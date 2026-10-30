@@ -37,6 +37,8 @@ def create_celery_app(settings: Settings | None = None):
         task_serializer="json",
         task_track_started=True,
         timezone="UTC",
+        # build_runtime 会重建 StreamHandler；保留真实 stderr，避免 LoggingProxy 递归丢日志。
+        worker_redirect_stdouts=False,
     )
     return celery_app
 

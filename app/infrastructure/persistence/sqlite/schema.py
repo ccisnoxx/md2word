@@ -98,7 +98,8 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
         file_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        review_query_json TEXT NULL
     )
     """,
     """
@@ -154,12 +155,50 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
         quality_status TEXT NOT NULL DEFAULT 'pending',
         review_status TEXT NOT NULL DEFAULT 'unreviewed',
         delivery_status TEXT NOT NULL DEFAULT 'internal_draft',
-        quality_summary_json TEXT NULL
+        quality_summary_json TEXT NULL,
+        list_query_json TEXT NULL
     )
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_document_jobs_created_at
     ON document_jobs (created_at, job_id)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS document_job_publications (
+        publication_id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        company_id TEXT NOT NULL,
+        generation INTEGER NOT NULL,
+        source_file_id TEXT NOT NULL,
+        result_file_id TEXT NOT NULL UNIQUE,
+        result_sha256 TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        published_at TEXT NOT NULL,
+        protected_file_ids TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        UNIQUE(job_id, generation),
+        UNIQUE(job_id, request_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS document_job_review_records (
+        record_id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        company_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        result_file_id TEXT NULL,
+        result_sha256 TEXT NULL,
+        origin TEXT NOT NULL,
+        import_version TEXT NULL,
+        payload TEXT NOT NULL,
+        UNIQUE(job_id, sequence)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_document_job_reviews_scope
+    ON document_job_review_records (tenant_id, company_id, job_id, sequence)
     """,
     """
     CREATE TABLE IF NOT EXISTS document_job_callback_messages (
@@ -241,12 +280,20 @@ DOCUMENT_JOB_STATE_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 
+DOCUMENT_JOB_LIST_QUERY_COLUMNS: tuple[tuple[str, str], ...] = (("list_query_json", "TEXT NULL"),)
+DOCUMENT_FILE_REVIEW_QUERY_COLUMNS: tuple[tuple[str, str], ...] = (("review_query_json", "TEXT NULL"),)
+
+
 def initialize_schema(connection: sqlite3.Connection) -> None:
-    """创建表和索引，并为既有 DocumentJob 表幂等补列；payload 回填由显式工具执行。"""
+    """创建表和索引，幂等补充任务/文件派生列；历史回填由显式工具执行。"""
 
     for statement in SQLITE_SCHEMA_STATEMENTS:
         connection.execute(statement)
     existing_columns = {row[1] for row in connection.execute("PRAGMA table_info(document_jobs)")}
-    for name, definition in DOCUMENT_JOB_STATE_COLUMNS:
+    for name, definition in (*DOCUMENT_JOB_STATE_COLUMNS, *DOCUMENT_JOB_LIST_QUERY_COLUMNS):
         if name not in existing_columns:
             connection.execute(f"ALTER TABLE document_jobs ADD COLUMN {name} {definition}")
+    file_columns = {row[1] for row in connection.execute("PRAGMA table_info(document_files)")}
+    for name, definition in DOCUMENT_FILE_REVIEW_QUERY_COLUMNS:
+        if name not in file_columns:
+            connection.execute(f"ALTER TABLE document_files ADD COLUMN {name} {definition}")

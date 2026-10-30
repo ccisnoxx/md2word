@@ -2,20 +2,32 @@ from __future__ import annotations
 
 # app/infrastructure/persistence/file/document_jobs.py: file backend 的 document_jobs adapter。
 
+import json
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
+from app.domains.document_jobs.new_generation import (
+    GENERATION_REQUESTS_ENVELOPE, NewGenerationAcceptance, NewGenerationSubmission, NewGenerationLedgerEntry,
+    NewGenerationCommitUnknownError, accept_new_generation, decode_generation_requests,
+    ensure_generation_ledger_not_patched, read_generation_request, replay_generation_request,
+)
+from app.domains.document_jobs.publication import (
+    PUBLICATION_ENVELOPE, PublicationRecord, PublicationSubmission, commit_publication, decode_file_publications, validate_publication_history,
+)
+from app.domains.document_jobs.review import (
+    REVIEW_ENVELOPE, ReviewRecord, ReviewSubmission, decode_file_history, validate_history, submit_review,
+)
 from app.domains.document_jobs.models import (
     DocumentJobCallbackMessage,
     DocumentJobEventRecord,
     DocumentJobRecord,
-    DocumentJobReviewStatus,
-    DocumentJobTranslationQaIssueType,
     DocumentJobTranslationBatchRecord,
 )
-from app.domains.document_jobs.delivery_state import backfill_document_job_state_payload, reviewed_job
+from app.domains.document_jobs.delivery_state import backfill_document_job_state_payload
+from app.domains.document_jobs.list_query import DocumentJobListQuery, DocumentJobListResult, query_document_job_records
+from app.domains.document_jobs.table_evidence import table_evidence_snapshot_values
 from app.domains.document_jobs.repository import (
     TranslationBatchTreeInvalidError,
     reduce_translation_batch_generation,
@@ -25,9 +37,13 @@ from app.domains.document_jobs.repository import (
     validate_translation_batch_tree_or_raise,
 )
 from app.infrastructure.persistence.file.backend import FilePersistenceBackend
-from app.domains.document_jobs.result_state import matches_current, patched_job, prepare_result, retry_job
+from app.infrastructure.persistence.file.files import FileDocumentFileRepository
+from app.domains.document_jobs.result_state import lifecycle_job, matches_current, patched_job, prepare_result, retry_job
 from app.domains.files.models import DocumentFileRecord
 from app.domains.resources.models import utc_now
+from app.domains.document_jobs.preview_state import (
+    PreviewArtifactObservation, PreviewClaim, PreviewClaimRequest, begin_preview_registration, claim_preview, finish_preview,
+)
 from app.infrastructure.persistence.file.record_lock import record_lock
 
 
@@ -47,8 +63,30 @@ class FileDocumentJobRepository:
             self._write_job(None, record)
             return record
 
-    def _write_job(self, connection: Any, record: DocumentJobRecord) -> None:
-        self.backend.write_json(self.backend.document_jobs_dir / record.id / "job.json", record.model_dump(mode="json"))
+    def _write_job(self, connection: Any, record: DocumentJobRecord, *,
+        generation_entry: NewGenerationLedgerEntry | None = None,
+    ) -> None:
+        payload = {**(connection or {}), **record.model_dump(mode="json")}
+        if generation_entry is not None:
+            payload[GENERATION_REQUESTS_ENVELOPE] = {
+                **payload.get(GENERATION_REQUESTS_ENVELOPE, {}),
+                generation_entry.acceptance.request_id: generation_entry.model_dump(mode="json"),
+            }
+        decode_generation_requests(payload)
+        validate_history(record, decode_file_history(payload))
+        validate_publication_history(record, decode_file_publications(payload))
+        path = self.backend.document_jobs_dir / record.id / "job.json"
+        if generation_entry is None:
+            self.backend.write_json(path, payload)
+        else:
+            # temp 写入失败发生在提交前；只有 replace 已开始后才报告接受结果未知。
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(path.suffix + ".tmp")
+            temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            try:
+                temporary.replace(path)
+            except Exception as exc:
+                raise NewGenerationCommitUnknownError() from exc
 
     @contextmanager
     def _locked_payload(self, job_id: str) -> Iterator[tuple[Any, Any]]:
@@ -56,7 +94,13 @@ class FileDocumentJobRepository:
             path = self.backend.document_jobs_dir / job_id / "job.json"
             if not path.exists():
                 raise FileNotFoundError(f"文档任务不存在: {job_id}")
-            yield None, self.backend.read_json(path, {})
+            payload = self.backend.read_json(path, {})
+            job = DocumentJobRecord.model_validate(payload)
+            if job.id != job_id:
+                raise ValueError("任务寻址与 payload 的 id 不一致。")
+            validate_history(job, decode_file_history(payload))
+            validate_publication_history(job, decode_file_publications(payload))
+            yield payload, payload
 
     @contextmanager
     def _locked_job(self, job_id: str) -> Iterator[tuple[Any, DocumentJobRecord]]:
@@ -67,20 +111,41 @@ class FileDocumentJobRepository:
         path = self.backend.document_jobs_dir / job_id / "job.json"
         if not path.exists():
             return None
-        return DocumentJobRecord.model_validate(self.backend.read_json(path, {}))
+        payload = self.backend.read_json(path, {})
+        job = DocumentJobRecord.model_validate(payload)
+        validate_history(job, decode_file_history(payload))
+        validate_publication_history(job, decode_file_publications(payload))
+        return job
 
     def list_document_jobs(self) -> list[DocumentJobRecord]:
         records: list[DocumentJobRecord] = []
         for path in sorted(self.backend.document_jobs_dir.glob("*/job.json")):
-            records.append(DocumentJobRecord.model_validate(self.backend.read_json(path, {})))
+            payload = self.backend.read_json(path, {})
+            job = DocumentJobRecord.model_validate(payload)
+            validate_history(job, decode_file_history(payload))
+            validate_publication_history(job, decode_file_publications(payload))
+            records.append(job)
         return sorted(records, key=lambda record: (record.created_at, record.id))
+
+    def query_document_jobs(self, query: DocumentJobListQuery) -> DocumentJobListResult:
+        """在单次可见任务/文件观察上筛选汇总；文件后端不提供跨全表原子快照。"""
+        return query_document_job_records(self.list_document_jobs(), query,
+            file_repository=FileDocumentFileRepository(self.backend))
+
+    def is_document_job_table_evidence_snapshot_current(self, expected: DocumentJobRecord) -> bool:
+        """每次沿原读取入口校验历史与当前字段，不缓存上次的重核结论。"""
+        current = self.get_document_job(expected.id)
+        return (current is not None and current.deleted_at is None
+            and table_evidence_snapshot_values(current) == table_evidence_snapshot_values(expected))
 
     def update_document_job_if_current(
         self, job_id: str, *, allowed_statuses: set[str], allowed_stages: set[str],
         expected_retry_count: int | None = None, expected_document_ir_file_id: str | None = None,
         require_no_prepared_result: bool = False, expected_prepared_result_file_id: str | None = None,
+        preview_contribution: dict | None = None,
         **patch: Any,
     ) -> DocumentJobRecord | None:
+        ensure_generation_ledger_not_patched(patch)
         with self._locked_job(job_id) as (connection, existing):
             if not matches_current(existing, allowed_statuses=allowed_statuses, allowed_stages=allowed_stages,
                                    expected_retry_count=expected_retry_count,
@@ -90,7 +155,7 @@ class FileDocumentJobRepository:
                 return None
             if patch.get("status") == "succeeded" and existing.timeout_at is not None and existing.timeout_at <= utc_now():
                 return None
-            updated = patched_job(existing, patch)
+            updated = patched_job(existing, patch, preview_contribution=preview_contribution)
             self._write_job(connection, updated)
             return updated
 
@@ -108,24 +173,55 @@ class FileDocumentJobRepository:
     def retry_document_job(
         self, job_id: str, *, expected_retry_count: int, max_retries: int, **patch: Any,
     ) -> DocumentJobRecord | None:
+        ensure_generation_ledger_not_patched(patch)
         with self._locked_job(job_id) as (connection, existing):
             updated = retry_job(existing, expected_retry_count=expected_retry_count, max_retries=max_retries, **patch)
             if updated is not None:
                 self._write_job(connection, updated)
             return updated
 
-    def update_document_job_review_if_current(
-        self, job_id: str, *, expected_retry_count: int, expected_result_file_id: str | None,
-        review_status: DocumentJobReviewStatus, issue_type: DocumentJobTranslationQaIssueType | None,
-        note: str | None, reviewed_by: str | None, reviewed_at: datetime | None, updated_at: datetime,
+    def claim_document_job_preview(self, job_id: str, *, request: PreviewClaimRequest,
+        observation: PreviewArtifactObservation | None = None,
+    ) -> PreviewClaim:
+        with self._locked_job(job_id) as (connection, existing):
+            claim = claim_preview(existing, request, observation=observation, now=utc_now())
+            if claim.job != existing:
+                self._write_job(connection, claim.job)
+            return claim
+
+    def finish_document_job_preview(
+        self, job_id: str, *, request: PreviewClaimRequest, revision: int, lease_token: str,
+        status: str, manifest_file_id: str, error_code: str | None, retryable: bool, evidence: dict,
+        page_quality_contribution: dict | None = None,
     ) -> DocumentJobRecord | None:
         with self._locked_job(job_id) as (connection, existing):
-            updated = reviewed_job(existing, expected_retry_count=expected_retry_count,
-                expected_result_file_id=expected_result_file_id, review_status=review_status,
-                issue_type=issue_type, note=note, reviewed_by=reviewed_by, reviewed_at=reviewed_at,
-                updated_at=updated_at)
+            updated = finish_preview(existing, request, revision=revision, lease_token=lease_token,
+                status=status, manifest_file_id=manifest_file_id, error_code=error_code,
+                retryable=retryable, evidence=evidence, page_quality_contribution=page_quality_contribution, now=utc_now())
             if updated is not None:
                 self._write_job(connection, updated)
+            return updated
+
+    def begin_document_job_preview_registration(
+        self, job_id: str, *, request: PreviewClaimRequest, revision: int, lease_token: str, attempt: int,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = begin_preview_registration(existing, request, revision=revision, lease_token=lease_token,
+                                                 attempt=attempt, now=utc_now())
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def update_document_job_review_if_current(self, job_id: str, *, submission: ReviewSubmission) -> DocumentJobRecord | None:
+        with self._locked_payload(job_id) as (payload, _):
+            existing = DocumentJobRecord.model_validate(payload)
+            records = decode_file_history(payload)
+            validate_history(existing, records)
+            prior = next((r for r in records if r.id == submission.record_id), None)
+            updated, record = submit_review(existing, submission, prior)
+            if record is not None:
+                self._insert_review(payload, record)
+                self._write_job(payload, updated)
             return updated
 
     def backfill_document_job_state_if_missing(self, job_id: str) -> bool:
@@ -137,10 +233,101 @@ class FileDocumentJobRepository:
             return changed
 
     def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord:
+        ensure_generation_ledger_not_patched(patch)
         with self._locked_job(job_id) as (connection, existing):
             updated = patched_job(existing, patch)
             self._write_job(connection, updated)
             return updated
+
+
+    def update_document_job_lifecycle_if_current(
+        self, job_id: str, *, expected_retry_count: int, action: Literal["archive", "delete"],
+        actor_id: str, occurred_at: datetime, delete_reason: str | None = None,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = lifecycle_job(existing, expected_retry_count=expected_retry_count, action=action,
+                actor_id=actor_id, occurred_at=occurred_at, delete_reason=delete_reason)
+            if updated is not None and updated != existing:
+                self._write_job(connection, updated)
+        return updated
+
+    def get_document_job_generation_request(
+        self, job_id: str, *, request_id: str, actor_id: str,
+    ) -> tuple[NewGenerationAcceptance, DocumentJobRecord] | None:
+        with self._locked_payload(job_id) as (_, payload):
+            entry = read_generation_request(payload, request_id=request_id, actor_id=actor_id)
+            result = (entry.acceptance, DocumentJobRecord.model_validate(payload)) if entry is not None else None
+        return result
+
+    def accept_document_job_new_generation(
+        self, job_id: str, *, submission: NewGenerationSubmission, max_retries: int,
+    ) -> tuple[NewGenerationAcceptance, DocumentJobRecord, bool]:
+        from app.infrastructure.persistence.file.files import FileDocumentFileRepository
+
+        files = FileDocumentFileRepository(self.backend)
+        with self.backend.publication_lifecycle_lock(), self._locked_payload(job_id) as (payload, _):
+            job = DocumentJobRecord.model_validate(payload)
+            prior = replay_generation_request(payload, submission)
+            if prior is not None:
+                return prior.acceptance, job, True
+            with ExitStack() as locks:
+                current_files = {}
+                for file_id in sorted({job.source_file_id, *([job.result_file_id] if job.result_file_id else [])}):
+                    locks.enter_context(record_lock(self.backend.document_files_dir / f"{file_id}.lock"))
+                    file = files.get_document_file(file_id)
+                    if file is not None:
+                        current_files[file_id] = file
+                updated, entry = accept_new_generation(job, submission, current_files=current_files,
+                    max_retries=max_retries, now=utc_now())
+                self._write_job(payload, updated, generation_entry=entry)
+            return entry.acceptance, updated, False
+
+    def list_document_job_publications(self, job_id: str) -> list[PublicationRecord]:
+        path = self.backend.document_jobs_dir / job_id / "job.json"
+        if not path.exists():
+            raise FileNotFoundError("文档任务不存在。")
+        return decode_file_publications(self.backend.read_json(path, {}))
+
+    def is_document_file_protected(self, file_id: str) -> bool:
+        return any(file_id in record.protected_file_ids for record in self.backend.list_publication_records())
+
+    def publish_document_job(self, job_id: str, *, submission: PublicationSubmission) -> tuple[PublicationRecord, bool]:
+        from app.infrastructure.persistence.file.files import FileDocumentFileRepository
+
+        files = FileDocumentFileRepository(self.backend)
+        with self.backend.publication_lifecycle_lock(), self._locked_payload(job_id) as (payload, _), ExitStack() as locks:
+            current_files = []
+            for file_id in sorted({file.id for file in submission.files}):
+                locks.enter_context(record_lock(self.backend.document_files_dir / f"{file_id}.lock"))
+                current = files.get_document_file(file_id)
+                if current is not None:
+                    current_files.append(current)
+            updated, record, created = commit_publication(DocumentJobRecord.model_validate(payload), submission,
+                prior=self.backend.list_publication_records(), current_files=current_files,
+                all_files=files.list_document_files(), reviews=decode_file_history(payload), now=utc_now())
+            if created:
+                payload[PUBLICATION_ENVELOPE] = [
+                    *[item.model_dump(mode="json") for item in decode_file_publications(payload)],
+                    record.model_dump(mode="json"),
+                ]
+                self._write_job(payload, updated)
+            return record, created
+
+    def _insert_review(self, payload: dict, record: ReviewRecord) -> None:
+        records = decode_file_history(payload)
+        payload[REVIEW_ENVELOPE] = [r.model_dump(mode="json") for r in [*records, record]]
+
+
+    def list_document_job_reviews(self, job_id: str, *, after_sequence: int = 0, limit: int = 100) -> list[ReviewRecord]:
+        if after_sequence < 0 or not 1 <= limit <= 200:
+            raise ValueError("复核历史游标或数量非法。")
+        path = self.backend.document_jobs_dir / job_id / "job.json"
+        if not path.exists():
+            raise FileNotFoundError("文档任务不存在。")
+        payload = self.backend.read_json(path, {})
+        records = decode_file_history(payload)
+        validate_history(DocumentJobRecord.model_validate(payload), records)
+        return [r for r in records if r.sequence > after_sequence][:limit]
 
 
 class FileDocumentJobEventRepository:

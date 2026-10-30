@@ -18,7 +18,15 @@ from app.domains.translation.modes import translation_prompt_path
 from app.domains.translation.integrity import INTEGRITY_INSTRUCTION
 
 
-class TranslationProviderResponseError(RuntimeError):
+class TranslationProviderCallError(RuntimeError):
+    """实际调用失败的安全上下文，不携带配置密钥或外部异常正文。"""
+
+    def __init__(self, message: str, *, publication_provenance: dict | None = None) -> None:
+        super().__init__(message)
+        self.publication_provenance = publication_provenance
+
+
+class TranslationProviderResponseError(TranslationProviderCallError):
     """Provider 响应无法解析或校验，仅携带非敏感诊断元数据。"""
 
     def __init__(
@@ -30,8 +38,9 @@ class TranslationProviderResponseError(RuntimeError):
         response_id: str | None = None,
         content: str = "",
         suspected_truncation: bool = False,
+        publication_provenance: dict | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(message, publication_provenance=publication_provenance)
         self.finish_reason = finish_reason
         self.usage = usage or {}
         self.response_id = response_id
@@ -83,26 +92,47 @@ class OpenAICompatibleTranslationProvider:
             base_url=config.base_url or None,
             timeout=config.timeout_seconds,
         )
-        response = client.chat.completions.create(
-            model=config.model,
-            messages=[
-                {"role": "system", "content": self._system_prompt(request)},
-                {"role": "user", "content": self._user_prompt(request)},
-            ],
-            stream=False,
-            max_tokens=config.max_output_tokens,
-            extra_body={"thinking": {"type": "disabled"}},
-        )
-        content = self._extract_content(response)
-        finish_reason = self._extract_finish_reason(response)
-        usage = self._extract_usage(response)
-        response_id = self._extract_response_id(response)
-        payload = self._parse_json_response(
-            content,
-            finish_reason=finish_reason,
-            usage=usage,
-            response_id=response_id,
-        )
+        messages = [
+            {"role": "system", "content": self._system_prompt(request)},
+            {"role": "user", "content": self._user_prompt(request)},
+        ]
+        # 只从构造本次请求的配置取白名单；调用结束后不能再次解析当前配置。
+        publication_provenance = {
+            "schema_version": "publication_provenance/v1",
+            "backend": config.backend,
+            "model": config.model,
+            "parameters": {
+                "timeout_seconds": config.timeout_seconds,
+                "max_output_tokens": config.max_output_tokens,
+                "stream": False,
+                "thinking": {"type": "disabled"},
+            },
+        }
+        try:
+            response = client.chat.completions.create(
+                model=config.model,
+                messages=messages,
+                stream=False,
+                max_tokens=config.max_output_tokens,
+                extra_body={"thinking": {"type": "disabled"}},
+            )
+            content = self._extract_content(response)
+            finish_reason = self._extract_finish_reason(response)
+            usage = self._extract_usage(response)
+            response_id = self._extract_response_id(response)
+            payload = self._parse_json_response(
+                content,
+                finish_reason=finish_reason,
+                usage=usage,
+                response_id=response_id,
+            )
+        except TranslationProviderResponseError as exc:
+            exc.publication_provenance = publication_provenance
+            raise
+        except Exception:
+            raise TranslationProviderCallError(
+                "翻译 Provider 调用失败。", publication_provenance=publication_provenance,
+            ) from None
         content_sha256 = f"sha256:{hashlib.sha256(content.encode('utf-8')).hexdigest()}" if content else None
         return TranslationProviderResult(
             items=payload,
@@ -111,6 +141,7 @@ class OpenAICompatibleTranslationProvider:
             response_id=response_id,
             content_length=len(content),
             content_sha256=content_sha256,
+            publication_provenance=publication_provenance,
         )
 
     def _effective_config(self) -> EffectiveAiProviderConfig:

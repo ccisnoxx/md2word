@@ -205,6 +205,8 @@ def build_layout_plan(document_ir: DocumentIR) -> LayoutPlan:
     if not any(block.layout is not None for block in document_ir.blocks):
         return _build_legacy_plan(document_ir)
 
+    from app.services.document_ir.table_placeholder import decode_placeholders
+    unknown_owners = {item.owner_block_id for item in decode_placeholders(document_ir) if item.page_index is None}
     page_sizes = {page.index: (page.width, page.height) for page in document_ir.pages}
     page_indices = set(page_sizes)
     page_indices.update(_block_page_index(block) for block in document_ir.blocks)
@@ -227,7 +229,52 @@ def build_layout_plan(document_ir: DocumentIR) -> LayoutPlan:
                 regions=_build_regions(body_blocks, width),
             )
         )
+    _place_unlocated_placeholders(pages, [block for block in document_ir.blocks
+        if (block.id in unknown_owners or (
+            block.type == "paragraph" and block.metadata.get("annotation_role") == "table_context"
+            and block.metadata.get("source_block_id") in unknown_owners))
+        and _block_page_index(block) is None and _block_role(block) == "body"])
     return LayoutPlan(mode="layout_v2", pages=pages)
+
+
+def _place_unlocated_placeholders(pages: list[LayoutPage], blocks: list[DocumentIRBlock]) -> None:
+    """只给未知页占位安排输出锚点；不写源页号，不重排既有页、栏或装饰。
+
+    单栏可在来源邻块处插入；双栏作为完整区域保留，避免切断左/右栏而改变正常阅读顺序。
+    converter 派生 context 与 owner 同 order；稳定排序保留数组中的 context→owner 展开顺序。
+    """
+    if not blocks or not pages:
+        return
+    anchors = [(block.order, page_index, region_index, block_index)
+               for page_index, page in enumerate(pages) for region_index, region in enumerate(page.regions)
+               for block_index, block in enumerate(region.blocks)]
+    insertions: dict[tuple[int, int, int], list[DocumentIRBlock]] = {}
+    for block in sorted(blocks, key=lambda item: item.order):
+        before = [anchor for anchor in anchors if anchor[0] < block.order]
+        if before:
+            _, pi, ri, bi = max(before)
+            region = pages[pi].regions[ri]
+            offset = len(region.blocks) if region.kind == "two_col" else bi + 1
+        elif anchors:
+            _, pi, ri, _ = min(anchors)
+            offset = 0
+        else:
+            pi, ri, offset = 0, 0, 0
+        insertions.setdefault((pi, ri, offset), []).append(block)
+    for pi, page in enumerate(pages):
+        output = []
+        for ri, region in enumerate(page.regions or [LayoutRegion("one_col", [])]):
+            start = 0
+            for offset in range(len(region.blocks) + 1):
+                additions = insertions.get((pi, ri, offset))
+                if additions:
+                    if offset > start:
+                        output.append(LayoutRegion(region.kind, region.blocks[start:offset]))
+                    output.append(LayoutRegion("unlocated", additions))
+                    start = offset
+            if start < len(region.blocks):
+                output.append(LayoutRegion(region.kind, region.blocks[start:]))
+        page.regions[:] = output
 
 
 def _build_legacy_plan(document_ir: DocumentIR) -> LayoutPlan:
@@ -400,3 +447,33 @@ def _block_page_index(block: DocumentIRBlock) -> int | None:
 
 def _block_role(block: DocumentIRBlock) -> str:
     return block.layout.role if block.layout is not None else "body"
+
+
+def split_two_col_blocks(
+    blocks: list[DocumentIRBlock],
+) -> tuple[list[DocumentIRBlock], list[DocumentIRBlock]]:
+    """双栏读取顺序的共享 owner；布局对账与实际输出使用相同分流规则。"""
+    left_blocks: list[DocumentIRBlock] = []
+    right_blocks: list[DocumentIRBlock] = []
+    for block in blocks:
+        column_hint = block.layout.column_hint if block.layout is not None else None
+        if column_hint == "left":
+            left_blocks.append(block)
+            continue
+        if column_hint == "right":
+            right_blocks.append(block)
+            continue
+        if column_hint == "wide":
+            left_blocks.append(block)
+            continue
+        bbox = block.layout.bbox if block.layout is not None else None
+        if bbox is None:
+            left_blocks.append(block)
+            continue
+        page_width = max((candidate.layout.bbox[2] for candidate in blocks if candidate.layout and candidate.layout.bbox), default=bbox[2])
+        center_x = (bbox[0] + bbox[2]) / 2
+        if center_x < page_width / 2:
+            left_blocks.append(block)
+        else:
+            right_blocks.append(block)
+    return left_blocks, right_blocks

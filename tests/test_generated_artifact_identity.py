@@ -26,7 +26,14 @@ class FakeS3Client:
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
 
-    def put_object(self, *, Bucket: str, Key: str, Body: bytes, ContentType: str) -> dict:
+    def put_object(self, *, Bucket: str, Key: str, Body: bytes, ContentType: str, IfNoneMatch: str) -> dict:
+        from botocore.exceptions import ClientError
+
+        if IfNoneMatch != "*":
+            raise AssertionError("生成件写入必须保留条件创建。")
+        if (Bucket, Key) in self.objects:
+            raise ClientError({"Error": {"Code": "PreconditionFailed"},
+                               "ResponseMetadata": {"HTTPStatusCode": 412}}, "PutObject")
         self.objects[(Bucket, Key)] = bytes(Body)
         return {"ETag": f'"{hashlib.sha256(Body).hexdigest()}"'}
 
@@ -148,7 +155,13 @@ class GeneratedArtifactIdentityTests(TestCase):
                     path = service.resolve_local_object_path(key)
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(content)
-                service.repository.create_document_file(old_record)
+                # 历史固定 key 从原始持久化恢复；当前 create 入口必须继续拒绝该旧布局。
+                with self.assertRaisesRegex(ValueError, "独立 file_id"):
+                    service.repository.create_document_file(old_record)
+                service.repository.backend.write_json(
+                    service.repository.backend.document_files_dir / f"{old_record.id}.json",
+                    old_record.model_dump(mode="json"),
+                )
                 before = old_record.model_dump(mode="json")
 
                 new_record = service.register_generated_content(

@@ -19,7 +19,7 @@ from app.domains.translation.models import (
     TranslationTermMatchTraceRecord,
     TranslationTextItem,
 )
-from app.domains.translation.provider import TranslationProviderResponseError
+from app.domains.translation.provider import TranslationProviderCallError, TranslationProviderResponseError
 from app.domains.translation.integrity import TranslationIntegrityError, TranslationIntegrityEvidence
 from app.domains.files import FileUploadService
 
@@ -44,6 +44,7 @@ class TranslationCallAuditRecorder:
         self.term_version = term_version
         self.trace_id = trace_id
         self.save_full_text = save_full_text
+        # 保留既有构造接线；审计只能复用调用上下文，不再自行解析运行配置。
         self.config_resolver = config_resolver
         self.call_id: str | None = None
         self.call_log_file_id: str | None = None
@@ -70,8 +71,12 @@ class TranslationCallAuditRecorder:
             duration_ms=duration_ms,
             error=None,
             integrity=integrity,
+            publication_provenance=result.publication_provenance,
         )
-        self._write_debug_archive(call_id=call_id, request=request, result=result, error=None)
+        self._write_debug_archive(
+            call_id=call_id, request=request, result=result, error=None,
+            publication_provenance=result.publication_provenance,
+        )
 
     def record_failure(
         self,
@@ -106,6 +111,10 @@ class TranslationCallAuditRecorder:
                     "suspected_truncation": error.suspected_truncation,
                 }
             )
+        publication_provenance = (
+            result.publication_provenance if isinstance(result, TranslationProviderResult) else
+            error.publication_provenance if isinstance(error, TranslationProviderCallError) else None
+        )
         call_id = self._new_call_id()
         self._write_call_log(
             call_id=call_id,
@@ -115,8 +124,12 @@ class TranslationCallAuditRecorder:
             duration_ms=duration_ms,
             error=error_payload,
             integrity=integrity,
+            publication_provenance=publication_provenance,
         )
-        self._write_debug_archive(call_id=call_id, request=request, result=result, error=error_payload)
+        self._write_debug_archive(
+            call_id=call_id, request=request, result=result, error=error_payload,
+            publication_provenance=publication_provenance,
+        )
 
     def _new_call_id(self) -> str:
         call_id = f"aicall_{uuid4().hex[:12]}"
@@ -133,8 +146,9 @@ class TranslationCallAuditRecorder:
         duration_ms: int,
         error: dict | None,
         integrity: TranslationIntegrityEvidence | None,
+        publication_provenance: dict | None,
     ) -> None:
-        provider = self._provider_summary()
+        provider = self._provider_summary(publication_provenance)
         payload = {
             "schema_version": "ai-call-log/v1",
             "call_id": call_id,
@@ -194,10 +208,11 @@ class TranslationCallAuditRecorder:
         request: TranslationProviderRequest,
         result: TranslationProviderResult | None,
         error: dict | None,
+        publication_provenance: dict | None,
     ) -> None:
         if not self.save_full_text:
             return
-        provider = self._provider_summary()
+        provider = self._provider_summary(publication_provenance)
         payload = {
             "schema_version": "translation-debug-archive/v1",
             "call_id": call_id,
@@ -300,13 +315,15 @@ class TranslationCallAuditRecorder:
             "content_hash": request.prompt_content_hash,
         }
 
-    def _provider_summary(self) -> dict[str, str | None]:
-        if self.config_resolver is not None:
-            config = self.config_resolver()
-            return {"backend": config.backend, "model": config.model if config.backend == "openai_compatible" else None}
+    @staticmethod
+    def _provider_summary(publication_provenance: dict | None) -> dict[str, str | None]:
+        """历史结果缺实际调用事实时保持未知，不以当前默认值补造。"""
+
+        if publication_provenance is None:
+            return {"backend": None, "model": None}
         return {
-            "backend": self.settings.translation_provider_backend,
-            "model": self.settings.openai_model if self.settings.translation_provider_backend == "openai_compatible" else None,
+            "backend": publication_provenance["backend"],
+            "model": publication_provenance["model"],
         }
 
     def _term_trace_summary(self, traces: tuple[TranslationTermMatchTraceRecord, ...]) -> list[dict]:

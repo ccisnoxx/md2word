@@ -16,6 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.errors import register_api_error_handlers
 from app.api.v1.router import router as api_v1_router
 from app.conversion.entrypoint import create_conversion_entrypoint
+from app.domains.document_jobs.preview import DocumentJobPreviewService
+from app.services.preview.sandbox_adapter import SandboxWordPreviewProvider
 from app.core.config import Settings
 from app.core.logging import configure_logging
 from app.core.runtime import AppRuntime
@@ -37,6 +39,7 @@ from app.domains.document_jobs.incidents import DocumentJobIncidentService
 from app.domains.document_jobs.service import DocumentJobService
 from app.domains.files import FileRetentionPolicyService, FileUploadService
 from app.services.document_ir import MinerUToDocumentIRService
+from app.infrastructure.pdf_crop import PopplerPdfTableCropProvider
 from app.domains.jobs.artifact_storage import LocalArtifactStorageAdapter
 from app.domains.jobs.artifacts import JobArtifactService
 from app.domains.jobs.command import JobCommandService
@@ -185,7 +188,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_file_repository,
         retention_days_resolver=file_retention_policy_service.resolve_retention_days,
     )
-    document_ir_service = MinerUToDocumentIRService()
+    document_ir_service = MinerUToDocumentIRService(pdf_crop_provider=PopplerPdfTableCropProvider())
     ai_provider_config_service = AiProviderConfigService(resolved_settings)
     mineru_config_service = MinerUConfigService(resolved_settings)
     translation_provider = build_translation_provider(
@@ -221,6 +224,17 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_job_repository=document_job_repository,
     )
     document_word_renderer = DocumentIRWordRenderer()
+    resolved_settings.page_quality_policy()
+    preview_provider = SandboxWordPreviewProvider(
+        backend=resolved_settings.word_preview_backend, launcher=resolved_settings.word_preview_launcher,
+        profile_path=resolved_settings.word_preview_profile_path, profile_id=resolved_settings.word_preview_profile_id,
+        profile_sha256=resolved_settings.word_preview_profile_sha256,
+    )
+    word_preview_service = DocumentJobPreviewService(
+        resolved_settings, document_job_repository, document_job_event_repository,
+        document_file_repository, file_upload_service, audit_service=audit_service,
+        provider=preview_provider, observer=preview_provider,
+    )
     document_job_execution_service = DocumentJobExecutionService(
         resolved_settings,
         document_job_repository,
@@ -237,6 +251,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         term_version_service,
         translation_audit_service,
         job_resource_snapshot_service,
+        word_preview_service=word_preview_service,
     )
     document_job_task_queue = _build_document_job_task_queue(resolved_settings, document_job_execution_service)
     document_translation_batch_task_queue = _build_document_translation_batch_task_queue(
@@ -262,6 +277,8 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         job_resource_snapshot_service,
         document_job_translation_batch_repository=document_job_translation_batch_repository,
         file_upload_service=file_upload_service,
+        word_preview_service=word_preview_service,
+        audit_service=audit_service,
     )
     document_job_incident_service = DocumentJobIncidentService(document_job_service)
     saved_view_service = SavedViewService(saved_view_repository)
@@ -454,6 +471,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_job_incident_service=document_job_incident_service,
         saved_view_service=saved_view_service,
         document_job_execution_service=document_job_execution_service,
+        word_preview_service=word_preview_service,
         document_job_recovery_service=document_job_recovery_service,
         document_job_task_queue=document_job_task_queue,
         health_service=health_service,

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import tempfile
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app.conversion.docx_rules.mineru_content import (
     clean_text,
@@ -15,6 +15,7 @@ from app.conversion.docx_rules.mineru_content import (
     mineru_list_items,
     coerce_text_list,
     collect_text_from_fields,
+    select_mineru_text_source,
     select_mineru_table_html,
     find_final_promotional_page,
     merge_footnote_fragments,
@@ -30,8 +31,9 @@ from app.services.document_ir.layout_signals import (
 )
 from app.services.document_ir.integrity import DocumentIntegrityError, build_source_integrity, ensure_integrity
 from app.services.document_ir.caption_reconciler import reconcile_captions
+from app.services.document_ir.logical_table_group import TableSourceLedger, attach_logical_table_groups, capture_table_sources
 from app.services.document_ir.artifact_validator import (
-    MinerUArtifactValidator, MinerUArtifactValidationError, MinerUValidationReport, ValidatedImage,
+    MinerUArtifactValidator, MinerUArtifactValidationError, MinerUValidationReport, ValidatedImage, ValidatedTableReference,
 )
 from app.services.document_ir.mineru_package import (
     DEFAULT_POLICY, MinerUPackageError, MinerUValidationPolicy, extract_zip, find_content_list,
@@ -45,6 +47,10 @@ from app.services.document_ir.models import (
     DocumentIRMetadata,
 )
 from app.services.document_ir.table_annotations import split_table_annotation_texts
+from app.services.document_ir.table_reference_assets import TableReferenceAsset, attach_table_references
+from app.services.document_ir.table_placeholder import (
+    PdfCropSource, PdfTableCropProvider, PlaceholderAsset, TablePlaceholderError, prepare_placeholders,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,13 +69,17 @@ class MinerUToDocumentIRResult:
     document: DocumentIR
     image_assets: list[MinerUImageAsset]
     validation_report: MinerUValidationReport | None = None
+    table_reference_assets: list[TableReferenceAsset] = field(default_factory=list)
+    table_placeholder_assets: list[PlaceholderAsset] = field(default_factory=list)
 
 
 class MinerUToDocumentIRService:
     """P0 MinerU -> DocumentIR v2 转换器，优先保留块顺序和资产引用。"""
 
-    def __init__(self, *, policy: MinerUValidationPolicy = DEFAULT_POLICY) -> None:
+    def __init__(self, *, policy: MinerUValidationPolicy = DEFAULT_POLICY,
+                 pdf_crop_provider: PdfTableCropProvider | None = None) -> None:
         self.policy = policy
+        self.pdf_crop_provider = pdf_crop_provider
 
     def convert_zip(
         self,
@@ -78,6 +88,7 @@ class MinerUToDocumentIRService:
         job_id: str,
         source_file_id: str,
         document_language: str,
+        placeholder_source_loader: Callable[[], PdfCropSource] | None = None,
     ) -> MinerUToDocumentIRResult:
         """读取 MinerU 结果 zip，生成 DocumentIR v2 和待登记图片资产。"""
 
@@ -93,6 +104,7 @@ class MinerUToDocumentIRService:
                 validator.check_report_limits()
                 payload, _checksum = read_json_payload(content_list_path, policy=self.policy)
                 validated = validator.validate(payload, package_root=package_root, content_list_path=content_list_path)
+                table_sources = capture_table_sources(payload, validated.blocks, checksum=report.content_list_sha256)
                 return self._convert_blocks(
                     validated.blocks,
                     package_root=package_root,
@@ -101,6 +113,9 @@ class MinerUToDocumentIRService:
                     source_file_id=source_file_id,
                     document_language=document_language,
                     validator=validator,
+                    table_sources=table_sources,
+                    table_references=validated.table_references,
+                    placeholder_source_loader=placeholder_source_loader,
                 )
             except MinerUPackageError as error:
                 validator.add_package_error(error)
@@ -116,6 +131,9 @@ class MinerUToDocumentIRService:
         source_file_id: str,
         document_language: str,
         validator: MinerUArtifactValidator,
+        table_sources: TableSourceLedger,
+        table_references: dict[str, ValidatedTableReference],
+        placeholder_source_loader: Callable[[], PdfCropSource] | None,
     ) -> MinerUToDocumentIRResult:
         """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
         validation_report = validator.report
@@ -273,11 +291,22 @@ class MinerUToDocumentIRService:
             assets=ir_assets,
             quality_flags=quality_flags,
         )
+        # 在来源账本/ref owner 上准备事实，再一次验证最终模型与源清单；不输出半合法 IR。
+        attach_logical_table_groups(document, table_sources)
+        reference_assets = attach_table_references(document, table_references)
+        try:
+            placeholder_assets = prepare_placeholders(document, table_references,
+                source_loader=placeholder_source_loader, crop_provider=self.pdf_crop_provider)
+        except TablePlaceholderError as error:
+            error.mineru_validation_report = validation_report
+            raise
+        document = DocumentIR.model_validate_json(document.model_dump_json())
         evidence = build_source_integrity(document)
-        if validation_report is not None:
-            evidence["mineru_validation"] = validation_report.model_dump(mode="json")
+        evidence["mineru_validation"] = validation_report.model_dump(mode="json")
         ensure_integrity("MinerU→DocumentIR", evidence)
-        return MinerUToDocumentIRResult(document=document, image_assets=image_assets, validation_report=validation_report)
+        return MinerUToDocumentIRResult(document=document, image_assets=image_assets,
+            validation_report=validation_report, table_reference_assets=reference_assets,
+            table_placeholder_assets=placeholder_assets)
 
     def _metadata_from_raw(self, raw_block: dict[str, Any]) -> dict[str, Any]:
         metadata: dict[str, Any] = {"source_type": raw_block["_mineru_source"]["source_type"]}
@@ -307,7 +336,24 @@ class MinerUToDocumentIRService:
         captions: list[str] | None = None,
     ) -> str | None:
         if block_type == "table":
-            return captions[0] if captions else self._first_text_from_keys(raw_block, ("text",))
+            text = self._first_text_from_keys(raw_block, ("text",))
+            if not select_mineru_table_html(raw_block):
+                # 只消费明确正文叶字段/typed runs，不把 table_type 等 schema 标签当上下文。
+                excluded = set([*(captions or []), *self._footnotes(raw_block, "table")])
+                contexts = []
+                containers = [raw_block]
+                if isinstance(raw_block.get("content"), dict):
+                    containers.append(raw_block["content"])
+                for container in containers:
+                    for field in ("text", "description", "alt", "title_content", "paragraph_content"):
+                        contexts.extend(coerce_text_list(container.get(field)))
+                selected = select_mineru_text_source(raw_block)
+                if selected is not None and selected[2] in {"string", "runs"}:
+                    contexts.append(self._raw_text(raw_block) or "")
+                contexts = [item for item in self._unique_texts(contexts) if item not in excluded]
+                if contexts:
+                    return "\n".join(contexts)
+            return captions[0] if captions else text
         if block_type == "image":
             return captions[0] if captions else self._first_text_from_keys(raw_block, ("text",))
         if block_type == "formula":

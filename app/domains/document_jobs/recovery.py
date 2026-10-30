@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-# File: app/domains/document_jobs/recovery.py
-# Purpose: Provide document_jobs callback observation and replay recovery orchestration.
+# app/domains/document_jobs/recovery.py：编排任务回调观察、轮询及重放恢复。
 
 import logging
 from dataclasses import dataclass, field
@@ -32,6 +31,18 @@ from app.domains.resources.models import utc_now
 CALLBACK_MESSAGE_STATUSES = ("pending", "running", "processed", "failed", "ignored")
 DOCUMENT_JOB_RECOVERY_STALE_SECONDS = 600
 RECENT_PROBLEM_MESSAGE_LIMIT = 5
+
+
+def is_mineru_polling_job(settings: Settings, job: DocumentJobRecord) -> bool:
+    """仅续投轮询模式中已知批次的当前解析，未知首次提交结果不自动重提。"""
+
+    return (
+        not settings.mineru_callback_url.strip()
+        and job.archived_at is None
+        and job.status == "running"
+        and job.stage == "parsing"
+        and bool(job.mineru_batch_id)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,7 +273,9 @@ class DocumentJobRecoveryService:
             recovery_events_written=recovery_events_written,
         )
 
-    def run_startup_recovery(self, *, trace_id: str | None = "startup") -> DocumentJobStartupRecoveryResult:
+    def run_startup_recovery(
+        self, *, trace_id: str | None = "startup", polling_only: bool = False,
+    ) -> DocumentJobStartupRecoveryResult:
         """进程启动后尝试重放可恢复 document_jobs；单任务失败只记录日志不阻断启动。"""
 
         if self.task_queue is None:
@@ -285,6 +298,8 @@ class DocumentJobRecoveryService:
         failed_jobs = 0
         run_inline = self.settings.document_jobs_worker_backend == "eager"
         for job in jobs:
+            if polling_only and not is_mineru_polling_job(self.settings, job):
+                continue
             try:
                 preview = self.preview_replay(job.id)
                 if not preview.eligible:
@@ -328,7 +343,7 @@ class DocumentJobRecoveryService:
         ]
 
     def _active_job_needs_enqueue_replay(self, job: DocumentJobRecord, stale_job_detected: bool) -> bool:
-        return job.status in {"pending", "queued"} or stale_job_detected
+        return is_mineru_polling_job(self.settings, job) or job.status in {"pending", "queued"} or stale_job_detected
 
     def _is_stale_active_job(self, job: DocumentJobRecord | None) -> bool:
         if job is None or job.archived_at is not None or job.status not in ACTIVE_DOCUMENT_JOB_STATUSES:

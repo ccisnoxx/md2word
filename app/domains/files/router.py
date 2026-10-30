@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from threading import Lock
 from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.concurrency import run_in_threadpool
 
 from app.api.dependencies import get_runtime, get_trace_id, require_admin_user, require_current_user
 from app.domains.audit.models import ActorContext, AuditDetails
@@ -92,6 +94,8 @@ from app.core.runtime import AppRuntime
 
 
 router = APIRouter(prefix="/files", tags=["files"])
+# 保留此路由原有的进程内同步段串行边界；工作线程等待锁，不阻塞事件循环，也不提供跨进程互斥。
+_upload_content_lock = Lock()
 
 
 @router.post("/upload-url", response_model=FileUploadUrlResponse, status_code=status.HTTP_201_CREATED)
@@ -724,20 +728,28 @@ async def upload_file_content(
     trace_id: str = Depends(get_trace_id),
 ) -> FileUploadResponse:
     content = await _read_body_with_limit(request, runtime.settings.jobs_upload_max_bytes)
-    record = runtime.file_upload_service.upload_authorized_content(
-        file_id=file_id,
-        user=user,
-        content=content,
-        content_type=request.headers.get("content-type"),
-    )
-    runtime.audit_service.record(
-        actor=_actor_from_user(user),
-        action="file.upload_content",
-        target_type="document_file",
-        target_id=record.id,
-        trace_id=trace_id,
-    )
-    return FileUploadResponse(file=_build_document_file_response(record))
+    content_type = request.headers.get("content-type")
+
+    def upload_and_audit() -> FileUploadResponse:
+        """同步上传和审计共用一次线程池调用，避免两者之间新增取消点。"""
+
+        with _upload_content_lock:
+            record = runtime.file_upload_service.upload_authorized_content(
+                file_id=file_id,
+                user=user,
+                content=content,
+                content_type=content_type,
+            )
+            runtime.audit_service.record(
+                actor=_actor_from_user(user),
+                action="file.upload_content",
+                target_type="document_file",
+                target_id=record.id,
+                trace_id=trace_id,
+            )
+            return FileUploadResponse(file=_build_document_file_response(record))
+
+    return await run_in_threadpool(upload_and_audit)
 
 
 @router.get("/{file_id}", response_model=DocumentFileResponse)
@@ -767,7 +779,14 @@ async def _read_body_with_limit(request: Request, max_bytes: int) -> bytes:
 
 
 def _build_document_file_response(record: DocumentFileRecord) -> DocumentFileResponse:
-    return DocumentFileResponse(**record.model_dump(mode="python"))
+    payload = record.model_dump(mode="python")
+    if record.file_type == "generated_word" and (
+            "renderer_content_contract_version" in record.metadata or "formula_source_coverage" in record.metadata):
+        from app.services.renderer.evidence import build_renderer_event_summary
+
+        # 声明损坏或未知版本也走同一白名单，不能退回原始私有 metadata。
+        payload["metadata"] = build_renderer_event_summary(record.metadata)
+    return DocumentFileResponse(**payload)
 
 
 def _retention_planner(runtime: AppRuntime) -> DocumentFileRetentionPlanner:

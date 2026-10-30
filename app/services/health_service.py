@@ -158,7 +158,7 @@ class HealthService:
         pdf_submission_available = mineru_config.api_token_configured
         artifact_root = self._artifact_root()
         resource_labels = self._build_default_resource_labels()
-        mineru_callback_url_configured = bool(self.settings.mineru_callback_url)
+        mineru_callback_url_configured = bool(self.settings.mineru_callback_url.strip())
         mineru_uid_configured = mineru_config.uid_configured
         p0_document_jobs = self._build_p0_document_jobs_readiness(
             mineru_api_token_configured=mineru_config.api_token_configured,
@@ -273,8 +273,6 @@ class HealthService:
         elif not checks["pdf_submission_available"]:
             warnings.append("mineru_api_token_missing")
             checks["pdf_submission_unavailable_reason"] = "MINERU_API_TOKEN 未配置"
-        if checks["pdf_submission_available"] and not mineru_callback_url_configured:
-            warnings.append("mineru_callback_url_missing")
         if not checks["translation_available"] and not checks["translation_required_for_default_mode"]:
             warnings.append("translation_unavailable")
         if ai_provider_config_error is not None and not checks["translation_required_for_default_mode"]:
@@ -369,8 +367,6 @@ class HealthService:
                 blockers.append(mineru_config_error)
             elif not mineru_api_token_configured:
                 blockers.append("mineru_api_token_missing")
-            if not self.settings.mineru_callback_url.strip():
-                blockers.append("mineru_callback_url_missing")
             if (
                 mineru_config_error is None
                 and self.settings.mineru_callback_url.strip()

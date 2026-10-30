@@ -137,17 +137,17 @@ STRUCTURAL_TEX_COMMANDS = {
 }
 
 
-def normalize_formula_text(text: str) -> str:
-    """把常见 MinerU/TeX 片段转换为安全的内联类 HTML 标记。"""
+def normalize_formula_text(text: str, *, literal_text: bool = False) -> str:
+    """转换受控 TeX；已分段文字模式保留 entity、普通标识及段首尾空白。"""
 
     if not text:
         return ""
-    normalized = unescape(text)
-    normalized = normalized.replace("\xa0", " ")
+    normalized = text if literal_text else unescape(text).replace("\xa0", " ")
     normalized = re.sub(r"<eq>\s*(.*?)\s*</eq>", r"\1", normalized, flags=re.IGNORECASE | re.DOTALL)
-    normalized = re.sub(r"\$+\s*(.*?)\s*\$+", r"\1", normalized, flags=re.DOTALL)
-    normalized = normalize_tex_text(normalized)
-    normalized = convert_inline_tex_to_html(normalized)
+    if not literal_text:
+        normalized = re.sub(r"\$+\s*(.*?)\s*\$+", r"\1", normalized, flags=re.DOTALL)
+    normalized = normalize_tex_text(normalized, literal_text=literal_text)
+    normalized = convert_inline_tex_to_html(normalized, explicit_scripts=literal_text)
     normalized = re.sub(r"\s+,", ",", normalized)
     normalized = re.sub(r"([±+\-])\s+(\d)", r"\1\2", normalized)
     normalized = re.sub(r"(\d)\s*°\s*([CFK])\b", r"\1°\2", normalized)
@@ -156,12 +156,15 @@ def normalize_formula_text(text: str) -> str:
     normalized = re.sub(r"([A-Za-zµμ])\s+Ω\b", r"\1Ω", normalized)
     normalized = re.sub(r"([A-Za-zµμΩ°])\s*/\s*([°√A-Za-zµμΩ])", r"\1/\2", normalized)
     normalized = re.sub(r"/\s+√", "/√", normalized)
+    if literal_text:
+        return normalized
     normalized = re.sub(r"[ \t]+", " ", normalized)
     normalized = re.sub(r" ?\n ?", "\n", normalized)
     return normalized.strip()
 
 
-def normalize_tex_text(text: str) -> str:
+def normalize_tex_text(text: str, *, literal_text: bool = False) -> str:
+    """复用已知命令转换；字面量模式跳过整段脚本重排与文字紧凑化。"""
     normalized = collapse_double_escaped_tex_commands(text)
     normalized = unwrap_tex_text_wrappers(normalized)
     prev = None
@@ -172,6 +175,8 @@ def normalize_tex_text(text: str) -> str:
         normalized = OVERLINE_RE.sub(replace_overline_expr, normalized)
 
     normalized = CONTROL_WORD_RE.sub(replace_control_word, normalized)
+    if literal_text:
+        return normalized
     normalized = normalized.replace(r"\_", "_")
     normalized = normalized.replace(r"\{", "{").replace(r"\}", "}")
     normalized = normalized.replace(r"\(", "(").replace(r"\)", ")")
@@ -188,7 +193,7 @@ def normalize_tex_text(text: str) -> str:
     return normalized
 
 
-def convert_inline_tex_to_html(text: str) -> str:
+def convert_inline_tex_to_html(text: str, *, explicit_scripts: bool = False) -> str:
     if not text:
         return ""
 
@@ -197,7 +202,12 @@ def convert_inline_tex_to_html(text: str) -> str:
         return convert_simple_tex_expr(expr or match.group(0))
 
     converted = INLINE_TEX_RE.sub(replace_inline, text)
-    converted = SIMPLE_EXPR_RE.sub(lambda match: convert_simple_tex_expr(match.group(0)), converted)
+    # 裸下划线也可能是 REG_OWNER 等标识；已分段文字只接受带花括号的明确脚本。
+    converted = SIMPLE_EXPR_RE.sub(
+        lambda match: match.group(0) if explicit_scripts and (
+            match.group("sub_plain") is not None or not (match.group("sub_braced") or match.group("sup_braced")))
+        else convert_simple_tex_expr(match.group(0)), converted,
+    )
     converted = SUP_ONLY_EXPR_RE.sub(lambda match: convert_simple_tex_expr(match.group(0)), converted)
     converted = LEADING_SUP_EXPR_RE.sub(
         lambda match: f"<sup>{clean_tex_fragment(match.group('sup_braced') or match.group('sup_plain') or '')}</sup>",

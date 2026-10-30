@@ -73,6 +73,8 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
     if expected_types and expected_types != dict(actual_types):
         flags.append("source_ir_integrity:type_count_mismatch")
 
+    from app.services.document_ir.table_placeholder import decode_placeholders
+    represented = {item.owner_block_id for item in decode_placeholders(document_ir)}
     assets_by_id = {asset.id for asset in document_ir.assets}
     for block in main_blocks:
         source_type = str(block.metadata.get("source_type") or "text")
@@ -81,7 +83,9 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
                 flags.append(f"source_ir_integrity:type_mismatch:{source_type}")
             elif not block.asset_ref or block.asset_ref not in assets_by_id:
                 flags.append(f"source_ir_integrity:payload_missing:{source_type}")
-        elif source_type == "table" and (block.type != "table" or not (block.html or "").strip()):
+        elif source_type == "table" and (block.type != "table" or (
+            not (block.html or "").strip() and block.id not in represented
+        )):
             flags.append("source_ir_integrity:payload_missing:table")
         elif source_type in FORMULA_SOURCE_TYPES and (
             block.type != "formula" or not ((block.latex or block.text or "").strip())
@@ -123,7 +127,7 @@ def is_visible_body_block(block: DocumentIRBlock) -> bool:
     if block.type in {"heading", "paragraph"}:
         return bool((block.text or "").strip())
     if block.type == "table":
-        return bool((block.html or block.text or "").strip() or block.captions or block.footnotes)
+        return True  # 空表也必须进入布局；合法占位或完整性失败由权威 decoder 判断。
     if block.type == "image":
         return bool(block.asset_ref or block.captions or block.footnotes or (block.text or "").strip())
     if block.type == "list":

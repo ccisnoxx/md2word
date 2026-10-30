@@ -9,6 +9,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, JsonValue, StrictInt, model_validator
 
 from app.domains.files.models import DocumentFileRecord
+from app.domains.document_jobs.preview_state import WordPreviewState
+from app.domains.document_jobs.review import ReviewBinding, ReviewStatus
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import DocumentJobMode, DocumentLanguage
 
@@ -40,7 +42,7 @@ DocumentJobTranslationBatchStatus = Literal[
 DocumentJobEventLevel = Literal["info", "warning", "error"]
 DocumentJobTranslationQaStatus = Literal["unreviewed", "approved", "needs_fix", "blocked"]
 DocumentJobQualityStatus = Literal["pending", "passed", "warning", "blocked"]
-DocumentJobReviewStatus = Literal["unreviewed", "approved", "needs_fix", "blocked"]
+DocumentJobReviewStatus = ReviewStatus
 DocumentJobDeliveryStatus = Literal["internal_draft", "ready_to_publish", "published"]
 DocumentJobTranslationQaIssueType = Literal[
     "translation",
@@ -51,6 +53,11 @@ DocumentJobTranslationQaIssueType = Literal[
     "other",
 ]
 DocumentJobEventType = Literal[
+    "published",
+    "preview_started",
+    "preview_succeeded",
+    "preview_failed",
+    "preview_retry_requested",
     "job_created",
     "job_archived",
     "job_unarchived",
@@ -133,6 +140,7 @@ class DocumentJobRecord(BaseModel):
     term_version_id: str | None = None
     result_file_id: str | None = None
     prepared_result: DocumentJobPreparedResult | None = None
+    word_preview_state: WordPreviewState | None = None
     mineru_raw_result_file_id: str | None = None
     source_document_ir_file_id: str | None = None
     document_ir_file_id: str | None = None
@@ -155,6 +163,10 @@ class DocumentJobRecord(BaseModel):
     deleted_by: str | None = None
     delete_reason: str | None = None
     quality_status: DocumentJobQualityStatus = "pending"
+    current_publication_id: str | None = None
+    current_review_record_id: str | None = None
+    review_sequence: StrictInt = Field(default=0, ge=0)
+    current_review_binding: ReviewBinding | None = None
     review_status: DocumentJobReviewStatus = "unreviewed"
     delivery_status: DocumentJobDeliveryStatus = "internal_draft"
     quality_summary: dict[str, JsonValue] = Field(default_factory=dict)
@@ -169,6 +181,10 @@ class DocumentJobRecord(BaseModel):
 
     @model_validator(mode="after")
     def _validate_state(self) -> "DocumentJobRecord":
+        if (self.current_review_record_id is None) != (self.current_review_binding is None):
+            raise ValueError("当前复核引用与绑定必须同时存在或同时清空。")
+        if self.current_review_record_id is not None and self.review_sequence == 0:
+            raise ValueError("当前复核引用缺少正式序号。")
         allowed_stages = DOCUMENT_JOB_ALLOWED_STAGES_BY_STATUS[self.status]
         if self.stage not in allowed_stages:
             raise ValueError(f"document job 状态不允许阶段: status={self.status} stage={self.stage}")

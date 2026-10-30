@@ -1,20 +1,51 @@
 from __future__ import annotations
 
+from uuid import UUID
+from app.domains.document_jobs.publication import (
+    PublicationConflict, PublicationExpectedSource, PublicationRecord, PublicationSubmission,
+    observed_publication_source, publication_request_sha256, validate_publication_history,
+)
+from app.domains.document_jobs.publication_evidence import prepare_publication_evidence, public_publication_record
+from app.domains.document_jobs.review import digest, review_validity
+from app.domains.audit.models import AuditEvent, ActorContext
+from app.domains.document_jobs.preview import _is_preview_storage_error
+from app.domains.files.result_registration import file_lifecycle_unavailable
+
 # 文件：app/domains/document_jobs/service.py
 # 用途：创建、投递、查询 document_jobs 并记录任务事件。
 
 import hashlib
 import json
+import logging
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Protocol, get_args
+from urllib.parse import quote
 from uuid import uuid4
 
 from bs4 import BeautifulSoup
+from botocore.exceptions import ClientError
 from fastapi import status
 
 from app.core.config import Settings
+from app.domains.document_jobs.preview import PREVIEW_FILE_TYPES, verified_current_preview_files
+from app.domains.document_jobs.preview_state import PreviewRetryResult
+from app.domains.document_jobs.review import (
+    ReviewBinding, ReviewIssueType, ReviewRecord, ReviewStatus, ReviewSubmission, effective_review_job,
+    ReviewExpectedSource, ReviewSubmissionConflict, observed_review_source, review_validity, digest,
+    receipt_identity, receipt_matches_file,
+)
+from app.domains.files.result_registration import review_source_descriptor
+from app.domains.document_jobs.base_quality import fresh_quality_summary
+from app.domains.document_jobs.new_generation import (
+    NewGenerationCommitUnknownError, NewGenerationConflict, NewGenerationSubmission,
+    new_generation_eligibility_reason, new_generation_request_sha256,
+)
+from app.domains.document_jobs.quality_state import effective_quality_status
+from app.domains.document_jobs.list_query import DocumentJobListQuery, DocumentJobListProjectionUnavailable
 from app.domains.document_jobs.delivery_state import translation_qa_projection
 from app.domains.document_jobs.models import (
     DocumentJobEventLevel,
@@ -30,6 +61,8 @@ from app.domains.document_jobs.models import (
 )
 from app.domains.document_jobs.schemas import (
     DocumentJobActionDisabledReasonResponse,
+    DocumentJobTableReferenceListResponse,
+    DocumentJobTableReferenceResponse,
     DocumentJobAvailableActionResponse,
     DocumentJobDownloadClassification,
     DocumentJobTranslationQaAiCallResponse,
@@ -48,7 +81,8 @@ from app.domains.document_jobs.workflow import (
 from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord, DocumentFileType
 from app.domains.files.repository import DocumentFileRepositoryProtocol
-from app.domains.jobs.models import ConversionOptions
+from app.domains.jobs.models import ConversionOptions, JobRecord, JobResourceSnapshot
+from app.domains.jobs.paths import build_job_paths
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import (
@@ -65,12 +99,18 @@ from app.domains.document_jobs.repository import (
     DocumentJobTranslationBatchRepositoryProtocol,
 )
 from app.domains.document_jobs.execution import DocumentJobTaskQueueProtocol
-from app.services.document_ir.models import DocumentIR
+from app.services.document_ir.models import DocumentIR, TableReferenceProvenance
+from app.services.document_ir.table_reference_assets import (
+    CHECKSUM_RE, INLINE_MIME_TYPES, RASTER_EXTENSIONS, TABLE_REFERENCE_ROLE,
+    DecodedTableReference, decode_table_references,
+)
+from app.services.renderer.evidence import is_valid_table_rendering_evidence
 from app.services.auth.models import AuthenticatedUser
 
 
 DOCUMENT_JOB_LIST_SORTS = {"created_at_desc", "created_at_asc", "updated_at_desc", "updated_at_asc"}
 DOCUMENT_JOB_DOWNLOAD_FILE_TYPES: set[DocumentFileType] = {
+    *PREVIEW_FILE_TYPES,
     "source_pdf",
     "mineru_raw_result",
     "document_ir",
@@ -90,6 +130,28 @@ DOCUMENT_JOB_FILE_TYPE_ORDER = {
 }
 DOCUMENT_JOB_DELETE_TERMINAL_STATUSES = {"succeeded", "failed", "canceled"}
 DEFAULT_DOCUMENT_JOB_DELETE_REASON = "admin_preview_confirm_delete"
+_UNREAD_RESULT = object()
+_SYSTEM_LOGGER = logging.getLogger("system")
+
+
+class NewGenerationRequestUnavailable(ApiError):
+    """503 的命令对账上下文；未知结果不携带否定接受声明。"""
+
+    def __init__(self, request_id: str, *, reason_code: str, accepted_generation: int | None = None):
+        message = ("新代请求暂不可确认，请保留原 request_id 对账。" if accepted_generation is None
+            else "新代已接受，Worker 投递结果未确认，请保留原 request_id 对账。" if reason_code == "worker_enqueue_failed"
+            else "新代已接受，当前状态暂不可读取，请保留原 request_id 对账。")
+        super().__init__(503, "service_unavailable", message,
+            reason_code=reason_code)
+        self.generation_request_id = request_id
+        self.accepted_generation = accepted_generation
+
+
+@dataclass(frozen=True)
+class _ReviewCommit:
+    job: DocumentJobRecord
+    accepted_record_id: str
+    accepted_sequence: int
 
 
 @dataclass(frozen=True)
@@ -102,10 +164,31 @@ class DocumentJobDownloadPolicy:
 
 
 @dataclass(frozen=True)
-class DocumentJobListResult:
-    """document_jobs 列表查询的分页结果和面向工作台的统计投影。"""
+class _TableReferenceSnapshot:
+    job: DocumentJobRecord
+    file: DocumentFileRecord
+    document: DocumentIR
+    references: list[DecodedTableReference]
+    provenance: TableReferenceProvenance | None
 
-    items: list[DocumentJobRecord]
+
+@dataclass(frozen=True)
+class TableReferenceContent:
+    """完成快照与完整性检查后，交给认证 HTTP 响应及审计的安全读取结果。"""
+
+    content: bytes
+    mime_type: str
+    filename: str
+    file_id: str
+    ir_file_id: str
+    generation: int
+
+
+@dataclass(frozen=True)
+class DocumentJobListResult:
+    """列表筛选、统计与行响应共享同次观察的任务和动作。"""
+
+    items: list[tuple[DocumentJobRecord, dict[str, DocumentJobAvailableActionResponse]]]
     total: int
     summary: dict[str, int]
     filtered_summary: dict[str, int]
@@ -182,6 +265,8 @@ class DocumentJobService:
         job_resource_snapshot_service: Any | None = None,
         document_job_translation_batch_repository: DocumentJobTranslationBatchRepositoryProtocol | None = None,
         file_upload_service: Any | None = None,
+        word_preview_service: Any | None = None,
+        audit_service: Any | None = None,
     ) -> None:
         self.settings = settings
         self.job_repository = job_repository
@@ -193,6 +278,426 @@ class DocumentJobService:
         self.job_resource_snapshot_service = job_resource_snapshot_service
         self.document_job_translation_batch_repository = document_job_translation_batch_repository
         self.file_upload_service = file_upload_service
+        self.word_preview_service = word_preview_service
+        self.audit_service = audit_service
+
+    def list_document_publications(self, job_id: str, *, user: AuthenticatedUser):
+        """同次 metadata 观察提供完整 expected_source，客户端不计算私有 receipt 摘要。"""
+        try:
+            job = self._publication_job(job_id, user)
+            file = self.file_repository.get_document_file(job.result_file_id) if job.result_file_id else None
+            records = self.job_repository.list_document_job_publications(job.id)
+            _, actions, checks = self._build_job_read_observation(job, user=user, observed_result=file)
+            download_actions = {}
+            for record in records:
+                try:
+                    self._verify_publication_result(job, record.id)
+                    download_actions[record.id] = self._available_action(None)
+                except ApiError as error:
+                    reason = DocumentJobActionDisabledReasonResponse(code=error.reason_code, message=error.message)
+                    download_actions[record.id] = DocumentJobAvailableActionResponse(enabled=False,
+                        disabled_reason=reason.message, disabled_reason_code=reason.code, disabled_reasons=[reason])
+            current = self.job_repository.get_document_job(job.id)
+            current_file = self.file_repository.get_document_file(job.result_file_id) if job.result_file_id else None
+            if current != job or current_file != file:
+                raise ApiError(409, "conflict", "发布来源已变化，请刷新后核对。", reason_code="publication_source_changed")
+            return {"job_id": job.id, "expected_source": observed_publication_source(job, file),
+                    "items": [public_publication_record(record) for record in records], "available_actions": actions,
+                    "preflight_checks": checks, "download_actions": download_actions}
+        except ApiError:
+            raise
+        except Exception as error:
+            if not _is_preview_storage_error(error):
+                raise
+            raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
+
+    def request_new_generation(self, job_id: str, *, user: AuthenticatedUser, request_id: str,
+        note: str, expected_source: ReviewExpectedSource, trace_id: str,
+    ):
+        """先按原 UUID 对账；只有新请求才认证原 PDF 和固定资源并原子接纳。"""
+        job = self._new_generation_job(job_id, user, request_id=request_id)
+        try:
+            key = str(UUID(request_id))
+        except (TypeError, ValueError, AttributeError):
+            raise ApiError(422, "validation_error", "request_id 必须是 UUID。") from None
+        note = note.strip()
+        if not 1 <= len(note) <= 1000:
+            raise ApiError(422, "validation_error", "新代原因去除首尾空白后必须为 1..1000 字。")
+        fingerprint = new_generation_request_sha256(job_id=job.id, actor_id=user.id,
+            expected_source=expected_source, note=note)
+        try:
+            prior = self.job_repository.get_document_job_generation_request(job.id, request_id=key, actor_id=user.id)
+            if prior is not None:
+                acceptance, current = prior
+                if acceptance.submission_sha256 != fingerprint:
+                    raise NewGenerationConflict("new_generation_request_conflict")
+                return self._new_generation_response(acceptance, current, replayed=True), False
+            reason = new_generation_eligibility_reason(job, max_retries=self.settings.p0_document_job_max_retries)
+            if reason is not None:
+                raise NewGenerationConflict(reason)
+            result_file = self._review_api_file(job, conflict_reason="new_generation_source_changed")
+            if observed_review_source(job, result_file) != expected_source:
+                raise NewGenerationConflict("new_generation_source_changed")
+            source = self._verify_new_generation_source(job)
+            self._verify_new_generation_resources(job)
+            acceptance, current, replayed = self.job_repository.accept_document_job_new_generation(job.id,
+                submission=NewGenerationSubmission(request_id=key, actor_id=user.id, note=note,
+                    expected_source=expected_source, expected_request_snapshot_sha256=digest(job.request_snapshot),
+                    source_file=source, audit_id="audit_" + uuid4().hex, trace_id=trace_id),
+                max_retries=self.settings.p0_document_job_max_retries)
+        except NewGenerationConflict as error:
+            raise ApiError(409, "conflict", "新代请求条件已变化，请重新读取。", reason_code=error.reason_code) from None
+        except NewGenerationCommitUnknownError:
+            raise NewGenerationRequestUnavailable(key, reason_code="new_generation_acceptance_unknown") from None
+        except ApiError:
+            raise
+        except Exception as error:
+            if not _is_preview_storage_error(error):
+                raise
+            raise NewGenerationRequestUnavailable(key, reason_code="new_generation_storage_unavailable") from None
+        if not replayed and self.task_queue is not None:
+            # 失败归属固定在已接纳的原阶段；eager 已推进或完成时 CAS 不得覆盖它。
+            try:
+                self.task_queue.enqueue(current.id, trace_id=trace_id)
+            except Exception as error:
+                _SYSTEM_LOGGER.error("新代投递结果未知 job_id=%s generation=%s generation_request_id=%s trace_id=%s exception_type=%s",
+                    current.id, acceptance.accepted_generation, key, trace_id, type(error).__name__)
+                try:
+                    self._mark_enqueue_failed(current, "新代 Worker 投递失败，请按原 request_id 对账。", trace_id=trace_id)
+                except Exception as failure:
+                    _SYSTEM_LOGGER.error("新代投递失败收尾未确认 job_id=%s generation_request_id=%s trace_id=%s exception_type=%s",
+                        current.id, key, trace_id, type(failure).__name__)
+                raise NewGenerationRequestUnavailable(key, reason_code="worker_enqueue_failed",
+                    accepted_generation=acceptance.accepted_generation) from None
+            try:
+                current = self.job_repository.get_document_job(job.id)
+            except Exception as error:
+                if not _is_preview_storage_error(error):
+                    raise
+                raise NewGenerationRequestUnavailable(key, reason_code="new_generation_storage_unavailable",
+                    accepted_generation=acceptance.accepted_generation) from None
+        return self._new_generation_response(acceptance, current, replayed=replayed), not replayed
+
+    def get_generation_request(self, job_id: str, *, request_id: str, user: AuthenticatedUser):
+        """只读原接纳事实及当前状态；存储失败不能解释为没有该请求。"""
+        self._new_generation_job(job_id, user, request_id=request_id)
+        try:
+            key = str(UUID(request_id))
+        except (TypeError, ValueError, AttributeError):
+            raise ApiError(422, "validation_error", "request_id 必须是 UUID。") from None
+        try:
+            result = self.job_repository.get_document_job_generation_request(job_id, request_id=key, actor_id=user.id)
+        except NewGenerationConflict as error:
+            raise ApiError(409, "conflict", "该请求不能由当前身份读取。", reason_code=error.reason_code) from None
+        except Exception as error:
+            if not isinstance(error, NewGenerationCommitUnknownError) and not _is_preview_storage_error(error):
+                raise
+            raise NewGenerationRequestUnavailable(key, reason_code="new_generation_acceptance_unknown") from None
+        if result is None:
+            raise ApiError(404, "not_found", "没有找到该新代接受记录。", reason_code="new_generation_request_not_found")
+        acceptance, current = result
+        return self._new_generation_response(acceptance, current, replayed=True)
+
+    def _new_generation_job(self, job_id: str, user: AuthenticatedUser, *, request_id: str) -> DocumentJobRecord:
+        if user.role != "admin" or {"admin_token", "jobs_token"}.intersection(user.token_scopes):
+            raise ApiError(403, "role_forbidden", "新代命令和对账需要内部 Admin 用户 JWT。", reason_code="admin_required")
+        try:
+            return self._get_job(job_id, user=user)
+        except Exception as error:
+            if not _is_preview_storage_error(error):
+                raise
+            raise NewGenerationRequestUnavailable(request_id, reason_code="new_generation_acceptance_unknown") from None
+
+    def _new_generation_response(self, acceptance, current, *, replayed):
+        try:
+            current = self._effective_job(current)
+        except Exception as error:
+            if not _is_preview_storage_error(error):
+                raise
+            raise NewGenerationRequestUnavailable(acceptance.request_id, reason_code="new_generation_storage_unavailable",
+                accepted_generation=acceptance.accepted_generation) from None
+        return {"accepted": True, "request_id": acceptance.request_id, "job_id": acceptance.job_id,
+            "accepted_generation": acceptance.accepted_generation, "accepted_at": acceptance.accepted_at,
+            "source": acceptance.expected_source, "audit_id": acceptance.audit_id, "replayed": replayed,
+            "current_generation": current.retry_count, "current_job": {field: getattr(current, field) for field in (
+                "id", "status", "stage", "progress", "retry_count", "result_file_id", "quality_status", "review_status", "delivery_status")}}
+
+    def _new_generation_source_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
+        """动作与命令共用同一 metadata 准入，物理认证仍由命令执行。"""
+        source = self.file_repository.get_document_file(job.source_file_id)
+        if (source is None or source.file_type != "source_pdf" or source.mime_type != "application/pdf"
+                or (source.tenant_id, source.company_id) != (job.tenant_id, job.company_id)
+                or source.status != "uploaded" or source.deletion_claim is not None or source.size_bytes <= 0 or not source.checksum_sha256
+                or source.expires_at is not None and source.expires_at <= utc_now()):
+            raise NewGenerationConflict("new_generation_source_unavailable")
+        original = job.request_snapshot.get("source_file")
+        if not isinstance(original, dict) or any(original.get(field) != getattr(source, field) for field in (
+                "id", "object_key", "original_filename", "mime_type", "size_bytes", "checksum_sha256")):
+            raise NewGenerationConflict("new_generation_source_changed")
+        return source
+
+    def _verify_new_generation_source(self, job: DocumentJobRecord) -> DocumentFileRecord:
+        """锁外完整读取原 PDF；仓储随后在接受锁内复核冻结 descriptor。"""
+        source = self._new_generation_source_file(job)
+        if self.file_upload_service is None:
+            raise ApiError(503, "service_unavailable", "源文件存储暂不可用。", reason_code="new_generation_storage_unavailable")
+        try:
+            content = self.file_upload_service.read_file_content(source)
+        except FileNotFoundError:
+            raise ApiError(404, "not_found", "源 PDF 实物不存在。", reason_code="new_generation_source_unavailable") from None
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") in {"NoSuchKey", "NotFound", "404"}:
+                raise ApiError(404, "not_found", "源 PDF 实物不存在。", reason_code="new_generation_source_unavailable") from None
+            raise ApiError(503, "service_unavailable", "源文件存储暂不可用。", reason_code="new_generation_storage_unavailable") from None
+        except ApiError as error:
+            if error.status_code == 503:
+                raise ApiError(503, "service_unavailable", "源文件存储暂不可用。", reason_code="new_generation_storage_unavailable") from None
+            raise NewGenerationConflict("new_generation_source_unavailable") from None
+        except ValueError:
+            raise NewGenerationConflict("new_generation_source_unavailable") from None
+        if len(content) != source.size_bytes or "sha256:" + hashlib.sha256(content).hexdigest() != source.checksum_sha256:
+            raise NewGenerationConflict("new_generation_source_changed")
+        return source.model_copy(deep=True)
+
+    @staticmethod
+    def _new_generation_resource_snapshot(job: DocumentJobRecord) -> JobResourceSnapshot:
+        resources = job.request_snapshot.get("resources")
+        if not isinstance(resources, dict):
+            raise ValueError("原资源快照缺失。")
+        if not is_translation_document_job_mode(job.mode):
+            # direct 历史惰性字段不参与认证；只在读取副本忽略，原快照仍完整保留。
+            resources = {key: value for key, value in resources.items() if key not in (
+                "translation_profile", "translation_term_set", "translation_prompt_id", "translation_prompt_content_hash")}
+        snapshot = JobResourceSnapshot.model_validate(resources)
+        if (job.request_snapshot.get("mode") != job.mode or job.request_snapshot.get("template_version_id") != job.template_version_id
+                or job.request_snapshot.get("translation_mode") != translation_mode_for_document_job_mode(job.mode)
+                or job.request_snapshot.get("document_language") != job.document_language
+                or snapshot.template is None or snapshot.term_rule_set is None
+                or f"{snapshot.template.resource_id}@{snapshot.template.version}" != job.template_version_id):
+            raise ValueError("原资源快照不完整或与任务不一致。")
+        return snapshot
+
+    def _verify_new_generation_resources(self, job: DocumentJobRecord) -> None:
+        """只物化原绑定版本；缺快照、实物或翻译绑定时拒绝，不读取当前默认值。"""
+        service = self.job_resource_snapshot_service
+        if service is None:
+            raise ApiError(503, "service_unavailable", "绑定资源服务暂不可用。", reason_code="new_generation_resources_unavailable")
+        try:
+            snapshot = self._new_generation_resource_snapshot(job)
+            resources_job = JobRecord(id=job.id, source_filename=job.request_snapshot["source_file"]["original_filename"],
+                status="completed", translation_mode=translation_mode_for_document_job_mode(job.mode), resource_snapshot=snapshot)
+            with TemporaryDirectory(prefix="new-generation-resources-") as temporary:
+                materialized = service.materialize(resources_job, build_job_paths(Path(temporary), job.id))
+                if materialized.template_path is None or materialized.layout_config_path is None:
+                    raise ValueError("原模板实物或版式配置缺失。")
+                record = service._load_snapshot_record(snapshot.template)
+                for name, path in (("docx_sha256", materialized.template_path), ("layout_config_sha256", materialized.layout_config_path)):
+                    actual = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+                    if record.payload.get(name) is not None and record.payload[name] != actual:
+                        raise ValueError("原模板实物完整性核验失败。")
+        except (JobResourceSnapshotError, FileNotFoundError, ValueError, KeyError):
+            raise ApiError(503, "service_unavailable", "原绑定资源快照或实物不可用。", reason_code="new_generation_resources_unavailable") from None
+
+    def _publication_job(self, job_id, user):
+        try:
+            return self._get_job(job_id, user=user)
+        except ApiError as error:
+            reason = {403: "publication_access_denied", 404: "document_job_not_found"}.get(error.status_code)
+            if reason is None:
+                raise
+            raise ApiError(error.status_code, error.code, error.message, reason_code=reason) from None
+
+    def get_publication_file_for_download(self, job_id: str, publication_id: str, *,
+        user: AuthenticatedUser, trace_id: str,
+    ) -> tuple[DocumentJobRecord, PublicationRecord, DocumentFileRecord]:
+        """仅 JWT 可见任务先授权；无权请求不读取发布私有记录或写目标审计。"""
+        if {"admin_token", "jobs_token"}.intersection(user.token_scopes):
+            raise ApiError(403, "forbidden", "最终件下载需要有效用户 JWT。", reason_code="publication_access_denied")
+        job = self._publication_job(job_id, user)
+        try:
+            record, file = self._verify_publication_result(job, publication_id)
+            return job, record, file
+        except ApiError as error:
+            self.record_publication_download_audit(job, user=user, trace_id=trace_id,
+                reason_code=error.reason_code)
+            raise
+
+    def get_publication_file_for_authorized_download(self, job_id: str, publication_id: str, *,
+        result_file_id: str, result_sha256: str,
+    ) -> tuple[PublicationRecord, DocumentFileRecord]:
+        """能力令牌验签后重验发布与实物；不构造 JWT actor 或伪造下载审计。"""
+        job = self.job_repository.get_document_job(job_id)
+        if job is None:
+            raise ApiError(404, "not_found", "文档任务不存在。", reason_code="document_job_not_found")
+        return self._verify_publication_result(job, publication_id,
+            expected_result=(result_file_id, result_sha256))
+
+    def _verify_publication_result(self, job: DocumentJobRecord, publication_id: str, *,
+        expected_result: tuple[str, str] | None = None,
+    ) -> tuple[PublicationRecord, DocumentFileRecord]:
+        """只认证不可变记录选定的主件，不重跑发布时的预览或当前资源检查。"""
+        try:
+            records = self.job_repository.list_document_job_publications(job.id)
+            try:
+                validate_publication_history(job, records)
+            except ValueError:
+                raise ApiError(409, "conflict", "发布记录与任务来源不一致。", reason_code="publication_download_source_changed") from None
+            record = next((item for item in records if item.id == publication_id), None)
+            if record is None:
+                raise ApiError(404, "not_found", "发布记录不存在。", reason_code="publication_result_unavailable")
+            if (job.deleted_at is not None or job.delivery_status != "published" or job.current_publication_id != record.id
+                    or job.result_file_id != record.result_file_id or job.retry_count != record.generation):
+                raise ApiError(409, "conflict", "发布记录与任务来源不一致。", reason_code="publication_download_source_changed")
+            if expected_result is not None and expected_result != (record.result_file_id, record.result_sha256):
+                raise ApiError(403, "forbidden", "最终件下载链接无效。", reason_code="publication_download_token_invalid")
+            file = self.file_repository.get_document_file(record.result_file_id)
+            archived = next((item for item in record.files if item.id == record.result_file_id), None)
+            if file is None:
+                raise ApiError(404, "not_found", "发布结果实物不存在。", reason_code="publication_result_unavailable")
+            if (file.file_type != "generated_word" or (file.tenant_id, file.company_id, file.job_id) !=
+                    (record.tenant_id, record.company_id, record.job_id) or archived is None
+                    or file.checksum_sha256 != record.result_sha256
+                    or review_source_descriptor(file) != review_source_descriptor(archived)
+                    or file.review_source_revision != archived.review_source_revision):
+                raise ApiError(409, "conflict", "发布结果描述与存档不一致。", reason_code="publication_download_source_changed")
+            if file_lifecycle_unavailable(file, self.file_repository, now=utc_now()) or not self.file_repository.is_document_file_protected(file.id):
+                raise ApiError(409, "conflict", "发布结果当前不可读取。", reason_code="publication_result_unavailable")
+            try:
+                self.file_upload_service.ensure_publication_physical_exclusive((file,))
+                content = self.file_upload_service.read_file_content(file)
+            except (PublicationConflict, ValueError):
+                raise ApiError(409, "conflict", "发布结果物理身份不安全。", reason_code="publication_download_source_changed") from None
+            if len(content) != file.size_bytes or "sha256:" + hashlib.sha256(content).hexdigest() != record.result_sha256:
+                raise ApiError(409, "conflict", "发布结果完整性核验失败。", reason_code="publication_result_integrity_failed")
+            self.check_publication_download_current(job, record, file)
+            return record, file
+        except FileNotFoundError:
+            raise ApiError(404, "not_found", "发布结果实物不存在。", reason_code="publication_result_unavailable") from None
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") in {"NoSuchKey", "NotFound", "404"}:
+                raise ApiError(404, "not_found", "发布结果实物不存在。", reason_code="publication_result_unavailable") from None
+            raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
+        except Exception as error:
+            if not _is_preview_storage_error(error):
+                raise
+            raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
+
+    def check_publication_download_current(self, job: DocumentJobRecord, record: PublicationRecord,
+        file: DocumentFileRecord,
+    ) -> None:
+        """字节读取和 presign I/O 之后重查同一记录与保留身份；归档不影响读取。"""
+        current = self.job_repository.get_document_job(job.id)
+        if (current is None or current.current_publication_id != record.id or current.result_file_id != file.id
+                or current.retry_count != record.generation or current.delivery_status != "published" or current.deleted_at is not None
+                or (current.tenant_id, current.company_id) != (record.tenant_id, record.company_id)
+                or self.file_repository.get_document_file(file.id) != file
+                or self.job_repository.list_document_job_publications(job.id) != [record]
+                or not self.file_repository.is_document_file_protected(file.id)):
+            raise ApiError(409, "conflict", "发布结果在读取期间发生变化。", reason_code="publication_download_source_changed")
+
+    def record_publication_download_audit(self, job: DocumentJobRecord, *, user: AuthenticatedUser, trace_id: str,
+        record: PublicationRecord | None = None, reason_code: str | None = None,
+    ) -> None:
+        """授权审计成功才允许路由交付 URL；取件端没有 JWT，不调用此方法。"""
+        if self.audit_service is None:
+            raise ApiError(503, "service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable")
+        details = ({"publication_id": record.id, "generation": record.generation,
+            "result_file_id": record.result_file_id, "result_sha256": record.result_sha256,
+            "classification": "final_delivery"} if record is not None else {"reason_code": reason_code})
+        try:
+            self.audit_service.record(actor=ActorContext(actor_id=user.id, actor_role=user.role, source="jwt"),
+                action="document_job.publication_download_authorize" if record is not None else "document_job.publication_download_rejected",
+                target_type="document_job", target_id=job.id, trace_id=trace_id, details=details)
+        except Exception as error:
+            if not _is_preview_storage_error(error):
+                raise
+            raise ApiError(503, "service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable") from None
+
+    def publish_document(self, job_id: str, *, user: AuthenticatedUser, request_id: str, note: str,
+                         expected_source: PublicationExpectedSource, trace_id: str):
+        """先授权和幂等查询，再做锁外认证；提交由单一仓储事务拥有。"""
+        if user.role != "admin" or "admin_token" in user.token_scopes or "jobs_token" in user.token_scopes:
+            raise ApiError(403, "role_forbidden", "只有内部 Admin 用户 JWT 可以发布。", reason_code="admin_required")
+        job = self._publication_job(job_id, user)
+        try:
+            key = str(UUID(request_id))
+        except (TypeError, ValueError, AttributeError):
+            raise ApiError(422, "validation_error", "request_id 必须是 UUID。") from None
+        note = note.strip()
+        if not note or len(note) > 1000:
+            raise ApiError(422, "validation_error", "发布备注必须为 1..1000 字。")
+        fingerprint = publication_request_sha256(job_id=job.id, actor_id=user.id, expected_source=expected_source, note=note)
+        try:
+            prior = self.job_repository.list_document_job_publications(job.id)
+            replay = next((record for record in prior if record.request_id == key), None)
+            if replay is not None:
+                if replay.submission_sha256 != fingerprint:
+                    raise PublicationConflict("publication_request_conflict")
+                return self._publication_response(replay, job, user), False
+            if prior or job.current_publication_id is not None or job.delivery_status == "published":
+                raise PublicationConflict("publication_already_exists")
+            if not self.settings.document_publication_enabled:
+                raise ApiError(503, "service_unavailable", "文档发布写入当前已停用。", reason_code="publication_disabled")
+            if job.deleted_at is not None or job.archived_at is not None or job.status != "succeeded" or job.stage != "completed":
+                raise PublicationConflict("publication_state_conflict")
+            quality = effective_quality_status(job)
+            if quality not in {"passed", "warning"}:
+                raise PublicationConflict("publication_quality_" + quality)
+            file = self.file_repository.get_document_file(job.result_file_id) if job.result_file_id else None
+            if observed_publication_source(job, file) != expected_source:
+                raise PublicationConflict("publication_source_changed")
+            if job.review_status != "approved" or review_validity(job, file, now=utc_now()) is not None:
+                raise PublicationConflict("publication_review_invalid")
+            evidence = prepare_publication_evidence(job, file_repository=self.file_repository,
+                file_service=self.file_upload_service, job_repository=self.job_repository)
+            publication_id = "publication_" + uuid4().hex
+            now = utc_now()
+            audit = AuditEvent(audit_id="audit_" + uuid4().hex, actor_id=user.id, actor_role="admin",
+                action="document_job.publish", target_type="document_job", target_id=job.id,
+                reason=note, details={"publication_id": publication_id, "generation": job.retry_count,
+                    "result_file_id": file.id, "result_sha256": file.checksum_sha256}, trace_id=trace_id, created_at=now)
+            files = {item.id: item for item in evidence.files}
+            record = PublicationRecord(id=publication_id, job_id=job.id, tenant_id=job.tenant_id, company_id=job.company_id,
+                generation=job.retry_count, request_id=key, submission_sha256=fingerprint, published_by=user.id,
+                published_at=now, note=note, trace_id=trace_id, source_file_id=job.source_file_id,
+                source_sha256=files[job.source_file_id].checksum_sha256, result_file_id=file.id,
+                result_sha256=file.checksum_sha256, expected_source=expected_source,
+                review_record_id=job.current_review_record_id, review_sequence=job.review_sequence, files=evidence.files,
+                quality=evidence.quality, preview=evidence.preview, configuration=evidence.configuration,
+                protected_file_ids=tuple(sorted(files)), audit=audit)
+            accepted, created = self.job_repository.publish_document_job(job.id, submission=PublicationSubmission(
+                record=record, expected_job_sha256=digest(job.model_dump(mode="json")), files=evidence.files))
+        except PublicationConflict as error:
+            self._publication_rejected(job, user, error.reason_code, trace_id)
+            raise ApiError(409, "conflict", str(error), reason_code=error.reason_code) from None
+        except ApiError as error:
+            self._publication_rejected(job, user, error.reason_code or "publication_state_conflict", trace_id)
+            raise
+        except Exception as error:
+            if not _is_preview_storage_error(error):
+                raise
+            self._publication_rejected(job, user, "publication_storage_unavailable", trace_id)
+            raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
+        current = self.job_repository.get_document_job(job.id)
+        if created:
+            self.record_event(current, event_type="published", stage="completed", level="info", message="文档已发布。",
+                payload={"publication_id": accepted.id}, trace_id=trace_id)
+        return self._publication_response(accepted, current, user), created
+
+    def _publication_response(self, record, job, user):
+        return {"publication": public_publication_record(record), "available_actions": self.build_available_actions(job, user=user)}
+
+    def _publication_rejected(self, job, user, reason_code, trace_id):
+        if self.audit_service is None:
+            raise ApiError(503, "service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable")
+        try:
+            self.audit_service.record(actor=ActorContext(actor_id=user.id, actor_role="admin", source="jwt"),
+                action="document_job.publish_rejected", target_type="document_job", target_id=job.id,
+                trace_id=trace_id, details={"reason_code": reason_code, "generation": job.retry_count})
+        except Exception as error:
+            if not _is_preview_storage_error(error):
+                raise
+            raise ApiError(503, "service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable") from None
 
     def create_job(
         self,
@@ -278,6 +783,7 @@ class DocumentJobService:
             status="pending",
             stage="uploaded",
             progress=0,
+            quality_summary=fresh_quality_summary(0),
             template_version_id=normalized_template_version_id,
             term_version_id=normalized_term_version_id,
             debug_full_text_enabled=debug_full_text_enabled,
@@ -310,7 +816,7 @@ class DocumentJobService:
             return job
         return self._enqueue_created_job(job, trace_id=trace_id)
 
-    def get_job(self, job_id: str, *, user: AuthenticatedUser) -> DocumentJobRecord:
+    def _get_job(self, job_id: str, *, user: AuthenticatedUser) -> DocumentJobRecord:
         """按 owner/admin 规则读取 document_job。"""
 
         job = self.job_repository.get_document_job(job_id)
@@ -318,6 +824,503 @@ class DocumentJobService:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文档任务不存在: {job_id}")
         self._ensure_visible(job, user)
         return job
+
+    def _effective_job(self, job: DocumentJobRecord) -> DocumentJobRecord:
+        """受权后按最新文件 metadata 投影；raw 写快照始终经 _get_job 取得。"""
+        binding = job.current_review_binding
+        file = (self.file_repository.get_document_file(job.result_file_id)
+                if job.result_file_id is not None and binding is not None and binding.binding_state == "verified" else None)
+        return effective_review_job(job, file, now=utc_now())
+
+    def get_job(self, job_id: str, *, user: AuthenticatedUser) -> DocumentJobRecord:
+        """返回有效读投影，GET 不修补存储。"""
+        return self._effective_job(self._get_job(job_id, user=user))
+
+    def _review_api_job(self, job_id, user):
+        """只在新接口的授权入口附固定原因，不改变旧端点错误。"""
+        try:
+            return self._get_job(job_id, user=user)
+        except ApiError as exc:
+            reason = {403: "review_access_denied", 404: "document_job_not_found"}.get(exc.status_code)
+            if reason is None:
+                raise
+            raise ApiError(exc.status_code, exc.code, exc.message, reason_code=reason) from None
+
+    def _review_api_file(self, job, *, conflict_reason="quality_evidence_conflict"):
+        file = self.file_repository.get_document_file(job.result_file_id) if job.result_file_id else None
+        if file is not None and ((file.tenant_id, file.company_id, file.job_id, file.file_type)
+                != (job.tenant_id, job.company_id, job.id, "generated_word")):
+            raise ApiError(409, "conflict", "当前主件归属与任务不一致。", reason_code=conflict_reason)
+        return file
+
+    @staticmethod
+    def _review_read_identity(job, *, preview=False):
+        fields = {"tenant_id", "company_id", "created_by", "source_file_id", "retry_count", "document_ir_file_id",
+            "result_file_id", "prepared_result", "status", "stage", "quality_status", "quality_summary",
+            "review_status", "delivery_status", "current_review_record_id", "current_review_binding", "review_sequence",
+            "deleted_at", "archived_at", "template_version_id", "mode", "document_language"}
+        if preview:
+            fields.update({"word_preview_state", "request_snapshot"})
+        return digest(job.model_dump(mode="json", include=fields))
+
+    def _finish_review_read(self, job, file, user, *, preview=False, artifacts=()):
+        """全部相关 I/O 后复核同次来源；不重试，也不把读投影写回仓储。"""
+        current = self._review_api_job(job.id, user)
+        if (self._review_read_identity(current, preview=preview) != self._review_read_identity(job, preview=preview)
+                or self._review_api_file(current) != file):
+            raise ApiError(409, "conflict", "质量来源已变化，请重新读取。", reason_code="quality_source_changed")
+        for artifact in artifacts:
+            if (self.file_repository.get_document_file(artifact.id) != artifact
+                    or artifact.expires_at is None or file_lifecycle_unavailable(artifact, self.file_repository, now=utc_now())):
+                raise ApiError(409, "conflict", "质量产物来源已变化，请重新读取。", reason_code="quality_source_changed")
+
+    def _current_review_record(self, job):
+        if job.current_review_record_id is None:
+            return None
+        records = self.job_repository.list_document_job_reviews(job.id, after_sequence=job.review_sequence - 1, limit=1)
+        if (len(records) != 1 or records[0].id != job.current_review_record_id
+                or records[0].sequence != job.review_sequence):
+            raise ValueError("当前复核指针与正式历史不一致。")
+        return records[0]
+
+    @staticmethod
+    def _review_cursor(cursor, kind, job_id, limit):
+        from app.domains.document_jobs.quality_review_projection import decode_cursor, InvalidReviewCursor
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ApiError(422, "validation_error", "分页数量必须为 1 到 100 的整数。")
+        try:
+            return decode_cursor(cursor, kind=kind, job_id=job_id) if cursor is not None else None
+        except InvalidReviewCursor:
+            raise ApiError(400, "invalid_request", "分页游标无效。", reason_code="invalid_review_cursor") from None
+
+    @staticmethod
+    def _review_cursor_binding(parsed, expected):
+        if parsed is not None and any(getattr(parsed, key) != value for key, value in expected.items()):
+            raise ApiError(409, "conflict", "质量分页来源已变化，请重新读取。", reason_code="quality_source_changed")
+
+    def get_document_quality(self, job_id, *, user):
+        from app.domains.document_jobs.quality_review_projection import project_source, project_quality_summary, project_review
+        from app.domains.document_jobs.schemas import DocumentQualityResponse
+        job = self._review_api_job(job_id, user)
+        file = self._review_api_file(job)
+        view, actions = self.build_job_read_view(job, user=user, observed_result=file)
+        summary, producers = project_quality_summary(job.quality_summary, generation=job.retry_count)
+        review = project_review(self._current_review_record(job), effective_status=view.review_status,
+            validity_reason=review_validity(job, file, now=utc_now()))
+        response = DocumentQualityResponse(job_id=job.id, source=project_source(job, file),
+            states={"execution_status": view.status, "quality_status": view.quality_status,
+                "review_status": view.review_status, "delivery_status": view.delivery_status},
+            summary=summary, producers=producers, review=review, available_actions=actions)
+        self._finish_review_read(job, file, user)
+        return response
+
+    def get_document_review(self, job_id, *, user):
+        from app.domains.document_jobs.quality_review_projection import project_source, project_review
+        from app.domains.document_jobs.schemas import DocumentCurrentReviewResponse
+        job = self._review_api_job(job_id, user)
+        file = self._review_api_file(job)
+        view, actions = self.build_job_read_view(job, user=user, observed_result=file)
+        response = DocumentCurrentReviewResponse(job_id=job.id, source=project_source(job, file),
+            review=project_review(self._current_review_record(job), effective_status=view.review_status,
+                validity_reason=review_validity(job, file, now=utc_now())), available_actions=actions)
+        self._finish_review_read(job, file, user)
+        return response
+
+    def list_document_review_blocks(self, job_id, *, user, limit=50, cursor=None,
+            source_page_index=None, block_type=None, problem="all", severity="all"):
+        """授权内容出口由独立 reader 拥有快照和有界投影。"""
+        from app.domains.document_jobs.review_content import list_blocks
+        return list_blocks(self, job_id, user=user, limit=limit, cursor=cursor,
+            source_page_index=source_page_index, block_type=block_type, problem=problem, severity=severity)
+
+    def get_document_review_block(self, job_id, block_id, *, user, snapshot_id, limit=20, cursor=None):
+        """只读取当前 IR 中的稳定块，不接受任意文件或对象路径。"""
+        from app.domains.document_jobs.review_content import get_block
+        return get_block(self, job_id, block_id, user=user, snapshot_id=snapshot_id, limit=limit, cursor=cursor)
+
+    def get_document_review_history(self, job_id, *, user, limit=50, cursor=None):
+        from app.domains.document_jobs.quality_review_projection import (
+            HistoryCursor, encode_cursor, paginate_history, project_review_history_item,
+        )
+        from app.domains.document_jobs.schemas import DocumentReviewHistoryResponse
+        job = self._review_api_job(job_id, user)
+        parsed = self._review_cursor(cursor, "history", job.id, limit)
+        after, through = (parsed.after_sequence, parsed.through_sequence) if parsed else (0, job.review_sequence)
+        if not 0 <= after <= through <= job.review_sequence:
+            raise ApiError(400, "invalid_request", "复核历史游标窗口无效。", reason_code="invalid_review_cursor")
+        records = self.job_repository.list_document_job_reviews(job.id, after_sequence=after, limit=limit + 1)
+        items, next_after = paginate_history(records, after_sequence=after, through_sequence=through, limit=limit)
+        self._review_api_job(job.id, user)
+        return DocumentReviewHistoryResponse(job_id=job.id, through_sequence=through,
+            items=[project_review_history_item(record) for record in items], next_cursor=encode_cursor(
+                HistoryCursor(job_id=job.id, after_sequence=next_after, through_sequence=through)) if next_after is not None else None)
+
+    def get_document_quality_tables(self, job_id, *, user, limit=50, cursor=None):
+        from app.domains.document_jobs.quality_review_projection import (
+            TableCursor, encode_cursor, project_source, project_table_item, project_table_report,
+        )
+        from app.domains.document_jobs.schemas import DocumentQualityTablesResponse
+        job = self._review_api_job(job_id, user)
+        parsed = self._review_cursor(cursor, "tables", job.id, limit)
+        file = self._review_api_file(job)
+        self._review_cursor_binding(parsed, dict(generation=job.retry_count,
+            ir_file_id=job.document_ir_file_id, result_file_id=job.result_file_id))
+        evidence = self.get_table_evidence(job.id, user=user, generation=job.retry_count,
+            ir_file_id=job.document_ir_file_id, result_file_id=job.result_file_id)
+        binding = dict(generation=job.retry_count, ir_file_id=job.document_ir_file_id,
+            result_file_id=job.result_file_id, report_sha256=evidence.report_sha256)
+        self._review_cursor_binding(parsed, binding)
+        start = parsed.next_index if parsed else 0
+        if start > len(evidence.tables):
+            raise ApiError(400, "invalid_request", "表格分页游标无效。", reason_code="invalid_review_cursor")
+        end = start + limit
+        response = DocumentQualityTablesResponse(job_id=job.id, source=project_source(job, file),
+            availability=evidence.evidence_status, reason_code=None,
+            report=project_table_report(evidence) if evidence.evidence_status == "available" else None,
+            items=[project_table_item(table) for table in evidence.tables[start:end]], next_cursor=encode_cursor(
+                TableCursor(job_id=job.id, **binding, next_index=end)) if end < len(evidence.tables) else None)
+        self._finish_review_read(job, file, user)
+        return response
+
+    def _read_api_preview(self, job, *, include_page_quality=False):
+        from app.domains.document_jobs.preview import read_current_preview_evidence, _PreviewStorageError, _frozen_page_policy
+        from app.domains.document_jobs.preview_state import _confirmed
+        from app.services.preview.models import PreviewPolicy
+        try:
+            if include_page_quality:
+                quality_policy = _frozen_page_policy(job)
+                if quality_policy is None:
+                    return "legacy_unavailable", None
+                if not quality_policy.enabled:
+                    return "disabled", None
+            policy = job.request_snapshot.get("word_preview")
+            if policy is None or PreviewPolicy.model_validate(policy).backend == "disabled":
+                return "disabled", None
+            state = job.word_preview_state
+            if state is None or not _confirmed(state.current_run):
+                return "not_ready", None
+            if self.file_upload_service is None:
+                raise _PreviewStorageError()
+            evidence = read_current_preview_evidence(job, self.file_repository, self.file_upload_service,
+                include_page_quality=include_page_quality)
+        except _PreviewStorageError:
+            raise ApiError(503, "service_unavailable", "质量产物存储暂不可用。", reason_code="quality_storage_unavailable") from None
+        except ValueError:
+            raise ApiError(409, "conflict", "预览质量证据无法认证。", reason_code="quality_evidence_conflict") from None
+        if not evidence.observation.available or state.current_run.status != "succeeded":
+            return "unavailable", evidence
+        if include_page_quality and evidence.page_quality_run is None:
+            return "not_ready", evidence
+        return "available", evidence
+
+    def get_document_preview(self, job_id, *, user, limit=50, cursor=None):
+        from app.domains.document_jobs.quality_review_projection import (
+            PreviewCursor, encode_cursor, project_source, project_preview_run, project_preview_page,
+        )
+        from app.domains.document_jobs.schemas import DocumentPreviewResponse
+        job = self._review_api_job(job_id, user)
+        parsed = self._review_cursor(cursor, "preview", job.id, limit)
+        file = self._review_api_file(job)
+        state = job.word_preview_state
+        run = state.current_run if state else None
+        binding = dict(generation=job.retry_count, result_file_id=job.result_file_id,
+            run_id=run.run_id if run else None, revision=state.revision if state else None,
+            attempt=run.attempt_count if run else None, manifest_file_id=run.manifest_file_id if run else None)
+        self._review_cursor_binding(parsed, binding)
+        availability, evidence = self._read_api_preview(job)
+        body = evidence.manifest if evidence and availability == "available" else None
+        pages = body["pages"] if body else []
+        start = parsed.next_index if parsed else 0
+        if start > len(pages):
+            raise ApiError(400, "invalid_request", "预览分页游标无效。", reason_code="invalid_review_cursor")
+        end = start + limit
+        response = DocumentPreviewResponse(job_id=job.id, source=project_source(job, file),
+            status=run.status if run else (availability if availability in {"disabled", "not_ready"} else "unavailable"), availability=availability,
+            reason_code="preview_artifact_unavailable" if availability == "unavailable" else None,
+            run=project_preview_run(state, run) if run else None, pdf_file_id=body["pdf_file_id"] if body else None,
+            page_count=body["page_count"] if body else None, items=[project_preview_page(page) for page in pages[start:end]],
+            next_cursor=encode_cursor(PreviewCursor(job_id=job.id, **binding, next_index=end)) if end < len(pages) else None)
+        artifacts = evidence.observation.files if evidence and evidence.observation.available else ()
+        self._finish_review_read(job, file, user, preview=True, artifacts=artifacts)
+        return response
+
+    def get_document_quality_pages(self, job_id, *, user, limit=50, cursor=None):
+        from app.domains.document_jobs.quality_review_projection import (
+            PageCursor, encode_cursor, project_source, project_page_report, project_page_item,
+        )
+        from app.domains.document_jobs.schemas import DocumentQualityPagesResponse
+        job = self._review_api_job(job_id, user)
+        parsed = self._review_cursor(cursor, "pages", job.id, limit)
+        file = self._review_api_file(job)
+        state = job.word_preview_state
+        run = state.current_run if state else None
+        binding = dict(generation=job.retry_count, result_file_id=job.result_file_id,
+            run_id=run.run_id if run else None, revision=state.revision if state else None,
+            attempt=run.attempt_count if run else None, manifest_file_id=run.manifest_file_id if run else None)
+        self._review_cursor_binding(parsed, binding)
+        availability, evidence = self._read_api_preview(job, include_page_quality=True)
+        report = evidence.page_quality_run if evidence and availability == "available" else None
+        binding["run_sha256"] = report["run_sha256"] if report else None
+        self._review_cursor_binding(parsed, binding)
+        pages = report["pages"] if report else []
+        start = parsed.next_index if parsed else 0
+        if start > len(pages):
+            raise ApiError(400, "invalid_request", "页面质量游标无效。", reason_code="invalid_review_cursor")
+        end = start + limit
+        response = DocumentQualityPagesResponse(job_id=job.id, source=project_source(job, file),
+            availability=availability, reason_code="preview_artifact_unavailable" if availability == "unavailable" else None,
+            report=project_page_report(report, revision=state.revision, manifest_file_id=run.manifest_file_id) if report else None,
+            items=[project_page_item(page) for page in pages[start:end]], next_cursor=encode_cursor(
+                PageCursor(job_id=job.id, **binding, next_index=end)) if end < len(pages) else None)
+        artifacts = evidence.observation.files if evidence and evidence.observation.available else ()
+        self._finish_review_read(job, file, user, preview=True, artifacts=artifacts)
+        return response
+
+    def submit_document_review_with_source(self, job_id, *, user, review_status, expected_source,
+            issue_type=None, note=None, trace_id=None):
+        from app.domains.document_jobs.schemas import DocumentReviewUpdateResponse
+        expected = ReviewExpectedSource.model_validate(expected_source)
+        committed = self._submit_document_review(self._review_api_job(job_id, user), user=user,
+            review_status=review_status, issue_type=issue_type, note=note, trace_id=trace_id, expected_source=expected)
+        try:
+            current = self.get_document_review(job_id, user=user)
+        except ApiError as exc:
+            # 正式记录已提交；后置读取故障不能伪装成未接受的前置冲突。
+            raise RuntimeError("复核已进入正式提交后的响应读取阶段。") from exc
+        return DocumentReviewUpdateResponse(job_id=job_id, accepted_record_id=committed.accepted_record_id,
+            accepted_sequence=committed.accepted_sequence, source=current.source,
+            review=current.review, available_actions=current.available_actions)
+
+    def get_table_evidence(self, job_id: str, *, user: AuthenticatedUser, generation: int,
+                           ir_file_id: str | None, result_file_id: str | None, table_id: str | None = None):
+        """供审核复用的受控内部查询；不返回存储记录，也不注册 HTTP 路由。"""
+        from app.domains.document_jobs.table_evidence import (
+            TableEvidenceView, has_evidence, verify_report, ensure_selected_result_descriptor, recheck_verified_report,
+        )
+        if not isinstance(user, AuthenticatedUser):
+            raise ApiError(401, "unauthorized", "表格证据查询需要认证。")
+        from app.services.tables.evidence import TableEvidenceError
+        job = self.get_job(job_id, user=user)
+        self._ensure_job_not_deleted(job)
+        if (type(generation) is not int or generation != job.retry_count or ir_file_id != job.document_ir_file_id
+                or result_file_id != job.result_file_id):
+            raise ApiError(409, "conflict", "表格证据所属任务快照已变化，请刷新。", reason_code="quality_source_changed")
+        base = dict(job_id=job.id, generation=job.retry_count, ir_file_id=ir_file_id, result_file_id=result_file_id)
+        if result_file_id is None:
+            return TableEvidenceView(**base, evidence_status="not_ready", summary={"status": "pending"}, tables=[])
+        result = self._get_completed_result_file(job)
+        try:
+            ensure_selected_result_descriptor(job, result)
+        except TableEvidenceError:
+            raise ApiError(409, "conflict", "当前主件与选定表格证据凭据冲突，请刷新。", reason_code="quality_evidence_conflict") from None
+        if not has_evidence(result.metadata):
+            return TableEvidenceView(**base, evidence_status="legacy_unavailable", summary={"status": "pending"}, tables=[])
+        if self.file_upload_service is None:
+            raise ApiError(503, "service_unavailable", "表格证据存储暂不可用。", reason_code="quality_storage_unavailable")
+        try:
+            verified = verify_report(job, result, file_repository=self.file_repository,
+                file_service=self.file_upload_service, job_repository=self.job_repository)
+        except FileNotFoundError:
+            raise ApiError(404, "not_found", "表格证据文件或内容不存在。", reason_code="quality_artifact_missing") from None
+        except TableEvidenceError:
+            raise ApiError(409, "conflict", "表格证据绑定或当前快照无效，请刷新。", reason_code="quality_evidence_conflict") from None
+        except RuntimeError:
+            raise ApiError(503, "service_unavailable", "表格证据存储暂不可用。", reason_code="quality_storage_unavailable") from None
+        current = self.get_job(job_id, user=user)
+        self._ensure_job_not_deleted(current)
+        if (current.retry_count, current.document_ir_file_id, current.result_file_id) != (generation, ir_file_id, result_file_id):
+            raise ApiError(409, "conflict", "表格证据所属任务快照已变化，请刷新。", reason_code="quality_source_changed")
+        try:
+            recheck_verified_report(verified, file_repository=self.file_repository, job_repository=self.job_repository)
+        except TableEvidenceError:
+            raise ApiError(409, "conflict", "表格证据绑定或当前快照无效，请刷新。", reason_code="quality_evidence_conflict") from None
+        envelope, summary = verified.envelope, verified.summary
+        tables = envelope.report.tables
+        if table_id is not None:
+            tables = [table for table in tables if table.table_id == table_id]
+            if not tables:
+                raise ApiError(404, "not_found", "当前报告未引用该表格。")
+        return TableEvidenceView(**base, evidence_status="available", report_file_id=summary["report_file_id"],
+            report_sha256=envelope.report.report_sha256, summary=summary,
+            tables=[table.model_dump(mode="json", warnings=False) for table in tables])
+
+    def list_table_references(
+        self, job_id: str, *, user: AuthenticatedUser, block_id: str | None = None,
+    ) -> DocumentJobTableReferenceListResponse:
+        """从当前选中 IR 读取审核导航；列表不探测每张远端图片的实际字节。"""
+        job = self.get_job(job_id, user=user)
+        self._ensure_job_not_deleted(job)
+        ir_file_id = job.document_ir_file_id or job.source_document_ir_file_id
+        if ir_file_id is None:
+            return DocumentJobTableReferenceListResponse(job_id=job.id, generation=job.retry_count,
+                                                        ir_file_id=None, evidence_status="not_ready")
+        snapshot = self._load_table_reference_snapshot(job)
+        return self._list_table_references_snapshot(snapshot, user=user, block_id=block_id)
+
+    def _list_table_references_snapshot(
+        self, snapshot: _TableReferenceSnapshot, *, user: AuthenticatedUser, block_id: str | None = None,
+    ) -> DocumentJobTableReferenceListResponse:
+        """只投影已认证观察；新内容 reader 可复用原 IR，免于重复读取字节。"""
+        job, ir_file_id = snapshot.job, snapshot.file.id
+        items: list[DocumentJobTableReferenceResponse] = []
+        for reference in snapshot.references:
+            if block_id is not None and reference.block_id != block_id:
+                continue
+            asset = reference.asset
+            file = self._get_table_reference_file(snapshot, reference) if asset is not None else None
+            availability = self._table_reference_availability(file) if asset is not None else "source_" + reference.detail.source_status
+            content_path = None
+            if availability == "available":
+                content_path = (f"/api/v1/document-jobs/{quote(job.id, safe='')}/table-references/"
+                                f"{quote(asset.id, safe='')}/content?generation={job.retry_count}&ir_file_id={quote(ir_file_id, safe='')}")
+            items.append(DocumentJobTableReferenceResponse(
+                block_id=reference.block_id, fragment_id=reference.fragment.fragment_id,
+                logical_group_id=reference.logical_group_id, page_index=reference.fragment.source_span.page_index,
+                bbox=reference.fragment.source_span.bbox, asset_id=asset.id if asset else None,
+                file_id=asset.file_id if asset else None, source_status=reference.detail.source_status,
+                availability=availability, mime_type=asset.mime_type if asset else None,
+                checksum_sha256=asset.checksum_sha256 if asset else None, size_bytes=file.size_bytes if file else None,
+                warning_codes=(["missing_table_reference"] if reference.detail.source_status == "missing" else
+                               ["invalid_table_reference"] if reference.detail.source_status == "invalid" else []),
+                display_supported=asset is not None and asset.mime_type in INLINE_MIME_TYPES, content_path=content_path,
+            ))
+        self._recheck_table_reference_snapshot(snapshot, user=user)
+        return DocumentJobTableReferenceListResponse(
+            job_id=job.id, generation=job.retry_count, ir_file_id=ir_file_id,
+            evidence_status="registered" if snapshot.document.metadata.table_references_version else "legacy_unavailable",
+            items=items,
+        )
+
+    def read_table_reference_content(
+        self, job_id: str, asset_id: str, *, user: AuthenticatedUser,
+        generation: int, ir_file_id: str, disposition: str,
+    ) -> TableReferenceContent:
+        """每次重新鉴权并核验 IR/图像实际字节，慢读后再次确认当前快照。"""
+        job = self.get_job(job_id, user=user)
+        self._ensure_job_not_deleted(job)
+        if generation != job.retry_count or ir_file_id != (job.document_ir_file_id or job.source_document_ir_file_id):
+            raise ApiError(409, "conflict", "表格参考图所属任务快照已变化，请刷新列表。")
+        snapshot = self._load_table_reference_snapshot(job)
+        reference = next((item for item in snapshot.references if item.asset is not None and item.asset.id == asset_id), None)
+        if reference is None:
+            raise ApiError(404, "not_found", "当前文档未引用该表格参考图。")
+        file = self._get_table_reference_file(snapshot, reference)
+        availability = self._table_reference_availability(file)
+        if availability == "missing":
+            raise ApiError(404, "not_found", "表格参考图文件不存在。")
+        if availability != "available":
+            raise ApiError(409, "conflict", "表格参考图当前不可用。")
+        if disposition == "inline" and file.mime_type not in INLINE_MIME_TYPES:
+            raise ApiError(409, "conflict", "该栅格格式请使用附件下载。")
+        content = self._read_table_reference_bytes(file)
+        self._check_table_reference_bytes(file, content)
+        self._recheck_table_reference_snapshot(snapshot, user=user)
+        if self.file_repository.get_document_file(file.id) != file:
+            raise ApiError(409, "conflict", "表格参考图文件状态已变化，请刷新列表。")
+        self._ensure_file_not_expired(file)
+        return TableReferenceContent(content, file.mime_type,
+                                     f"table_reference_{asset_id.split(':')[-1]}.{RASTER_EXTENSIONS[file.mime_type]}",
+                                     file.id, snapshot.file.id, generation)
+
+    def _load_table_reference_snapshot(self, job: DocumentJobRecord) -> _TableReferenceSnapshot:
+        ir_id = job.document_ir_file_id or job.source_document_ir_file_id
+        file = self.file_repository.get_document_file(ir_id) if ir_id else None
+        if file is None:
+            raise ApiError(404, "not_found", "当前文档 IR 文件不存在。")
+        if file.tenant_id != job.tenant_id or file.company_id != job.company_id or file.job_id != job.id:
+            raise ApiError(403, "forbidden", "当前文档 IR 与任务归属不匹配。")
+        if file.file_type != "document_ir" or file.status != "uploaded" or file.mime_type != "application/json":
+            raise ApiError(409, "conflict", "当前文档 IR 文件不可用。")
+        self._ensure_file_not_expired(file)
+        content = self._read_table_reference_bytes(file)
+        self._check_table_reference_bytes(file, content)
+        try:
+            document = DocumentIR.model_validate_json(content)
+        except (ValueError, TypeError, KeyError) as error:
+            raise ApiError(409, "conflict", "当前文档的表格参考资产合同无效。") from error
+        return self._table_reference_snapshot(job, file, document)
+
+    def _table_reference_snapshot(
+        self, job: DocumentJobRecord, file: DocumentFileRecord, document: DocumentIR,
+    ) -> _TableReferenceSnapshot:
+        """沿原引用 owner 校验已认证 IR 的绑定及转换来源，不执行额外对象读取。"""
+        try:
+            references = decode_table_references(document, require_bound=True)
+            provenance = (TableReferenceProvenance.model_validate(document.metadata.mineru_validation_input)
+                          if document.metadata.table_references_version else None)
+        except (ValueError, TypeError, KeyError) as error:
+            raise ApiError(409, "conflict", "当前文档的表格参考资产合同无效。") from error
+        if document.metadata.job_id != job.id or document.metadata.source_file_id != job.source_file_id:
+            raise ApiError(409, "conflict", "当前文档来源与任务不匹配。")
+        if provenance is not None:
+            file_retry = file.metadata.get("retry_count")
+            if (type(file_retry) is not int or not provenance.retry_count <= file_retry <= job.retry_count or
+                    file.metadata.get("source_file_id") != job.source_file_id or
+                    file.metadata.get("mineru_validation_input") != provenance.model_dump() or
+                    document.metadata.mineru_validation is None or
+                    document.metadata.mineru_validation.package_sha256 != provenance.mineru_raw_result_sha256.removeprefix("sha256:")):
+                raise ApiError(409, "conflict", "当前文档的转换来源校验不一致。")
+        return _TableReferenceSnapshot(job, file, document, references, provenance)
+
+    def _get_table_reference_file(
+        self, snapshot: _TableReferenceSnapshot, reference: DecodedTableReference,
+    ) -> DocumentFileRecord | None:
+        asset, provenance, job = reference.asset, snapshot.provenance, snapshot.job
+        file = self.file_repository.get_document_file(asset.file_id)
+        if file is None:
+            return None
+        if file.tenant_id != job.tenant_id or file.company_id != job.company_id or file.job_id != job.id:
+            raise ApiError(403, "forbidden", "表格参考图与任务归属不匹配。")
+        expected = {"asset_role": TABLE_REFERENCE_ROLE, "asset_id": asset.id, "block_id": reference.block_id,
+                    "fragment_id": reference.fragment.fragment_id, "logical_group_id": reference.logical_group_id,
+                    "source_file_id": job.source_file_id, "source_path": asset.source_path,
+                    "mineru_raw_result_file_id": provenance.mineru_raw_result_file_id, "retry_count": provenance.retry_count}
+        if (file.file_type != "image_asset" or file.mime_type != asset.mime_type or
+                file.checksum_sha256 != asset.checksum_sha256 or file.size_bytes <= 0 or
+                type(file.metadata.get("retry_count")) is not int or
+                any(file.metadata.get(key) != value for key, value in expected.items())):
+            raise ApiError(409, "conflict", "表格参考图的角色、来源或完整性校验不一致。")
+        return file
+
+    @staticmethod
+    def _table_reference_availability(file: DocumentFileRecord | None) -> str:
+        if file is None:
+            return "missing"
+        if file.status == "deleted":
+            return "deleted"
+        if file.status == "expired" or file.expires_at is not None and file.expires_at <= utc_now():
+            return "expired"
+        return "available" if file.status == "uploaded" else "not_uploaded"
+
+    def _read_table_reference_bytes(self, file: DocumentFileRecord) -> bytes:
+        if self.file_upload_service is None:
+            raise ApiError(503, "service_unavailable", "表格参考资产存储当前不可用。")
+        try:
+            return self.file_upload_service.read_file_content(file)
+        except FileNotFoundError as error:
+            raise ApiError(404, "not_found", "表格参考资产内容不存在。") from error
+        except Exception as error:
+            # S3 错误只读取受控 code，不能把 bucket、key 或原始异常返回客户端。
+            response = getattr(error, "response", None)
+            details = response.get("Error") if isinstance(response, dict) else None
+            if isinstance(details, dict) and details.get("Code") in {"NoSuchKey", "404", "NotFound"}:
+                raise ApiError(404, "not_found", "表格参考资产内容不存在。") from error
+            raise ApiError(503, "service_unavailable", "表格参考资产存储当前不可用。") from error
+
+    @staticmethod
+    def _check_table_reference_bytes(file: DocumentFileRecord, content: bytes) -> None:
+        if (not isinstance(file.checksum_sha256, str) or CHECKSUM_RE.fullmatch(file.checksum_sha256) is None or
+                len(content) != file.size_bytes or "sha256:" + hashlib.sha256(content).hexdigest() != file.checksum_sha256):
+            raise ApiError(409, "conflict", "表格参考资产内容校验不一致。")
+
+    def _recheck_table_reference_snapshot(self, snapshot: _TableReferenceSnapshot, *, user: AuthenticatedUser) -> None:
+        current = self.get_job(snapshot.job.id, user=user)
+        self._ensure_job_not_deleted(current)
+        if (current.retry_count != snapshot.job.retry_count or
+                (current.document_ir_file_id or current.source_document_ir_file_id) != snapshot.file.id or
+                self.file_repository.get_document_file(snapshot.file.id) != snapshot.file):
+            raise ApiError(409, "conflict", "表格参考图所属任务快照已变化，请刷新列表。")
+        self._ensure_file_not_expired(snapshot.file)
 
     def list_jobs(
         self,
@@ -350,39 +1353,37 @@ class DocumentJobService:
         if created_from is not None and created_to is not None and created_from > created_to:
             raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "created_from 不能晚于 created_to。")
         normalized_q = self._normalize_optional_text(q)
-        visible_jobs = [
-            job
-            for job in self.job_repository.list_document_jobs()
-            if self._is_visible(job, user)
-            and job.deleted_at is None
-            and (include_archived or job.archived_at is None)
-        ]
-        summary = dict(Counter(job.status for job in visible_jobs))
-        qa_summary_jobs = [
-            job
-            for job in visible_jobs
-            if self._matches_status_filter(job, status_filter=status_filter, status_group=status_group)
-            and self._matches_document_job_query(job, normalized_q)
-            and self._matches_created_range(job, created_from=created_from, created_to=created_to)
-            and is_translation_document_job_mode(job.mode)
-        ]
-        filtered_jobs = [
-            job
-            for job in visible_jobs
-            if self._matches_status_filter(job, status_filter=status_filter, status_group=status_group)
-            and self._matches_translation_qa_status(job, translation_qa_status)
-            and self._matches_document_job_query(job, normalized_q)
-            and self._matches_created_range(job, created_from=created_from, created_to=created_to)
-        ]
-        filtered_summary = dict(Counter(job.status for job in filtered_jobs))
-        filtered_jobs.sort(key=lambda job: self._document_job_sort_key(job, sort), reverse=sort.endswith("_desc"))
-        start = (page - 1) * page_size
+        query = DocumentJobListQuery(
+            tenant_id=user.tenant_id,
+            company_id=user.company_id,
+            created_by=None if user.role == "admin" else user.id,
+            page=page,
+            page_size=page_size,
+            statuses=(status_filter,) if status_filter is not None else (
+                tuple(DOCUMENT_JOB_STATUS_GROUPS[status_group]) if status_group is not None else None
+            ),
+            translation_qa_status=translation_qa_status,
+            q=normalized_q.casefold() if normalized_q is not None else None,
+            sort=sort,
+            include_archived=include_archived,
+            created_from=created_from,
+            created_to=created_to,
+            as_of=utc_now(),
+        )
+        try:
+            result = self.job_repository.query_document_jobs(query)
+            # 明确的 None 也属于本次观察，不能在页面动作阶段重读成另一个结果。
+            items = [self.build_job_read_view(job, user=user,
+                observed_result=result.observed_results[job.id], as_of=query.as_of) for job in result.items]
+        except DocumentJobListProjectionUnavailable as error:
+            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable",
+                "任务列表查询事实尚未就绪，请完成校准后重试。") from error
         return DocumentJobListResult(
-            items=filtered_jobs[start:start + page_size],
-            total=len(filtered_jobs),
-            summary=summary,
-            filtered_summary=filtered_summary,
-            translation_qa_summary=self._count_translation_qa_statuses(qa_summary_jobs),
+            items=items,
+            total=result.total,
+            summary=result.summary,
+            filtered_summary=result.filtered_summary,
+            translation_qa_summary=result.translation_qa_summary,
         )
 
     def list_events(self, job_id: str, *, user: AuthenticatedUser) -> list[DocumentJobEventRecord]:
@@ -431,7 +1432,7 @@ class DocumentJobService:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", "文档任务不存在。")
         # 当前三类 adapter 的 generation=None 快照会带回历史记录；按同一锁快照返回的
         # job.retry_count 过滤，避免历史批次进入当前代 API 投影。
-        return snapshot_job, [batch for batch in batches if batch.generation == snapshot_job.retry_count]
+        return self._effective_job(snapshot_job), [batch for batch in batches if batch.generation == snapshot_job.retry_count]
 
     def list_visible_jobs(
         self,
@@ -439,10 +1440,10 @@ class DocumentJobService:
         user: AuthenticatedUser,
         include_archived: bool = False,
     ) -> list[DocumentJobRecord]:
-        """Return document_jobs visible to the user for read-only projections."""
+        """按可见性取得有效读投影，供异常队列使用。"""
 
         return [
-            job
+            self._effective_job(job)
             for job in self.job_repository.list_document_jobs()
             if self._is_visible(job, user)
             and job.deleted_at is None
@@ -461,16 +1462,35 @@ class DocumentJobService:
         return self._list_files_for_job(job)
 
     def build_available_actions(
+        self, job: DocumentJobRecord, *, user: AuthenticatedUser,
+    ) -> dict[str, DocumentJobAvailableActionResponse]:
+        """保留已有动作入口；字段与动作组合响应使用同次 read view。"""
+        return self.build_job_read_view(job, user=user)[1]
+
+    def build_job_read_view(
         self,
         job: DocumentJobRecord,
         *,
         user: AuthenticatedUser,
-    ) -> dict[str, DocumentJobAvailableActionResponse]:
-        """返回前端展示用的动作可用性投影；真正执行仍由各 endpoint 校验。"""
+        observed_result: DocumentFileRecord | None | object = _UNREAD_RESULT,
+        as_of: datetime | None = None,
+    ) -> tuple[DocumentJobRecord, dict[str, DocumentJobAvailableActionResponse]]:
+        """保留公共二元组合同，内部观察同时拥有发布检查。"""
+        view, actions, _ = self._build_job_read_observation(job, user=user, observed_result=observed_result, as_of=as_of)
+        return view, actions
 
+    def _build_job_read_observation(
+        self, job: DocumentJobRecord, *, user: AuthenticatedUser,
+        observed_result: DocumentFileRecord | None | object = _UNREAD_RESULT,
+        as_of: datetime | None = None,
+    ):
+        """同次来源和唯一深度检查同时产出状态、动作及前置检查。"""
+
+
+        job, download = self._build_result_read_view(job, observed_result=observed_result, as_of=as_of)
         retry_disabled_reason = self._retry_disabled_reason(job)
-        download = self._build_download_action(job)
-        return {
+        publish, checks = self._build_publish_action(job, user=user, download=download)
+        actions = {
             "download": download,
             "retry": self._available_action(retry_disabled_reason, retryable=retry_disabled_reason is None),
             "cancel": self._available_action(self._cancel_disabled_reason(job)),
@@ -478,10 +1498,50 @@ class DocumentJobService:
             "unarchive": self._available_action(self._unarchive_disabled_reason(job)),
             "clone": self._available_action(self._clone_disabled_reason(job, user=user)),
             "delete": self._available_action(self._delete_disabled_reason(job, user=user)),
-            "publish": self._build_publish_action(job, user=user, download=download),
+            "publish": publish,
+            "new_generation": self._build_new_generation_action(job, user=user),
         }
+        if actions["publish"].enabled and job.delivery_status != "published":
+            job = job.model_copy(update={"delivery_status": "ready_to_publish"})
+        return job, actions, checks
+
+    def _build_new_generation_action(self, job: DocumentJobRecord, *, user: AuthenticatedUser):
+        """后端给出可执行资格；POST 仍独立认证实物并在接受锁内重核。"""
+        reason = ("admin_required" if user.role != "admin" or {"admin_token", "jobs_token"}.intersection(user.token_scopes)
+            else new_generation_eligibility_reason(job, max_retries=self.settings.p0_document_job_max_retries))
+        if reason is None:
+            try:
+                self._new_generation_resource_snapshot(job)
+            except ValueError:
+                reason = "new_generation_resources_unavailable"
+            if self.job_resource_snapshot_service is None:
+                reason = "new_generation_resources_unavailable"
+        if reason is None:
+            try:
+                self._new_generation_source_file(job)
+            except NewGenerationConflict as error:
+                reason = error.reason_code
+        messages = {"admin_required": "只有内部 Admin 用户 JWT 可以开始新代。",
+            "new_generation_state_invalid": "只有未发布、未归档删除的成功任务可以开始新代。",
+            "new_generation_budget_exhausted": "任务的共享重试预算已用尽。",
+            "new_generation_resources_unavailable": "原绑定资源快照不可用。",
+            "new_generation_source_unavailable": "原源 PDF 当前不可用。",
+            "new_generation_source_changed": "原源 PDF 的登记来源已变化。",
+            "publication_immutable": "已发布任务不可原地开始新代。"}
+        message = messages.get(reason, "任务当前不允许开始新代。") if reason else None
+        return DocumentJobAvailableActionResponse(enabled=reason is None, disabled_reason=message,
+            disabled_reason_code=reason, disabled_reasons=[DocumentJobActionDisabledReasonResponse(code=reason, message=message)] if reason else [])
 
     def build_download_policy(
+        self, job: DocumentJobRecord, file: DocumentFileRecord,
+    ) -> DocumentJobDownloadPolicy:
+        """签发已校验当前 file，以同一 metadata 观察决定有效复核及警告。"""
+        if file.file_type != "generated_word" or file.id != job.result_file_id:
+            return DocumentJobDownloadPolicy()
+        view = effective_review_job(job, file, now=utc_now())
+        return self._download_policy_for_view(view, file)
+
+    def _download_policy_for_view(
         self,
         job: DocumentJobRecord,
         file: DocumentFileRecord,
@@ -585,82 +1645,131 @@ class DocumentJobService:
         )
 
     def update_translation_qa(
-        self,
-        job_id: str,
-        *,
-        user: AuthenticatedUser,
-        qa_status: DocumentJobTranslationQaStatus,
-        issue_type: DocumentJobTranslationQaIssueType | None,
-        note: str | None,
-        trace_id: str | None,
+        self, job_id: str, *, user: AuthenticatedUser, qa_status: DocumentJobTranslationQaStatus,
+        issue_type: DocumentJobTranslationQaIssueType | None, note: str | None, trace_id: str | None,
     ) -> DocumentJobRecord:
-        """保存任务级翻译 QA 结论，并只记录非敏感事件摘要。"""
-
-        job = self.get_job(job_id, user=user)
+        """旧翻译入口保留模式及六值边界，正式写入交由统一复核端口。"""
+        job = self._get_job(job_id, user=user)
         if not is_translation_document_job_mode(job.mode):
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "翻译 QA 仅支持翻译任务。")
-        result_file = None
-        if qa_status == "approved":
-            if job.quality_status == "blocked":
-                raise ApiError(status.HTTP_409_CONFLICT, "conflict", "质量阻断的任务不能批准复核。")
+        return self._submit_document_review(job, user=user, review_status=qa_status,
+                                            issue_type=issue_type, note=note, trace_id=trace_id).job
+
+    def submit_document_review(
+        self, job_id: str, *, user: AuthenticatedUser, review_status: ReviewStatus,
+        issue_type: ReviewIssueType | None = None, note: str | None = None, trace_id: str | None = None,
+    ) -> DocumentJobRecord:
+        """两模式共用的受权内部入口；不读取翻译诊断或触发生产者。"""
+        return self._submit_document_review(self._get_job(job_id, user=user), user=user,
+            review_status=review_status, issue_type=issue_type, note=note, trace_id=trace_id).job
+
+    def list_document_reviews(
+        self, job_id: str, *, user: AuthenticatedUser, after_sequence: int = 0, limit: int = 100,
+    ) -> list[ReviewRecord]:
+        """先鉴权任务，再按 job 和有界序号读取历史；不提供裸记录 ID 查询。"""
+        job = self._get_job(job_id, user=user)
+        return self.job_repository.list_document_job_reviews(job.id, after_sequence=after_sequence, limit=limit)
+
+    def _submit_document_review(
+        self, job: DocumentJobRecord, *, user: AuthenticatedUser, review_status: ReviewStatus,
+        issue_type: ReviewIssueType | None, note: str | None, trace_id: str | None,
+        expected_source: ReviewExpectedSource | None = None,
+    ) -> _ReviewCommit:
+        def conflict(message, reason):
+            return ApiError(409, "conflict", message,
+                reason_code=reason if expected_source is not None else None)
+
+        if job.deleted_at is not None or job.delivery_status == "published":
+            raise conflict("已删除或已发布任务不能修改复核。", "review_state_conflict")
+        result_file, actual_hash = None, None
+        if expected_source is not None:
+            result_file = self._review_api_file(job, conflict_reason="review_result_integrity_conflict")
+            if observed_review_source(job, result_file) != expected_source:
+                raise conflict("复核来源已变化，请重新读取。", "review_source_changed")
+        if review_status == "approved":
+            if effective_quality_status(job) == "blocked":
+                raise conflict("质量阻断的任务不能批准复核。", "review_quality_blocked")
             try:
-                result_file = self._get_downloadable_completed_result_file(job)
+                if expected_source is None:
+                    result_file = self._get_downloadable_completed_result_file(job)
+                else:
+                    result_file = self._get_completed_result_file(job, observed_result=result_file)
+                    self._ensure_file_not_expired(result_file)
             except ApiError as exc:
+                if expected_source is not None:
+                    reason = ("review_result_integrity_conflict" if exc.reason_code == "result_file_mismatch"
+                        else "review_result_unavailable")
+                    raise conflict("当前主 DOCX 不可用，不能批准复核。", reason) from None
                 if exc.status_code != status.HTTP_404_NOT_FOUND or exc.code != "not_found":
                     raise
                 raise ApiError(status.HTTP_409_CONFLICT, "conflict", "当前主 DOCX 未登记，不能批准复核。") from exc
+            if "table_rendering" in result_file.metadata:
+                rendering = result_file.metadata["table_rendering"]
+                if (
+                    self._file_retry_count(result_file) != job.retry_count
+                    or not is_valid_table_rendering_evidence(rendering)
+                    or rendering.get("quality_status") not in ("passed", "warning")
+                    or rendering["blocking_quality_flags"]
+                ):
+                    reason = ("review_result_integrity_conflict" if self._file_retry_count(result_file) != job.retry_count
+                        or not is_valid_table_rendering_evidence(rendering) else "review_quality_blocked")
+                    raise conflict("表格质量受阻或渲染证据无效，不能批准。", reason)
+            if expected_source is not None and self.file_upload_service is None:
+                raise ApiError(503, "service_unavailable", "复核文件存储暂不可用。", reason_code="quality_storage_unavailable")
             self._ensure_file_reader_available()
             try:
                 content = self.file_upload_service.read_file_content(result_file)
             except FileNotFoundError as exc:
-                raise ApiError(status.HTTP_409_CONFLICT, "conflict", "当前主 DOCX 不可用，不能批准复核。") from exc
-            if (len(content) != result_file.size_bytes or (
-                result_file.checksum_sha256 is not None
-                and result_file.checksum_sha256 != f"sha256:{hashlib.sha256(content).hexdigest()}"
-            )):
-                raise ApiError(status.HTTP_409_CONFLICT, "conflict", "当前主 DOCX 与登记的完整性描述不一致。")
-        elif job.result_file_id is not None:
+                raise conflict("当前主 DOCX 不可用，不能批准复核。", "review_result_unavailable") from exc
+            except Exception as exc:
+                from app.domains.document_jobs.preview import _is_preview_storage_error
+                if expected_source is not None and _is_preview_storage_error(exc):
+                    raise ApiError(503, "service_unavailable", "复核文件存储暂不可用。", reason_code="quality_storage_unavailable") from None
+                raise
+            actual_hash = f"sha256:{hashlib.sha256(content).hexdigest()}"
+            if (len(content) != result_file.size_bytes or
+                (result_file.checksum_sha256 is not None and result_file.checksum_sha256 != actual_hash)
+                or (job.prepared_result is not None and not receipt_matches_file(result_file, job.prepared_result))):
+                raise conflict("当前主 DOCX 与登记或选定凭据的完整性描述不一致。", "review_result_integrity_conflict")
+            latest = self.file_repository.get_document_file(result_file.id)
+            if (latest is None or latest.review_source_revision != result_file.review_source_revision
+                    or review_source_descriptor(latest) != review_source_descriptor(result_file)):
+                raise conflict("复核期间主件来源已变化，请重新读取。", "review_source_changed")
+        elif expected_source is None and job.result_file_id is not None:
             result_file = self.file_repository.get_document_file(job.result_file_id)
-            if result_file is not None and (
-                (result_file.tenant_id, result_file.company_id, result_file.job_id)
-                != (job.tenant_id, job.company_id, job.id)
-            ):
+            if result_file is not None and ((result_file.tenant_id, result_file.company_id, result_file.job_id)
+                                          != (job.tenant_id, job.company_id, job.id)):
                 result_file = None
+        if expected_source is not None:
+            latest = self._review_api_file(job, conflict_reason="review_result_integrity_conflict")
+            if (observed_review_source(job, latest) != expected_source or
+                    latest is not None and review_source_descriptor(latest) != review_source_descriptor(result_file)):
+                raise conflict("复核来源已变化，请重新读取。", "review_source_changed")
         now = utc_now()
-        updated = self.job_repository.update_document_job_review_if_current(
-            job.id,
-            expected_retry_count=job.retry_count,
-            expected_result_file_id=job.result_file_id,
-            review_status=qa_status,
-            issue_type=issue_type,
-            note=self._normalize_optional_text(note),
-            reviewed_by=None if qa_status == "unreviewed" else user.id,
-            reviewed_at=None if qa_status == "unreviewed" else now,
-            updated_at=now,
-        )
+        binding = ReviewBinding(generation=job.retry_count, result_file_id=job.result_file_id,
+            binding_state="verified" if actual_hash else ("no_result" if job.result_file_id is None else "unverified_result"),
+            result_sha256=actual_hash, file_review_source_revision=result_file.review_source_revision if result_file else None,
+            descriptor=review_source_descriptor(result_file) if result_file else None, receipt_sha256=receipt_identity(job))
+        submission = ReviewSubmission(record_id=f"review_{uuid4().hex}", status=review_status, issue_type=issue_type,
+            note=self._normalize_optional_text(note), reviewed_by=user.id, reviewed_at=now, reviewer_role=user.role,
+            binding=binding, expected_source=expected_source)
+        try:
+            updated = self.job_repository.update_document_job_review_if_current(job.id, submission=submission)
+        except ReviewSubmissionConflict as exc:
+            raise conflict("复核提交条件已变化，请重新读取。", exc.reason_code) from None
         if updated is None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "任务代数、当前主件或复核条件已变化，请刷新后重试。")
-        qa = translation_qa_projection(updated)
-        self.record_event(
-            updated,
-            event_type="translation_qa_updated",
-            stage=updated.stage,
-            level="info",
-            message="翻译 QA 复核状态已更新。",
-            payload={
-                "observed_review_status": job.review_status,
-                "review_status": updated.review_status,
-                "status": qa["translation_qa_status"],
-                "issue_type": qa["translation_qa_issue_type"],
-                "reviewed_by": qa["translation_qa_reviewed_by"],
-                "generation": updated.retry_count,
-                "result_file_id": updated.result_file_id,
-                "checksum_sha256": result_file.checksum_sha256 if result_file else None,
-                "note_length": len(qa["translation_qa_note"] or ""),
-            },
-            trace_id=trace_id,
-        )
-        return updated
+            raise conflict("任务代数、当前主件或复核条件已变化，请刷新后重试。", "review_source_changed")
+        effective = self._effective_job(updated)
+        self.record_event(updated, event_type="translation_qa_updated", stage=updated.stage, level="info",
+            message="文档复核状态已更新。", payload={
+                "observed_review_status": job.review_status, "record_status": submission.status,
+                "review_status": effective.review_status, "status": effective.review_status,
+                "issue_type": translation_qa_projection(updated)["translation_qa_issue_type"] if is_translation_document_job_mode(job.mode) else issue_type,
+                "reviewed_by": user.id, "generation": updated.retry_count, "result_file_id": updated.result_file_id,
+                "checksum_sha256": actual_hash, "note_length": len(submission.note or ""),
+                "review_record_id": updated.current_review_record_id, "review_sequence": updated.review_sequence,
+            }, trace_id=trace_id)
+        return _ReviewCommit(effective, updated.current_review_record_id, updated.review_sequence)
 
     def get_result_file_for_download(
         self,
@@ -670,8 +1779,9 @@ class DocumentJobService:
     ) -> tuple[DocumentJobRecord, DocumentFileRecord]:
         """校验任务权限和完成状态后返回生成 Word 文件。"""
 
-        job = self.get_job(job_id, user=user)
-        return job, self._get_downloadable_completed_result_file(job)
+        job = self._get_job(job_id, user=user)
+        file = self._get_downloadable_completed_result_file(job)
+        return effective_review_job(job, file, now=utc_now()), file
 
     def get_file_for_download(
         self,
@@ -682,10 +1792,11 @@ class DocumentJobService:
     ) -> tuple[DocumentJobRecord, DocumentFileRecord]:
         """按可见任务签发文件下载前，校验文件归属、状态、过期和类型。"""
 
-        job = self.get_job(job_id, user=user)
-        if file_id is None:
-            return job, self._get_downloadable_completed_result_file(job)
-        return job, self._get_downloadable_task_file(job, file_id=file_id)
+        job = self._get_job(job_id, user=user)
+        file = (self._get_downloadable_completed_result_file(job) if file_id is None
+                else self._get_downloadable_task_file(job, file_id=file_id))
+        view = effective_review_job(job, file, now=utc_now()) if file.id == job.result_file_id else self._effective_job(job)
+        return view, file
 
     def get_result_file_for_authorized_download(
         self,
@@ -731,7 +1842,7 @@ class DocumentJobService:
     ) -> DocumentJobRecord:
         """对可重试失败任务按原 job_id 重新投递，保留既有中间产物用于幂等恢复。"""
 
-        job = self.get_job(job_id, user=user)
+        job = self._get_job(job_id, user=user)
         self._ensure_job_not_deleted(job)
         self._ensure_resource_selection_allowed(
             user=user,
@@ -799,6 +1910,14 @@ class DocumentJobService:
             ) from exc
         return self.job_repository.get_document_job(job.id) or retried
 
+    def retry_word_preview(self, job_id: str, *, user: AuthenticatedUser, reason: str, request_id: str,
+                           trace_id: str | None = None) -> PreviewRetryResult:
+        """内部应用入口；沿用 owner/Admin 范围，不增加 HTTP 重试路由。"""
+        job = self.get_job(job_id, user=user)
+        if self.word_preview_service is None:
+            raise ApiError(503, "service_unavailable", "Word 预览应用服务未配置。")
+        return self.word_preview_service.retry(job, user=user, reason=reason, request_id=request_id, trace_id=trace_id)
+
     def clone_job(
         self,
         job_id: str,
@@ -820,7 +1939,7 @@ class DocumentJobService:
     ) -> DocumentJobRecord:
         """把源任务复制为一个新 document_job；不修改源任务，也不复用 retry 语义。"""
 
-        source_job = self.get_job(job_id, user=user)
+        source_job = self._get_job(job_id, user=user)
         self._ensure_job_not_deleted(source_job)
         source_file = self._get_source_file_for_clone(source_job)
         explicit_values = {
@@ -891,6 +2010,7 @@ class DocumentJobService:
             status="pending",
             stage="uploaded",
             progress=0,
+            quality_summary=fresh_quality_summary(0),
             template_version_id=clone_config["template_version_id"],
             term_version_id=clone_config["term_version_id"],
             debug_full_text_enabled=clone_config["debug_full_text_enabled"],
@@ -927,19 +2047,17 @@ class DocumentJobService:
     ) -> DocumentJobRecord:
         """归档终态 document_job，仅隐藏列表记录，不删除文件或事件。"""
 
-        job = self.get_job(job_id, user=user)
+        job = self._get_job(job_id, user=user)
         self._ensure_job_not_deleted(job)
         if job.archived_at is not None:
-            return job
+            return self._effective_job(job)
         if job.status not in ARCHIVABLE_DOCUMENT_JOB_STATUSES:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "只有 succeeded、failed、canceled 终态任务允许归档。")
         now = utc_now()
-        archived = self.job_repository.update_document_job(
-            job.id,
-            archived_at=now,
-            archived_by=user.id,
-            updated_at=now,
-        )
+        archived = self.job_repository.update_document_job_lifecycle_if_current(job.id,
+            expected_retry_count=job.retry_count, action="archive", actor_id=user.id, occurred_at=now)
+        if archived is None:
+            raise ApiError(409, "conflict", "任务代次或终态已变化，不能归档旧来源。")
         self.record_event(
             archived,
             event_type="job_archived",
@@ -949,7 +2067,7 @@ class DocumentJobService:
             payload={"archived_by": user.id, "status": archived.status},
             trace_id=trace_id,
         )
-        return archived
+        return self._effective_job(archived)
 
     def unarchive_job(
         self,
@@ -960,10 +2078,10 @@ class DocumentJobService:
     ) -> DocumentJobRecord:
         """恢复误归档 document_job；只更新归档元数据，不触碰文件或状态。"""
 
-        job = self.get_job(job_id, user=user)
+        job = self._get_job(job_id, user=user)
         self._ensure_job_not_deleted(job)
         if job.archived_at is None:
-            return job
+            return self._effective_job(job)
         now = utc_now()
         restored = self.job_repository.update_document_job(
             job.id,
@@ -980,7 +2098,7 @@ class DocumentJobService:
             payload={"restored_by": user.id, "status": restored.status},
             trace_id=trace_id,
         )
-        return restored
+        return self._effective_job(restored)
 
     def preview_delete_job(
         self,
@@ -990,7 +2108,7 @@ class DocumentJobService:
     ) -> DocumentJobDeletePlan:
         """构建 Admin-only 任务删除计划；不修改任务、文件、事件或审计。"""
 
-        job = self.get_job(job_id, user=user)
+        job = self._get_job(job_id, user=user)
         self._ensure_delete_allowed(job, user=user)
         return self._build_delete_plan(job, action_mode="delete_preview")
 
@@ -1006,7 +2124,7 @@ class DocumentJobService:
     ) -> DocumentJobDeletePlan:
         """按预览 hash 执行 Admin-only 任务删除，保留任务 metadata 和审计证据。"""
 
-        job = self.get_job(job_id, user=user)
+        job = self._get_job(job_id, user=user)
         self._ensure_delete_allowed(job, user=user)
         normalized_reason = self._normalize_optional_text(reason) or DEFAULT_DOCUMENT_JOB_DELETE_REASON
         if confirmation is not None:
@@ -1022,11 +2140,29 @@ class DocumentJobService:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "删除预览已过期，请重新预览后再执行。")
 
         delete_file_ids = [item.file_id for item in preview.files if item.action == "delete"]
+        if delete_file_ids and self.file_upload_service is None:
+            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "文件清理服务不可用，无法删除任务文件。")
+        # deleted_at 是持久生命周期预留；确认赢得本代后，才允许取得文件删除 claim。
+        now = utc_now()
+        try:
+            deleted = self.job_repository.update_document_job_lifecycle_if_current(job.id,
+                expected_retry_count=job.retry_count, action="delete", actor_id=user.id, occurred_at=now,
+                delete_reason=normalized_reason)
+        except Exception as error:
+            if not _is_preview_storage_error(error):
+                raise
+            raise ApiError(503, "service_unavailable", "任务删除预留暂不可确认，请先核对原任务状态。",
+                reason_code="document_job_deletion_unknown") from None
+        if deleted is None:
+            raise ApiError(409, "conflict", "任务代次、发布或删除状态已变化，未执行文件删除。")
         executed_files = preview.files
         if delete_file_ids:
-            if self.file_upload_service is None:
-                raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "文件清理服务不可用，无法删除任务文件。")
-            physical_delete = self.file_upload_service.execute_document_job_physical_delete(delete_file_ids)
+            try:
+                physical_delete = self.file_upload_service.execute_document_job_physical_delete(delete_file_ids)
+            except Exception as error:
+                _SYSTEM_LOGGER.error("任务删除预留已提交，文件清理结果未确认 job_id=%s generation=%s trace_id=%s exception_type=%s",
+                    deleted.id, deleted.retry_count, trace_id, type(error).__name__)
+                raise
             physical_items = {item.file_id: item for item in physical_delete.items}
             executed_files = [
                 self._delete_plan_file_from_physical_item(physical_items[item.file_id], action="delete")
@@ -1035,14 +2171,6 @@ class DocumentJobService:
                 for item in preview.files
             ]
 
-        now = utc_now()
-        deleted = self.job_repository.update_document_job(
-            job.id,
-            deleted_at=now,
-            deleted_by=user.id,
-            delete_reason=normalized_reason,
-            updated_at=now,
-        )
         self.record_event(
             deleted,
             event_type="job_deleted",
@@ -1057,7 +2185,7 @@ class DocumentJobService:
             trace_id=trace_id,
         )
         return self._build_delete_plan(
-            deleted,
+            self._effective_job(deleted),
             action_mode="delete_execute",
             files=executed_files,
             physical_delete_executed=bool(delete_file_ids),
@@ -1075,7 +2203,7 @@ class DocumentJobService:
     ) -> DocumentJobRecord:
         """把未终态 document_job 标记为 canceled，保留所有文件和事件。"""
 
-        job = self.get_job(job_id, user=user)
+        job = self._get_job(job_id, user=user)
         self._ensure_job_not_deleted(job)
         if job.archived_at is not None:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "已归档文档任务不允许取消。")
@@ -1661,13 +2789,14 @@ class DocumentJobService:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "源 PDF 已过期，不能重新发起。")
         return source_file
 
-    def _get_completed_result_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
+    def _get_completed_result_file(self, job: DocumentJobRecord, *,
+            observed_result: DocumentFileRecord | None | object = _UNREAD_RESULT) -> DocumentFileRecord:
         self._ensure_job_not_deleted(job, reason_code="job_deleted")
         if job.status != "succeeded" or job.stage != "completed":
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。", reason_code="job_not_completed")
         if job.result_file_id is None:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。", reason_code="result_file_missing")
-        file = self.file_repository.get_document_file(job.result_file_id)
+        file = self.file_repository.get_document_file(job.result_file_id) if observed_result is _UNREAD_RESULT else observed_result
         if file is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"结果文件不存在: {job.result_file_id}", reason_code="result_file_missing")
         if ((file.tenant_id, file.company_id, file.job_id) != (job.tenant_id, job.company_id, job.id)
@@ -1683,15 +2812,22 @@ class DocumentJobService:
         return file
 
     def _list_files_for_job(self, job: DocumentJobRecord) -> list[DocumentFileRecord]:
-        files = [
+        candidates = [
             file
             for file in self.file_repository.list_document_files()
             if file.tenant_id == job.tenant_id
             and file.company_id == job.company_id
             and file.file_type in DOCUMENT_JOB_DOWNLOAD_FILE_TYPES
             and self._file_belongs_to_job(job, file)
-            and self._is_current_downloadable_job_file(job, file)
         ]
+        # 完整预览只观测一次；以刚验证的Record筛选列表快照，避免逐页重读全组。
+        preview_files = verified_current_preview_files(job, self.file_repository, self.file_upload_service) if any(
+            file.file_type in PREVIEW_FILE_TYPES for file in candidates
+        ) else {}
+        files = [file for file in candidates if (
+            preview_files.get(file.id) == file if file.file_type in PREVIEW_FILE_TYPES
+            else self._is_current_downloadable_job_file(job, file)
+        )]
         return sorted(
             files,
             key=lambda file: (
@@ -1719,14 +2855,19 @@ class DocumentJobService:
         self._ensure_file_not_expired(file)
         return file
 
-    def _ensure_file_not_expired(self, file: DocumentFileRecord) -> None:
-        if file.expires_at is not None and file.expires_at <= utc_now():
+    def _ensure_file_not_expired(self, file: DocumentFileRecord, *, as_of: datetime | None = None) -> None:
+        if file.deletion_claim is not None:
+            raise ApiError(409, "conflict", "文件已预留删除。", reason_code="file_deletion_reserved")
+        if file.expires_at is not None and file.expires_at <= (as_of if as_of is not None else utc_now()) and not self.file_repository.is_document_file_protected(file.id):
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件已过期，不能下载。", reason_code="file_expired")
 
     def _file_belongs_to_job(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
         return file.job_id == job.id or file.id == job.source_file_id
 
     def _is_current_downloadable_job_file(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
+        if file.file_type in PREVIEW_FILE_TYPES:
+            # 单件下载每次独立观测，不能使用先前列表的核验结果。
+            return verified_current_preview_files(job, self.file_repository, self.file_upload_service).get(file.id) == file
         if file.file_type == "source_pdf":
             return file.id == job.source_file_id
         if file.file_type == "mineru_raw_result" and file.id == job.mineru_raw_result_file_id:
@@ -2010,62 +3151,81 @@ class DocumentJobService:
             retryable=retryable,
         )
 
-    def _build_download_action(self, job: DocumentJobRecord) -> DocumentJobAvailableActionResponse:
-        """只检查签发已有的 metadata 门槛，不读取对象或新增质量拒绝。"""
+    def _build_result_read_view(
+        self, job: DocumentJobRecord, *, observed_result: DocumentFileRecord | None | object = _UNREAD_RESULT,
+        as_of: datetime | None = None,
+    ) -> tuple[DocumentJobRecord, DocumentJobAvailableActionResponse]:
+        """同一主件观察拥有有效复核和下载判定，期间不再次读取主件。"""
 
+        file = None
         try:
-            file = self._get_downloadable_completed_result_file(job)
+            file = self._get_completed_result_file(job, observed_result=observed_result)
+            self._ensure_file_not_expired(file, as_of=as_of)
         except ApiError as exc:
             reason = exc.message
             if exc.reason_code == "job_not_completed":
                 reason = "只有 succeeded 文档任务允许下载结果。"
             elif exc.reason_code == "result_file_missing" and job.result_file_id is None:
                 reason = "任务结果文件尚未登记，不能下载。"
-            return DocumentJobAvailableActionResponse(
+            return effective_review_job(job, file, now=as_of if as_of is not None else utc_now()), DocumentJobAvailableActionResponse(
                 enabled=False, disabled_reason=reason, disabled_reason_code=exc.reason_code,
             )
-        policy = self.build_download_policy(job, file)
-        return DocumentJobAvailableActionResponse(
+        view = effective_review_job(job, file, now=as_of if as_of is not None else utc_now())
+        policy = self._download_policy_for_view(view, file)
+        return view, DocumentJobAvailableActionResponse(
             enabled=True, classification=policy.classification,
             warning_code=policy.warning_code, warning_message=policy.warning_message,
         )
 
-    def _build_publish_action(
-        self,
-        job: DocumentJobRecord,
-        *,
-        user: AuthenticatedUser,
+    def _build_publish_action(self, job: DocumentJobRecord, *, user: AuthenticatedUser,
         download: DocumentJobAvailableActionResponse,
-    ) -> DocumentJobAvailableActionResponse:
-        """核心资格不等于执行许可；预览与真实发布仍由后续能力拥有。"""
+    ) -> tuple[DocumentJobAvailableActionResponse, list[dict[str, Any]]]:
+        """核心资格保持原语义；未执行的实物/预览/快照组合检查不能冒充通过。"""
+        reasons = []
+        checks = []
 
-        reasons: list[DocumentJobActionDisabledReasonResponse] = []
-        if not download.enabled:
-            reasons.append(DocumentJobActionDisabledReasonResponse(
-                code=download.disabled_reason_code or "download_unavailable", message=download.disabled_reason or "结果不可下载。",
-            ))
-        if user.role != "admin":
-            reasons.append(DocumentJobActionDisabledReasonResponse(code="admin_required", message="只有 Admin 可以发布文档。"))
-        if job.quality_status == "blocked":
-            reasons.append(DocumentJobActionDisabledReasonResponse(code="quality_status_blocked", message="质量阻塞，不能发布。"))
-        elif job.quality_status == "pending":
-            reasons.append(DocumentJobActionDisabledReasonResponse(code="quality_status_pending", message="尚无质量结论，不能发布。"))
-        if job.review_status != "approved":
-            review_messages = {"unreviewed": "文档尚未复核。", "needs_fix": "文档复核要求修正。", "blocked": "文档复核已阻断。"}
-            reasons.append(DocumentJobActionDisabledReasonResponse(
-                code=f"review_status_{job.review_status}", message=review_messages[job.review_status],
-            ))
-        if job.delivery_status == "published":
-            reasons.append(DocumentJobActionDisabledReasonResponse(code="already_published", message="该结果已发布，不能重复发布。"))
+        def check(code, passed, reason_code, message):
+            checks.append({"code": code, "status": "passed" if passed else "blocked",
+                "reason_code": None if passed else reason_code, "message": "检查通过。" if passed else message})
+            if not passed:
+                reasons.append(DocumentJobActionDisabledReasonResponse(code=reason_code, message=message))
+
+        check("result_download", download.enabled, download.disabled_reason_code or "download_unavailable",
+            download.disabled_reason or "结果不可下载。")
+        check("admin_role", user.role == "admin", "admin_required", "只有 Admin 可以发布文档。")
+        check("quality", job.quality_status in {"passed", "warning"}, "quality_status_" + job.quality_status,
+            "质量阻塞，不能发布。" if job.quality_status == "blocked" else "尚无质量结论，不能发布。")
+        review_messages = {"unreviewed": "文档尚未复核。", "needs_fix": "文档复核要求修正。", "blocked": "文档复核已阻断。"}
+        check("review", job.review_status == "approved", "review_status_" + job.review_status,
+            review_messages.get(job.review_status, "文档尚无有效批准。"))
+        check("publication_state", job.delivery_status != "published", "already_published", "该结果已发布，不能重复发布。")
         eligible = not reasons
-        reasons.extend([
-            DocumentJobActionDisabledReasonResponse(code="preview_unavailable", message="当前阶段尚未接通发布所需的预览验证。"),
-            DocumentJobActionDisabledReasonResponse(code="publication_unavailable", message="当前阶段尚未提供文档发布功能。"),
-        ])
+        check("publication_write", self.settings.document_publication_enabled, "publication_disabled", "文档发布写入当前已停用。")
+        if self.settings.document_publication_enabled and eligible:
+            check("job_state", job.archived_at is None and job.deleted_at is None,
+                "publication_state_conflict", "归档或删除任务不能发布。")
+        evidence_check = {"code": "publication_evidence", "status": "not_checked", "reason_code": None,
+            "message": "尚未核验预览、实物完整性、执行快照及保留能力；提交时由后端完整核验。"}
+        if not reasons:
+            try:
+                evidence = prepare_publication_evidence(job, file_repository=self.file_repository,
+                    file_service=self.file_upload_service, job_repository=self.job_repository)
+                if any(self.file_repository.get_document_file(item.id) != item for item in evidence.files):
+                    raise ApiError(409, "conflict", "发布证据在读取期间发生变化。", reason_code="publication_source_changed")
+                evidence_check.update(status="passed", message="预览、实物、执行快照及保留能力检查通过。")
+            except PublicationConflict as error:
+                evidence_check.update(status="blocked", reason_code=error.reason_code, message=str(error))
+            except Exception as error:
+                if not _is_preview_storage_error(error):
+                    raise
+                evidence_check.update(status="blocked", reason_code="publication_storage_unavailable", message="发布存储暂不可用。")
+            if evidence_check["status"] == "blocked":
+                reasons.append(DocumentJobActionDisabledReasonResponse(code=evidence_check["reason_code"], message=evidence_check["message"]))
+        checks.append(evidence_check)
         return DocumentJobAvailableActionResponse(
-            enabled=False, eligible=eligible, disabled_reason=reasons[0].message,
-            disabled_reason_code=reasons[0].code, disabled_reasons=reasons,
-        )
+            enabled=not reasons, eligible=eligible, disabled_reason=reasons[0].message if reasons else None,
+            disabled_reason_code=reasons[0].code if reasons else None, disabled_reasons=reasons,
+        ), checks
 
     def _retry_disabled_reason(self, job: DocumentJobRecord) -> str | None:
         if job.deleted_at is not None:
@@ -2170,6 +3330,8 @@ class DocumentJobService:
             },
             "resources": resource_snapshot,
             "debug_full_text_enabled": debug_full_text_enabled,
+            "word_preview": self.settings.word_preview_policy().model_dump(mode="json"),
+            "page_quality": self.settings.page_quality_policy().model_dump(mode="json"),
         }
 
     def _resolve_clone_config(
@@ -2213,6 +3375,14 @@ class DocumentJobService:
                 translation_profile_version=self._read_snapshot_string(source_profile, "translation_profile_version"),
                 resource_snapshot=self._read_snapshot_record(source_job.request_snapshot, "resources"),
             )
+            if "word_preview" in source_job.request_snapshot:
+                request_snapshot["word_preview"] = source_job.request_snapshot["word_preview"]
+            else:
+                request_snapshot.pop("word_preview", None)
+            if "page_quality" in source_job.request_snapshot:
+                request_snapshot["page_quality"] = source_job.request_snapshot["page_quality"]
+            else:
+                request_snapshot.pop("page_quality", None)
             request_snapshot["clone"] = self._build_clone_snapshot(source_job, config_strategy, reason)
             return {
                 "template_version_id": source_job.template_version_id,

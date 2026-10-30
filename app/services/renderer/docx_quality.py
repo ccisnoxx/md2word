@@ -142,6 +142,7 @@ def _analyze_docx_package(package: zipfile.ZipFile, *, formula_report: dict[str,
         "paragraph_count": len(paragraphs),
         "table_count": table_count,
         "table_shapes": table_shapes,
+        "table_observations": [_table_observation(table, index) for index, table in enumerate(tables)],
         "wide_table_count": wide_table_count,
         "media_count": media_count,
         "inline_shape_count": inline_shape_count,
@@ -388,3 +389,26 @@ def verify_docx_formula_report(content: bytes, report: dict[str, Any]) -> None:
     with zipfile.ZipFile(BytesIO(content)) as package:
         root = ElementTree.fromstring(package.read("word/document.xml"))
     _formula_ranges(root, report)
+
+
+def _table_observation(table: ElementTree.Element, index: int) -> dict[str, Any]:
+    """只观察实际 OOXML 的无文本结构，机器锚点也必须符合固定格式。"""
+    caption = table.find("w:tblPr/w:tblCaption", DOCX_XML_NS)
+    anchor = caption.get(_w_attr("val"), "") if caption is not None else ""
+    rows = []
+    for row in table.findall("w:tr", DOCX_XML_NS):
+        cells = []
+        for cell in row.findall("w:tc", DOCX_XML_NS):
+            span = cell.find("w:tcPr/w:gridSpan", DOCX_XML_NS)
+            merge = cell.find("w:tcPr/w:vMerge", DOCX_XML_NS)
+            value = span.get(_w_attr("val"), "1") if span is not None else "1"
+            cells.append({"grid_span": int(value) if value.isdigit() else 0,
+                          "vertical_merge": merge.get(_w_attr("val"), "continue") if merge is not None else None})
+        def enabled(name):
+            marker = row.find("w:trPr/w:" + name, DOCX_XML_NS)
+            return marker is not None and marker.get(_w_attr("val"), "true").lower() not in {"0", "false", "off"}
+        rows.append({"cells": cells, "header": enabled("tblHeader"), "cant_split": enabled("cantSplit"),
+                     "bookmarks": [node.get(_w_attr("name")) for node in row.findall(".//w:bookmarkStart", DOCX_XML_NS)
+                                   if re.fullmatch(r"_md2tf_[0-9a-f]{30}", node.get(_w_attr("name"), ""))]})
+    return {"table_index": index, "anchor": anchor if re.fullmatch(r"md2word-table-[0-9a-f]{32}", anchor) else None,
+            "grid_columns": len(table.findall("w:tblGrid/w:gridCol", DOCX_XML_NS)), "rows": rows}

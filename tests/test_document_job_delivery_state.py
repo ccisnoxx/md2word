@@ -8,6 +8,7 @@ import sqlite3
 from tempfile import TemporaryDirectory
 from threading import Event
 from unittest import TestCase
+from uuid import uuid4
 
 from pydantic import ValidationError
 
@@ -20,6 +21,8 @@ from app.domains.document_jobs.delivery_state import (
 )
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.result_state import patched_job
+from app.domains.document_jobs.review import ReviewBinding, ReviewSubmission, receipt_identity
+from app.domains.files.result_registration import review_source_descriptor
 from app.domains.resources.models import utc_now
 from app.infrastructure.persistence import (
     build_file_persistence_adapters,
@@ -30,8 +33,45 @@ from app.infrastructure.persistence.sqlite.backend import SqlitePersistenceBacke
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock, DocumentIRMetadata
 from app.services.renderer.word_renderer import DocumentIRWordRenderer
 from app.services.renderer.evidence import build_renderer_evidence
-from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+from tests.test_database_job_repository import _FakeMysqlConnection, _FakeMysqlCursor, _FakeMysqlDatabase, _mysql_config
 from tests.test_document_job_result_persistence import _candidate
+
+
+class _ReviewMysqlCursor(_FakeMysqlCursor):
+    """仅补齐本文件使用的复核历史读写，不模拟真实 MySQL 事务。"""
+    def execute(self, sql, params=()):
+        normalized = " ".join(sql.lower().split())
+        if normalized == "select payload from document_job_review_records where job_id = %s and record_id = %s":
+            self.database.executed_sql.append(normalized)
+            row = self.database.review_records.get(params[1])
+            self._rows = [{"payload": row["payload"]}] if row is not None and row["job_id"] == params[0] else []
+            return
+        if normalized.startswith("insert into document_job_review_records "):
+            self.database.executed_sql.append(normalized)
+            record_id, job_id, _, _, sequence, _, _, _, _, payload = params
+            if record_id in self.database.review_records or any(
+                (row["job_id"], row["sequence"]) == (job_id, sequence) for row in self.database.review_records.values()
+            ):
+                raise ValueError("复核记录身份或序号重复。")
+            self.database.review_records[record_id] = {"job_id": job_id, "sequence": sequence, "payload": payload}
+            self._rows = []
+            self.rowcount = 1
+            return
+        return super().execute(sql, params)
+
+
+class _ReviewMysqlConnection(_FakeMysqlConnection):
+    def cursor(self):
+        return _ReviewMysqlCursor(self.database)
+
+
+class _ReviewMysqlDatabase(_FakeMysqlDatabase):
+    def __init__(self):
+        super().__init__()
+        self.review_records = {}
+
+    def connect(self):
+        return _ReviewMysqlConnection(self)
 
 
 def _job(**patch):
@@ -46,7 +86,7 @@ def _job(**patch):
 def _repository(kind):
     with TemporaryDirectory() as directory:
         root = Path(directory)
-        database = _FakeMysqlDatabase()
+        database = _ReviewMysqlDatabase()
         if kind == "file":
             build = lambda: build_file_persistence_adapters(root)
         elif kind == "sqlite":
@@ -75,12 +115,23 @@ def _write_raw(repository, kind, database, payload):
         database.document_jobs["job"]["payload"] = json.dumps(payload)
 
 
-def _review(repository, snapshot, review_status="approved", **overrides):
-    return repository.update_document_job_review_if_current(snapshot.id, **{
-        "expected_retry_count": snapshot.retry_count, "expected_result_file_id": snapshot.result_file_id,
-        "review_status": review_status, "issue_type": None, "note": "复核备注",
-        "reviewed_by": "operator", "reviewed_at": utc_now(), "updated_at": utc_now(), **overrides,
-    })
+def _review(repository, snapshot, review_status="approved", *, expected_retry_count=None):
+    file = None
+    if snapshot.result_file_id is not None:
+        file = snapshot.prepared_result.file if snapshot.prepared_result is not None else _candidate(
+            snapshot.result_file_id, generation=snapshot.retry_count)
+    binding = ReviewBinding(
+        generation=snapshot.retry_count if expected_retry_count is None else expected_retry_count,
+        result_file_id=snapshot.result_file_id, binding_state="verified" if file is not None else "no_result",
+        result_sha256=file.checksum_sha256 if file is not None else None,
+        file_review_source_revision=file.review_source_revision if file is not None else None,
+        descriptor=review_source_descriptor(file) if file is not None else None,
+        receipt_sha256=receipt_identity(snapshot),
+    )
+    return repository.update_document_job_review_if_current(snapshot.id, submission=ReviewSubmission(
+        record_id=uuid4().hex, status=review_status, note="复核备注", reviewed_by="operator",
+        reviewed_at=utc_now(), reviewer_role="operator", binding=binding,
+    ))
 
 
 class DocumentJobDeliveryStateTests(TestCase):
@@ -162,7 +213,7 @@ class DocumentJobDeliveryStateTests(TestCase):
     def test_all_adapters_keep_state_and_columns_on_execution_receipt_review_and_retry(self):
         for kind in ("file", "sqlite", "mysql"):
             with self.subTest(kind=kind), _repository(kind) as (repository, build, database):
-                original = _job(status="running", stage="quality_checking", document_ir_file_id="ir")
+                original = _job(mode="en2zh_pdf_to_word", status="running", stage="quality_checking", document_ir_file_id="ir")
                 repository.create_document_job(original)
                 self._assert_columns(repository, kind, database)
                 checked = repository.update_document_job_if_current("job", allowed_statuses={"running"},
@@ -196,7 +247,17 @@ class DocumentJobDeliveryStateTests(TestCase):
                     status="running", stage="uploading", retry_count=1)
                 self.assertEqual(retry.result_file_id, failed.result_file_id)
                 self.assertIsNone(retry.prepared_result)
-                self.assertEqual({key: getattr(retry, key) for key in DOCUMENT_JOB_STATE_FIELDS}, initial_delivery_state())
+                expected = {**initial_delivery_state(), "quality_summary": {"checks_v1": {"document_base": {
+                    "schema_version": "document-base-quality/v1", "scope_version": "scope/v1", "generation": 1,
+                    "evaluation_state": "incomplete", "quality_status": "pending", "reason_code": "not_ready",
+                    "report_sha256": None, "receipt_sha256": None,
+                    "counts": {"count": 0, "formula_count": 0, "fallback_count": 0, "image_count": 0,
+                               "table_count": 0, "blocker_count": 0, "warning_count": 0, "unknown_flag_count": 0},
+                    "warning_codes": [],
+                }}}}
+                self.assertEqual({key: getattr(retry, key) for key in DOCUMENT_JOB_STATE_FIELDS}, expected)
+                self.assertNotIn("checks", retry.quality_summary)
+                self.assertNotIn("layout_warning", json.dumps(retry.quality_summary))
                 self.assertEqual(retry.translation_qa_note, "复核备注")
                 self._assert_columns(repository, kind, database)
 
@@ -219,7 +280,10 @@ class DocumentJobDeliveryStateTests(TestCase):
                 self.assertEqual({key: getattr(changed, key) for key in DOCUMENT_JOB_STATE_FIELDS}, initial_delivery_state())
                 repository.update_document_job("job", quality_status="passed")
                 _review(repository, changed)
-                published = repository.update_document_job("job", delivery_status="published")
+                # 预置已发布夹具，后续保护仍通过公开仓储端口验证。
+                with repository._locked_job("job") as (connection, locked):
+                    published = DocumentJobRecord.model_validate({**locked.model_dump(mode="python"), "delivery_status": "published"})
+                    repository._write_job(connection, published)
                 for patch in ({"result_file_id": "other"}, {"retry_count": 1}, {"quality_status": "blocked"},
                               {"delivery_status": "internal_draft"},
                               {"delivery_status": "internal_draft", "result_file_id": "other"},
@@ -237,7 +301,10 @@ class DocumentJobDeliveryStateTests(TestCase):
         for kind in ("file", "sqlite", "mysql"):
             with self.subTest(kind=kind), _repository(kind) as (repository, _, database):
                 before = repository.create_document_job(_job())
-                self.assertIsNone(_review(repository, before))
+                reviewable = repository.update_document_job("job", status="succeeded", stage="completed", result_file_id="result")
+                # 批准上下文必须先有有效主件；提交时主件已被清除，仍须由仓储 CAS 拒绝。
+                repository.update_document_job("job", status="queued", stage="uploaded", result_file_id=None)
+                self.assertIsNone(_review(repository, reviewable))
                 current = repository.update_document_job("job", status="succeeded", stage="completed", result_file_id="result")
                 self.assertIsNone(_review(repository, before, "needs_fix"))
                 self.assertIsNone(_review(repository, current, expected_retry_count=1))
@@ -342,7 +409,7 @@ class DocumentJobDeliveryStateTests(TestCase):
             with backend.connect() as connection:
                 row = connection.execute("SELECT * FROM document_jobs").fetchone()
                 self.assertEqual(set(row.keys()), {"job_id", "payload", "created_at", "updated_at", "quality_status",
-                                                  "review_status", "delivery_status", "quality_summary_json"})
+                                                  "review_status", "delivery_status", "quality_summary_json", "list_query_json"})
                 self.assertEqual(json.loads(row["payload"]), payload)
                 self.assertEqual((row["quality_status"], row["review_status"], row["delivery_status"]),
                                  ("pending", "unreviewed", "internal_draft"))

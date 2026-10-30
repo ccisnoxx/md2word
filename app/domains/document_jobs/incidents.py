@@ -208,7 +208,7 @@ class DocumentJobIncidentService:
         user: AuthenticatedUser,
         now: datetime,
     ) -> DocumentJobIncidentQueueItemResponse:
-        actions = self.document_job_service.build_available_actions(job, user=user)
+        job, actions = self.document_job_service.build_job_read_view(job, user=user)
         retry_action = actions.get("retry")
         retryable = bool(retry_action and retry_action.enabled and retry_action.retryable)
         retry_disabled_reason = retry_action.disabled_reason if retry_action else "后端未返回重试动作。"

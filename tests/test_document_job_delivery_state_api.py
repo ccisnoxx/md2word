@@ -65,11 +65,51 @@ class DocumentJobDeliveryStateApiTests(TestCase):
             json={"status": qa_status, "issue_type": "terminology", "note": note},
         )
 
-    def _assert_defaults(self, response):
-        self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+    def _assert_defaults(self, response, *, quality_summary=None):
+        expected = {**STATE_DEFAULTS, "quality_summary": {} if quality_summary is None else quality_summary}
+        self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, expected)
         self.assertEqual(response["translation_qa_status"], "unreviewed")
         for field in ("issue_type", "note", "reviewed_by", "reviewed_at"):
             self.assertIsNone(response[f"translation_qa_{field}"])
+
+    def _assert_rendered_formula_summary(self, summary, *, result_file_id):
+        self.assertEqual(set(summary), {"formula", "checks_v1", "table_evidence"})
+        formula = summary["formula"]
+        self.assertRegex(formula["report_sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual({key: value for key, value in formula.items() if key != "report_sha256"}, {
+            "schema_version": "formula-summary/v1", "formula_count": 1, "omml_count": 1,
+            "semantic_count": 0, "fallback_count": 0, "warning_codes": [], "reason_counts": {},
+        })
+        self.assertEqual(set(summary["checks_v1"]), {"document_base", "word_preview"})
+        preview = summary["checks_v1"]["word_preview"]
+        self.assertEqual({key: preview[key] for key in ("quality_status", "status", "source_generation",
+                         "source_result_file_id", "profile_id", "profile_sha256", "attempt", "error_code")}, {
+            "quality_status": "pending", "status": "unavailable", "source_generation": 0,
+            "source_result_file_id": result_file_id, "profile_id": "unconfigured",
+            "profile_sha256": "sha256:" + "0" * 64, "attempt": 1, "error_code": "preview_disabled",
+        })
+        self.assertRegex(preview["source_docx_sha256"], r"^sha256:[0-9a-f]{64}$")
+        self.assertRegex(preview["run_id"], r"^[0-9a-f]{32}$")
+        self.assertRegex(preview["manifest_file_id"], r"^file_[0-9a-f]+$")
+        base = summary["checks_v1"]["document_base"]
+        self.assertEqual({key: value for key, value in base.items()
+                          if key not in {"report_sha256", "receipt_sha256"}}, {
+            "schema_version": "document-base-quality/v1", "scope_version": "scope/v1", "generation": 0,
+            "evaluation_state": "incomplete", "quality_status": "pending", "reason_code": "base_risk_unclassified",
+            "counts": {"count": 6, "formula_count": 1, "fallback_count": 0, "image_count": 1,
+                       "table_count": 1, "blocker_count": 0, "warning_count": 8, "unknown_flag_count": 10},
+            "warning_codes": ["missing_table_reference"],
+        })
+        self.assertRegex(base["report_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(base["receipt_sha256"], r"^sha256:[0-9a-f]{64}$")
+        table = summary["table_evidence"]
+        self.assertEqual({key: table[key] for key in ("schema_version", "coverage", "status", "table_count",
+                         "fragment_count", "native_count", "placeholder_count", "blocker_count", "warning_count",
+                         "issue_codes", "generation")}, {
+            "schema_version": "table-evidence/v1", "coverage": "complete", "status": "warning", "table_count": 1,
+            "fragment_count": 1, "native_count": 1, "placeholder_count": 0, "blocker_count": 0,
+            "warning_count": 1, "issue_codes": ["missing_table_reference"], "generation": 0,
+        })
 
     def _raw_payload(self, runtime, job_id, *, replace=None):
         if runtime.settings.jobs_repository_backend == "file":
@@ -145,6 +185,8 @@ class DocumentJobDeliveryStateApiTests(TestCase):
                 self.assertEqual(created["job"]["status"], "succeeded", created)
                 job_id = created["job_id"]
                 original = runtime.document_job_repository.get_document_job(job_id)
+                self._assert_rendered_formula_summary(original.quality_summary, result_file_id=original.result_file_id)
+                self._assert_defaults(created["job"], quality_summary=original.quality_summary)
                 file = runtime.document_file_repository.get_document_file(original.result_file_id)
                 Document(io.BytesIO(runtime.file_upload_service.read_file_content(file)))
                 response = self._qa(client, headers, job_id)
@@ -153,6 +195,7 @@ class DocumentJobDeliveryStateApiTests(TestCase):
                 self.assertEqual(response.json()["job"]["review_status"], "approved")
                 self.assertEqual(response.json()["job"]["delivery_status"], "internal_draft")
                 self.assertEqual(response.json()["job"]["quality_status"], "pending")
+                self.assertEqual(response.json()["job"]["quality_summary"], original.quality_summary)
                 self.assertEqual(response.json()["job"]["translation_qa_reviewed_by"], "user_operator")
                 queue = client.get("/api/v1/document-jobs", headers=headers,
                                    params={"translation_qa_status": "approved"}).json()
@@ -173,7 +216,7 @@ class DocumentJobDeliveryStateApiTests(TestCase):
                     self.assertNotIn(secret, serialized)
                 reset = self._qa(client, headers, job_id, "unreviewed")
                 self.assertEqual(reset.status_code, 200, reset.text)
-                self._assert_defaults(reset.json()["job"])
+                self._assert_defaults(reset.json()["job"], quality_summary=original.quality_summary)
 
     def test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries(self):
         with self._application("file", eager=True) as (runtime, client, headers):
@@ -185,14 +228,19 @@ class DocumentJobDeliveryStateApiTests(TestCase):
                 self.assertEqual(client.get(f"/api/v1/document-jobs/{job_id}/translation-qa", headers=other).status_code, 403)
             admin = fixtures.build_auth_header(client, username="admin", password="admin-pass")
             self.assertEqual(self._qa(client, admin, job_id).status_code, 200)
-            direct_id = self._create(client, headers, translation=False)["job_id"]
+            direct_created = self._create(client, headers, translation=False)
+            self.assertEqual(direct_created["job"]["status"], "succeeded", direct_created)
+            direct_summary = direct_created["job"]["quality_summary"]
+            self._assert_rendered_formula_summary(direct_summary, result_file_id=direct_created["job"]["result_file_id"])
+            self._assert_defaults(direct_created["job"], quality_summary=direct_summary)
+            direct_id = direct_created["job_id"]
             runtime.document_job_repository.update_document_job(direct_id, translation_qa_status="approved")
             direct = client.get(f"/api/v1/document-jobs/{direct_id}/translation-qa", headers=headers).json()
             self.assertFalse(direct["available"])
             self.assertEqual(direct["qa"]["status"], "unreviewed")
             self.assertEqual(self._qa(client, headers, direct_id).status_code, 409)
             detail = client.get(f"/api/v1/document-jobs/{direct_id}", headers=headers).json()
-            self._assert_defaults(detail)
+            self._assert_defaults(detail, quality_summary=direct_summary)
 
     def test_approval_rejects_blocked_incomplete_expired_missing_and_invalid_current_files(self):
         for backend in ("file", "database"):

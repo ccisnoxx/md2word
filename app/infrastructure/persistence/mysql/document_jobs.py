@@ -6,18 +6,32 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
-from typing import Any
+from typing import Any, Literal
 
+from app.domains.document_jobs.new_generation import (
+    GENERATION_REQUESTS_ENVELOPE, NewGenerationAcceptance, NewGenerationSubmission, NewGenerationLedgerEntry,
+    NewGenerationCommitUnknownError, accept_new_generation, decode_generation_requests,
+    ensure_generation_ledger_not_patched, read_generation_request, replay_generation_request,
+)
+from app.domains.document_jobs.publication import PublicationRecord, PublicationSubmission, commit_publication
+from app.domains.document_jobs.review import (
+    ReviewRecord, ReviewSubmission, submit_review,
+)
+from app.domains.document_jobs.list_query import (
+    DocumentJobListQuery, DocumentJobListResult, DocumentJobListProjectionUnstable,
+    document_job_list_projection_from_raw,
+)
+from app.infrastructure.persistence.document_job_list_query import (
+    query_document_jobs_sql, is_document_job_table_evidence_snapshot_current_sql,
+)
 from app.domains.document_jobs.models import (
     DocumentJobCallbackMessage,
     DocumentJobEventRecord,
     DocumentJobRecord,
-    DocumentJobReviewStatus,
-    DocumentJobTranslationQaIssueType,
     DocumentJobTranslationBatchRecord,
 )
 from app.domains.document_jobs.delivery_state import (
-    backfill_document_job_state_payload, document_job_state_columns, reviewed_job,
+    backfill_document_job_state_payload, document_job_state_columns,
 )
 from app.domains.document_jobs.repository import (
     TranslationBatchTreeInvalidError,
@@ -28,9 +42,12 @@ from app.domains.document_jobs.repository import (
     validate_translation_batch_tree_or_raise,
 )
 from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend
-from app.domains.document_jobs.result_state import matches_current, patched_job, prepare_result, retry_job
+from app.domains.document_jobs.result_state import lifecycle_job, matches_current, patched_job, prepare_result, retry_job
 from app.domains.files.models import DocumentFileRecord
 from app.domains.resources.models import utc_now
+from app.domains.document_jobs.preview_state import (
+    PreviewArtifactObservation, PreviewClaim, PreviewClaimRequest, begin_preview_registration, claim_preview, finish_preview,
+)
 
 
 class MysqlDocumentJobRepository:
@@ -40,23 +57,37 @@ class MysqlDocumentJobRepository:
         self.backend = backend
 
     def create_document_job(self, record: DocumentJobRecord) -> DocumentJobRecord:
+        payload = self.backend.dump_payload(record)
+        projection = json.dumps(document_job_list_projection_from_raw(payload), ensure_ascii=False)
         with self.backend.connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO document_jobs (job_id, payload, created_at, updated_at, "
-                    "quality_status, review_status, delivery_status, quality_summary_json) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                    (record.id, self.backend.dump_payload(record), record.created_at.isoformat(), record.updated_at.isoformat(),
-                     *document_job_state_columns(record)),
+                    "quality_status, review_status, delivery_status, quality_summary_json, list_query_json) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (record.id, payload, record.created_at.isoformat(), record.updated_at.isoformat(),
+                     *document_job_state_columns(record), projection),
                 )
         return record
 
-    def _write_job(self, connection: Any, record: DocumentJobRecord) -> None:
+    def _write_job(self, connection: Any, record: DocumentJobRecord, *,
+        generation_entry: NewGenerationLedgerEntry | None = None,
+    ) -> None:
         with connection.cursor() as cursor:
+            cursor.execute("SELECT payload FROM document_jobs WHERE job_id = %s", (record.id,))
+            payload = {**json.loads(cursor.fetchone()["payload"]), **record.model_dump(mode="json")}
+            if generation_entry is not None:
+                payload[GENERATION_REQUESTS_ENVELOPE] = {
+                    **payload.get(GENERATION_REQUESTS_ENVELOPE, {}),
+                    generation_entry.acceptance.request_id: generation_entry.model_dump(mode="json"),
+                }
+            decode_generation_requests(payload)
+            serialized = json.dumps(payload, ensure_ascii=False)
+            projection = json.dumps(document_job_list_projection_from_raw(serialized), ensure_ascii=False)
             cursor.execute(
                 "UPDATE document_jobs SET payload = %s, created_at = %s, updated_at = %s, "
-                "quality_status = %s, review_status = %s, delivery_status = %s, quality_summary_json = %s WHERE job_id = %s",
-                (self.backend.dump_payload(record), record.created_at.isoformat(), record.updated_at.isoformat(),
-                 *document_job_state_columns(record), record.id),
+                "quality_status = %s, review_status = %s, delivery_status = %s, quality_summary_json = %s, list_query_json = %s WHERE job_id = %s",
+                (serialized, record.created_at.isoformat(), record.updated_at.isoformat(),
+                 *document_job_state_columns(record), projection, record.id),
             )
 
     @contextmanager
@@ -90,12 +121,26 @@ class MysqlDocumentJobRepository:
                 rows = cursor.fetchall()
         return [DocumentJobRecord.model_validate_json(row["payload"]) for row in rows]
 
+    def query_document_jobs(self, query: DocumentJobListQuery) -> DocumentJobListResult:
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+                cursor.execute("START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY")
+            return query_document_jobs_sql(connection, query, mysql=True)
+
+    def is_document_job_table_evidence_snapshot_current(self, expected: DocumentJobRecord) -> bool:
+        # 每次重核独立读取当前提交状态，不能复用列表的历史快照。
+        with self.backend.connect() as connection:
+            return is_document_job_table_evidence_snapshot_current_sql(connection, expected, mysql=True)
+
     def update_document_job_if_current(
         self, job_id: str, *, allowed_statuses: set[str], allowed_stages: set[str],
         expected_retry_count: int | None = None, expected_document_ir_file_id: str | None = None,
         require_no_prepared_result: bool = False, expected_prepared_result_file_id: str | None = None,
+        preview_contribution: dict | None = None,
         **patch: Any,
     ) -> DocumentJobRecord | None:
+        ensure_generation_ledger_not_patched(patch)
         with self._locked_job(job_id) as (connection, existing):
             if not matches_current(existing, allowed_statuses=allowed_statuses, allowed_stages=allowed_stages,
                                    expected_retry_count=expected_retry_count,
@@ -105,7 +150,7 @@ class MysqlDocumentJobRepository:
                 return None
             if patch.get("status") == "succeeded" and existing.timeout_at is not None and existing.timeout_at <= utc_now():
                 return None
-            updated = patched_job(existing, patch)
+            updated = patched_job(existing, patch, preview_contribution=preview_contribution)
             self._write_job(connection, updated)
             return updated
 
@@ -123,43 +168,209 @@ class MysqlDocumentJobRepository:
     def retry_document_job(
         self, job_id: str, *, expected_retry_count: int, max_retries: int, **patch: Any,
     ) -> DocumentJobRecord | None:
+        ensure_generation_ledger_not_patched(patch)
         with self._locked_job(job_id) as (connection, existing):
             updated = retry_job(existing, expected_retry_count=expected_retry_count, max_retries=max_retries, **patch)
             if updated is not None:
                 self._write_job(connection, updated)
             return updated
 
-    def update_document_job_review_if_current(
-        self, job_id: str, *, expected_retry_count: int, expected_result_file_id: str | None,
-        review_status: DocumentJobReviewStatus, issue_type: DocumentJobTranslationQaIssueType | None,
-        note: str | None, reviewed_by: str | None, reviewed_at: datetime | None, updated_at: datetime,
+    def claim_document_job_preview(self, job_id: str, *, request: PreviewClaimRequest,
+        observation: PreviewArtifactObservation | None = None,
+    ) -> PreviewClaim:
+        with self._locked_job(job_id) as (connection, existing):
+            claim = claim_preview(existing, request, observation=observation, now=utc_now())
+            if claim.job != existing:
+                self._write_job(connection, claim.job)
+            return claim
+
+    def finish_document_job_preview(
+        self, job_id: str, *, request: PreviewClaimRequest, revision: int, lease_token: str,
+        status: str, manifest_file_id: str, error_code: str | None, retryable: bool, evidence: dict,
+        page_quality_contribution: dict | None = None,
     ) -> DocumentJobRecord | None:
         with self._locked_job(job_id) as (connection, existing):
-            updated = reviewed_job(existing, expected_retry_count=expected_retry_count,
-                expected_result_file_id=expected_result_file_id, review_status=review_status,
-                issue_type=issue_type, note=note, reviewed_by=reviewed_by, reviewed_at=reviewed_at,
-                updated_at=updated_at)
+            updated = finish_preview(existing, request, revision=revision, lease_token=lease_token,
+                status=status, manifest_file_id=manifest_file_id, error_code=error_code,
+                retryable=retryable, evidence=evidence, page_quality_contribution=page_quality_contribution, now=utc_now())
             if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def begin_document_job_preview_registration(
+        self, job_id: str, *, request: PreviewClaimRequest, revision: int, lease_token: str, attempt: int,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = begin_preview_registration(existing, request, revision=revision, lease_token=lease_token,
+                                                 attempt=attempt, now=utc_now())
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def update_document_job_review_if_current(self, job_id: str, *, submission: ReviewSubmission) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            prior = self._review_by_id(connection, job_id, submission.record_id)
+            updated, record = submit_review(existing, submission, prior)
+            if record is not None:
+                self._insert_review(connection, record)
                 self._write_job(connection, updated)
             return updated
 
     def backfill_document_job_state_if_missing(self, job_id: str) -> bool:
         with self._locked_payload(job_id) as (connection, payload):
             updated = backfill_document_job_state_payload(payload)
+            serialized = json.dumps(updated, ensure_ascii=False)
+            try:
+                projection = json.dumps(document_job_list_projection_from_raw(serialized), ensure_ascii=False)
+            except DocumentJobListProjectionUnstable:
+                # 状态回填保留原始缺键；不能把模型生成的 now 冻结成查询事实。
+                projection = None
             with connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE document_jobs SET payload = %s, quality_status = %s, review_status = %s, "
-                    "delivery_status = %s, quality_summary_json = %s WHERE job_id = %s",
-                    (json.dumps(updated, ensure_ascii=False),
-                     *document_job_state_columns(DocumentJobRecord.model_validate(updated)), job_id),
+                    "delivery_status = %s, quality_summary_json = %s, list_query_json = %s WHERE job_id = %s",
+                    (serialized,
+                     *document_job_state_columns(DocumentJobRecord.model_validate(updated)), projection, job_id),
                 )
             return updated != payload
 
     def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord:
+        ensure_generation_ledger_not_patched(patch)
         with self._locked_job(job_id) as (connection, existing):
             updated = patched_job(existing, patch)
             self._write_job(connection, updated)
             return updated
+
+
+    def update_document_job_lifecycle_if_current(
+        self, job_id: str, *, expected_retry_count: int, action: Literal["archive", "delete"],
+        actor_id: str, occurred_at: datetime, delete_reason: str | None = None,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = lifecycle_job(existing, expected_retry_count=expected_retry_count, action=action,
+                actor_id=actor_id, occurred_at=occurred_at, delete_reason=delete_reason)
+            if updated is not None and updated != existing:
+                self._write_job(connection, updated)
+        return updated
+
+    def get_document_job_generation_request(
+        self, job_id: str, *, request_id: str, actor_id: str,
+    ) -> tuple[NewGenerationAcceptance, DocumentJobRecord] | None:
+        # 与接受/普通 writer 共用主库同 job 串行边界；退出读事务成功后才返回不存在。
+        with self._locked_payload(job_id) as (_, payload):
+            entry = read_generation_request(payload, request_id=request_id, actor_id=actor_id)
+            result = (entry.acceptance, DocumentJobRecord.model_validate(payload)) if entry is not None else None
+        return result
+
+    def accept_document_job_new_generation(
+        self, job_id: str, *, submission: NewGenerationSubmission, max_retries: int,
+    ) -> tuple[NewGenerationAcceptance, DocumentJobRecord, bool]:
+        commit_ready = False
+        try:
+            with self._locked_payload(job_id) as (connection, payload):
+                job = DocumentJobRecord.model_validate(payload)
+                prior = replay_generation_request(payload, submission)
+                if prior is not None:
+                    result = prior.acceptance, job, True
+                else:
+                    current_files = {}
+                    with connection.cursor() as cursor:
+                        for file_id in sorted({job.source_file_id, *([job.result_file_id] if job.result_file_id else [])}):
+                            cursor.execute("SELECT payload FROM document_files WHERE file_id = %s FOR UPDATE", (file_id,))
+                            row = cursor.fetchone()
+                            if row is not None:
+                                current_files[file_id] = DocumentFileRecord.model_validate_json(row["payload"])
+                    updated, entry = accept_new_generation(job, submission, current_files=current_files,
+                        max_retries=max_retries, now=utc_now())
+                    self._write_job(connection, updated, generation_entry=entry)
+                    audit = entry.audit
+                    with connection.cursor() as cursor:
+                        cursor.execute("INSERT INTO audit_events (audit_id, payload, created_at) VALUES (%s, %s, %s)",
+                            (audit.audit_id, self.backend.dump_payload(audit), audit.created_at.isoformat()))
+                    result = entry.acceptance, updated, False
+                    # backend 在 context 退出时 COMMIT；rollback 成功也不能证明 ACK 丢失未接受。
+                    commit_ready = True
+        except Exception as exc:
+            if commit_ready:
+                raise NewGenerationCommitUnknownError() from exc
+            raise
+        return result
+
+    def list_document_job_publications(self, job_id: str) -> list[PublicationRecord]:
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT payload FROM document_job_publications WHERE job_id = %s ORDER BY published_at, publication_id", (job_id,))
+                rows = cursor.fetchall()
+        return [PublicationRecord.model_validate_json(row["payload"]) for row in rows]
+
+    def is_document_file_protected(self, file_id: str) -> bool:
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT protected_file_ids FROM document_job_publications")
+                rows = cursor.fetchall()
+        return any(file_id in json.loads(row["protected_file_ids"]) for row in rows)
+
+    def publish_document_job(self, job_id: str, *, submission: PublicationSubmission) -> tuple[PublicationRecord, bool]:
+        with self._locked_job(job_id) as (connection, job):
+            with connection.cursor() as cursor:
+                current_files = []
+                for file_id in sorted({file.id for file in submission.files}):
+                    cursor.execute("SELECT payload FROM document_files WHERE file_id = %s FOR UPDATE", (file_id,))
+                    row = cursor.fetchone()
+                    if row is not None:
+                        current_files.append(DocumentFileRecord.model_validate_json(row["payload"]))
+                # 首个一致读发生在全部文件锁之后，等待发布者提交后不会沿用旧 RR 快照。
+                cursor.execute("SELECT payload FROM document_job_publications")
+                prior = [PublicationRecord.model_validate_json(row["payload"]) for row in cursor.fetchall()]
+                cursor.execute("SELECT payload FROM document_files ORDER BY file_id")
+                all_files = [DocumentFileRecord.model_validate_json(row["payload"]) for row in cursor.fetchall()]
+                cursor.execute("SELECT payload FROM document_job_review_records WHERE job_id = %s ORDER BY sequence", (job_id,))
+                reviews = [ReviewRecord.model_validate_json(row["payload"]) for row in cursor.fetchall()]
+            updated, record, created = commit_publication(job, submission, prior=prior,
+                current_files=current_files, all_files=all_files, reviews=reviews, now=utc_now())
+            if created:
+                self._insert_publication(connection, record)
+                self._write_job(connection, updated)
+                audit = record.audit
+                with connection.cursor() as cursor:
+                    cursor.execute("INSERT INTO audit_events (audit_id, payload, created_at) VALUES (%s, %s, %s)",
+                        (audit.audit_id, self.backend.dump_payload(audit), audit.created_at.isoformat()))
+            return record, created
+
+    def _insert_publication(self, connection: Any, record: PublicationRecord) -> None:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO document_job_publications (publication_id, job_id, tenant_id, company_id, generation, "
+                "source_file_id, result_file_id, result_sha256, request_id, published_at, protected_file_ids, payload) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (record.id, record.job_id, record.tenant_id, record.company_id, record.generation,
+                 record.source_file_id, record.result_file_id, record.result_sha256, record.request_id,
+                 record.published_at.isoformat(), json.dumps(record.protected_file_ids), self.backend.dump_payload(record)),
+            )
+
+    def _insert_review(self, connection: Any, record: ReviewRecord) -> None:
+        params = (record.id, record.job_id, record.tenant_id, record.company_id, record.sequence,
+                  record.binding.result_file_id, record.binding.result_sha256, record.origin, record.import_version,
+                  self.backend.dump_payload(record))
+        with connection.cursor() as cursor:
+            cursor.execute('INSERT INTO document_job_review_records (record_id, job_id, tenant_id, company_id, sequence, result_file_id, result_sha256, origin, import_version, payload) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', params)
+
+
+    def list_document_job_reviews(self, job_id: str, *, after_sequence: int = 0, limit: int = 100) -> list[ReviewRecord]:
+        if after_sequence < 0 or not 1 <= limit <= 200:
+            raise ValueError("复核历史游标或数量非法。")
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT payload FROM document_job_review_records WHERE job_id = %s AND sequence > %s ORDER BY sequence LIMIT %s', (job_id, after_sequence, limit))
+                rows = cursor.fetchall()
+        return [ReviewRecord.model_validate_json(row["payload"]) for row in rows]
+
+
+    def _review_by_id(self, connection: Any, job_id: str, record_id: str) -> ReviewRecord | None:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT payload FROM document_job_review_records WHERE job_id = %s AND record_id = %s', (job_id, record_id))
+            row = cursor.fetchone()
+        return ReviewRecord.model_validate_json(row["payload"]) if row is not None else None
 
 
 class MysqlDocumentJobEventRepository:

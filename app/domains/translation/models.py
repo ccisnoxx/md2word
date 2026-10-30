@@ -227,7 +227,7 @@ class TranslationProviderRequest:
 
 @dataclass(frozen=True, slots=True)
 class TranslationProviderResult:
-    """translation provider 返回的结构化文本结果。"""
+    """Provider 结果与同次调用的安全来源事实；缺少来源事实时不推导历史配置。"""
 
     items: tuple[TranslationTextItem, ...] = field(repr=False)
     finish_reason: str | None = None
@@ -236,3 +236,4 @@ class TranslationProviderResult:
     provider_trace_id: str | None = None
     content_length: int | None = None
     content_sha256: str | None = None
+    publication_provenance: dict | None = field(default=None, repr=False)

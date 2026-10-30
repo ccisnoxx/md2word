@@ -201,6 +201,8 @@ class FileRetentionDeleteItemResponse(BaseModel):
         "skipped_already_deleted",
         "skipped_unsupported_storage",
         "skipped_missing_object_key",
+        "skipped_publication_protected",
+        "skipped_deletion_reserved",
         "failed",
     ]
     reason: str

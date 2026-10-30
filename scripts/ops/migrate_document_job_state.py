@@ -1,4 +1,4 @@
-"""Migration A：只补 DocumentJob 状态列与缺键，按单批游标显式前滚。"""
+"""状态迁移：独立维护状态/查询列，按单批游标只补业务状态缺键。"""
 
 from __future__ import annotations
 
@@ -33,10 +33,11 @@ from app.infrastructure.persistence.mysql.document_jobs import MysqlDocumentJobR
 from app.infrastructure.persistence.mysql.schema import MYSQL_SCHEMA_COLUMN_MAINTENANCE
 from app.infrastructure.persistence.sqlite.backend import SqlitePersistenceBackend
 from app.infrastructure.persistence.sqlite.document_jobs import SqliteDocumentJobRepository
-from app.infrastructure.persistence.sqlite.schema import DOCUMENT_JOB_STATE_COLUMNS
+from app.infrastructure.persistence.sqlite.schema import DOCUMENT_JOB_LIST_QUERY_COLUMNS, DOCUMENT_JOB_STATE_COLUMNS
 
 
 STATE_COLUMNS = tuple(name for name, _ in DOCUMENT_JOB_STATE_COLUMNS)
+SCHEMA_COLUMNS = STATE_COLUMNS + tuple(name for name, _ in DOCUMENT_JOB_LIST_QUERY_COLUMNS)
 BASE_COLUMNS = {"job_id", "payload", "created_at", "updated_at"}
 SAFE_JOB_ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 
@@ -100,7 +101,7 @@ def _schema_columns(connection: Any, backend: str) -> set[str]:
 
 
 def _apply_schema(connection: Any, backend: str, missing: list[str], added: list[str]) -> None:
-    definitions = dict(DOCUMENT_JOB_STATE_COLUMNS) if backend == "database" else {
+    definitions = dict((*DOCUMENT_JOB_STATE_COLUMNS, *DOCUMENT_JOB_LIST_QUERY_COLUMNS)) if backend == "database" else {
         name: definition for table, name, definition in MYSQL_SCHEMA_COLUMN_MAINTENANCE
         if table == "document_jobs"
     }
@@ -238,13 +239,13 @@ def migrate_document_job_state(
                 columns = _schema_columns(connection, backend)
                 if not BASE_COLUMNS.issubset(columns):
                     raise MigrationError("document_jobs_schema_missing")
-                missing = [name for name in STATE_COLUMNS if name not in columns]
+                missing = [name for name in SCHEMA_COLUMNS if name not in columns]
                 report["schema_missing"] = missing
                 report["schema_remaining"] = missing.copy()
                 if mode == "apply" and phase in {"schema", "all"}:
                     _apply_schema(connection, backend, missing, report["schema_added"])
                     columns = _schema_columns(connection, backend)
-                    report["schema_remaining"] = [name for name in STATE_COLUMNS if name not in columns]
+                    report["schema_remaining"] = [name for name in SCHEMA_COLUMNS if name not in columns]
                 if mode == "apply" and report["schema_remaining"]:
                     raise MigrationError("state_columns_missing")
         if phase != "schema":

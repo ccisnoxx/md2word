@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from app.domains.document_jobs.table_evidence import has_evidence, save_report, verify_report, validate_candidate_binding, recheck_verified_report
+from app.services.tables.evidence import TableEvidenceError
+
 # app/domains/document_jobs/execution.py: 提供 document_jobs Worker 投递端口和幂等执行骨架。
 
 import logging
@@ -16,8 +19,16 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 from uuid import uuid4
 
+from billiard.exceptions import SoftTimeLimitExceeded
+
 from app.clients.mineru_client import MinerUClient, MinerUError
 from app.core.config import Settings
+from app.domains.document_jobs.preview import DocumentJobPreviewService
+from app.domains.document_jobs.publication_provenance import (
+    actual_call_fact, batch_publication_provenance, save_translation_publication_provenance,
+    capture_render_publication_provenance,
+)
+from app.domains.document_jobs.review import digest
 from app.domains.jobs.models import JobResourceSnapshot
 from app.domains.jobs.resource_snapshots import (
     JobResourceSnapshotError,
@@ -32,7 +43,15 @@ from app.domains.document_jobs.models import (
     DocumentJobTranslationBatchRecord,
 )
 from app.core.errors import ApiError
-from app.services.document_ir.models import DocumentIR, DocumentIRAsset
+from app.services.document_ir.models import DocumentIR, DocumentIRAsset, TableReferenceProvenance
+from app.services.document_ir.artifact_validator import MinerUArtifactValidationError
+from app.services.document_ir.integrity import DocumentIntegrityError
+from app.services.document_ir.table_reference_assets import (
+    RASTER_EXTENSIONS, TABLE_REFERENCE_ROLE, decode_table_references,
+)
+from app.services.document_ir.table_placeholder import (
+    PdfCropSource, TablePlaceholderError, checksum as placeholder_checksum, decode_placeholders,
+)
 from app.domains.files import FileUploadService
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
@@ -52,8 +71,13 @@ from app.domains.document_jobs.workflow import (
 )
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.evidence import (
+    build_renderer_evidence,
+    build_renderer_event_summary, ensure_renderer_integrity, validate_persisted_render_evidence,
+    validate_persisted_renderer_content,
+)
 from app.services.renderer import image_evidence
+from app.services.renderer.block_anchors import validate_block_anchor_evidence
 from app.services.renderer.layout_plan import build_layout_plan
 from app.domains.translation.audit import (
     TranslationAuditService,
@@ -77,7 +101,7 @@ from app.domains.translation.integrity import (
     TranslationIntegrityEvidence,
     ValidatedTranslationBatch,
 )
-from app.domains.translation.provider import OpenAICompatibleTranslationProvider, TranslationProviderResponseError
+from app.domains.translation.provider import OpenAICompatibleTranslationProvider, TranslationProviderCallError, TranslationProviderResponseError
 
 
 class _TranslationBatchStorageError(RuntimeError):
@@ -131,7 +155,10 @@ class DocumentJobExecutionService:
         job_resource_snapshot_service: JobResourceSnapshotService | None = None,
         translation_batch_task_queue: DocumentTranslationBatchTaskQueueProtocol | None = None,
         mineru_client_factory: Callable[[], Any] | None = None,
+        word_preview_service: DocumentJobPreviewService | None = None,
     ) -> None:
+        self.word_preview_service = word_preview_service or DocumentJobPreviewService(
+            settings, job_repository, event_repository, file_repository, file_service)
         self.settings = settings
         self.job_repository = job_repository
         self.event_repository = event_repository
@@ -165,24 +192,26 @@ class DocumentJobExecutionService:
         job = self.job_repository.get_document_job(job_id)
         if job is None:
             return None
-        job = self._process_replayable_callback_messages(job, trace_id=trace_id)
-        if job.status in {"succeeded", "failed", "canceled"}:
-            return job
-        timed_out = self._mark_timed_out_if_needed(job, trace_id=trace_id)
-        if timed_out is not None:
-            return timed_out
-        if job.status == "running" and job.stage not in {
-            "parsing", "parsed", "ir_converting", "translating", "translation_validating",
-            "rendering", "quality_checking", "uploading",
-        }:
-            return job
-
         latest = job
         try:
+            job = self._process_replayable_callback_messages(job, trace_id=trace_id)
+            latest = job
+            if job.status in {"succeeded", "failed", "canceled"}:
+                return job
+            timed_out = self._mark_timed_out_if_needed(job, trace_id=trace_id)
+            if timed_out is not None:
+                return timed_out
+            if job.status == "running" and job.stage not in {
+                "parsing", "parsed", "ir_converting", "translating", "translation_validating",
+                "rendering", "quality_checking", "uploading",
+            }:
+                return job
             if job.status == "pending":
                 job = self._mark_queued_from_worker(job, trace_id=trace_id)
+                latest = job
             if job.status == "queued":
                 job = self._mark_parsing_started(job, trace_id=trace_id)
+                latest = job
 
             latest = self.job_repository.get_document_job(job_id)
             if latest is None:
@@ -208,35 +237,9 @@ class DocumentJobExecutionService:
             if latest.status == "running" and latest.stage in {"rendering", "quality_checking", "uploading"}:
                 return self._render_and_save_word(latest, trace_id=trace_id)
             return latest
-        except (ApiError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile) as exc:
-            current = self.job_repository.get_document_job(job_id) or job
-            failed_stage, error_code = self._classify_worker_failure(exc, current)
-            return self._mark_failed(
-                current,
-                failed_stage=failed_stage,
-                error_code=error_code,
-                error_message=str(exc),
-                trace_id=trace_id,
-                integrity=exc.evidence if isinstance(exc, (DocumentIRTranslationError, TranslationIntegrityError)) else None,
-                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
-            )
         except Exception as exc:
-            current = self.job_repository.get_document_job(job_id) or job
-            failed_stage = self._failed_stage_for_current_job(current)
-            error_message = f"Worker 未预期异常: {type(exc).__name__}: {exc}"
-            self.logger.exception(
-                "[trace_id=%s job_id=%s stage=%s status=unexpected_error]",
-                trace_id,
-                job_id,
-                failed_stage,
-            )
-            return self._mark_failed(
-                current,
-                failed_stage=failed_stage,
-                error_code="document_job_unexpected_error",
-                error_message=error_message,
-                trace_id=trace_id,
-            )
+            # latest 是本次阶段调用实际接收的快照，不能拿事后读到的新代归属旧错误。
+            return self._fail_stage_attempt(latest, exc, trace_id=trace_id)
 
     def mark_job_timed_out(self, job_id: str, *, trace_id: str | None = None) -> DocumentJobRecord | None:
         """供 Worker 超时保护调用，保证 Celery 超时时 MySQL/file 状态也落到 failed。"""
@@ -272,6 +275,7 @@ class DocumentJobExecutionService:
 
     def _mark_parsing_started(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         now = utc_now()
+        started_at = job.started_at or now
         running = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"queued"},
@@ -280,7 +284,8 @@ class DocumentJobExecutionService:
             status="running",
             stage="parsing",
             progress=max(job.progress, 10),
-            started_at=job.started_at or now,
+            started_at=started_at,
+            timeout_at=job.timeout_at or started_at + timedelta(seconds=self.settings.p0_document_job_timeout_seconds),
             error_code=None,
             error_message=None,
             failed_stage=None,
@@ -302,6 +307,10 @@ class DocumentJobExecutionService:
         return running
 
     def _run_mineru_parse(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
+        current, can_continue = self._refresh_mineru_parse_attempt(job, trace_id=trace_id)
+        if not can_continue:
+            return current
+        job = current
         if job.mineru_raw_result_file_id:
             parsed = self.job_repository.update_document_job_if_current(
                 job.id,
@@ -315,15 +324,15 @@ class DocumentJobExecutionService:
             )
             return parsed or self.job_repository.get_document_job(job.id) or job
 
-        source_file = self._get_uploaded_file(job.source_file_id)
         with tempfile.TemporaryDirectory(prefix="document_job_mineru_") as temp_dir:
-            source_path = Path(temp_dir) / source_file.original_filename
-            source_path.write_bytes(self.file_service.read_file_content(source_file))
             client = self.mineru_client_factory()
             data_id = job.mineru_data_id or job.id
             batch_id = job.mineru_batch_id
             if not batch_id:
-                callback = self.settings.mineru_callback_url or None
+                source_file = self._get_uploaded_file(job.source_file_id)
+                source_path = Path(temp_dir) / source_file.original_filename
+                source_path.write_bytes(self.file_service.read_file_content(source_file))
+                callback = self.settings.mineru_callback_url.strip() or None
                 callback_seed = self._build_callback_seed() if callback else None
                 batch_id, _file_urls = client.upload_files_batch(
                     [source_path],
@@ -358,8 +367,16 @@ class DocumentJobExecutionService:
                 )
 
             payload = client.query_batch_extract_results(batch_id)
-            result_item = self._select_mineru_result(payload, data_id)
+            current, can_continue = self._refresh_mineru_parse_attempt(job, trace_id=trace_id)
+            if not can_continue:
+                return current
+            result_item = self._select_mineru_result(payload, data_id, batch_id=batch_id)
             state = str(result_item.get("state") or "").lower()
+            if state == "failed":
+                return self._mark_failed(
+                    job, failed_stage="parsing", error_code="mineru_failed",
+                    error_message="MinerU 查询返回解析失败。", trace_id=trace_id,
+                )
             full_zip_url = result_item.get("full_zip_url")
             if state not in {"done", "success", "succeeded"} or not full_zip_url:
                 waiting = self.job_repository.update_document_job_if_current(
@@ -378,7 +395,7 @@ class DocumentJobExecutionService:
                     waiting,
                     event_type="stage_started",
                     stage="parsing",
-                    message="MinerU 结果尚未就绪，等待后续重投递或重试。",
+                    message="MinerU 结果尚未就绪，等待后续查询或回调。",
                     payload={"mineru_batch_id": batch_id, "mineru_state": state or "unknown"},
                     trace_id=trace_id,
                 )
@@ -711,10 +728,8 @@ class DocumentJobExecutionService:
     ) -> DocumentJobRecord:
         """下载 MinerU 原始结果包，登记为 document_file 并把任务推进到 parsed。"""
 
-        latest = self.job_repository.get_document_job(job.id)
-        if latest is None:
-            return job
-        if latest.status in {"succeeded", "failed", "canceled"}:
+        latest, can_continue = self._refresh_mineru_parse_attempt(job, trace_id=trace_id)
+        if not can_continue:
             return latest
         if latest.mineru_raw_result_file_id:
             updated = self.job_repository.update_document_job_if_current(
@@ -728,11 +743,11 @@ class DocumentJobExecutionService:
                 updated_at=utc_now(),
             )
             return updated or self.job_repository.get_document_job(job.id) or latest
-        if latest.status != "running" or latest.stage != "parsing":
-            return latest
-
         raw_zip_path = temp_dir / "mineru_raw_result.zip"
         client.download_result_zip(full_zip_url, raw_zip_path)
+        latest, can_continue = self._refresh_mineru_parse_attempt(job, trace_id=trace_id)
+        if not can_continue:
+            return latest
         raw_file = self.file_service.register_generated_content(
             tenant_id=latest.tenant_id,
             company_id=latest.company_id,
@@ -843,12 +858,23 @@ class DocumentJobExecutionService:
         with tempfile.TemporaryDirectory(prefix="document_job_ir_") as temp_dir:
             raw_zip_path = Path(temp_dir) / raw_file.original_filename
             raw_zip_path.write_bytes(self.file_service.read_file_content(raw_file))
-            result = self.document_ir_service.convert_zip(
-                raw_zip_path,
-                job_id=job.id,
-                source_file_id=job.source_file_id,
-                document_language=job.document_language,
-            )
+            validation_input = {
+                "mineru_raw_result_file_id": raw_file.id,
+                "mineru_raw_result_sha256": raw_file.checksum_sha256,
+                "retry_count": job.retry_count,
+            }
+            try:
+                result = self.document_ir_service.convert_zip(
+                    raw_zip_path,
+                    job_id=job.id,
+                    source_file_id=job.source_file_id,
+                    document_language=job.document_language,
+                    placeholder_source_loader=lambda: self._load_placeholder_source(job),
+                )
+            except (MinerUArtifactValidationError, DocumentIntegrityError, TablePlaceholderError) as error:
+                error.mineru_validation_input = validation_input
+                return self._fail_stage_attempt(job, error, trace_id=trace_id)
+            result.document.metadata.mineru_validation_input = validation_input
 
         image_file_ids: list[str] = []
         for image_asset in result.image_assets:
@@ -885,7 +911,42 @@ class DocumentJobExecutionService:
             image_file_ids=image_file_ids,
         )
 
+        # QA 图只由 IR 引用，不能混入渲染图片列表、资源包或主记录 image_asset_file_ids。
+        assets_by_id = {asset.id: asset for asset in result.document.assets}
+        for reference in result.table_reference_assets:
+            reference_file = self.file_service.register_generated_content(
+                tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+                file_type="image_asset",
+                filename=f"table_reference_{reference.asset_id.split(':')[-1]}.{RASTER_EXTENSIONS[reference.mime_type]}",
+                mime_type=reference.mime_type, content=reference.content,
+                object_version=f"g{job.retry_count}_{uuid4().hex}",
+                metadata={
+                    "asset_role": TABLE_REFERENCE_ROLE, "asset_id": reference.asset_id,
+                    "block_id": reference.block_id, "fragment_id": reference.fragment_id,
+                    "logical_group_id": reference.logical_group_id, "source_file_id": job.source_file_id,
+                    "mineru_raw_result_file_id": raw_file.id, "source_path": reference.source_path,
+                    "retry_count": job.retry_count,
+                },
+            )
+            asset = assets_by_id[reference.asset_id]
+            asset.file_id, asset.object_key = reference_file.id, reference_file.object_key
+            asset.mime_type, asset.checksum_sha256 = reference_file.mime_type, reference_file.checksum_sha256
+
+        for pending in result.table_placeholder_assets:
+            binding = next(item for item in result.document.metadata.table_placeholders if item.asset_ref == pending.asset_id)
+            file = self.file_service.register_generated_content(
+                tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+                file_type="image_asset", filename="table_placeholder.png", mime_type=pending.mime_type,
+                content=pending.content, object_version=f"g{job.retry_count}_{uuid4().hex}",
+                metadata={"asset_role": "table_placeholder", "asset_id": pending.asset_id,
+                          "source_file_id": job.source_file_id, "source_pdf_sha256": binding.source_pdf_sha256,
+                          "fragment_id": binding.fragment_id, "retry_count": job.retry_count},
+            )
+            asset = next(asset for asset in result.document.assets if asset.id == pending.asset_id)
+            asset.file_id, asset.object_key = file.id, file.object_key
         document_ir = result.document
+        decode_table_references(document_ir, require_bound=True)
+        decode_placeholders(document_ir, require_bound=True)
         if is_translation_document_job_mode(job.mode):
             return self._register_source_ir_and_enqueue_translation(
                 job,
@@ -906,6 +967,7 @@ class DocumentJobExecutionService:
             created_by=job.created_by,
             file_type="document_ir",
             filename="document_ir_v2.json",
+            object_version=(f"g{job.retry_count}_{uuid4().hex}" if document_ir.metadata.table_references_version else None),
             mime_type="application/json",
             content=ir_content,
             metadata={
@@ -1008,6 +1070,7 @@ class DocumentJobExecutionService:
     ) -> DocumentJobRecord:
         """保存翻译 source IR，并把后续 provider 调用切换到批次任务。"""
 
+        decode_table_references(document_ir, require_bound=True)
         source_ir_file = self.file_service.register_generated_content(
             tenant_id=job.tenant_id,
             company_id=job.company_id,
@@ -1015,6 +1078,7 @@ class DocumentJobExecutionService:
             created_by=job.created_by,
             file_type="document_ir",
             filename="document_ir_source_v2.json",
+            object_version=(f"g{job.retry_count}_{uuid4().hex}" if document_ir.metadata.table_references_version else None),
             mime_type="application/json",
             content=document_ir.model_dump_json(indent=2).encode("utf-8"),
             metadata={
@@ -1134,44 +1198,47 @@ class DocumentJobExecutionService:
                 return self._fail_stage_attempt(job, exc, trace_id=trace_id)
         if job.status != "running" or job.stage != "translating" or job.retry_count != generation:
             return job
-        if self.document_ir_translation_service is None:
-            raise DocumentIRTranslationError("DocumentIR 翻译服务未配置。")
-        spec = spec_for_document_job_mode(job.mode)
-        if spec.language_pair is None:
-            raise DocumentIRTranslationError("当前任务不是翻译任务。")
-        if not job.source_document_ir_file_id:
-            raise DocumentIRTranslationError("翻译任务缺少 source DocumentIR 文件。")
-        expected_plans = self._build_expected_translation_plans(job, source_document_ir)
         try:
-            batches = self.translation_batch_repository.ensure_translation_batch_roots(
-                job.id,
-                generation=generation,
-                expected_plans=expected_plans,
-            )
-        except TranslationBatchTreeInvalidError as exc:
-            return self._mark_failed(
-                job,
-                failed_stage="translating",
-                error_code=exc.code,
-                error_message="翻译批次树与当前权威计划不一致。",
-                trace_id=trace_id,
-            )
-        except TranslationIntegrityError as exc:
-            return self._mark_failed(
-                job,
-                failed_stage="translating",
-                error_code="translation_failed",
-                error_message=str(exc),
-                trace_id=trace_id,
-                integrity=exc.evidence,
-            )
-        if not batches:
-            return self._finalize_translation_generation(
-                job.id, generation=generation, trace_id=trace_id,
-            ) or job
-        self._reset_expired_translation_batch_leases(job, generation=generation, trace_id=trace_id)
-        self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
-        return self._finalize_translation_generation(job.id, generation=generation, trace_id=trace_id) or job
+            if self.document_ir_translation_service is None:
+                raise DocumentIRTranslationError("DocumentIR 翻译服务未配置。")
+            spec = spec_for_document_job_mode(job.mode)
+            if spec.language_pair is None:
+                raise DocumentIRTranslationError("当前任务不是翻译任务。")
+            if not job.source_document_ir_file_id:
+                raise DocumentIRTranslationError("翻译任务缺少 source DocumentIR 文件。")
+            expected_plans = self._build_expected_translation_plans(job, source_document_ir)
+            try:
+                batches = self.translation_batch_repository.ensure_translation_batch_roots(
+                    job.id,
+                    generation=generation,
+                    expected_plans=expected_plans,
+                )
+            except TranslationBatchTreeInvalidError as exc:
+                return self._mark_failed(
+                    job,
+                    failed_stage="translating",
+                    error_code=exc.code,
+                    error_message="翻译批次树与当前权威计划不一致。",
+                    trace_id=trace_id,
+                )
+            except TranslationIntegrityError as exc:
+                return self._mark_failed(
+                    job,
+                    failed_stage="translating",
+                    error_code="translation_failed",
+                    error_message=str(exc),
+                    trace_id=trace_id,
+                    integrity=exc.evidence,
+                )
+            if not batches:
+                return self._finalize_translation_generation(
+                    job.id, generation=generation, trace_id=trace_id,
+                ) or job
+            self._reset_expired_translation_batch_leases(job, generation=generation, trace_id=trace_id)
+            self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
+            return self._finalize_translation_generation(job.id, generation=generation, trace_id=trace_id) or job
+        except Exception as exc:
+            return self._fail_stage_attempt(job, exc, trace_id=trace_id)
 
     def _get_translation_execution_snapshot(
         self,
@@ -1374,7 +1441,7 @@ class DocumentJobExecutionService:
             provider_called = True
             try:
                 result = self.document_ir_translation_service.provider.translate(request)
-            except TranslationProviderResponseError:
+            except TranslationProviderCallError:
                 raise
             except Exception:
                 # 外部异常可夹带正文；在调用边界转成固定安全描述，保留既有失败路径。
@@ -1413,6 +1480,8 @@ class DocumentJobExecutionService:
                     validated=validated,
                     integrity=integrity,
                     recorder=recorder,
+                    publication_provenance=batch_publication_provenance(result=result, integrity=integrity,
+                        batch=claimed, profile=translation_profile, term_version=term_version),
                 )
             except (RuntimeError, ValueError, FileNotFoundError, OSError) as exc:
                 # Provider 已成功且审计已落盘；结果 Artifact 的 I/O 失败不能再次调用 Provider。
@@ -2239,7 +2308,9 @@ class DocumentJobExecutionService:
         try:
             translated = source_document_ir.model_copy(deep=True)
             targets, items = self.document_ir_translation_service.extract_translation_items(translated)
-            replacements = self._load_batch_replacements(job, source_file, items, succeeded_batches)
+            publication_calls = []
+            replacements = self._load_batch_replacements(job, source_file, items, succeeded_batches,
+                                                        publication_calls=publication_calls)
         except (DocumentIRTranslationError, TranslationIntegrityError, TranslationProviderResponseError, ValueError, FileNotFoundError, OSError) as exc:
             error_code = (
                 "oss_failed" if isinstance(exc, (FileNotFoundError, OSError))
@@ -2294,6 +2365,9 @@ class DocumentJobExecutionService:
             "ai_call_log_file_ids": ai_call_log_file_ids,
             "debug_archive_file_ids": debug_archive_file_ids,
         }
+        translation_provenance = save_translation_publication_provenance(job, publication_calls, file_service=self.file_service)
+        translation_metadata["publication_provenance_file_id"] = translation_provenance.id
+        decode_table_references(translated, require_bound=True)
         ir_content = translated.model_dump_json(indent=2).encode("utf-8")
         try:
             ir_file = self.file_service.register_generated_content(
@@ -2303,6 +2377,7 @@ class DocumentJobExecutionService:
                 created_by=job.created_by,
                 file_type="document_ir",
                 filename="document_ir_v2.json",
+                object_version=(f"g{job.retry_count}_{uuid4().hex}" if translated.metadata.table_references_version else None),
                 mime_type="application/json",
                 content=ir_content,
                 metadata={
@@ -2406,6 +2481,7 @@ class DocumentJobExecutionService:
     def _load_batch_replacements(
         self, job: DocumentJobRecord, source_file: DocumentFileRecord,
         source_items: list[TranslationTextItem], batches: list[DocumentJobTranslationBatchRecord],
+        *, publication_calls: list | None = None,
     ) -> dict[str, str]:
         """对全部叶子的本地来源、恢复文本和证据重核，全部通过后才交给 apply。"""
         replacements: dict[str, str] = {}
@@ -2462,6 +2538,17 @@ class DocumentJobExecutionService:
             validated = self.document_ir_translation_service.validator.validate_persisted(
                 local_items, restored, payload.get("integrity"), binding=binding,
             )
+            if publication_calls is not None:
+                provenance = payload.get("publication_provenance")
+                if provenance is not None:
+                    if (not isinstance(provenance, dict) or provenance.get("schema_version") != "publication-batch/v1"
+                            or provenance.get("integrity_sha256") != digest(payload["integrity"])
+                            or type(provenance.get("attempt")) is not int or provenance["attempt"] != batch.attempt_count):
+                        raise DocumentIRTranslationError("翻译发布来源与成功尝试不一致。", code="translation_integrity_evidence_mismatch")
+                    actual_call_fact(provenance.get("call"))
+                publication_calls.append({"batch_id": batch.id, "attempt": batch.attempt_count,
+                    "result_file_id": result_file.id, "result_sha256": result_file.checksum_sha256,
+                    "provenance": provenance} if provenance is not None else None)
             if replacements.keys() & validated.replacements.keys():
                 raise DocumentIRTranslationError("翻译叶子批次包含重复合并项。", code="translation_integrity_item_duplicate")
             replacements.update(validated.replacements)
@@ -2476,9 +2563,11 @@ class DocumentJobExecutionService:
         validated: ValidatedTranslationBatch,
         integrity: TranslationIntegrityEvidence,
         recorder: TranslationCallAuditRecorder | None,
+        publication_provenance: dict | None = None,
     ) -> DocumentFileRecord:
         payload = {
             "schema_version": "translation-batch-result/v1",
+            "publication_provenance": publication_provenance,
             "job_id": job.id,
             "batch_id": batch.id,
             "root_batch_id": batch.root_batch_id,
@@ -3114,7 +3203,11 @@ class DocumentJobExecutionService:
             render_started_at = time.perf_counter()
 
             ir_file = self._get_document_ir_file(rendering)
-            document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(ir_file))
+            try:
+                ir_bytes = self.file_service.read_file_content(ir_file)
+                document_ir = DocumentIR.model_validate_json(ir_bytes)
+            except ValueError:
+                raise TablePlaceholderError("table_placeholder_integrity_failed") from None
             layout_plan = build_layout_plan(document_ir)
             snapshot_resources = rendering.request_snapshot.get("resources")
             snapshot_template = snapshot_resources.get("template") if isinstance(snapshot_resources, dict) else None
@@ -3133,7 +3226,7 @@ class DocumentJobExecutionService:
                 document_ir,
                 template_path=template_selection.template_path,
                 config_path=template_selection.layout_config_path,
-                image_loader=self._build_image_loader(rendering),
+                image_loader=self._build_image_loader(rendering, document_ir),
                 options=DocumentIRRenderOptions(
                     subscript_config_path=self.settings.subscript_config_path,
                     document_language=document_ir.metadata.document_language,
@@ -3176,8 +3269,10 @@ class DocumentJobExecutionService:
             quality_started_at = time.perf_counter()
             try:
                 renderer_metadata = build_renderer_evidence(
-                    document_ir, word_content, layout_plan, formula_report=render_result.formula_report,
+                    document_ir, word_content, layout_plan, render_result=render_result, formula_report=render_result.formula_report,
                     image_layout_report=render_result.image_layout_report,
+                    renderer_content_contract_version=render_result.renderer_content_contract_version,
+                    formula_source_coverage=render_result.formula_source_coverage,
                     expected_template_version_id=template_selection.template_version_id,
                     expected_generation_policy=image_evidence.IMAGE_GENERATION_POLICY,
                 )
@@ -3185,7 +3280,8 @@ class DocumentJobExecutionService:
             except Exception as exc:
                 failed = self._mark_failed(
                     checking, failed_stage="quality_checking", error_code="render_failed",
-                    error_message=str(exc), trace_id=trace_id,
+                    error_message=self._worker_failure_message(exc), trace_id=trace_id,
+                    failure_evidence=self._worker_failure_evidence(exc),
                     duration_ms=int((time.perf_counter() - quality_started_at) * 1000),
                 )
                 if failed.status == "running" and failed.retry_count == checking.retry_count and failed.prepared_result is not None:
@@ -3203,7 +3299,7 @@ class DocumentJobExecutionService:
             self._record_event(
                 uploading, event_type="stage_succeeded", stage="quality_checking",
                 message="Word 文档质量检查已通过。",
-                payload={"document_ir_file_id": ir_file.id, **self._safe_renderer_event_metadata(renderer_metadata)},
+                payload={"document_ir_file_id": ir_file.id, **build_renderer_event_summary(renderer_metadata)},
                 trace_id=trace_id, duration_ms=int((time.perf_counter() - quality_started_at) * 1000),
             )
             self._record_event(
@@ -3214,6 +3310,10 @@ class DocumentJobExecutionService:
                 payload={"template_version_id": template_selection.template_version_id},
                 trace_id=trace_id,
             )
+            renderer_metadata, preparation = save_report(uploading, ir_file, ir_bytes, renderer_metadata, self.file_service)
+            publication_provenance = capture_render_publication_provenance(uploading, ir_file, document_ir, render_result,
+                renderer=self.word_renderer, snapshot_service=self.job_resource_snapshot_service, file_service=self.file_service)
+            renderer_metadata["publication_provenance_file_id"] = publication_provenance.id
             word_file = self.file_service.register_result_candidate(
                 tenant_id=uploading.tenant_id,
                 company_id=uploading.company_id,
@@ -3221,6 +3321,7 @@ class DocumentJobExecutionService:
                 created_by=uploading.created_by,
                 filename=self._result_filename(uploading),
                 content=word_content,
+                expires_at=preparation.docx_expires_at,
                 metadata={
                     "source_file_id": uploading.source_file_id,
                     "document_ir_file_id": ir_file.id,
@@ -3233,6 +3334,8 @@ class DocumentJobExecutionService:
                     **renderer_metadata,
                 },
             )
+            verify_report(uploading, word_file, file_repository=self.file_repository,
+                          file_service=self.file_service, job_repository=self.job_repository)
             prepared = self.job_repository.prepare_document_job_result(
                 uploading.id, expected_retry_count=uploading.retry_count,
                 expected_document_ir_file_id=ir_file.id, candidate=word_file,
@@ -3245,10 +3348,16 @@ class DocumentJobExecutionService:
             if not isinstance(exc, (ApiError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile)):
                 error_code = "document_job_unexpected_error"
                 self.logger.exception("[trace_id=%s job_id=%s stage=%s status=unexpected_error]", trace_id, job.id, failed_stage)
+            if isinstance(exc, TableEvidenceError):
+                failed_stage, error_code = "quality_checking", "render_failed"
             if validating_legacy:
                 failed_stage, error_code = "uploading", "oss_failed"
+                if (isinstance(exc, DocumentIntegrityError)
+                        and exc.evidence.get("renderer_content_contract_version") == "renderer-content/v2"):
+                    failed_stage, error_code = "quality_checking", "render_failed"
             failed = self._mark_failed(attempt, failed_stage=failed_stage, error_code=error_code,
-                                       error_message=str(exc), trace_id=trace_id)
+                                       error_message=self._worker_failure_message(exc), trace_id=trace_id,
+                                       failure_evidence=self._worker_failure_evidence(exc))
             if failed.status == "running" and failed.retry_count == attempt.retry_count and failed.prepared_result is not None:
                 return self._finish_prepared_result(failed, trace_id=trace_id)
             return failed
@@ -3275,9 +3384,26 @@ class DocumentJobExecutionService:
         if timed_out is not None:
             return timed_out
         try:
+            validate_candidate_binding(job, receipt.file)
             word_file = self.file_repository.materialize_prepared_result(receipt.file)
-            # 已选凭据重验原文件报告；对象读取和质量重建均在 job 锁外。
-            self._validate_render_result_file(word_file)
+            ir_file, final_ir, _ = self._validate_render_result_file(word_file)
+            verified_report = verify_report(job, word_file, file_repository=self.file_repository,
+                          file_service=self.file_service, job_repository=self.job_repository)
+            # 恢复只核对原 receipt 的实物，不重裁图、不重渲染或更换同代身份。
+            proof = word_file.metadata.get("table_placeholder_rendering")
+            placeholders = decode_placeholders(final_ir, require_bound=True)
+            if placeholders or proof is not None:
+                if final_ir.metadata.job_id != job.id or final_ir.metadata.source_file_id != job.source_file_id:
+                    raise TablePlaceholderError("table_placeholder_integrity_failed")
+                self._verify_placeholder_dependencies(job, final_ir)
+                for file in (ir_file, word_file):
+                    self._ensure_placeholder_file_current(job, file, "table_placeholder_integrity_failed")
+            preview_job, preview_finished = self.word_preview_service.ensure_initial(current, trace_id=trace_id)
+            if not preview_finished:
+                return self._mark_timed_out_if_needed(preview_job, trace_id=trace_id) or preview_job
+            if verified_report is not None:
+                recheck_verified_report(verified_report, file_repository=self.file_repository,
+                                        job_repository=self.job_repository)
             completed = self.job_repository.update_document_job_if_current(
                 job.id, allowed_statuses={"running"}, allowed_stages={"uploading"},
                 expected_retry_count=receipt.generation, expected_document_ir_file_id=receipt.document_ir_file_id,
@@ -3285,73 +3411,67 @@ class DocumentJobExecutionService:
                 progress=100, result_file_id=word_file.id, completed_at=utc_now(), updated_at=utc_now(),
             )
         except Exception as exc:
-            return self._mark_failed(job, failed_stage="uploading", error_code="oss_failed",
-                                     error_message=str(exc), trace_id=trace_id,
-                                     expected_prepared_result_file_id=receipt.file.id)
+            return self._mark_failed(job,
+                failed_stage="quality_checking" if isinstance(exc, (TablePlaceholderError, DocumentIntegrityError, TableEvidenceError)) else "uploading",
+                error_code="render_failed" if isinstance(exc, (TablePlaceholderError, DocumentIntegrityError, TableEvidenceError)) else "oss_failed",
+                error_message=(self._worker_failure_message(exc) if isinstance(exc, (TablePlaceholderError, TableEvidenceError, DocumentIntegrityError)) or
+                    "table_placeholder_rendering" not in receipt.file.metadata else "表格占位结果文件读取或完整性校验失败。"),
+                trace_id=trace_id, expected_prepared_result_file_id=receipt.file.id)
         if completed is None:
             current = self.job_repository.get_document_job(job.id) or job
             return self._mark_timed_out_if_needed(current, trace_id=trace_id) or current
         self._record_event(completed, event_type="file_registered", stage="uploading", message="生成 Word 已保存。",
                            payload={"file_id": word_file.id, "file_type": word_file.file_type,
-                                    "object_key": word_file.object_key,
-                                    **self._safe_renderer_event_metadata(word_file.metadata)}, trace_id=trace_id)
+                                    **build_renderer_event_summary(word_file.metadata)}, trace_id=trace_id)
         self._record_event(completed, event_type="stage_succeeded", stage="completed", message="文档任务已完成。",
                            payload={"result_file_id": word_file.id, "template_version_id": completed.template_version_id},
                            trace_id=trace_id)
         return completed
 
-    @staticmethod
-    def _safe_renderer_event_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
-        """逐项证据与格式快照仅随内部文件保存，普通事件保留安全汇总。"""
+    def _validate_render_result_file(self, record: DocumentFileRecord) -> tuple[DocumentFileRecord, DocumentIR, bytes]:
+        """先核实原件及绑定 IR 的实物，再由 renderer 按保存的版本认证内容。"""
 
-        safe = {key: value for key, value in metadata.items() if key not in {"formula_report", "image_layout_report"}}
-        quality = safe.get("docx_quality")
-        if isinstance(quality, dict):
-            safe["docx_quality"] = {
-                key: value for key, value in quality.items() if key != "latex_residue_examples"
-            }
-        return safe
-
-    def _validate_render_result_file(self, record: DocumentFileRecord) -> None:
-        """新报告绑定文件原始 IR，不能用当前代 IR 重新解释历史主件。"""
-
-        has_formula = "formula_report" in record.metadata or "formula_summary" in record.metadata
-        has_image = bool(image_evidence.IMAGE_EVIDENCE_KEYS.intersection(record.metadata))
-        if not has_formula and not has_image:
-            if image_evidence.has_image_markers(self.file_service.read_file_content(record)):
-                raise ValueError("主 DOCX 含图片布局标记但缺少报告。")
-            return
-        report = record.metadata.get("formula_report")
-        if has_formula and not isinstance(report, dict):
-            raise ValueError("主 DOCX 的公式报告缺失或无效。")
-        image_report = record.metadata.get("image_layout_report")
-        if has_image and (not isinstance(image_report, dict) or not isinstance(record.metadata.get("image_layout_summary"), dict)):
-            raise ValueError("主 DOCX 的图片报告或摘要缺失或无效。")
-        if has_image and image_report.get("render_inputs", {}).get("template", {}).get("version_id") is not None and not record.metadata.get("template_version_id"):
-            raise ValueError("主 DOCX 的图片报告缺少外层模板绑定。")
-        ir_id = record.metadata.get("document_ir_file_id")
-        if not isinstance(ir_id, str) or not ir_id:
-            raise ValueError("主 DOCX 的公式报告缺少原始 IR 绑定。")
-        ir_file = self._get_uploaded_file(ir_id)
-        if ((ir_file.tenant_id, ir_file.company_id, ir_file.job_id)
-                != (record.tenant_id, record.company_id, record.job_id) or ir_file.file_type != "document_ir"):
-            raise ValueError("主 DOCX 的原始 IR 与文件归属不一致。")
+        if (record.file_type != "generated_word" or record.status != "uploaded"
+                or record.expires_at is not None and record.expires_at <= utc_now()
+                or record.expires_at is None and any(key in record.metadata for key in (
+                    "renderer_content_contract_version", "formula_source_coverage"))):
+            raise ValueError("主 DOCX 的类型、状态或保留期无效。")
         content = self.file_service.read_file_content(record)
-        if not has_image and image_evidence.has_image_markers(content):
-            raise ValueError("主 DOCX 含图片布局标记但缺少报告。")
         if record.size_bytes != len(content) or record.checksum_sha256 != f"sha256:{hashlib.sha256(content).hexdigest()}":
             raise ValueError("主 DOCX 字节与 SHA-256 描述不一致。")
-        ir = DocumentIR.model_validate_json(self.file_service.read_file_content(ir_file))
-        evidence = build_renderer_evidence(ir, content, formula_report=report, image_layout_report=image_report,
-            expected_template_version_id=record.metadata.get("template_version_id") if has_image else None)
-        ensure_renderer_integrity(evidence)
-        if any(record.metadata.get(key) != value for key, value in evidence.items()
-               if key not in {"mineru_validation", "mineru_validation_input", "caption_reconciliation"}
-               or key in record.metadata):
-            raise ValueError("主 DOCX 的公式报告或质量证据与实际字节不一致。")
+        ir_id = record.metadata.get("document_ir_file_id")
+        if not isinstance(ir_id, str) or not ir_id:
+            raise ValueError("主 DOCX 缺少原始 IR 绑定。")
+        ir_file = self._get_uploaded_file(ir_id)
+        if ((ir_file.tenant_id, ir_file.company_id, ir_file.job_id)
+                != (record.tenant_id, record.company_id, record.job_id) or ir_file.file_type != "document_ir"
+                or ir_file.expires_at is not None and ir_file.expires_at <= utc_now()):
+            raise ValueError("主 DOCX 的原始 IR 与文件归属不一致。")
+        ir_bytes = self.file_service.read_file_content(ir_file)
+        if ir_file.size_bytes != len(ir_bytes) or ir_file.checksum_sha256 != placeholder_checksum(ir_bytes):
+            raise ValueError("主 DOCX 的原始 IR 字节与描述不一致。")
+        ir = DocumentIR.model_validate_json(ir_bytes)
+        validate_persisted_renderer_content(ir, content, record.metadata,
+            expected_template_version_id=record.metadata.get("template_version_id"))
+        self._validate_optional_block_anchors(ir, content, record.metadata)
+        return ir_file, ir, content
+
+    def _validate_optional_block_anchors(self, document_ir: DocumentIR, content: bytes, metadata: dict[str, Any]) -> None:
+        """历史恢复只局部认证可选锚点；保留原 metadata，不重建或升级创建事实。"""
+        if "block_anchor_evidence" not in metadata:
+            return
+        verified = validate_persisted_render_evidence(document_ir, content,
+            render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"))
+        anchors = None
+        if verified is not None:
+            plan, trace = verified
+            anchors = validate_block_anchor_evidence(metadata["block_anchor_evidence"], plan=plan,
+                block_evidence=trace, word_content=content)
+        if anchors is None:
+            self.logger.warning("[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。")
 
     def _document_ir_layout_metadata(self, document_ir: DocumentIR) -> dict[str, Any]:
-        """生成 DocumentIR artifact 与事件共用的布局诊断摘要。"""
+        """保存私有 IR 诊断；事件出口另行投影。"""
 
         return {
             "schema_version": document_ir.schema_version,
@@ -3360,6 +3480,10 @@ class DocumentJobExecutionService:
             "block_count": len(document_ir.blocks),
             "layout_block_count": sum(1 for block in document_ir.blocks if block.layout is not None),
             "quality_flags": document_ir.quality_flags,
+            "mineru_validation": (document_ir.metadata.mineru_validation.model_dump(mode="json")
+                                  if document_ir.metadata.mineru_validation is not None else None),
+            "mineru_validation_input": document_ir.metadata.mineru_validation_input,
+            "table_reference_asset_count": sum(item.asset is not None for item in decode_table_references(document_ir)),
         }
 
     def _record_event(
@@ -3374,6 +3498,26 @@ class DocumentJobExecutionService:
         level: str = "info",
         duration_ms: int | None = None,
     ) -> None:
+        # renderer 事件只允许固定外层身份与安全摘要；未知新字段不能借嵌套值透传。
+        if (payload.get("file_type") == "generated_word"
+                or any(key in payload for key in ("renderer_content_contract_version", "formula_source_coverage",
+                    "render_plan", "block_render_evidence", "block_anchor_evidence", "page_mapping"))):
+            outer_keys = {"file_id", "file_type", "document_ir_file_id", "result_file_id", "template_version_id",
+                "error_code", "error_message", "prepared_result_file_id"}
+            payload = {**{key: value for key, value in payload.items() if key in outer_keys},
+                **build_renderer_event_summary(payload)}
+        if payload.get("schema_version") in {"document-ir/v1", "document-ir/v2"}:
+            outer_keys = {
+                "file_id", "file_type", "document_ir_file_id", "source_document_ir_file_id",
+                "image_asset_file_ids", "image_assets_archive_file_id", "image_asset_count",
+                "translation", "translation_batch_count", "translation_item_count",
+            }
+            payload = {
+                **{key: value for key, value in payload.items() if key in outer_keys},
+                **build_renderer_event_summary(payload),
+            }
+        if payload.get("mineru_validation") is not None:
+            payload = {**payload, "retry_count": job.retry_count}
         event = DocumentJobEventRecord(
             id=f"event_{uuid4().hex[:12]}",
             tenant_id=job.tenant_id,
@@ -3410,17 +3554,52 @@ class DocumentJobExecutionService:
             raise FileNotFoundError(f"任务缺少 MinerU 原始结果文件: {job.id}")
         return sorted(candidates, key=lambda item: (item.created_at, item.id))[-1]
 
-    def _select_mineru_result(self, payload: dict, data_id: str) -> dict:
+    def _refresh_mineru_parse_attempt(
+        self, job: DocumentJobRecord, *, trace_id: str | None,
+    ) -> tuple[DocumentJobRecord, bool]:
+        """解析外端调用前后核对本次身份和固定期限，避免旧结果归入新代。"""
+
+        latest = self.job_repository.get_document_job(job.id)
+        if latest is None:
+            return job, False
+        if (latest.retry_count != job.retry_count or latest.status != "running" or latest.stage != "parsing"
+                or latest.mineru_batch_id != job.mineru_batch_id or latest.mineru_data_id != job.mineru_data_id):
+            return latest, False
+        if latest.timeout_at is None:
+            # 旧新代可能已提交批次却未保存期限；只能沿本代稳定起点补齐，不能从每轮 now 续期。
+            if latest.started_at is None:
+                return self._mark_failed(
+                    latest, failed_stage="parsing", error_code="document_job_timeout",
+                    error_message="解析记录缺少本代开始时间，无法确定绝对截止期限，已停止执行。",
+                    trace_id=trace_id,
+                ), False
+            updated = self.job_repository.update_document_job_if_current(
+                latest.id, allowed_statuses={"running"}, allowed_stages={"parsing"},
+                expected_retry_count=latest.retry_count,
+                timeout_at=latest.started_at + timedelta(seconds=self.settings.p0_document_job_timeout_seconds),
+                updated_at=utc_now(),
+            )
+            if updated is None:
+                return self.job_repository.get_document_job(latest.id) or latest, False
+            latest = updated
+        timed_out = self._mark_timed_out_if_needed(latest, trace_id=trace_id)
+        return (timed_out, False) if timed_out is not None else (latest, True)
+
+    def _select_mineru_result(self, payload: dict, data_id: str, *, batch_id: str) -> dict:
         results = payload.get("extract_result") if isinstance(payload, dict) else None
         if not isinstance(results, list):
             raise ValueError("MinerU 查询结果缺少 extract_result 数组。")
+        if payload.get("batch_id") and str(payload["batch_id"]) != batch_id:
+            raise MinerUError("MinerU 查询结果的 batch_id 与当前批次不一致。")
         for item in results:
             if isinstance(item, dict) and str(item.get("data_id") or "") == data_id:
                 return item
-        for item in results:
-            if isinstance(item, dict):
-                return item
-        raise ValueError("MinerU 查询结果为空。")
+        if not results:
+            return {}
+        # 历史单文件结果和既有适配器可能不回传 data_id；显式异身份不能借此兜底。
+        if len(results) == 1 and isinstance(results[0], dict) and not results[0].get("data_id"):
+            return results[0]
+        raise MinerUError("MinerU 查询结果缺少匹配当前 data_id 的记录。")
 
     def _get_document_ir_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
         if job.document_ir_file_id is None:
@@ -3438,7 +3617,17 @@ class DocumentJobExecutionService:
                     or record.file_type != "generated_word"
                     or (record.expires_at is not None and record.expires_at <= utc_now())):
                 raise ValueError("任务指定的结果文件不属于该任务的可用主 DOCX。")
-            self._validate_render_result_file(record)
+            if (any(key in record.metadata for key in ("renderer_content_contract_version", "formula_source_coverage",
+                    "formula_report", "formula_summary"))
+                    or image_evidence.IMAGE_EVIDENCE_KEYS.intersection(record.metadata)
+                    or has_evidence(record.metadata)):
+                self._validate_render_result_file(record)
+            elif image_evidence.has_image_markers(self.file_service.read_file_content(record)):
+                raise ValueError("主 DOCX 含图片布局标记但缺少报告。")
+            # 显式历史指针原本允许无报告、无 IR 绑定；仅该已验收路径保留原门。
+            if has_evidence(record.metadata):
+                verify_report(job, record, file_repository=self.file_repository,
+                              file_service=self.file_service, job_repository=self.job_repository)
             return record
         candidates = [
             file for file in self.file_repository.list_document_files()
@@ -3456,25 +3645,117 @@ class DocumentJobExecutionService:
         record = candidates[0]
         if record.expires_at is None or record.expires_at <= utc_now():
             raise ValueError("历史主件已过期或缺少保留期。")
-        if (any(key in record.metadata for key in ("formula_report", "formula_summary"))
-                or image_evidence.IMAGE_EVIDENCE_KEYS.intersection(record.metadata)):
-            self._validate_render_result_file(record)
-            return record
-        content = self.file_service.read_file_content(record)
-        if image_evidence.has_image_markers(content):
-            raise ValueError("主 DOCX 含图片布局标记但缺少报告。")
-        if record.size_bytes != len(content) or record.checksum_sha256 != f"sha256:{hashlib.sha256(content).hexdigest()}":
-            raise ValueError("历史主件字节与 SHA-256 描述不一致。")
-        ir = DocumentIR.model_validate_json(self.file_service.read_file_content(self._get_document_ir_file(job)))
-        evidence = build_renderer_evidence(ir, content)
-        ensure_renderer_integrity(evidence)
-        if any(record.metadata.get(key) != value for key, value in evidence.items()
-               if key not in {"mineru_validation", "mineru_validation_input", "caption_reconciliation"}
-               or key in record.metadata):
-            raise ValueError("历史主件缺少与实际字节一致的质量证据。")
+        self._validate_render_result_file(record)
+        if has_evidence(record.metadata):
+            verify_report(job, record, file_repository=self.file_repository,
+                          file_service=self.file_service, job_repository=self.job_repository)
         return record
 
-    def _build_image_loader(self, job: DocumentJobRecord) -> Callable[[DocumentIRAsset], bytes | None]:
+    def _ensure_placeholder_attempt_current(self, job: DocumentJobRecord, error_code: str) -> None:
+        """慢读两侧核对仍在执行的同代/最终 IR；质量摘要等无关并发更新不影响快照。"""
+        current = self.job_repository.get_document_job(job.id)
+        if (current is None or current.status != "running" or current.deleted_at is not None
+                or current.archived_at is not None or current.retry_count != job.retry_count
+                or current.document_ir_file_id != job.document_ir_file_id
+                or (current.tenant_id, current.company_id, current.source_file_id, current.source_job_id) !=
+                   (job.tenant_id, job.company_id, job.source_file_id, job.source_job_id)):
+            raise TablePlaceholderError(error_code)
+
+    def _ensure_placeholder_file_current(self, job: DocumentJobRecord, file: DocumentFileRecord, error_code: str) -> None:
+        """与 IR-206 相同：按 ID 重取并比较完整描述，不把有 file_id 当作当前可读。"""
+        if (self.file_repository.get_document_file(file.id) != file or file.status != "uploaded"
+                or file.expires_at is not None and file.expires_at <= utc_now()):
+            raise TablePlaceholderError(error_code)
+        self._ensure_placeholder_attempt_current(job, error_code)
+
+    def _read_current_placeholder_file(self, job: DocumentJobRecord, file: DocumentFileRecord,
+                                       error_code: str = "table_placeholder_integrity_failed") -> bytes:
+        """字节读取前后核验同一描述、生命周期、任务快照与实际 hash；错误不带存储定位。"""
+        snapshot = file.model_copy(deep=True)
+        self._ensure_placeholder_file_current(job, snapshot, error_code)
+        try:
+            content = self.file_service.read_file_content(snapshot)
+        except Exception:
+            raise TablePlaceholderError(error_code) from None
+        self._ensure_placeholder_file_current(job, snapshot, error_code)
+        if len(content) != snapshot.size_bytes or placeholder_checksum(content) != snapshot.checksum_sha256:
+            raise TablePlaceholderError("table_placeholder_integrity_failed")
+        return content
+
+    def _get_placeholder_source_file(self, job: DocumentJobRecord,
+                                      error_code: str = "table_placeholder_source_unavailable") -> DocumentFileRecord:
+        """裁图或未完成 receipt 只认绑定源；clone 沿既有同源父链核验归属。"""
+        file = self.file_repository.get_document_file(job.source_file_id)
+        if (file is None or file.file_type != "source_pdf" or file.status != "uploaded"
+                or (file.tenant_id, file.company_id) != (job.tenant_id, job.company_id)
+                or file.expires_at is not None and file.expires_at <= utc_now()
+                or not file.checksum_sha256):
+            raise TablePlaceholderError(error_code)
+        owner = job
+        seen = set()
+        while file.job_id != owner.id:
+            if owner.id in seen or owner.source_job_id is None:
+                raise TablePlaceholderError(error_code)
+            seen.add(owner.id)
+            owner = self.job_repository.get_document_job(owner.source_job_id)
+            if (owner is None or owner.source_file_id != file.id
+                    or (owner.tenant_id, owner.company_id) != (job.tenant_id, job.company_id)):
+                raise TablePlaceholderError(error_code)
+        return file
+
+    def _load_placeholder_source(self, job: DocumentJobRecord) -> PdfCropSource:
+        file = self._get_placeholder_source_file(job)
+        content = self._read_current_placeholder_file(job, file, "table_placeholder_source_unavailable")
+        return PdfCropSource(file.id, file.checksum_sha256, content)
+
+    def _read_placeholder_asset(self, job: DocumentJobRecord, document: DocumentIR, asset: DocumentIRAsset, binding):
+        """仅显式消费的占位图按当前 ID 读取；来源 attempt 可早于翻译 retry，不能硬套最新代。"""
+        file = self.file_repository.get_document_file(asset.file_id)
+        try:
+            provenance = TableReferenceProvenance.model_validate(document.metadata.mineru_validation_input)
+        except ValueError:
+            raise TablePlaceholderError("table_placeholder_integrity_failed") from None
+        expected = {"asset_id": asset.id, "source_file_id": job.source_file_id,
+                    "fragment_id": binding.fragment_id, "retry_count": provenance.retry_count}
+        if binding.source_kind == "mineru_reference":
+            reference = next(item for item in decode_table_references(document, require_bound=True)
+                             if item.fragment.fragment_id == binding.fragment_id)
+            expected.update(asset_role=TABLE_REFERENCE_ROLE, block_id=reference.block_id,
+                logical_group_id=reference.logical_group_id, source_path=asset.source_path,
+                mineru_raw_result_file_id=provenance.mineru_raw_result_file_id)
+        else:
+            expected.update(asset_role="table_placeholder", source_pdf_sha256=binding.source_pdf_sha256)
+        if (file is None or file.file_type != "image_asset" or file.mime_type != asset.mime_type
+                or (file.tenant_id, file.company_id, file.job_id) != (job.tenant_id, job.company_id, job.id)
+                or file.checksum_sha256 != asset.checksum_sha256 or file.object_key != asset.object_key
+                or not provenance.retry_count <= job.retry_count
+                or type(file.metadata.get("retry_count")) is not int
+                or any(file.metadata.get(key) != value for key, value in expected.items())):
+            raise TablePlaceholderError("table_placeholder_integrity_failed")
+        return file, self._read_current_placeholder_file(job, file)
+
+    def _verify_placeholder_dependencies(self, job: DocumentJobRecord, document: DocumentIR) -> None:
+        """未完成 receipt 复核原绑定依赖；只读取原件，不重渲染、重裁图或替换身份。"""
+        bindings = decode_placeholders(document, require_bound=True)
+        if not bindings:
+            return
+        source = self._get_placeholder_source_file(job, "table_placeholder_integrity_failed")
+        snapshots = [source]
+        crop_hashes = {item.source_pdf_sha256 for item in bindings if item.source_kind == "source_pdf_crop"}
+        if crop_hashes:
+            self._read_current_placeholder_file(job, source)
+            if crop_hashes != {source.checksum_sha256}:
+                raise TablePlaceholderError("table_placeholder_integrity_failed")
+        assets = {asset.id: asset for asset in document.assets}
+        for binding in bindings:
+            file, _ = self._read_placeholder_asset(job, document, assets[binding.asset_ref], binding)
+            snapshots.append(file)
+        # 后续图片慢读也可能使前面的源/图片失效；所有 I/O 完成后再次对账。
+        for file in snapshots:
+            self._ensure_placeholder_file_current(job, file, "table_placeholder_integrity_failed")
+
+    def _build_image_loader(self, job: DocumentJobRecord, document_ir: DocumentIR) -> Callable[[DocumentIRAsset], bytes | None]:
+        bindings = {item.asset_ref: item for item in decode_placeholders(document_ir, require_bound=True)}
         image_files = {
             file.id: file
             for file in self.file_repository.list_document_files()
@@ -3482,12 +3763,15 @@ class DocumentJobExecutionService:
         }
 
         def load_image(asset: DocumentIRAsset) -> bytes | None:
+            if asset.id in bindings:
+                return self._read_placeholder_asset(job, document_ir, asset, bindings[asset.id])[1]
+            if asset.id.startswith(("table-reference:", "table-placeholder:")):
+                # 普通 QA 参考图不能借普通 image loader 绕过显式占位消费及其来源核验。
+                raise TablePlaceholderError("table_placeholder_integrity_failed")
             if asset.file_id is None:
                 return None
             record = image_files.get(asset.file_id)
-            if record is None:
-                return None
-            return self.file_service.read_file_content(record)
+            return self.file_service.read_file_content(record) if record is not None else None
 
         return load_image
 
@@ -3499,12 +3783,23 @@ class DocumentJobExecutionService:
         return f"{source_stem}.docx"
 
     def _mark_succeeded(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
+        # legacy 明确主件可下载，但无 receipt 不能生成或伪造与当前来源绑定的预览。
+        preview_contribution = None
+        if "word_preview" in job.request_snapshot:
+            from app.services.preview.models import PreviewPolicy
+            policy = PreviewPolicy.model_validate(job.request_snapshot["word_preview"])
+            preview_contribution = {"quality_status": "blocked" if policy.required else "pending",
+                "status": "unavailable", "error_code": "preview_provider_unavailable",
+                "source_generation": job.retry_count, "source_result_file_id": job.result_file_id,
+                "profile_id": policy.profile_id, "profile_sha256": policy.profile_sha256,
+                "manifest_file_id": None}
         completed = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"running"},
             allowed_stages={"uploading"},
             expected_retry_count=job.retry_count,
             expected_document_ir_file_id=job.document_ir_file_id, require_no_prepared_result=True,
+            preview_contribution=preview_contribution,
             status="succeeded",
             stage="completed",
             progress=100,
@@ -3558,6 +3853,8 @@ class DocumentJobExecutionService:
         job: DocumentJobRecord,
     ) -> tuple[DocumentJobStage, str]:
         failed_stage = self._failed_stage_for_current_job(job)
+        if isinstance(exc, (TablePlaceholderError, DocumentIntegrityError, TableEvidenceError)) and job.stage == "uploading":
+            return "quality_checking", "render_failed"
         if isinstance(exc, MinerUError) or failed_stage == "parsing":
             return failed_stage, "mineru_failed"
         if isinstance(exc, (DocumentIRTranslationError, TranslationIntegrityError)):
@@ -3574,23 +3871,60 @@ class DocumentJobExecutionService:
             return failed_stage, "oss_failed"
         return failed_stage, "document_job_worker_failed"
 
+    @staticmethod
+    def _worker_failure_message(error: Exception) -> str:
+        """完整性异常的自由证据也不能借异常消息进入事件或日志。"""
+        if isinstance(error, DocumentIntegrityError):
+            return str(DocumentIntegrityError(error.boundary, build_renderer_event_summary(dict(error.evidence))))
+        if isinstance(error, MinerUError):
+            return "MinerU 外部调用失败。"
+        if isinstance(error, OSError):
+            return "Worker 文件或对象存储操作失败。"
+        return str(error)
+
+    @staticmethod
+    def _worker_failure_evidence(error: Exception) -> dict[str, Any]:
+        """提取原异常拥有的结构化报告，不读取可能已换代的任务状态。"""
+
+        evidence: dict[str, Any] = {}
+        if isinstance(error, MinerUArtifactValidationError):
+            evidence["mineru_validation"] = error.report.model_dump(mode="json")
+        elif isinstance(error, TablePlaceholderError) and getattr(error, "mineru_validation_report", None) is not None:
+            evidence["mineru_validation"] = error.mineru_validation_report.model_dump(mode="json")
+        elif isinstance(error, DocumentIntegrityError):
+            evidence = dict(error.evidence)
+        validation_input = getattr(error, "mineru_validation_input", None)
+        if validation_input is not None:
+            evidence["mineru_validation_input"] = validation_input
+        return build_renderer_event_summary(evidence)
+
     def _fail_stage_attempt(
         self, job: DocumentJobRecord, error: Exception, *, trace_id: str | None,
     ) -> DocumentJobRecord:
         """只使用本调用已接收的阶段快照归类失败，持久化仍核对代数、IR 和结果空槽。"""
 
+        if isinstance(error, SoftTimeLimitExceeded):
+            self.logger.error(
+                "[trace_id=%s job_id=%s generation=%s stage=%s status=failure_observed error_code=document_job_timeout]",
+                trace_id, job.id, job.retry_count, job.stage,
+            )
+            return self._mark_timed_out(job, trace_id=trace_id)
         failed_stage, error_code = self._classify_worker_failure(error, job)
-        error_message = str(error)
+        error_message = self._worker_failure_message(error)
         if not isinstance(error, (ApiError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile)):
             error_code = "document_job_unexpected_error"
-            error_message = f"Worker 未预期异常: {type(error).__name__}: {error}"
-            self.logger.exception(
-                "[trace_id=%s job_id=%s stage=%s status=unexpected_error]", trace_id, job.id, failed_stage,
-            )
+            error_message = "Worker 执行发生未预期异常。"
+        # CAS 落败也保留原调用的安全诊断；外端异常正文和异常链不进入普通日志。
+        self.logger.error(
+            "[trace_id=%s job_id=%s generation=%s stage=%s status=failure_observed error_code=%s error_type=%s]",
+            trace_id, job.id, job.retry_count, failed_stage, error_code, type(error).__name__,
+        )
         return self._mark_failed(
             job, failed_stage=failed_stage, error_code=error_code,
             error_message=error_message, trace_id=trace_id,
+            integrity=error.evidence if isinstance(error, (DocumentIRTranslationError, TranslationIntegrityError)) else None,
             formula_protection=error.formula_protection if isinstance(error, DocumentIRTranslationError) else None,
+            failure_evidence=self._worker_failure_evidence(error),
         )
 
     def _mark_failed(
@@ -3606,16 +3940,16 @@ class DocumentJobExecutionService:
         duration_ms: int | None = None,
         expected_prepared_result_file_id: str | None = None,
         allow_prepared_result: bool = False,
+        failure_evidence: dict[str, Any] | None = None,
     ) -> DocumentJobRecord:
         now = utc_now()
+        # 同代另一执行可能已经提交目标 IR；失败 CAS 不能跨过其原子 rendering 推进。
         failed = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"pending", "queued", "running"},
-            allowed_stages={
-                "uploaded", "parsing", "parsed", "ir_converting", "translating",
-                "translation_validating", "rendering", "quality_checking", "uploading",
-            },
+            allowed_stages={job.stage},
             expected_retry_count=job.retry_count,
+            expected_document_ir_file_id=job.document_ir_file_id,
             require_no_prepared_result=not allow_prepared_result and expected_prepared_result_file_id is None,
             expected_prepared_result_file_id=expected_prepared_result_file_id,
             status="failed",
@@ -3631,6 +3965,7 @@ class DocumentJobExecutionService:
         payload = {
             "error_code": error_code,
             "error_message": error_message,
+            **build_renderer_event_summary(failure_evidence or {}),
             **({"prepared_result_file_id": failed.prepared_result.file.id} if failed.prepared_result else {}),
         }
         if integrity is not None:

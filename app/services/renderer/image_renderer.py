@@ -20,6 +20,7 @@ from app.services.document_ir.models import DocumentIRAsset, DocumentIRBlock
 from app.services.renderer.image_evidence import (IMAGE_TABLE_PREFIX, expected_annotation, image_anchor,
     image_dimensions, image_slots, section_geometry, single_image_width, source_image_position)
 from app.services.renderer.layout_plan import ImageSpan, image_annotations
+from app.services.renderer.block_evidence import LocalTarget, paragraph_target
 from app.services.renderer.template_config import TemplateConfigPackage
 
 ImageContentLoader = Callable[[DocumentIRAsset], bytes | None]
@@ -140,6 +141,8 @@ class WordImageRendererMixin:
             paragraph.add_run("【图片缺失或无效，需复核】")
         self._image_bookmark(paragraph, anchor, context, start=False)
         paragraph.paragraph_format.keep_with_next = bool(annotations)
+        targets = [LocalTarget(inline._inline.getparent(), paragraph.part, "image")
+            if decoded is not None else paragraph_target(paragraph, "image_fallback")]
         image = {"block_id": block.id, "asset_ref": block.asset_ref, "asset_sha256": hashlib.sha256(content).hexdigest() if content else None,
                  "anchor": anchor, "width": width, "height": height,
                  "source": source_image_position(block), "annotations": []}
@@ -154,12 +157,16 @@ class WordImageRendererMixin:
             if not self._fill_caption_paragraph(caption, text, config.caption, terminology=config.terminology, caption_bookmarks=context.caption_bookmarks):
                 self._fill_paragraph(caption, text, config.caption, terminology=config.terminology, reference_bookmarks=context.caption_bookmarks)
             self._image_bookmark(caption, annotation_anchor, context, start=False)
+            targets.append(paragraph_target(caption, "caption", index))
             image["annotations"].append({"field": field, "source_sha256": sha256_text(text), "anchor": annotation_anchor,
                                          "expected_output_sha256": expected_hash})
         if not annotations and block.text and decoded is None:
             # 没有结构化注释的历史缺图仍保留其源文本和公式来源。
             self._set_formula_source(root, block.id, "text")
             self._fill_paragraph(paragraph, block.text, config.caption, terminology=config.terminology)
+
+        context.collector.add(block.id, targets)
+        context.collector.images.append((block.id, tuple(targets)))
 
     @staticmethod
     def _image_bookmark(paragraph: Any, name: str, context: Any, *, start: bool) -> None:

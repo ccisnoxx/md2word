@@ -50,13 +50,19 @@ def source_image_position(block: Any) -> dict:
             "bbox": [value if math.isfinite(value) else None for value in box] if box is not None else None}
 
 
-def caption_bookmark_inventory(document_ir: DocumentIR) -> dict:
+def caption_bookmark_inventory(document_ir: DocumentIR, *, table_contracts=None, primary_table_block_ids=None) -> dict:
     """图片投影与正式正文使用相同的唯一题注编号规则。"""
     from collections import Counter
     text_renderer = WordTextRendererMixin()
     keys = []
+    members = {identity for unit in table_contracts or [] for identity in unit.member_block_ids}
+    selected = {(item.block_id, item.item_index) for unit in table_contracts or [] for item in unit.annotations
+                if item.field == "captions" and item.disposition == "rendered"
+                and (primary_table_block_ids is None or unit.anchor_block_id in primary_table_block_ids)}
     for block in document_ir.blocks:
-        values = image_annotations(block) if block.type == "image" else tuple(("", t) for t in dict.fromkeys(t.strip() for t in block.captions) if t) if block.type == "table" else ()
+        captions = [text for index, text in enumerate(block.captions)
+                    if block.id not in members or (block.id, index) in selected]
+        values = image_annotations(block) if block.type == "image" else tuple(("", t) for t in dict.fromkeys(t.strip() for t in captions) if t) if block.type == "table" else ()
         for _, text in values:
             parsed = text_renderer._parse_caption_text(text)
             if parsed:
@@ -182,11 +188,15 @@ def _actual_section(body: Any, child: Any) -> Any:
 
 
 def verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, *, expected_template_version_id: str | None = None,
-                        expected_generation_policy: str | None = None) -> dict:
+                        expected_generation_policy: str | None = None, _legacy_ir_identity: bool = False,
+                        _table_contracts=None, _placeholder_ownership=None, _table_primary_block_ids=None) -> dict:
     """源计划、冻结输入、实际包三方核验；失败不得降级为历史报告。"""
     try:
         return _verify_image_report(document_ir, content, report, expected_template_version_id=expected_template_version_id,
-                                    expected_generation_policy=expected_generation_policy)
+                                    expected_generation_policy=expected_generation_policy,
+                                    legacy_ir_identity=_legacy_ir_identity, table_contracts=_table_contracts,
+                                    placeholder_ownership=_placeholder_ownership,
+                                    table_primary_block_ids=_table_primary_block_ids)
     except _ImageEvidenceError:
         raise
     except (ValueError, KeyError, TypeError, IndexError, AttributeError, OverflowError, re.error, zipfile.BadZipFile,
@@ -196,10 +206,13 @@ def verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, *
 
 
 def _verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, *, expected_template_version_id: str | None,
-                         expected_generation_policy: str | None) -> dict:
+                         expected_generation_policy: str | None, legacy_ir_identity: bool = False, table_contracts=None,
+                         placeholder_ownership=None, table_primary_block_ids=None) -> dict:
     _check(isinstance(report, dict) and report["schema_version"] == IMAGE_REPORT_VERSION, "报告版本")
     _check(report["rule_version"] == IMAGE_GROUP_VERSION and report["thresholds"] == IMAGE_GROUP_THRESHOLDS, "归组规则")
-    _check(report["source_ir_sha256"] == canonical_sha256(document_ir.model_dump(mode="json")), "原始 IR 绑定")
+    from app.services.renderer.render_plan import legacy_document_ir_payload
+    ir_payload = legacy_document_ir_payload(document_ir) if legacy_ir_identity else document_ir.model_dump(mode="json")
+    _check(report["source_ir_sha256"] == canonical_sha256(ir_payload), "原始 IR 绑定")
     inputs = report["render_inputs"]
     _check(set(inputs) == {"schema_version", "projection_version", "writer_version", "rule_version", "generation_policy",
                           "document_language", "template", "caption_style", "format_rules", "spans"}, "输入字段白名单")
@@ -229,7 +242,8 @@ def _verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, 
     assets = {asset.id: asset for asset in document_ir.assets}
     pages = {page.index: page for page in document_ir.pages}
     legacy_layout = build_layout_plan(document_ir).mode == "legacy_v1_fallback"
-    bookmarks = caption_bookmark_inventory(document_ir)
+    bookmarks = caption_bookmark_inventory(document_ir, table_contracts=table_contracts,
+        primary_table_block_ids=table_primary_block_ids)
     with zipfile.ZipFile(io.BytesIO(content)) as package:
         root = ET.fromstring(package.read("word/document.xml"))
         styles = ET.fromstring(package.read("word/styles.xml"))
@@ -316,7 +330,8 @@ def _verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, 
                 inlines = paragraph.findall(".//wp:inline", _NS)
                 _check(not paragraph.findall(".//wp:anchor", _NS), "浮动图片")
                 _check(len(inlines) == 1, "图片缺失或重复")
-                image_nodes = [node for node in paragraph if node.tag != qn("w:pPr")]
+                from app.services.renderer.block_anchors import _paragraph_projection
+                image_nodes = _paragraph_projection(root, paragraph)
                 _check(len(image_nodes) == 3 and image_nodes[1].tag == qn("w:r")
                        and len(image_nodes[1]) == 1 and image_nodes[1][0].tag == qn("w:drawing")
                        and len(image_nodes[1][0]) == 1, "图片段含未登记内容")
@@ -381,7 +396,22 @@ def _verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, 
             if downgraded:
                 _check(size_unfit, "尺寸降级缺少实际依据")
         _check(len(marked) == group_count, "未登记或伪造布局表")
-        _check(len(root.findall(".//wp:inline", _NS)) == len(image_paragraphs) and not root.findall(".//wp:anchor", _NS), "未登记图片")
+        all_inlines = set(root.findall(".//wp:inline", _NS))
+        ordinary = [inline for paragraph in image_paragraphs for inline in paragraph.findall(".//wp:inline", _NS)]
+        placeholders = []
+        if placeholder_ownership is not None:
+            from app.services.renderer.table_placeholder_evidence import _PlaceholderImageOwnership
+            _check(isinstance(placeholder_ownership, _PlaceholderImageOwnership)
+                and placeholder_ownership.docx_sha256 == "sha256:" + hashlib.sha256(content).hexdigest(), "占位实物身份")
+            for path in placeholder_ownership.inline_paths:
+                node = root
+                for position in path:
+                    node = list(node)[position]
+                _check(node.tag == qn("wp:inline"), "占位实际 inline 定位")
+                placeholders.append(node)
+        _check(len(set(ordinary)) == len(ordinary) and len(set(placeholders)) == len(placeholders)
+            and set(ordinary).isdisjoint(placeholders) and set(ordinary) | set(placeholders) == all_inlines
+            and not root.findall(".//wp:anchor", _NS), "未登记图片")
         actual_anchors = [node.get(qn("w:name")) for node in root.findall(".//w:bookmarkStart", _NS) if node.get(qn("w:name"), "").startswith("md2w_img_")]
         _check(len(actual_anchors) == len(expected_anchors) and set(actual_anchors) == expected_anchors, "未登记或重复锚点")
     return {"schema_version": IMAGE_REPORT_VERSION, "accepted_group_count": group_count,
@@ -400,7 +430,8 @@ def _verify_anchor(root: Any, paragraph: Any, start: Any) -> None:
     bookmark_id = start.get(qn("w:id"))
     starts = [node for node in root.findall(".//w:bookmarkStart", _NS) if node.get(qn("w:id")) == bookmark_id]
     ends = [node for node in root.findall(".//w:bookmarkEnd", _NS) if node.get(qn("w:id")) == bookmark_id]
-    content = [node for node in paragraph if node.tag != qn("w:pPr")]
+    from app.services.renderer.block_anchors import _paragraph_projection
+    content = _paragraph_projection(root, paragraph)
     _check(len(starts) == len(ends) == 1 and content[0] is start and content[-1] is ends[0], "图片或注释锚点范围")
 
 

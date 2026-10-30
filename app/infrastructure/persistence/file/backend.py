@@ -3,10 +3,13 @@ from __future__ import annotations
 # app/infrastructure/persistence/file/backend.py: file metadata backend 的路径和 JSON 辅助能力。
 
 import json
+from contextlib import contextmanager
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from app.domains.jobs.paths import JobPaths, build_job_paths
+from app.infrastructure.persistence.file.record_lock import record_lock
 
 
 class FilePersistenceBackend:
@@ -34,6 +37,21 @@ class FilePersistenceBackend:
             self.tmp_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
+
+    @contextmanager
+    def publication_lifecycle_lock(self) -> Iterator[None]:
+        """所有文件写与发布共用稳定锁，顺序固定为 lifecycle、job、file。"""
+        with record_lock(self.data_dir / "publication-lifecycle.lock"):
+            yield
+
+    def list_publication_records(self):
+        """只从已提交的 job envelope 读取保护事实，不依赖运行开关或缓存。"""
+        from app.domains.document_jobs.publication import decode_file_publications
+
+        records = []
+        for path in sorted(self.document_jobs_dir.glob("*/job.json")):
+            records.extend(decode_file_publications(self.read_json(path, {})))
+        return records
 
     def job_paths(self, job_id: str) -> JobPaths:
         return build_job_paths(self.data_dir, job_id)

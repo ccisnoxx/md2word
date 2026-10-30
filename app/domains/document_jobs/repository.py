@@ -4,20 +4,23 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Protocol
+from app.domains.document_jobs.review import ReviewSubmission, ReviewRecord
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from app.domains.files.models import DocumentFileRecord
+from app.domains.document_jobs.new_generation import NewGenerationAcceptance, NewGenerationSubmission
+from app.domains.document_jobs.publication import PublicationRecord, PublicationSubmission
+from app.domains.document_jobs.preview_state import PreviewArtifactObservation, PreviewClaim, PreviewClaimRequest
 
 from app.domains.document_jobs.models import (
     DocumentJobCallbackMessage,
     DocumentJobEventRecord,
     DocumentJobRecord,
-    DocumentJobReviewStatus,
-    DocumentJobTranslationQaIssueType,
     DocumentJobTranslationBatchRecord,
 )
 
 if TYPE_CHECKING:
+    from app.domains.document_jobs.list_query import DocumentJobListQuery, DocumentJobListResult
     from app.domains.document_jobs.workflow import TranslationGenerationSummary, TranslationRootPlan
 
 
@@ -178,9 +181,27 @@ def validate_expected_root_plans_or_raise(
 class DocumentJobRepositoryProtocol(Protocol):
     """主记录元数据合同；所有写方法共享同 job 的局部序列化点。"""
 
+    def accept_document_job_new_generation(
+        self, job_id: str, *, submission: NewGenerationSubmission, max_retries: int,
+    ) -> tuple[NewGenerationAcceptance, DocumentJobRecord, bool]: ...
+    def get_document_job_generation_request(
+        self, job_id: str, *, request_id: str, actor_id: str,
+    ) -> tuple[NewGenerationAcceptance, DocumentJobRecord] | None: ...
+
+    def update_document_job_lifecycle_if_current(
+        self, job_id: str, *, expected_retry_count: int, action: Literal["archive", "delete"],
+        actor_id: str, occurred_at: datetime, delete_reason: str | None = None,
+    ) -> DocumentJobRecord | None: ...
+
+    def publish_document_job(self, job_id: str, *, submission: PublicationSubmission) -> tuple[PublicationRecord, bool]: ...
+    def list_document_job_publications(self, job_id: str) -> list[PublicationRecord]: ...
+    def is_document_file_protected(self, file_id: str) -> bool: ...
+
     def create_document_job(self, record: DocumentJobRecord) -> DocumentJobRecord: ...
     def get_document_job(self, job_id: str) -> DocumentJobRecord | None: ...
     def list_document_jobs(self) -> list[DocumentJobRecord]: ...
+    def query_document_jobs(self, query: DocumentJobListQuery) -> DocumentJobListResult: ...
+    def is_document_job_table_evidence_snapshot_current(self, expected: DocumentJobRecord) -> bool: ...
     def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord: ...
     def update_document_job_if_current(
         self,
@@ -192,6 +213,7 @@ class DocumentJobRepositoryProtocol(Protocol):
         expected_document_ir_file_id: str | None = None,
         require_no_prepared_result: bool = False,
         expected_prepared_result_file_id: str | None = None,
+        preview_contribution: dict | None = None,
         **patch: Any,
     ) -> DocumentJobRecord | None: ...
 
@@ -203,15 +225,29 @@ class DocumentJobRepositoryProtocol(Protocol):
         self, job_id: str, *, expected_retry_count: int, max_retries: int, **patch: Any,
     ) -> DocumentJobRecord | None: ...
 
+    def claim_document_job_preview(
+        self, job_id: str, *, request: PreviewClaimRequest, observation: PreviewArtifactObservation | None = None,
+    ) -> PreviewClaim: ...
+    def begin_document_job_preview_registration(
+        self, job_id: str, *, request: PreviewClaimRequest, revision: int, lease_token: str, attempt: int,
+    ) -> DocumentJobRecord | None: ...
+    def finish_document_job_preview(
+        self, job_id: str, *, request: PreviewClaimRequest, revision: int, lease_token: str,
+        status: str, manifest_file_id: str, error_code: str | None, retryable: bool, evidence: dict,
+        page_quality_contribution: dict | None = None,
+    ) -> DocumentJobRecord | None: ...
     def update_document_job_review_if_current(
-        self, job_id: str, *, expected_retry_count: int, expected_result_file_id: str | None,
-        review_status: DocumentJobReviewStatus, issue_type: DocumentJobTranslationQaIssueType | None,
-        note: str | None, reviewed_by: str | None, reviewed_at: datetime | None, updated_at: datetime,
+        self, job_id: str, *, submission: ReviewSubmission,
     ) -> DocumentJobRecord | None: ...
 
     def backfill_document_job_state_if_missing(self, job_id: str) -> bool:
         """锁内重读 raw 并补缺，返回 payload 是否补键；SQL 同时校准投影列。"""
         ...
+
+
+    def list_document_job_reviews(
+        self, job_id: str, *, after_sequence: int = 0, limit: int = 100,
+    ) -> list[ReviewRecord]: ...
 
 
 class DocumentJobEventRepositoryProtocol(Protocol):

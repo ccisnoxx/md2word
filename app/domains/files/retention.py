@@ -89,6 +89,8 @@ class DocumentFileRetentionPlanner:
             if record.status == "deleted":
                 totals["already_deleted_files"] += 1
                 continue
+            if self.repository.is_document_file_protected(record.id) or record.deletion_claim is not None:
+                continue
             if record.expires_at is None:
                 continue
             totals["files_with_expires_at"] += 1

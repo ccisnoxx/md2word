@@ -138,6 +138,14 @@ class ValidatedImage:
     resolution: str
 
 
+@dataclass(frozen=True, slots=True)
+class ValidatedTableReference:
+    """归一化前的单次验证结果；二进制不进入持久化报告或原始来源副本。"""
+
+    source_status: Literal["valid", "missing", "invalid"]
+    image: ValidatedImage | None
+
+
 @dataclass(slots=True)
 class _ImageInspection:
     """单次验证中按规范文件复用栅格探测；Word 能力另行缓存，不能替代参考图能力。"""
@@ -153,6 +161,7 @@ class _ImageInspection:
 class MinerUValidatedContent:
     blocks: list[dict[str, Any]]
     report: MinerUValidationReport
+    table_references: dict[str, ValidatedTableReference]
 
 
 def bbox_invalid_reason(value: Any) -> str | None:
@@ -395,6 +404,7 @@ class MinerUArtifactValidator:
                          valid_block_count=0, invalid_block_count=0, invalid_page_count=0,
                          type_counts={}, image_check_count=0, table_reference_check_count=0)
         normalized: list[dict[str, Any]] = []
+        table_references: dict[str, ValidatedTableReference] = {}
         type_counts = inventory["type_counts"]
         flat_offsets: Counter[int] = Counter()
         flat_pages: set[int] = set()
@@ -483,10 +493,13 @@ class MinerUArtifactValidator:
                 self._validate_asset_paths(block, locator, package_root, content_list_path.parent)
                 if effective_type == "image":
                     inventory["image_check_count"] += 1
-                if effective_type == "table":
+                if effective_type == "table" or source_type == "table_placeholder":
                     inventory["table_reference_check_count"] += 1
                     asset, status = self._validate_asset(block, locator, package_root, content_list_path.parent, required=False)
-                    self._validate_table(block, locator, status, asset)
+                    if status in {"valid", "missing", "invalid"}:
+                        table_references[pointer] = ValidatedTableReference(status, asset)
+                    if effective_type == "table":
+                        self._validate_table(block, locator, status, asset)
                 if self.report.fatal_count == before:
                     inventory["valid_block_count"] += 1
                 else:
@@ -501,7 +514,7 @@ class MinerUArtifactValidator:
             self.add_issue("mineru_content_empty", facts={"reason": "no_blocks"})
         if not self.report.can_convert:
             raise MinerUArtifactValidationError(self.report)
-        return MinerUValidatedContent(blocks=normalized, report=self.report)
+        return MinerUValidatedContent(blocks=normalized, report=self.report, table_references=table_references)
 
     @staticmethod
     def _page_index(value: Any) -> int | None:

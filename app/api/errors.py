@@ -121,6 +121,7 @@ async def _request_validation_exception_handler(request: Request, exc: RequestVa
             "请求参数校验失败。",
             detail=_validation_errors_for_response(request, exc),
         ),
+        headers=_error_response_headers(request),
     )
 
 
@@ -151,8 +152,20 @@ def api_error_response(
     return JSONResponse(
         status_code=status_code,
         content=_build_error_content(request, status_code, code, message, detail=detail, reason_code=reason_code),
-        headers=headers,
+        headers=_error_response_headers(request, headers),
     )
+
+
+def _error_response_headers(request: Request, headers: dict[str, str] | None = None) -> dict[str, str] | None:
+    """审核参照图的失败响应也禁止缓存，保留统一错误结构及原认证头。"""
+
+    route_path = getattr(request.scope.get("route"), "path", None)
+    if route_path in {
+        "/api/v1/document-jobs/{job_id}/table-references",
+        "/api/v1/document-jobs/{job_id}/table-references/{asset_id}/content",
+    }:
+        return {**(headers or {}), "Cache-Control": "private, no-store"}
+    return headers
 
 
 def _build_error_content(

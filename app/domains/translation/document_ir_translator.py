@@ -512,25 +512,28 @@ class DocumentIRTranslationService:
             return snippet[: _TRACE_CONTEXT_MAX_CHARS - 3] + "..."
         return snippet
 
+    @classmethod
     def extract_translation_items(
-        self,
+        cls,
         document_ir: DocumentIR,
     ) -> tuple[list[DocumentIRTranslationTarget], list[TranslationTextItem]]:
+        """纯提取稳定单元；类调用与原实例调用共享同一排序及校验。"""
         targets: list[DocumentIRTranslationTarget] = []
         items: list[TranslationTextItem] = []
         for block in sorted(document_ir.blocks, key=lambda item: item.order):
-            self._append_block_text(block, targets, items)
-            self._append_list_items(block, targets, items)
-            self._append_table_text_nodes(block, targets, items)
+            cls._append_block_text(block, targets, items)
+            cls._append_list_items(block, targets, items)
+            cls._append_table_text_nodes(block, targets, items)
         return targets, items
 
+    @classmethod
     def _append_block_text(
-        self,
+        cls,
         block: DocumentIRBlock,
         targets: list[DocumentIRTranslationTarget],
         items: list[TranslationTextItem],
     ) -> None:
-        if block.type in {"formula", "list"} or not self._has_text(block.text):
+        if block.type in {"formula", "list"} or not cls._has_text(block.text):
             return
         item_id = f"{block.id}.text"
         targets.append(
@@ -538,14 +541,15 @@ class DocumentIRTranslationService:
                 item_id=item_id,
                 block_id=block.id,
                 field="text",
-                page_number=self._block_page_number(block),
+                page_number=cls._block_page_number(block),
                 order=block.order,
             )
         )
         items.append(TranslationTextItem(id=item_id, text=block.text.strip()))
 
+    @classmethod
     def _append_list_items(
-        self,
+        cls,
         block: DocumentIRBlock,
         targets: list[DocumentIRTranslationTarget],
         items: list[TranslationTextItem],
@@ -553,7 +557,7 @@ class DocumentIRTranslationService:
         if block.type != "list" or not block.list_items:
             return
         for index, item in enumerate(block.list_items):
-            if not self._has_text(item):
+            if not cls._has_text(item):
                 continue
             item_id = f"{block.id}.list_items.{index:04d}"
             targets.append(
@@ -562,14 +566,15 @@ class DocumentIRTranslationService:
                     block_id=block.id,
                     field="list_items",
                     index=index,
-                    page_number=self._block_page_number(block),
+                    page_number=cls._block_page_number(block),
                     order=block.order,
                 )
             )
             items.append(TranslationTextItem(id=item_id, text=item.strip()))
 
+    @classmethod
     def _append_table_text_nodes(
-        self,
+        cls,
         block: DocumentIRBlock,
         targets: list[DocumentIRTranslationTarget],
         items: list[TranslationTextItem],
@@ -577,7 +582,7 @@ class DocumentIRTranslationService:
         if block.type != "table" or not block.html:
             return
         soup = BeautifulSoup(block.html, "html.parser")
-        self._validate_html_formula_boundaries(soup)
+        cls._validate_html_formula_boundaries(soup)
         text_index = 0
         for node in soup.find_all(string=True):
             text = str(node).strip()
@@ -594,7 +599,7 @@ class DocumentIRTranslationService:
                     block_id=block.id,
                     field="html",
                     index=text_index,
-                    page_number=self._block_page_number(block),
+                    page_number=cls._block_page_number(block),
                     order=block.order,
                 )
             )

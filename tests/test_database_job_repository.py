@@ -1,7 +1,9 @@
-# File: tests/test_database_job_repository.py
-# Purpose: 校验 file/sqlite/MySQL metadata adapter 的协议行为一致。
+# 文件：tests/test_database_job_repository.py
+# 用途：校验 file/sqlite/MySQL metadata adapter 的协议行为一致。
 from __future__ import annotations
 
+import io
+import json
 from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,6 +11,7 @@ from typing import Any
 from unittest import TestCase
 from unittest.mock import patch
 
+from docx import Document
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -61,7 +64,8 @@ from tests.test_fastapi_jobs_backend import (
     build_callback_payload,
     build_test_runtime,
     make_pdf_bytes,
-    publish_default_job_resources,
+    publish_template_resource_version,
+    publish_term_rule_resource_version,
 )
 
 
@@ -156,6 +160,7 @@ class _FakeMysqlDatabase:
         self.file_retention_cleanup_locks: dict[str, dict[str, Any]] = {}
         self.file_retention_cleanup_runs: dict[str, dict[str, Any]] = {}
         self.document_jobs: dict[str, dict[str, Any]] = {}
+        self.document_job_publications: dict[str, dict[str, Any]] = {}
         self.document_job_callback_messages: dict[str, dict[str, Any]] = {}
         self.document_job_translation_batches: dict[str, dict[str, Any]] = {}
         self.job_files: dict[tuple[str, str], dict[str, Any]] = {}
@@ -252,6 +257,8 @@ class _FakeMysqlCursor:
                 "file_retention_cleanup_locks",
                 "file_retention_cleanup_runs",
                 "document_jobs",
+                "document_job_review_records",
+                "document_job_publications",
                 "document_job_callback_messages",
                 "document_job_translation_batches",
             ):
@@ -265,7 +272,11 @@ class _FakeMysqlCursor:
                     if table == "document_jobs" and table not in self.database.table_columns:
                         self.database.table_columns[table] = {
                             "job_id", "payload", "created_at", "updated_at", "quality_status",
-                            "review_status", "delivery_status", "quality_summary_json",
+                            "review_status", "delivery_status", "quality_summary_json", "list_query_json",
+                        }
+                    if table == "document_files" and table not in self.database.table_columns:
+                        self.database.table_columns[table] = {
+                            "file_id", "payload", "created_at", "updated_at", "review_query_json",
                         }
             self._rows = []
             return
@@ -287,10 +298,10 @@ class _FakeMysqlCursor:
             self.database.table_columns.setdefault("term_rules", set()).add(column_name)
             self._rows = []
             return
-        if normalized.startswith("alter table document_jobs add column"):
+        if normalized.startswith(("alter table document_jobs add column", "alter table document_files add column")):
             if " if not exists " in f" {normalized} ":
                 raise AssertionError("MySQL fake 不支持 ADD COLUMN IF NOT EXISTS。")
-            self.database.table_columns.setdefault("document_jobs", set()).add(normalized.split()[5])
+            self.database.table_columns.setdefault(normalized.split()[2], set()).add(normalized.split()[5])
             self._rows = []
             return
         if normalized.startswith("update term_rules set normalized_term"):
@@ -498,15 +509,16 @@ class _FakeMysqlCursor:
                         payload, *state_values, record_id = params
                     self.database.document_jobs[record_id].update(
                         payload=payload,
-                        **dict(zip(("quality_status", "review_status", "delivery_status", "quality_summary_json"), state_values, strict=True)),
+                        **dict(zip(("quality_status", "review_status", "delivery_status", "quality_summary_json", "list_query_json"), state_values, strict=True)),
                     )
                 else:
-                    payload, created_at, updated_at, record_id = params
-                    getattr(self.database, table)[record_id].update(payload=payload, created_at=created_at, updated_at=updated_at)
+                    payload, created_at, updated_at, projection, record_id = params
+                    getattr(self.database, table)[record_id].update(payload=payload, created_at=created_at,
+                                                                  updated_at=updated_at, review_query_json=projection)
                 self._rows = []
                 return
         if normalized.startswith("insert into document_files"):
-            file_id, payload, created_at, updated_at = params
+            file_id, payload, created_at, updated_at, projection = params
             if file_id in self.database.document_files and "on duplicate key" not in normalized:
                 raise ValueError("主键冲突。")
             self.database.document_files[file_id] = {
@@ -514,8 +526,28 @@ class _FakeMysqlCursor:
                 "payload": payload,
                 "created_at": created_at,
                 "updated_at": updated_at,
+                "review_query_json": projection,
             }
             self._rows = []
+            return
+        if normalized == "select protected_file_ids from document_job_publications":
+            self._rows = [{"protected_file_ids": row["protected_file_ids"]}
+                          for row in self.database.document_job_publications.values()]
+            return
+        if (normalized.startswith("select case when json_valid(list_query_json)")
+                and normalized.endswith("from document_jobs where job_id = %s")):
+            from app.domains.document_jobs.list_query import document_job_list_projection_from_raw
+
+            expected_key, job_id = params
+            row = self.database.document_jobs.get(job_id)
+            if row is None:
+                self._rows = []
+                return
+            projection = json.loads(row["list_query_json"]) if row["list_query_json"] is not None else None
+            ready = projection == document_job_list_projection_from_raw(row["payload"])
+            self._rows = [{"ready": int(ready), "is_current": int(ready and not projection["deleted"]
+                and projection["table_snapshot_key_comparable"] and "and 1 = 1 and" in normalized
+                and projection["table_snapshot_key"] == expected_key)}]
             return
         if normalized.startswith("select payload from document_files where file_id"):
             row = self.database.document_files.get(params[0])
@@ -604,7 +636,7 @@ class _FakeMysqlCursor:
                 "payload": payload,
                 "created_at": created_at,
                 "updated_at": updated_at,
-                **dict(zip(("quality_status", "review_status", "delivery_status", "quality_summary_json"), state_values, strict=True)),
+                **dict(zip(("quality_status", "review_status", "delivery_status", "quality_summary_json", "list_query_json"), state_values, strict=True)),
             }
             self._rows = []
             return
@@ -1408,7 +1440,7 @@ class _FakeMysqlCursor:
                     for row in sorted(rows, key=lambda item: (item["position"], item["created_at"], item["view_id"]))
                 ]
             return
-        raise AssertionError(f"Unexpected SQL: {sql}")
+        raise AssertionError(f"未预期的 SQL: {sql}")
 
     def fetchone(self) -> dict[str, Any] | None:
         return self._rows[0] if self._rows else None
@@ -1417,12 +1449,47 @@ class _FakeMysqlCursor:
         return list(self._rows)
 
 
-class _FakeDocumentJobWordRenderer:
-    def render_to_bytes(self, *args, **kwargs) -> bytes:
-        return b"fake-docx"
-
-
 class PersistenceAdapterTests(TestCase):
+    def _assert_callback_word_result(self, runtime, job):
+        self.assertEqual(job.status, "succeeded", job.error_message)
+        result = runtime.document_file_repository.get_document_file(job.result_file_id)
+        self.assertEqual(result.file_type, "generated_word")
+        self.assertEqual(result.status, "uploaded")
+        self.assertEqual((result.job_id, result.id), (job.id, job.prepared_result.file.id))
+        document = Document(io.BytesIO(runtime.file_upload_service.read_file_content(result)))
+        self.assertIn("主要特性", [paragraph.text for paragraph in document.paragraphs])
+        self.assertIn("VCC", [cell.text for table in document.tables for row in table.rows for cell in row.cells])
+        self.assertEqual(len(document.inline_shapes), 1)
+        report = result.metadata["formula_report"]
+        self.assertEqual(report["schema_version"], "formula-render/v1")
+        self.assertEqual(len(report["entries"]), 1)
+        self.assertEqual(report["entries"][0]["mode"], "omml")
+        self.assertEqual(result.metadata["blocking_quality_flags"], [])
+        self.assertEqual(set(job.quality_summary), {"formula", "checks_v1", "table_evidence"})
+        self.assertEqual(job.quality_summary["formula"], result.metadata["formula_summary"])
+        self.assertEqual(job.quality_summary["formula"]["formula_count"], 1)
+        self.assertEqual(set(job.quality_summary["checks_v1"]), {"document_base", "word_preview"})
+        preview = job.quality_summary["checks_v1"]["word_preview"]
+        self.assertEqual((preview["quality_status"], preview["status"], preview["error_code"], preview["attempt"]),
+                         ("pending", "unavailable", "preview_disabled", 1))
+        self.assertEqual((preview["source_generation"], preview["source_result_file_id"], preview["source_docx_sha256"]),
+                         (job.retry_count, result.id, result.checksum_sha256))
+        base = job.quality_summary["checks_v1"]["document_base"]
+        self.assertEqual((base["schema_version"], base["generation"], base["quality_status"], base["evaluation_state"]),
+                         ("document-base-quality/v1", job.retry_count, "pending", "incomplete"))
+        self.assertEqual(base["counts"], {"count": 6, "formula_count": 1, "fallback_count": 0,
+            "image_count": 1, "table_count": 1, "blocker_count": 0, "warning_count": 2, "unknown_flag_count": 8})
+        self.assertEqual(base["warning_codes"], ["missing_table_reference"])
+        self.assertRegex(base["report_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(base["receipt_sha256"], r"^sha256:[0-9a-f]{64}$")
+        table = job.quality_summary["table_evidence"]
+        self.assertEqual((table["schema_version"], table["coverage"], table["status"], table["table_count"],
+                          table["native_count"], table["blocker_count"], table["issue_codes"]),
+                         ("table-evidence/v1", "complete", "warning", 1, 1, 0, ["missing_table_reference"]))
+        self.assertEqual(table, result.metadata["table_evidence_summary"])
+        self.assertEqual((job.quality_status, job.review_status, job.delivery_status),
+                         ("pending", "unreviewed", "internal_draft"))
+
     def test_internal_user_repository_contract_matches_all_backends(self):
         for backend_name, build_adapters in (
             ("file", lambda path: build_file_persistence_adapters(path)),
@@ -1521,6 +1588,8 @@ class PersistenceAdapterTests(TestCase):
                 "file_retention_cleanup_locks",
                 "file_retention_cleanup_runs",
                 "document_jobs",
+                "document_job_review_records",
+                "document_job_publications",
                 "document_job_callback_messages",
                 "document_job_translation_batches",
             },
@@ -1864,7 +1933,6 @@ class PersistenceAdapterTests(TestCase):
             )
             runtime.document_job_execution_service.fake_mineru_client.query_state = "running"
             runtime.document_job_execution_service.fake_mineru_client.query_full_zip_url = None
-            runtime.document_job_execution_service.word_renderer = _FakeDocumentJobWordRenderer()
             app = create_app(runtime)
             with TestClient(app) as client:
                 headers = build_auth_header(client)
@@ -1895,6 +1963,7 @@ class PersistenceAdapterTests(TestCase):
                 detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
 
             persisted_job = runtime.document_job_repository.get_document_job(job_id)
+            self._assert_callback_word_result(runtime, persisted_job)
             persisted_files = runtime.document_file_repository.list_document_files()
             replayable_messages = runtime.document_job_callback_message_store.list_replayable_callback_messages(job_id)
             callback_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status(job_id)
@@ -1932,10 +2001,12 @@ class PersistenceAdapterTests(TestCase):
                     connect_factory=fake_mysql.connect,
                 ),
             )
-            publish_default_job_resources(runtime)
+            template = io.BytesIO()
+            Document().save(template)
+            publish_template_resource_version(runtime, version="1", content=template.getvalue(), make_default=True)
+            publish_term_rule_resource_version(runtime, version="1", source_term="VONE", make_default=True)
             runtime.document_job_execution_service.fake_mineru_client.query_state = "running"
             runtime.document_job_execution_service.fake_mineru_client.query_full_zip_url = None
-            runtime.document_job_execution_service.word_renderer = _FakeDocumentJobWordRenderer()
             app = create_app(runtime)
             with TestClient(app) as client:
                 headers = build_auth_header(client)
@@ -1967,6 +2038,16 @@ class PersistenceAdapterTests(TestCase):
 
             checks = runtime.health_service.build_dependency_checks()
             persisted_job = runtime.document_job_repository.get_document_job(job_id)
+            self._assert_callback_word_result(runtime, persisted_job)
+            from app.domains.document_jobs.list_query import (
+                document_file_review_projection_from_raw, document_job_list_projection_from_raw,
+            )
+            stored_job = fake_mysql.document_jobs[job_id]
+            self.assertEqual(json.loads(stored_job["list_query_json"]),
+                             document_job_list_projection_from_raw(stored_job["payload"]))
+            for stored_file in fake_mysql.document_files.values():
+                self.assertEqual(json.loads(stored_file["review_query_json"]),
+                                 document_file_review_projection_from_raw(stored_file["payload"]))
             persisted_files = runtime.document_file_repository.list_document_files()
             replayable_messages = runtime.document_job_callback_message_store.list_replayable_callback_messages(job_id)
             callback_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status(job_id)

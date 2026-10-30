@@ -113,7 +113,7 @@ class _MigrationMysqlCursor(persistence._FakeMysqlCursor):
             super().execute(sql, params)
             name = normalized.split()[5]
             defaults = {"quality_status": "pending", "review_status": "unreviewed",
-                        "delivery_status": "internal_draft", "quality_summary_json": None}
+                        "delivery_status": "internal_draft", "quality_summary_json": None, "list_query_json": None}
             for row in self.database.document_jobs.values():
                 row.setdefault(name, defaults[name])
             return
@@ -163,7 +163,7 @@ class DocumentJobDeliveryStateMigrationTests(TestCase):
             with patch.object(migration, "SqlitePersistenceBackend", side_effect=AssertionError("只读不能初始化 backend")):
                 dry = migration.migrate_document_job_state(_settings(root, "database"))
                 verify = migration.migrate_document_job_state(_settings(root, "database"), mode="verify")
-            self.assertEqual(dry["schema_missing"], list(migration.STATE_COLUMNS))
+            self.assertEqual(dry["schema_missing"], list(migration.SCHEMA_COLUMNS))
             self.assertEqual(verify["exit_code"], 1)
             self.assertEqual(before, _snapshot(root))
 
@@ -185,14 +185,14 @@ class DocumentJobDeliveryStateMigrationTests(TestCase):
             before = _stored(root, "database", "job-a")
             report = migration.migrate_document_job_state(_settings(root, "database"), mode="apply", phase="schema")
             self.assertEqual(report["exit_code"], 0)
-            self.assertEqual(report["schema_added"], list(migration.STATE_COLUMNS[1:]))
+            self.assertEqual(report["schema_added"], list(migration.SCHEMA_COLUMNS[1:]))
             self.assertEqual(report["scanned_rows"], 0)
             self.assertEqual(_stored(root, "database", "job-a"), before)
             with sqlite3.connect(root / "metadata.sqlite3") as connection:
                 tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
                 self.assertEqual(tables, {"document_jobs", "unrelated_domain"})
                 self.assertEqual({row[1] for row in connection.execute("PRAGMA table_info(document_jobs)")},
-                                 migration.BASE_COLUMNS | set(migration.STATE_COLUMNS))
+                                 migration.BASE_COLUMNS | set(migration.SCHEMA_COLUMNS))
             again = migration.migrate_document_job_state(_settings(root, "database"), mode="apply", phase="schema")
             self.assertEqual(again["schema_added"], [])
 
@@ -377,7 +377,7 @@ class DocumentJobDeliveryStateMigrationTests(TestCase):
         settings = Settings(_env_file=None, jobs_repository_backend="mysql")
         before = deepcopy(database.document_jobs)
         dry = migration.migrate_document_job_state(settings, mysql_connect_factory=database.connect)
-        self.assertEqual(dry["schema_missing"], list(migration.STATE_COLUMNS))
+        self.assertEqual(dry["schema_missing"], list(migration.SCHEMA_COLUMNS))
         self.assertEqual(database.document_jobs, before)
         self.assertFalse(any(sql.startswith(("alter", "create", "update")) for sql in database.executed_sql))
         database.fail_column = "review_status"
@@ -390,7 +390,7 @@ class DocumentJobDeliveryStateMigrationTests(TestCase):
         database.fail_column = None
         applied = migration.migrate_document_job_state(settings, mode="apply", mysql_connect_factory=database.connect)
         self.assertEqual(applied["exit_code"], 0)
-        self.assertEqual(applied["schema_added"], list(migration.STATE_COLUMNS[1:]))
+        self.assertEqual(applied["schema_added"], list(migration.SCHEMA_COLUMNS[1:]))
         payload = json.loads(database.document_jobs["job-a"]["payload"])
         for key, value in _legacy().items():
             self.assertEqual(payload[key], value, key)
