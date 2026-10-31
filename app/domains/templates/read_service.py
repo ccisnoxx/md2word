@@ -101,11 +101,12 @@ class TemplateReadService:
         return [self.get_template_detail(item.id, url_for=url_for).to_list_item() for item in self._visible_templates()]
 
     def bootstrap_manifest_versions(self) -> None:
-        """把 seed manifest 幂等登记为 published，并只在缺省时建立默认指针。"""
+        """登记缺失 seed，核对 bundled 身份，并只在缺省时建立默认指针。"""
 
         service = self.resource_version_service
         if service is None:
             return
+        bundled_templates_dir = (self.settings.root_dir / "resources" / "templates").resolve()
         for template in self._visible_templates():
             version = str(template.version)
             existing = service.repository.get_resource_version("template", template.id, version)
@@ -113,15 +114,23 @@ class TemplateReadService:
             layout_path = self._resolve_manifest_path(template.layout_config_path) if template.layout_config_path else None
             if not template_path.exists() or (layout_path is not None and not layout_path.exists()):
                 raise FileNotFoundError(f"模板 seed 资源不存在: {template.id}@{version}")
+            payload = self._build_template_version_payload(
+                template=template,
+                version=template.version,
+                template_path=template_path,
+                layout_config_path=template.layout_config_path,
+                render_policy=template.render_policy,
+            )
             record = existing
+            resolved_template_path = template_path.resolve()
+            managed_version_dir = (self.settings.templates_storage_dir / template.id / f"v{version}").resolve()
+            is_bundled_seed = (
+                template.is_default_seed
+                and resolved_template_path.is_relative_to(bundled_templates_dir)
+                # 上传目录即使位于 bundled 根目录内，其中的 draft 也不是 seed。
+                and not resolved_template_path.is_relative_to(managed_version_dir)
+            )
             if record is None:
-                payload = self._build_template_version_payload(
-                    template=template,
-                    version=template.version,
-                    template_path=template_path,
-                    layout_config_path=template.layout_config_path,
-                    render_policy=template.render_policy,
-                )
                 now = utc_now()
                 record = service.repository.create_resource_version(
                     ResourceVersionRecord(
@@ -136,6 +145,17 @@ class TemplateReadService:
                         updated_at=now,
                     )
                 )
+            elif is_bundled_seed:
+                # manifest 元数据可编辑；只核对 DOCX 身份与旧 payload 自身的完整性。
+                registered_payload = record.payload or {}
+                if (
+                    record.status == ResourceVersionStatus.DRAFT
+                    or registered_payload.get("template_id") != template.id
+                    or str(registered_payload.get("version")) != version
+                    or any(registered_payload.get(key) != payload[key] for key in ("docx_path", "docx_sha256"))
+                    or record.snapshot_hash != self._snapshot_hash(registered_payload)
+                ):
+                    raise ValueError(f"模板 seed 版本与已登记资源冲突: {template.id}@{version}")
             if (
                 record.status == ResourceVersionStatus.PUBLISHED
                 and service.repository.get_default_resource_version("template", template.id) is None
@@ -502,22 +522,36 @@ class TemplateReadService:
         self._write_manifest(manifest)
 
     def list_template_versions(self, template_id: str) -> list[TemplateVersionResponse]:
-        """列出 API 管理目录下可见的模板文件版本。"""
+        """合并受管目录、manifest 和持久化快照中的模板版本。"""
 
         template = self._require_template_item(template_id)
-        records_by_version = self._resource_records_by_version(template.id)
+        records_by_version: dict[int, ResourceVersionRecord] = {}
+        for raw_version, record in self._resource_records_by_version(template.id).items():
+            try:
+                version = int(raw_version)
+            except ValueError:
+                continue
+            # 规范 key 优先；没有规范 key 时保留仓储顺序中的首条等价记录。
+            if version not in records_by_version or raw_version == str(version):
+                records_by_version[version] = record
         default_version = self._resource_default_version(template.id)
         version_dir = self.settings.templates_storage_dir / template.id
         versions: list[TemplateVersionResponse] = []
+        listed_versions: set[int] = set()
         if version_dir.exists():
             for child in sorted(version_dir.iterdir(), key=lambda path: self._version_sort_key(path.name)):
                 version = self._parse_version_dir_name(child.name)
-                if version is None or not child.is_dir():
+                if version is None or version in listed_versions or not child.is_dir():
                     continue
-                template_file = next((item for item in sorted(child.iterdir()) if item.is_file() and item.suffix.lower() == ".docx"), None)
-                if template_file is None:
+                record = records_by_version.get(version)
+                # 已登记版本以 payload 为准，目录残留文件不能遮蔽原文件或其缺失状态。
+                template_file = (
+                    self._template_version_path(template, version, record.payload)
+                    if record is not None
+                    else next((item for item in sorted(child.iterdir()) if item.is_file() and item.suffix.lower() == ".docx"), None)
+                )
+                if template_file is None and record is None:
                     continue
-                record = records_by_version.get(str(version))
                 versions.append(
                     self._build_template_version_response(
                         template=template,
@@ -527,19 +561,40 @@ class TemplateReadService:
                         default_version=default_version,
                     )
                 )
+                listed_versions.add(version)
 
-        current_path = self.get_template_path(template.id)
-        if current_path is not None and all(item.version != template.version for item in versions):
-            record = records_by_version.get(str(template.version))
+        current_record = records_by_version.get(template.version)
+        current_path = self._template_version_path(
+            template,
+            template.version,
+            current_record.payload if current_record is not None else None,
+        )
+        if current_path is not None and template.version not in listed_versions:
             versions.append(
                 self._build_template_version_response(
                     template=template,
                     version=template.version,
                     template_path=current_path,
+                    record=current_record,
+                    default_version=default_version,
+                )
+            )
+            listed_versions.add(template.version)
+
+        # 新 seed 不再引用的历史版本仍由其持久化快照拥有。
+        for version, record in records_by_version.items():
+            if version in listed_versions:
+                continue
+            versions.append(
+                self._build_template_version_response(
+                    template=template,
+                    version=version,
+                    template_path=self._template_version_path(template, version, record.payload),
                     record=record,
                     default_version=default_version,
                 )
             )
+            listed_versions.add(version)
         return sorted(versions, key=lambda item: item.version, reverse=True)
 
     def get_template_layout_config(self, template_id: str, *, version: int | None = None) -> TemplateLayoutConfigResponse:
