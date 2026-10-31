@@ -20,6 +20,7 @@ from app.conversion.docx_rules.mineru_content import (
     find_final_promotional_page,
     merge_footnote_fragments,
 )
+from app.conversion.docx_rules.text_semantics import infer_source_heading_level
 from app.services.document_ir.layout_signals import (
     build_block_layout,
     build_block_layout_metadata,
@@ -252,14 +253,18 @@ class MinerUToDocumentIRService:
                         metadata=context_metadata,
                     )
                 )
+            text = self._text_for_block(raw_block, block_type, captions=captions)
             blocks.append(
                 DocumentIRBlock(
                     id=block_id,
                     type=block_type,
                     order=index,
                     page_index=page_index,
-                    text=self._text_for_block(raw_block, block_type, captions=captions),
-                    level=self._heading_level(raw_block) if block_type == "heading" else None,
+                    text=text,
+                    level=(
+                        infer_source_heading_level(text or "", source_level=self._heading_level(raw_block))
+                        if block_type == "heading" else None
+                    ),
                     html=select_mineru_table_html(raw_block) if block_type == "table" else None,
                     latex=self._formula_text(raw_block) if block_type == "formula" else None,
                     list_items=(mineru_list_items(raw_block) or None) if block_type == "list" else None,

@@ -187,15 +187,19 @@ def extract_zip(zip_path: Path, target_dir: Path, *, policy: MinerUValidationPol
 
 
 def find_content_list(package_root: Path) -> Path:
-    """v2 优先，只有不存在 v2 时才选择 legacy；坏 v2 不回退。"""
+    """要求结果根与被选版本候选唯一；v2 优先，坏 v2 不回退。"""
 
     candidates = [path for path in package_root.rglob("*.json") if path.is_file() and
                   (path.name in {"content_list_v2.json", "content_list.json"} or
                    path.name.endswith(("_content_list_v2.json", "_content_list.json")))]
     if not candidates:
         raise MinerUPackageError("mineru_content_list_missing", "missing_content_list")
-    return sorted(candidates, key=lambda item: (0 if item.name.endswith("content_list_v2.json") else 1,
-                                               len(item.parts), item.as_posix()))[0]
+    if len({path.parent for path in candidates}) > 1:
+        raise MinerUPackageError("mineru_content_list_ambiguous", "multiple_result_roots")
+    selected = [path for path in candidates if path.name.endswith("content_list_v2.json")] or candidates
+    if len(selected) > 1:
+        raise MinerUPackageError("mineru_content_list_ambiguous", "multiple_content_lists")
+    return selected[0]
 
 
 def read_json_payload(path: Path, *, policy: MinerUValidationPolicy = DEFAULT_POLICY) -> tuple[Any, str]:

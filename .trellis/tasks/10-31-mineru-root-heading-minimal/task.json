@@ -1,0 +1,41 @@
+{
+  "id": "mineru-root-heading-minimal",
+  "name": "mineru-root-heading-minimal",
+  "title": "最小提取 MinerU 结果根唯一性与编号标题层级",
+  "description": "仅分两批适配唯一 MinerU 结果根和显式标题编号层级，保留 main v2 及 1–6 级合同，仅运行新增直接回归。",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "scope": "document-ir-input-and-headings",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": null,
+  "branch": "codex/mineru-root-heading-minimal-20261031",
+  "base_branch": "main",
+  "worktree_path": "/Users/sc/.codex/worktrees/mineru-root-heading-20261031-xtefthlw/md2word",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "app/services/document_ir/mineru_package.py",
+    "tests/test_mineru_result_root_uniqueness.py",
+    "app/conversion/docx_rules/text_semantics.py",
+    "app/services/document_ir/mineru_converter.py",
+    "tests/test_document_ir_numbered_heading_levels.py",
+    ".trellis/spec/backend/word-generation-rules.md"
+  ],
+  "notes": "两批最小实现、直接回归、必要Spec和任务记录按用户新授权分别保存为两笔本地提交。第一批14/14及第二批10/10的成功结果直接复用，本提交轮不再测试。任务保留in_progress、不自动归档；不推送/合并/删分支/配置CI，不产生额外bookkeeping提交。其他工作区及历史11测试+2文档维护不纳入提交。",
+  "meta": {
+    "baseline_main": "a942bbdaada9d91f30b21354f851c600b1039c13",
+    "source_snapshot": "c9b1e6a9642d23d932bcd98c107e8bc66fb3c361",
+    "verification_scope": "复用实施轮14/14及10/10成功结果；本提交轮不运行测试",
+    "implementation_result": "两批源码、直接回归、必要Spec与任务记录分两笔本地提交保存",
+    "batch1_commit": "dd32568c21b87f364c9bcbbcb087b15963a339b9",
+    "batch2_commit": "本条记录所在的第二批提交；精确SHA见Git历史",
+    "local_commit_scope": "仅两批对应源码、直接回归、必要Spec及任务记录"
+  }
+}
