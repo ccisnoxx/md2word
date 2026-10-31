@@ -19,7 +19,7 @@ from app.domains.translation.provider_config import EffectiveAiProviderConfig
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
-from app.services.renderer.word_renderer import DocumentIRRenderResult
+from app.services.renderer.block_evidence import WordRenderResult
 from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
 from app.services.renderer import image_evidence
 
@@ -212,6 +212,7 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
         word_content = render_result.content
 
     renderer_metadata = build_renderer_evidence(document_ir, word_content, formula_report=render_result.formula_report,
+                                                render_result=render_result,
                                                 image_layout_report=render_result.image_layout_report,
                                                 expected_generation_policy=image_evidence.IMAGE_GENERATION_POLICY)
     ensure_renderer_integrity(renderer_metadata)
@@ -351,7 +352,7 @@ def _render_document(
     document_ir: DocumentIR,
     image_assets: list[Any],
     request: FormalMinerUConversionRequest,
-) -> DocumentIRRenderResult:
+) -> WordRenderResult:
     image_content_by_asset_id = {image_asset.asset_id: image_asset.content for image_asset in image_assets}
 
     def load_image(asset: DocumentIRAsset) -> bytes | None:
