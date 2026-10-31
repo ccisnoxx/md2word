@@ -1804,6 +1804,318 @@ async function expectLocatorInViewport(page: Page, selector: string): Promise<vo
   expect(box.y + box.height, `${selector} should fit inside the viewport`).toBeLessThanOrEqual(viewport.height + 1);
 }
 
+const con102StageScenarios = [
+  { stage: "translating", label: "翻译中", filterable: true },
+  { stage: "translation_validating", label: "校验翻译完整性", filterable: true },
+  { stage: "quality_checking", label: "检查文档质量", filterable: true },
+  { stage: "future_document_stage", label: "future_document_stage", filterable: false },
+];
+
+for (const scenario of con102StageScenarios) {
+  test(`CON-102：详情展示 ${scenario.stage}、失败定位与事件筛选，保持后端禁用动作`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const runtimeErrors: string[] = [];
+    page.on("pageerror", (error) => runtimeErrors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") {
+        runtimeErrors.push(message.text());
+      }
+    });
+    await mockApi(page);
+    await page.addInitScript(() => window.localStorage.setItem("md2word.frontend.access_token", "smoke-token"));
+    let currentJob = {
+      ...documentJob,
+      mode: "en2zh_pdf_to_word",
+      translation_mode: "en2zh",
+      document_language: "en",
+      status: "running",
+      stage: scenario.stage,
+      progress: 75,
+      result_file_id: null,
+      completed_at: null as string | null,
+      failed_stage: null as string | null,
+      error_code: null as string | null,
+      error_message: null as string | null,
+      available_actions: {
+        ...activeActionStates,
+        cancel: { enabled: false, disabled_reason: "后端锁定当前任务。", retryable: false },
+      },
+    };
+    await page.route("**/api/v1/document-jobs/docjob_smoke_001", (route) => route.fulfill({ json: currentJob }));
+    await page.route("**/api/v1/document-jobs/docjob_smoke_001/files", (route) => route.fulfill({
+      json: { job_id: documentJob.id, files: [] },
+    }));
+    await page.route("**/api/v1/document-jobs/docjob_smoke_001/translation-batches", (route) => route.fulfill({
+      json: { job_id: documentJob.id, generation: 0, items: [] },
+    }));
+    await page.route("**/api/v1/document-jobs/docjob_smoke_001/events", (route) => route.fulfill({
+      json: {
+        job_id: documentJob.id,
+        items: con102StageScenarios.map(({ stage }) => ({
+          id: `event_con102_${stage}`,
+          job_id: documentJob.id,
+          tenant_id: "tenant_default",
+          company_id: "company_default",
+          created_by: "worker",
+          stage,
+          level: "info",
+          event_type: "stage_started",
+          message: `CON-102 阶段事件 ${stage}`,
+          payload: { generation: 0 },
+          duration_ms: null,
+          trace_id: "trace_con102",
+          created_at: "2026-10-16T00:00:00Z",
+        })),
+      },
+    }));
+
+    await page.goto(`/jobs/${documentJob.id}`);
+    await expect(page).toHaveURL(`/jobs/${documentJob.id}`);
+    await expect(page).toHaveTitle("内部文档转换工作台");
+    await expect(page.getByRole("heading", { name: "任务详情", exact: true })).toBeVisible();
+    await expect(page.locator(".detail-overview .job-progress")).toContainText(scenario.label);
+    const actions = page.locator(".detail-header .job-actions");
+    await expect(actions.getByRole("button", { name: "下载", exact: true })).toBeDisabled();
+    await expect(actions.getByRole("button", { name: "取消", exact: true })).toBeDisabled();
+
+    await page.getByRole("tab", { name: "事件", exact: true }).click();
+    const timeline = page.locator(".event-timeline");
+    await expect(timeline.locator(".event-message")).toHaveCount(con102StageScenarios.length);
+    await expect(timeline.getByText(scenario.label, { exact: true })).toBeVisible();
+    if (scenario.filterable) {
+      await page.getByRole("tabpanel", { name: "事件", exact: true }).locator(".el-select").nth(1).click();
+      await page.locator(".el-select-dropdown:visible").getByText(scenario.label, { exact: true }).click();
+      await expect(timeline.locator(".event-message")).toHaveText([`CON-102 阶段事件 ${scenario.stage}`]);
+    }
+
+    currentJob = {
+      ...currentJob,
+      status: "failed",
+      stage: "failed",
+      failed_stage: scenario.stage,
+      error_code: "render_failed",
+      error_message: "CON-102 失败定位样本。",
+    };
+    await actions.getByRole("button", { name: "刷新", exact: true }).click();
+    await expect(page.locator(".task-disposition-fact").filter({ hasText: "失败阶段" })).toContainText(scenario.label);
+    await expect(actions.getByRole("button", { name: "重试", exact: true })).toBeDisabled();
+    await page.getByRole("tab", { name: "诊断", exact: true }).click();
+    await expect(page.locator(".failure-summary")).toContainText(`任务在 ${scenario.label} 阶段失败`);
+    await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+    expect(runtimeErrors).toEqual([]);
+  });
+}
+
+test("TR-406：翻译批次展示自动重试、终态失败、拆分成功与旧代响应保护", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const batchBase = {
+    job_id: "docjob_qa_001",
+    generation: 1,
+    root_batch_id: "batch_root_406",
+    parent_batch_id: null,
+    status: "succeeded",
+    page_start: 1,
+    page_end: 2,
+    item_count: 2,
+    char_count: 120,
+    split_level: 0,
+    attempt_count: 1,
+    max_attempts: 2,
+    deterministic_batch_count: 2,
+    provider_call_budget: 8,
+    source_document_ir_file_id: "file_ir_qa",
+    result_file_id: "file_batch_result",
+    ai_call_log_file_ids: ["file_ai_log"],
+    debug_archive_file_ids: [],
+    finish_reason: "stop",
+    usage: {},
+    response_id: "response_406",
+    error_code: null,
+    error_message: null,
+    retryable: false,
+    truncation_retry: false,
+    lease_expires_at: null,
+    created_at: "2026-10-22T00:00:00Z",
+    updated_at: "2026-10-22T00:01:00Z",
+    is_effective_leaf: true,
+    failure_disposition: "none",
+  };
+  const makeBatch = (batchId: string, overrides: Record<string, unknown> = {}) => ({
+    ...batchBase,
+    batch_id: batchId,
+    ...overrides,
+  });
+  const autoRetryResponse = {
+    job_id: "docjob_qa_001",
+    generation: 1,
+    execution: {
+      outcome: "retrying",
+      leaf_count: 2,
+      succeeded_leaf_count: 1,
+      active_leaf_count: 0,
+      retryable_failed_leaf_count: 1,
+      terminal_failed_leaf_count: 0,
+      failure_batch_id: null,
+      reason_code: null,
+      reason_message: null,
+      partial_artifacts_debug_only: true,
+    },
+    items: [
+      makeBatch("batch_root_406", { status: "split", is_effective_leaf: false, failure_disposition: "superseded", result_file_id: null }),
+      makeBatch("batch_success_406", { parent_batch_id: "batch_root_406" }),
+      makeBatch("batch_retry_406", {
+        parent_batch_id: "batch_root_406",
+        status: "failed",
+        error_code: "translation_failed",
+        error_message: "批次正在自动重试。",
+        retryable: true,
+        failure_disposition: "retrying",
+      }),
+    ],
+  };
+  const terminalResponse = {
+    ...autoRetryResponse,
+    execution: {
+      ...autoRetryResponse.execution,
+      outcome: "failed",
+      active_leaf_count: 0,
+      retryable_failed_leaf_count: 0,
+      terminal_failed_leaf_count: 1,
+      failure_batch_id: "batch_retry_406",
+      reason_code: "translation_failed",
+      reason_message: "本代翻译批次最终失败。",
+    },
+    items: [
+      autoRetryResponse.items[0],
+      autoRetryResponse.items[1],
+      makeBatch("batch_retry_406", {
+        parent_batch_id: "batch_root_406",
+        status: "failed",
+        error_code: "translation_failed",
+        error_message: "本代翻译批次最终失败。",
+        retryable: false,
+        failure_disposition: "terminal",
+      }),
+      makeBatch("batch_stopped_406", {
+        batch_id: "batch_stopped_406",
+        parent_batch_id: "batch_root_406",
+        status: "queued",
+        failure_disposition: "stopped",
+      }),
+    ],
+  };
+  const splitSuccessResponse = {
+    ...autoRetryResponse,
+    generation: 2,
+    execution: {
+      ...autoRetryResponse.execution,
+      outcome: "completed",
+      leaf_count: 2,
+      succeeded_leaf_count: 2,
+      active_leaf_count: 0,
+      retryable_failed_leaf_count: 0,
+      terminal_failed_leaf_count: 0,
+      failure_batch_id: null,
+      reason_code: null,
+      reason_message: null,
+    },
+    items: [
+      makeBatch("batch_root_406", { generation: 2, status: "split", is_effective_leaf: false, failure_disposition: "superseded", result_file_id: null }),
+      makeBatch("batch_success_406_a", { generation: 2, parent_batch_id: "batch_root_406" }),
+      makeBatch("batch_success_406_b", { generation: 2, parent_batch_id: "batch_root_406", page_start: 2, page_end: 2 }),
+    ],
+  };
+
+  await mockApi(page);
+  let currentJob = {
+    ...translationQaJob,
+    status: "running",
+    stage: "translating",
+    retry_count: 1,
+    result_file_id: null,
+    completed_at: null,
+    available_actions: activeActionStates,
+  };
+  let batchResponse = autoRetryResponse;
+  await page.route("**/api/v1/document-jobs/docjob_qa_001", async (route) => {
+    await route.fulfill({ json: currentJob });
+  });
+  await page.route("**/api/v1/document-jobs/docjob_qa_001/translation-batches", async (route) => {
+    await route.fulfill({ json: batchResponse });
+  });
+  await page.route("**/api/v1/document-jobs/docjob_qa_001/files", async (route) => {
+    await route.fulfill({ json: { job_id: currentJob.id, files: [] } });
+  });
+  await page.route("**/api/v1/document-jobs/docjob_qa_001/events", async (route) => {
+    await route.fulfill({ json: { job_id: currentJob.id, items: [] } });
+  });
+  await page.route("**/api/v1/document-jobs/docjob_qa_001/callback-messages/summary", async (route) => {
+    await route.fulfill({
+      json: {
+        job_id: currentJob.id,
+        status_counts: {},
+        replayable_count: 0,
+        oldest_replayable_age_seconds: 0,
+        recent_problem_messages: [],
+      },
+    });
+  });
+
+  for (const role of ["operator", "admin"] as const) {
+    for (const viewport of WORKBENCH_VIEWPORTS) {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await page.addInitScript((theme) => window.localStorage.setItem("md2word.theme.mode", theme), viewport.name === "laptop" ? "dark" : "light");
+      currentJob = { ...currentJob, status: "running", stage: "translating", retry_count: 1 };
+      batchResponse = autoRetryResponse;
+      await page.goto("/login");
+      await page.evaluate(() => window.localStorage.removeItem("md2word.frontend.access_token"));
+      await page.goto("/login");
+      await loginAsRole(page, role);
+      await page.goto(`/jobs/${currentJob.id}`);
+      const detail = page.locator(".job-detail-page");
+      await page.getByRole("tab", { name: "诊断", exact: true }).click();
+      const batches = page.getByLabel("翻译批次", { exact: true });
+      await expect(batches).toBeVisible();
+      await expect(batches).toContainText("自动重试中");
+      await expect(batches).toContainText("拆分父项");
+      await expect(batches).not.toContainText("详细结论");
+      await expectNoPageHorizontalOverflow(page);
+      await expectElementContentFitsViewportWidth(page, detail);
+      const refreshBatches = batches.getByRole("button", { name: "刷新批次", exact: true });
+      await refreshBatches.focus();
+      await expect(refreshBatches).toBeFocused();
+
+      currentJob = {
+        ...currentJob,
+        status: "failed",
+        stage: "failed",
+        failed_stage: "translating",
+        error_code: "translation_failed",
+        error_message: "本代翻译批次最终失败。",
+      };
+      batchResponse = terminalResponse;
+      await detail.getByRole("button", { name: "刷新诊断", exact: true }).first().click();
+      await expect(batches).toContainText("翻译失败，未生成可交付 Word");
+      await expect(batches).toContainText("其他批次已停止");
+
+      currentJob = { ...currentJob, status: "running", stage: "translating", retry_count: 2 };
+      batchResponse = terminalResponse;
+      await detail.getByRole("button", { name: "刷新诊断", exact: true }).first().click();
+      await expect(batches).toContainText("翻译失败，未生成可交付 Word");
+
+      batchResponse = splitSuccessResponse;
+      currentJob = { ...currentJob, status: "succeeded", stage: "completed", completed_at: "2026-10-22T00:02:00Z" };
+      await detail.getByRole("button", { name: "刷新诊断", exact: true }).first().click();
+      await expect(batches).toContainText("翻译批次已完成");
+      await expect(batches).not.toContainText("翻译失败，未生成可交付 Word");
+      await page.screenshot({ path: testInfo.outputPath(`translation-batches-${role}-${viewport.name}.png`), fullPage: true });
+      if (viewport.name === "laptop") {
+        await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+      }
+    }
+  }
+});
+
 test("operations redesign renders verified desktop, tablet, and mobile screenshots", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
   for (const viewport of WORKBENCH_VIEWPORTS) {

@@ -1,9 +1,12 @@
-# File: app/domains/files/service.py
-# Purpose: 处理文件元数据登记、上传授权、代理写入和保留期物理删除。
+# 文件：app/domains/files/service.py
+# 用途： 处理文件元数据登记、上传授权、代理写入和保留期物理删除。
 
 from __future__ import annotations
 
 import hashlib
+import os
+import tempfile
+from botocore.exceptions import ClientError
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -16,7 +19,8 @@ from fastapi import status
 from app.services.auth.models import AuthenticatedUser
 from app.core.config import Settings
 from app.core.errors import ApiError
-from app.domains.files.models import DocumentFileRecord, DocumentFileStorageProvider, DocumentFileType
+from app.domains.files.result_registration import is_result_candidate, is_preview_candidate
+from app.domains.files.models import DocumentFileRecord, DocumentFileStorageProvider, DocumentFileType, WORD_PREVIEW_FILE_TYPES
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.files.validation import validate_pdf_metadata, validate_pdf_upload
 from app.domains.resources.models import utc_now
@@ -25,6 +29,10 @@ RETENTION_DELETE_BATCH_LIMIT = 50
 RETENTION_DELETE_CONFIRMATION_PHRASE = "DELETE EXPIRED FILES"
 RETENTION_DELETE_SUPPORTED_LOCAL_PROVIDERS = {"local_file", "local_object"}
 S3_DELETE_FAKE_CONTRACT_VERSION = "s3-delete-fake-v1"
+
+
+class GeneratedArtifactWriteError(RuntimeError):
+    """独立审核证据对象保存失败，只携带可公开的受控消息。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,7 +149,7 @@ class FileUploadService:
         checksum_sha256: str | None,
         job_id: str | None,
     ) -> FileUploadAuthorization:
-        """登记 source_pdf 元数据，并生成本地代理或 S3 直传授权。"""
+        """登记 source_pdf 元数据，统一授权后端代理上传以校验内容并收口状态。"""
 
         validate_pdf_metadata(
             filename=filename,
@@ -182,11 +190,10 @@ class FileUploadService:
             created_at=now,
             updated_at=now,
         )
-        upload_url = self._build_presigned_put_url(record) if provider == "s3" else None
         self.repository.create_document_file(record)
         return FileUploadAuthorization(
             record=record,
-            upload_url=upload_url,
+            upload_url=None,
             method="PUT",
             headers={"Content-Type": record.mime_type},
             expires_at=now + timedelta(seconds=self.settings.oss_upload_presign_expires_seconds),
@@ -199,6 +206,8 @@ class FileUploadService:
         if record is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文件不存在: {file_id}")
         self._ensure_visible(record, user)
+        if record.file_type == "quality_report" or record.metadata.get("asset_role") in {"table_reference", "table_placeholder", "table_evidence"}:
+            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "表格证据不能通过通用文件元数据入口访问。")
         return record
 
     def upload_authorized_content(
@@ -212,6 +221,8 @@ class FileUploadService:
         """通过后端代理上传已授权文件内容，并回填 checksum / page_count。"""
 
         record = self.get_document_file(file_id, user=user)
+        if is_result_candidate(record) or is_preview_candidate(record):
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "内部结果候选不允许代理上传。")
         if record.status != "pending_upload":
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件当前状态不允许重复上传。")
         validation = validate_pdf_upload(
@@ -236,6 +247,10 @@ class FileUploadService:
                 "uploaded_size_bytes": validation.size_bytes,
             }
         )
+        current = self.repository.get_document_file(file_id)
+        if (current is not None and current.status == "uploaded" and current.deletion_claim is None
+                and current.checksum_sha256 == checksum_sha256 and current.size_bytes == validation.size_bytes):
+            return current
         return self.repository.update_document_file(
             file_id,
             status="uploaded",
@@ -258,24 +273,42 @@ class FileUploadService:
     def read_file_content(self, record: DocumentFileRecord) -> bytes:
         """读取 document_file 二进制内容，供 Worker 提交源文件和解析中间资产。"""
 
+        if record.deletion_claim is not None:
+            raise ApiError(409, "conflict", "文件已预留删除，不能读取。")
         if record.storage_provider == "s3":
             response = self._s3_client().get_object(Bucket=record.bucket, Key=record.object_key)
             body = response["Body"]
             return body.read()
-        return self.resolve_local_object_path(record.object_key).read_bytes()
+        return self.resolve_file_object_path(record).read_bytes()
 
     def create_presigned_download_url(self, record: DocumentFileRecord, *, expires_seconds: int) -> str:
         """为 S3 文件生成临时下载 URL；本地存储由 API 路由签发本地 URL。"""
 
+        if record.file_type == "quality_report" or record.metadata.get("asset_role") == "table_evidence":
+            raise ApiError(403, "forbidden", "表格报告必须通过受控任务查询读取。")
         if record.storage_provider != "s3":
             raise ValueError("本地文件下载不支持 S3 presigned URL。")
         if not record.bucket:
             raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 bucket 未配置。")
+        if record.file_type.startswith("word_preview_"):
+            expires_seconds = self.preview_download_ttl(record, expires_seconds=expires_seconds)
         return self._s3_client().generate_presigned_url(
             "get_object",
             Params={"Bucket": record.bucket, "Key": record.object_key},
             ExpiresIn=expires_seconds,
         )
+
+    def preview_download_ttl(self, record: DocumentFileRecord, *, expires_seconds: int) -> int:
+        """预览直连 URL 的有效期同时受文件、主件和现有签发上限约束。"""
+        source = self.repository.get_document_file(record.metadata.get("source_result_file_id", ""))
+        if source is None or source.expires_at is None or record.expires_at is None:
+            raise ApiError(409, "conflict", "预览文件缺少有效主件保留期。")
+        expiries = [file.expires_at for file in (source, record) if not self.is_publication_retained(file)]
+        ttl = min(expires_seconds, self.settings.oss_download_presign_expires_seconds,
+                  *(int((expiry - utc_now()).total_seconds()) for expiry in expiries))
+        if ttl <= 0:
+            raise ApiError(409, "conflict", "预览文件或主件已过期。")
+        return ttl
 
     def preview_retention_physical_delete(
         self,
@@ -385,20 +418,24 @@ class FileUploadService:
         content: bytes,
         metadata: dict[str, Any] | None = None,
         expires_at: datetime | None = None,
+        object_version: str | None = None,
     ) -> DocumentFileRecord:
-        """登记并写入 Worker 生成的中间或结果文件。"""
+        """登记 Worker 产物；预览先登记候选，独立证据支持受控 object_version。"""
 
         file_id = f"file_{uuid4().hex[:12]}"
         provider = self._storage_provider()
         bucket = self._bucket_for(provider)
         if provider == "s3" and not bucket:
             raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 bucket 未配置。")
+        preview = file_type in WORD_PREVIEW_FILE_TYPES
         object_key = self._generated_object_key_for(
             tenant_id=tenant_id,
             job_id=job_id,
             file_type=file_type,
+            file_id=file_id,
             filename=filename,
             provider=provider,
+            object_version=object_version,
         )
         now = utc_now()
         checksum_sha256 = f"sha256:{hashlib.sha256(content).hexdigest()}"
@@ -415,17 +452,55 @@ class FileUploadService:
             mime_type=mime_type,
             size_bytes=len(content),
             checksum_sha256=checksum_sha256,
-            status="uploaded",
+            status="pending_upload" if preview else "uploaded",
             expires_at=expires_at or now + timedelta(days=self.retention_days_resolver(file_type)),
-            metadata=metadata or {},
+            metadata={**(metadata or {}), "word_preview_artifact_protocol": 1} if preview else (metadata or {}),
             created_by=created_by,
             created_at=now,
             updated_at=now,
         )
-        etag = self._write_object(record, content)
-        stored = record.model_copy(update={"etag": etag, "updated_at": utc_now()})
-        self.repository.create_document_file(stored)
+        try:
+            if preview:
+                # 插入失败时尚无对象；对象或确认失败时保留 metadata 与独立 key 供恢复/清理。
+                self.repository.create_document_file(record)
+            etag = self._write_object(record, content)
+            if preview:
+                return self.repository.update_document_file(record.id, status="uploaded", etag=etag, updated_at=utc_now())
+            stored = record.model_copy(update={"etag": etag, "updated_at": utc_now()})
+            self.repository.create_document_file(stored)
+        except Exception:
+            if object_version is None:
+                raise
+            # 存储/仓储异常可能含对象路径；本版审核证据失败不能进入公开错误或 traceback。
+            raise GeneratedArtifactWriteError("审核证据文件保存失败，请重试或联系管理员。") from None
         return stored
+
+    def register_result_candidate(
+        self, *, tenant_id: str, company_id: str, job_id: str, created_by: str,
+        filename: str, content: bytes, metadata: dict[str, Any], expires_at: datetime | None = None,
+    ) -> DocumentFileRecord:
+        """先持久化可追踪的私有候选，再写独立对象；返回值只供任务选定凭据。"""
+
+        file_id = f"file_{uuid4().hex}"
+        provider = self._storage_provider()
+        bucket = self._bucket_for(provider)
+        if provider == "s3" and not bucket:
+            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 bucket 未配置。")
+        now = utc_now()
+        pending = DocumentFileRecord(
+            id=file_id, tenant_id=tenant_id, company_id=company_id, job_id=job_id,
+            created_by=created_by, file_type="generated_word", storage_provider=provider, bucket=bucket,
+            object_key=self._object_key_for(tenant_id, file_id, filename, provider),
+            original_filename=Path(filename).name,
+            mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            size_bytes=len(content), checksum_sha256=f"sha256:{hashlib.sha256(content).hexdigest()}",
+            status="pending_upload", expires_at=expires_at if expires_at is not None else now + timedelta(days=self.retention_days_resolver("generated_word")),
+            metadata={**metadata, "document_job_result_protocol": 1}, created_at=now, updated_at=now,
+        )
+        self.repository.create_document_file(pending)
+        etag = self._write_object(pending, content)
+        # 对象写入后的描述只进入 receipt，落选候选保持 pending，不能被扫描晋升。
+        return pending.model_copy(update={"status": "uploaded", "etag": etag})
 
     def _validate_retention_delete_file_ids(self, file_ids: list[str]) -> list[str]:
         """校验物理删除批量 file_id，避免空值、重复和过大批次。"""
@@ -559,6 +634,10 @@ class FileUploadService:
     def _document_job_delete_eligibility(self, record: DocumentFileRecord) -> tuple[str, str]:
         """判断任务删除流程是否可直接清理该文件，不要求 retention 过期。"""
 
+        if self.is_publication_retained(record):
+            return "skipped_publication_protected", "文件已被发布记录永久引用。"
+        if record.deletion_claim is not None:
+            return "skipped_deletion_reserved", "文件已预留删除，需核对原删除结果。"
         if record.status == "deleted":
             return "skipped_already_deleted", "文件 metadata 已是 deleted。"
         if record.status == "pending_upload":
@@ -572,6 +651,10 @@ class FileUploadService:
     def _retention_delete_eligibility(self, record: DocumentFileRecord, *, now: datetime) -> tuple[str, str]:
         """判断文件是否满足第一版物理删除条件。"""
 
+        if self.is_publication_retained(record):
+            return "skipped_publication_protected", "文件已被发布记录永久引用。"
+        if record.deletion_claim is not None:
+            return "skipped_deletion_reserved", "文件已预留删除，需核对原删除结果。"
         if record.status == "deleted":
             return "skipped_already_deleted", "文件 metadata 已是 deleted。"
         if record.status != "expired":
@@ -590,8 +673,12 @@ class FileUploadService:
     def _delete_retention_local_object(self, record: DocumentFileRecord, *, now: datetime) -> FileRetentionDeleteItem:
         """删除本地 document_file 二进制，并在成功或已缺失时保留 metadata 但标记 deleted。"""
 
+        claimed = None
+        deleted = False
         try:
-            object_path = self._resolve_retention_local_path(record)
+            claim_id = "deletion_" + uuid4().hex
+            claimed = self.repository.reserve_document_file_deletion(record.id, claim_id=claim_id, now=now)
+            object_path = self.resolve_file_object_path(claimed)
             if object_path.exists():
                 object_path.unlink()
                 outcome = "deleted"
@@ -601,24 +688,15 @@ class FileUploadService:
                 outcome = "already_missing"
                 reason = "本地文件已不存在，按幂等清理处理。"
                 deleted = False
-            updated = self.repository.update_document_file(
-                record.id,
-                status="deleted",
-                updated_at=now,
-            )
-        except OSError as exc:
+            updated = self.repository.finish_document_file_deletion(record.id, claim_id=claim_id, now=now)
+        except (OSError, ValueError) as exc:
+            # 预留与 unlink 是分别已确认的事实，后续失败不能把它们报告为未发生。
+            reason = (f"删除预留已保留，需核对本地对象及 metadata: {exc.__class__.__name__}"
+                      if claimed is not None else f"删除预留或路径校验失败: {exc.__class__.__name__}")
             return self._build_retention_delete_item(
-                record,
-                outcome="failed",
-                reason=f"本地文件删除失败: {exc.__class__.__name__}",
-                status_after=record.status,
-            )
-        except (FileNotFoundError, ValueError) as exc:
-            return self._build_retention_delete_item(
-                record,
-                outcome="failed",
-                reason=f"metadata 更新或路径解析失败: {exc.__class__.__name__}",
-                status_after=record.status,
+                record, outcome="failed", reason=reason,
+                status_after=claimed.status if claimed is not None else record.status,
+                deleted=deleted, metadata_updated=claimed is not None,
             )
         return self._build_retention_delete_item(
             record,
@@ -717,7 +795,7 @@ class FileUploadService:
             items=items,
         )
 
-    def _resolve_retention_local_path(self, record: DocumentFileRecord) -> Path:
+    def resolve_file_object_path(self, record: DocumentFileRecord) -> Path:
         """按文件记录自身的 storage_provider 解析本地路径，避免运行时配置切换导致删错根目录。"""
 
         if record.storage_provider == "local_object":
@@ -774,13 +852,20 @@ class FileUploadService:
         tenant_id: str,
         job_id: str,
         file_type: DocumentFileType,
+        file_id: str,
         filename: str,
         provider: DocumentFileStorageProvider,
+        object_version: str | None = None,
     ) -> str:
+        """用本次登记身份隔离物理对象，避免同名重试覆盖已登记字节。"""
+
         safe_filename = _safe_object_filename(filename)
+        if object_version is not None and re.fullmatch(r"[A-Za-z0-9_-]{1,100}", object_version) is None:
+            raise ValueError("生成文件的 object_version 必须是受控安全路径段。")
+        version_segment = f"{object_version}/" if object_version is not None else ""
         logical_key = (
             f"document-jobs/{_safe_path_part(tenant_id)}/{_safe_path_part(job_id)}/"
-            f"{_safe_path_part(file_type)}/{safe_filename}"
+            f"{_safe_path_part(file_type)}/{_safe_path_part(file_id)}/{version_segment}{safe_filename}"
         )
         if provider != "s3":
             return logical_key
@@ -789,37 +874,70 @@ class FileUploadService:
             return f"{prefix}/{logical_key}"
         return logical_key
 
+    def ensure_publication_physical_exclusive(self, records: tuple[DocumentFileRecord, ...]) -> None:
+        """按实际存储 namespace 识别历史别名；不改写或迁移任何旧对象。"""
+        from app.domains.document_jobs.publication import PublicationConflict, physical_identity
+
+        def identity(file):
+            if file.storage_provider == "s3":
+                return ("s3", file.bucket, file.object_key)
+            try:
+                return ("local", str(self.resolve_file_object_path(file)))
+            except (OSError, ValueError):
+                raise PublicationConflict("publication_object_identity_unverified") from None
+
+        inventory = self.repository.list_document_files()
+        identities = [(file.id, identity(file)) for file in inventory]
+        for record in records:
+            physical_identity(record)
+            selected = identity(record)
+            if any(file_id != record.id and locator == selected for file_id, locator in identities):
+                raise PublicationConflict("publication_object_identity_unverified")
+
+    def is_publication_retained(self, record: DocumentFileRecord) -> bool:
+        """保留期只作为授权读取的例外，不修改原始 descriptor。"""
+        return (record.status == "uploaded" and record.deletion_claim is None
+                and self.repository.is_document_file_protected(record.id))
+
     def _write_object(self, record: DocumentFileRecord, content: bytes) -> str | None:
+        """创建后永不覆盖；迟到上传只能只读复用相同实物。"""
+        current = self.repository.get_document_file(record.id)
+        if current is not None and (current.status in {"expired", "deleted"} or current.deletion_claim is not None
+                or current.expires_at is not None and current.expires_at <= utc_now()):
+            raise ApiError(409, "conflict", "文件生命周期已失效，不能写入对象。")
+        checksum = f"sha256:{hashlib.sha256(content).hexdigest()}"
         if record.storage_provider == "s3":
-            response = self._s3_client().put_object(
-                Bucket=record.bucket,
-                Key=record.object_key,
-                Body=content,
-                ContentType=record.mime_type,
-            )
+            try:
+                response = self._s3_client().put_object(Bucket=record.bucket, Key=record.object_key,
+                    Body=content, ContentType=record.mime_type, IfNoneMatch="*")
+            except ClientError as error:
+                if error.response.get("Error", {}).get("Code") not in {"PreconditionFailed", "412"}:
+                    raise
+                if self.read_file_content(record) != content:
+                    raise ApiError(409, "conflict", "既有对象内容不同，不能覆盖。") from None
+                return current.etag if current is not None else record.etag
             etag = response.get("ETag") if isinstance(response, dict) else None
             return str(etag).strip('"') if etag else None
-
-        target_path = self.resolve_local_object_path(record.object_key)
+        target_path = self.resolve_file_object_path(record)
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = target_path.with_name(f"{target_path.name}.tmp")
-        temp_path.write_bytes(content)
-        temp_path.replace(target_path)
-        return f"sha256:{hashlib.sha256(content).hexdigest()}"
+        descriptor, temporary_name = tempfile.mkstemp(prefix=target_path.name + ".", suffix=".tmp", dir=target_path.parent)
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(content)
+            try:
+                os.link(temporary, target_path)
+            except FileExistsError:
+                if target_path.read_bytes() != content:
+                    raise ApiError(409, "conflict", "既有对象内容不同，不能覆盖。") from None
+        finally:
+            temporary.unlink(missing_ok=True)
+        return checksum
 
     def _local_object_root(self) -> Path:
         if self.settings.jobs_artifact_storage_backend == "local_object":
             return self.settings.jobs_artifact_object_store_dir
         return self.settings.data_path / "document_file_objects"
-
-    def _build_presigned_put_url(self, record: DocumentFileRecord) -> str:
-        if not record.bucket:
-            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 bucket 未配置。")
-        return self._s3_client().generate_presigned_url(
-            "put_object",
-            Params={"Bucket": record.bucket, "Key": record.object_key, "ContentType": record.mime_type},
-            ExpiresIn=self.settings.oss_upload_presign_expires_seconds,
-        )
 
     def _s3_client(self) -> Any:
         try:

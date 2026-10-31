@@ -1,5 +1,5 @@
-// File: frontend/src/utils/incidents.ts
-// Purpose: Shared helpers for the incident triage queue page.
+// 文件：frontend/src/utils/incidents.ts
+// 用途：异常处理队列共用的筛选校验和诊断辅助函数。
 import type {
   DocumentJobIncidentBulkResponse,
   DocumentJobIncidentFailureType,
@@ -10,6 +10,7 @@ import type {
   DocumentJobStatus,
 } from "@/api/types";
 import { isEditableShortcutTarget } from "@/utils/keyboardShortcuts";
+import { documentJobStages } from "@/utils/format";
 
 export const incidentFailureTypes: DocumentJobIncidentFailureType[] = [
   "conversion_failed",
@@ -72,17 +73,7 @@ export function isDocumentJobIncidentStatus(value: string): value is DocumentJob
 }
 
 export function isDocumentJobIncidentStage(value: string): value is DocumentJobStage {
-  return [
-    "uploaded",
-    "parsing",
-    "parsed",
-    "ir_converting",
-    "rendering",
-    "uploading",
-    "completed",
-    "failed",
-    "canceled",
-  ].includes(value);
+  return documentJobStages.includes(value as DocumentJobStage);
 }
 
 export function incidentFailureTagType(

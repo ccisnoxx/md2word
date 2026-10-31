@@ -6,6 +6,7 @@ from app.domains.templates.layout_config_schema import (
     TemplateHeaderConfig,
     TemplatePageSetupConfig,
     TemplateParagraphStyleConfig,
+    TemplateTableContentStyleConfig,
     TemplateTableStyleConfig,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "TemplateHeaderConfig",
     "TemplatePageSetupConfig",
     "TemplateParagraphStyleConfig",
+    "TemplateTableContentStyleConfig",
     "TemplateTableStyleConfig",
 ]

@@ -17,7 +17,7 @@ source_files:
   - app/domains/files/quota_policy.py
   - app/domains/files/storage_usage.py
   - app/domains/files/service.py
-summary: Files API 提供 PDF 上传授权、本地代理上传、文件 metadata 查询、Admin-only 文件库搜索、metadata 保留期管理、quota policy dry-run、受保护的过期文件物理删除、signed cleanup run 执行合同、手动 scheduler dry-run 和 durable run history。
+summary: Files API 提供 PDF 上传授权、后端代理上传、文件 metadata 查询、Admin-only 文件库搜索、metadata 保留期管理、quota policy dry-run、受保护的过期文件物理删除、signed cleanup run 执行合同、手动 scheduler dry-run 和 durable run history。
 tags: [files, api, pdf, upload, retention, search, quota]
 last_reviewed: 2026-06-07
 ---
@@ -51,6 +51,8 @@ Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文�
 | `quota_override_confirmation` | 否 | Admin-only quota override 确认短语，必须为 `OVERRIDE FILE QUOTA POLICY`。 |
 
 - 响应：`201 Created`，包含 `file_id`、`upload_url`、`method=PUT`、`headers`、`expires_at`、`object_key`、`max_bytes` 和 `file`。
+- 所有存储 provider（包括 `s3`）的 `upload_url` 均指向后端 `PUT /api/v1/files/{file_id}/content`。调用方上传时须携带响应中的 `headers` 和 Bearer token。
+- 授权仅登记 `pending_upload` 元数据；内容校验及对象写入成功后才更新为 `uploaded`，此时才能创建 document job。
 - quota 行为：
   - 默认配置下 quota policy disabled 或 dry-run，不影响上传授权。
   - 当 policy 状态为 `ready` 且 projected usage 达到 block 阈值时，返回 `409 conflict`，不创建 `document_files`，写入 `file.quota_policy_block` audit event。
@@ -60,12 +62,13 @@ Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文�
 
 ### `PUT /api/v1/files/{file_id}/content`
 
-- 用途：本地代理上传 PDF 内容。
+- 用途：通过后端代理上传 PDF 内容，由后端写入配置的本地存储或 S3。
 - 请求体：PDF 二进制。
 - 关键行为：
   - 请求体不能超过 `JOBS_UPLOAD_MAX_BYTES`。
-  - 本地代理上传需要继续带 Bearer token。
-  - 成功后文件状态变为可用于创建 document job。
+  - 上传需要继续带 Bearer token，沿用文件所有者或同租户、同公司 Admin 的访问限制。
+  - 后端校验 PDF 内容、页数、授权大小和可选 checksum，成功写入对象后回填 checksum、page_count 和 etag，并把文件状态更新为 `uploaded`，以供创建 document job。
+  - 内容校验或 S3 写入失败时保持 `pending_upload`，不写入 `file.upload_content` 成功审计。
 - 响应：`201 Created`，返回 `file`。
 - 成功动作写入 `file.upload_content` audit event。
 

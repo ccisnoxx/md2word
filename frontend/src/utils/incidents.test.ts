@@ -6,6 +6,7 @@ import {
   countBatchRetryable,
   failedOrSkippedBatchItems,
   incidentPriorityLabel,
+  isDocumentJobIncidentStage,
   isIncidentFailureType,
   isIncidentRetryCountBucket,
   isIncidentSort,
@@ -81,6 +82,20 @@ function buildIncident(id: string, retryable: boolean, stalled = false, blocked 
 }
 
 describe("incident helpers", () => {
+  it.each(["translating", "translation_validating", "quality_checking", "ir_converting", "failed"])(
+    "CON-102：异常 URL 筛选接受阶段 %s",
+    (stage) => {
+      expect(isDocumentJobIncidentStage(stage)).toBe(true);
+    },
+  );
+
+  it.each(["future_document_stage", "", "TRANSLATING", "toString"])(
+    "CON-102：异常 URL 筛选拒绝未知或非法阶段 %s",
+    (stage) => {
+      expect(isDocumentJobIncidentStage(stage)).toBe(false);
+    },
+  );
+
   it("validates known query enum values", () => {
     expect(isIncidentFailureType("artifact_missing")).toBe(true);
     expect(isIncidentFailureType("not_real")).toBe(false);

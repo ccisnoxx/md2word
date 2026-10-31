@@ -1,0 +1,707 @@
+"""选定主 DOCX 后的预览编排；不重新运行解析、翻译或 renderer。"""
+
+from __future__ import annotations
+
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+import json
+import logging
+import re
+import sqlite3
+import time
+from uuid import UUID, uuid4
+
+from botocore.exceptions import BotoCoreError, ClientError
+from pydantic import ValidationError
+
+from app.core.errors import ApiError
+from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJobRecord
+from app.domains.document_jobs.preview_state import (
+    PreviewArtifactObservation, PreviewClaimRequest, PreviewRetryResult, current_preview_ids, page_quality_context_sha256,
+)
+from app.domains.resources.models import utc_now
+from app.domains.files.models import DocumentFileRecord, WORD_PREVIEW_FILE_TYPES
+from app.domains.files.result_registration import ensure_result_descriptor_matches, file_lifecycle_unavailable, retained_file_expiry
+from app.services.preview.models import PreviewFailure, PreviewPolicy, PreviewResult, sha256, validate_docx, validate_result
+from app.services.preview.page_mapping import (
+    MappingBinding, build_page_mapping, read_page_mapping, unavailable_mapping,
+)
+from app.services.document_ir.models import DocumentIR
+from app.services.renderer.evidence import validate_persisted_renderer_content, validate_persisted_render_evidence
+from app.services.renderer.block_anchors import validate_block_anchor_evidence
+from app.services.preview.page_quality import (
+    PageQualityBinding, parse_page_quality_policy, policy_sha256, build_page_quality_run,
+    read_page_quality_run, page_quality_summary,
+)
+from app.services.preview.provider import WordPreviewProvider
+from app.services.preview.sandbox_adapter import SandboxWordPreviewProvider
+
+PREVIEW_FILE_TYPES = WORD_PREVIEW_FILE_TYPES
+_UNREAD_QUALITY_PLAN = object()
+
+
+class _PreviewStorageError(OSError):
+    """新预览I/O的安全错误，不保留驱动消息、对象路径或客户内容。"""
+
+    code = "preview_storage_failed"
+
+    def __init__(self):
+        super().__init__("Word 预览存储失败，请稍后重试。")
+
+
+def _is_preview_storage_error(error: Exception) -> bool:
+    return (isinstance(error, (OSError, sqlite3.Error, BotoCoreError, ClientError))
+            or type(error).__module__.startswith("pymysql."))
+
+
+@contextmanager
+def _preview_storage_io():
+    """只归一化已识别的存储异常；编程、业务权限和契约错误仍按原语义抛出。"""
+    try:
+        yield
+    except Exception as error:
+        if _is_preview_storage_error(error):
+            raise _PreviewStorageError() from None
+        raise
+
+
+class DocumentJobPreviewService:
+    """仓储负责原子身份与预算，文件服务负责追加对象；本服务只编排锁外 I/O。"""
+
+    def __init__(self, settings, job_repository, event_repository, file_repository, file_service,
+                 provider: WordPreviewProvider | None = None, audit_service=None, observer=None):
+        self.settings, self.job_repository, self.event_repository = settings, job_repository, event_repository
+        self.file_repository, self.file_service = file_repository, file_service
+        self.provider = provider or SandboxWordPreviewProvider(
+            backend=settings.word_preview_backend, launcher=settings.word_preview_launcher,
+            profile_path=settings.word_preview_profile_path, profile_id=settings.word_preview_profile_id,
+            profile_sha256=settings.word_preview_profile_sha256)
+        self.observer = observer
+        self.audit_service = audit_service
+        self.logger = logging.getLogger("business")
+
+    def ensure_initial(self, job: DocumentJobRecord, *, trace_id: str | None = None) -> tuple[DocumentJobRecord, bool]:
+        # 缺快照的历史任务不自动回填或运行。
+        if "word_preview" not in job.request_snapshot:
+            return job, True
+        current, completed, _ = self._run(job, request_key="initial", requested_by=job.created_by, reason="initial",
+                         independent=False, resume=True, trace_id=trace_id)
+        return current, completed
+
+    def retry(self, job: DocumentJobRecord, *, user, reason: str, request_id: str,
+              trace_id: str | None = None) -> PreviewRetryResult:
+        reason = reason.strip()
+        if not reason or len(reason) > 1000:
+            raise ApiError(400, "invalid_request", "预览重试必须提供 1..1000 字的原因。")
+        try:
+            key = str(UUID(request_id))
+        except (ValueError, TypeError, AttributeError):
+            raise ApiError(400, "invalid_request", "预览重试 request ID 必须是 UUID。") from None
+        if (job.status != "succeeded" or job.stage != "completed" or job.prepared_result is None
+                or job.result_file_id != job.prepared_result.file.id or job.deleted_at is not None
+                or job.archived_at is not None or job.delivery_status == "published"
+                or "word_preview" not in job.request_snapshot):
+            raise ApiError(409, "conflict", "当前任务或主件不支持预览单独重试。")
+        try:
+            result, _, run = self._run(job, request_key=key, requested_by=user.id, reason=reason,
+                                  independent=True, resume=False, trace_id=trace_id, actor=user)
+            available = False
+            state = result.word_preview_state
+            if run is not None and run.status == "succeeded" and state is not None and state.current_run.run_id == run.run_id:
+                observation = observe_current_preview(result, self.file_repository, self.file_service)
+                available = observation.available
+            return PreviewRetryResult(job=result, run=run, available=available)
+        except ValueError as exc:
+            raise ApiError(409, "conflict", str(exc)) from None
+
+    def _source(self, job: DocumentJobRecord):
+        receipt = job.prepared_result
+        if receipt is None:
+            raise ValueError("预览缺少当前主件凭据。")
+        with _preview_storage_io():
+            file = self.file_repository.get_document_file(receipt.file.id)
+        if (file is None or file.status != "uploaded" or file.expires_at is None or file.expires_at <= utc_now()):
+            raise ValueError("预览主件 metadata 与选定凭据不一致或已失效。")
+        ensure_result_descriptor_matches(file, receipt.file)
+        with _preview_storage_io():
+            content = self.file_service.read_file_content(file)
+        if len(content) != receipt.file.size_bytes or sha256(content) != receipt.file.checksum_sha256:
+            raise ValueError("选定主 DOCX 字节与凭据不一致。")
+        return file, content
+
+    def _run(self, job, *, request_key, requested_by, reason, independent, resume, trace_id, actor=None):
+        policy = PreviewPolicy.model_validate(job.request_snapshot["word_preview"])
+        page_policy = _frozen_page_policy(job)
+        page_hash = policy_sha256(page_policy) if page_policy is not None and page_policy.enabled else None
+        actual_context = page_quality_context_sha256(job) if page_hash is not None else None
+        file, docx = self._source(job)
+        fingerprint = sha256(json.dumps({"tenant": job.tenant_id, "company": job.company_id, "job": job.id,
+            "generation": job.retry_count, "result": file.id, "sha256": file.checksum_sha256,
+            "profile": policy.profile_sha256, "action": "retry" if independent else "initial",
+            **({"page_quality_policy_sha256": page_hash, "page_quality_context_sha256": actual_context} if page_hash is not None else {}),
+            "actor": requested_by, "reason_sha256": sha256(reason.encode())}, sort_keys=True).encode())
+        request = PreviewClaimRequest(generation=job.retry_count, result_file_id=file.id, docx_sha256=file.checksum_sha256,
+            policy=policy, page_quality_policy_sha256=page_hash, page_quality_context_sha256=actual_context, request_key=request_key, request_fingerprint=fingerprint, requested_by=requested_by,
+            reason_sha256=sha256(reason.encode()), independent=independent, resume=resume)
+        while True:
+            # 使用最新记录建立观测；job锁内仍须比较revision/current，禁止复用陈旧成功。
+            with _preview_storage_io():
+                latest = self.job_repository.get_document_job(job.id) or job
+            observation = None
+            if latest.word_preview_state is not None:
+                selected = latest.word_preview_state.current_run
+                if selected.manifest_file_id is not None and selected.status in {"succeeded", "failed", "unavailable"}:
+                    observation = observe_current_preview(latest, self.file_repository, self.file_service,
+                        check_page_quality=page_hash is not None and request_key not in latest.word_preview_state.runs_by_request_key)
+            with _preview_storage_io():
+                claim = self.job_repository.claim_document_job_preview(job.id, request=request, observation=observation)
+            if claim.disposition == "stale":
+                if independent:
+                    raise ValueError("预览来源、配置或任务状态已改变。")
+                return claim.job, False, claim.run
+            if claim.disposition == "busy":
+                return claim.job, False, claim.run
+            if claim.disposition == "storage_failed":
+                raise PreviewFailure("preview_storage_failed")
+            if claim.disposition not in {"claimed", "finalizing"}:
+                # 主执行只接受当前attempt已留证的终态，文件仓储仍在锁外复查。
+                if not independent and claim.run is not None:
+                    confirmed = observe_current_preview(claim.job, self.file_repository, self.file_service)
+                    if not confirmed.available:
+                        raise PreviewFailure("preview_storage_failed")
+                return claim.job, True, claim.run
+            current = claim.job
+            state, run = current.word_preview_state, current.word_preview_state.current_run
+            if independent and run.attempt_count == 1:
+                self._event(current, "preview_retry_requested", trace_id=trace_id)
+                if self.audit_service is not None and actor is not None:
+                    from app.domains.audit.models import ActorContext
+                    with _preview_storage_io():
+                        self.audit_service.record(actor=ActorContext(actor_id=actor.id, actor_role=actor.role, source="jwt"),
+                            action="document_job.word_preview_retry", target_type="document_job", target_id=job.id,
+                            trace_id=trace_id or "word_preview", details={"run_id": run.run_id, "generation": job.retry_count})
+            self._event(current, "preview_started", trace_id=trace_id)
+            started = time.monotonic()
+            output, error = None, None
+            observed, observation_reason = None, None
+            attempt_deadline = min(run.run_deadline_at, run.lease_expires_at,
+                                   current.updated_at + timedelta(seconds=policy.timeout_seconds))
+            try:
+                if claim.disposition == "finalizing":
+                    raise PreviewFailure("preview_timeout")
+                if policy.backend == "disabled":
+                    raise PreviewFailure("preview_disabled")
+                validate_docx(docx, policy)
+                remaining = max(0.001, (run.run_deadline_at - utc_now()).total_seconds())
+                if page_hash is not None:
+                    remaining = min(page_policy.render_budget_seconds,
+                        (attempt_deadline - utc_now()).total_seconds()
+                        - page_policy.observe_budget_seconds - page_policy.registration_budget_seconds)
+                if remaining <= 0:
+                    raise PreviewFailure("preview_timeout")
+                call_policy = policy.model_copy(update={"timeout_seconds": min(policy.timeout_seconds, remaining),
+                                                        "deadline_seconds": remaining})
+                output = self.provider.render(docx, policy=call_policy)
+                if not isinstance(output, PreviewResult):
+                    raise PreviewFailure("preview_output_invalid")
+                validate_result(output, policy)
+            except PreviewFailure as exc:
+                error = exc
+            except Exception:
+                error = PreviewFailure("preview_unexpected_error")
+                self.logger.error("[job_id=%s stage=%s error_code=preview_unexpected_error] 预览 Provider 发生未分类异常。", job.id, job.stage)
+            if output is not None and error is None and page_hash is not None:
+                observed, observation_reason = self._observe_page_quality(output, page_policy, policy, attempt_deadline, job_id=job.id)
+            # Provider结束后再次CAS；任何PDF/page/失败manifest写入之前都必须已进入登记。
+            with _preview_storage_io():
+                registering = self.job_repository.begin_document_job_preview_registration(
+                    job.id, request=request, revision=state.revision, lease_token=claim.lease_token,
+                    attempt=run.attempt_count)
+            if registering is None:
+                with _preview_storage_io():
+                    return self.job_repository.get_document_job(job.id) or current, False, run
+            current = registering
+            state, run = current.word_preview_state, current.word_preview_state.current_run
+            evidence, descriptors = {}, {}
+            if output is not None and error is None:
+                # 任一对象或 metadata 不可确认均显式传播，不能降级为可成功收尾的预览失败。
+                pdf = self._register(current, file, "word_preview_pdf", "preview.pdf", output.pdf, "application/pdf", **({"deadline": attempt_deadline} if page_hash else {}))
+                pages = [self._register(current, file, "word_preview_page", f"page-{page.page_index:06d}.png",
+                                        page.content, "image/png", **({"deadline": attempt_deadline} if page_hash else {})) for page in output.pages]
+                descriptors = {"pdf": self._descriptor(pdf), "pages": [
+                    {**self._descriptor(file), "page_index": page.page_index, "width": page.width, "height": page.height}
+                    for file, page in zip(pages, output.pages, strict=True)]}
+                evidence = {"provider_id": output.provider_id, "provider_version": output.provider_version,
+                            "page_count": output.page_count, "pdf_file_id": pdf.id, "page_file_ids": [page.id for page in pages]}
+            status = "succeeded" if error is None else ("unavailable" if error.code in {
+                "preview_disabled", "preview_provider_unavailable", "preview_profile_unavailable", "preview_sandbox_unavailable"} else "failed")
+            manifest = {"schema_version": "word-preview/v1", "source_generation": state.source_generation,
+                "source_result_file_id": state.source_result_file_id, "source_docx_sha256": state.source_docx_sha256,
+                "profile_id": state.profile_id, "profile_sha256": state.profile_sha256, "run_id": run.run_id,
+                "attempt": run.attempt_count, "status": status, "error_code": error.code if error else None,
+                "created_at": utc_now().isoformat(), **evidence, **descriptors}
+            if status == "succeeded":
+                plan, trace, anchors = _mapping_source(file, docx, self.file_repository, self.file_service)
+                binding = _mapping_binding(file, state, run, pdf=pdf, page_count=output.page_count, plan=plan)
+                try:
+                    manifest["page_mapping"] = build_page_mapping(binding=binding, plan=plan,
+                        block_evidence=trace, block_anchor_evidence=anchors)
+                except Exception:
+                    # 只有纯 mapper 隔离未预期错误；上面的原件读取/认证与下面登记仍显式失败。
+                    manifest["page_mapping"] = unavailable_mapping(binding, "unexpected_error")
+                    self.logger.error("[job_id=%s trace_id=%s reason_code=unexpected_error] 页映射推断失败。", job.id, trace_id)
+                if page_hash is not None:
+                    quality_binding = _page_quality_binding(current, file, state, run, page_policy, pdf=pdf,
+                        page_count=output.page_count, mapping=manifest.get("page_mapping"), authenticated_plan=plan)
+                    try:
+                        manifest["page_quality_run"] = build_page_quality_run(binding=quality_binding,
+                            policy=page_policy, observation=observed, mapping=manifest.get("page_mapping"),
+                            created_at=run.started_at.isoformat(), reason_code=observation_reason)
+                    except Exception:
+                        # 规则异常只降级页面 coverage；原件认证及存储错误仍在此边界外显式失败。
+                        manifest["page_quality_run"] = build_page_quality_run(binding=quality_binding,
+                            policy=page_policy, created_at=run.started_at.isoformat(), reason_code="unexpected_error")
+                        self.logger.error("[job_id=%s reason_code=page_quality_unexpected_error] 页面质量计算失败。", job.id)
+            # manifest 或 CAS 持久化失败显式传播，执行收尾不能伪成功。
+            manifest_file = self._register(current, file, "word_preview_manifest", "manifest.json",
+                                          json.dumps(manifest, ensure_ascii=False).encode(), "application/json",
+                                          **({"deadline": attempt_deadline} if page_hash else {}))
+            # uploaded响应与实际字节一致才允许确认；响应丢失仍保留registering而非猜测完成。
+            verified_records, verified_body = _artifact_evidence(current, run, self.file_repository, self.file_service,
+                               manifest_file_id=manifest_file.id, expected_status=status,
+                               expected_error_code=error.code if error else None)
+            page_contribution = None
+            if page_hash is not None and status == "succeeded":
+                checked = _read_page_quality(current, run, verified_records, verified_body,
+                    self.file_repository, self.file_service, authenticated_plan=plan)
+                if checked is None:
+                    raise ValueError("新登记的页面质量报告无法认证。")
+                page_contribution = _page_quality_contribution(current, run, page_policy, checked, manifest_file.id)
+            if page_hash is not None and utc_now() >= attempt_deadline:
+                raise PreviewFailure("preview_timeout")
+            with _preview_storage_io():
+                finished = self.job_repository.finish_document_job_preview(job.id, request=request, revision=state.revision,
+                    lease_token=claim.lease_token, status=status, manifest_file_id=manifest_file.id,
+                    error_code=error.code if error else None, retryable=error.retryable if error else False, evidence=evidence,
+                    page_quality_contribution=page_contribution)
+            if finished is None:
+                with _preview_storage_io():
+                    return self.job_repository.get_document_job(job.id) or current, False, run
+            self._event(finished, "preview_succeeded" if error is None else "preview_failed", trace_id=trace_id,
+                        duration_ms=int((time.monotonic() - started) * 1000))
+            if not finished.word_preview_state.current_run.retryable:
+                if not observe_current_preview(finished, self.file_repository, self.file_service).available:
+                    raise PreviewFailure("preview_storage_failed")
+                return finished, True, finished.word_preview_state.current_run
+            request = request.model_copy(update={"resume": True})
+
+    def _observe_page_quality(self, output, page_policy, preview_policy, attempt_deadline, *, job_id=None):
+        """观察与 render 共用原 attempt 时限，并为对象登记保留冻结窗口。"""
+        if not self.settings.page_quality_observation_enabled:
+            return None, "observer_unavailable"
+        observer = self.observer if self.observer is not None else self.provider
+        if not hasattr(observer, "observe"):
+            return None, "observer_unavailable"
+        remaining = min(page_policy.observe_budget_seconds,
+                        (attempt_deadline - utc_now()).total_seconds() - page_policy.registration_budget_seconds)
+        if remaining <= 0:
+            return None, "resource_exceeded"
+        started = time.monotonic()
+        try:
+            batch = observer.observe(output.pdf, pages=output.pages, page_count=output.page_count,
+                                     policy=page_policy, preview_policy=preview_policy, budget_seconds=remaining)
+            if time.monotonic() - started > remaining:
+                return None, "observer_timeout"
+            return batch, None
+        except Exception:
+            self.logger.error("[job_id=%s reason_code=page_quality_invalid_observation] 页面 observer 返回失败。", job_id)
+            return None, "invalid_observation"
+
+    def _register(self, job, source, file_type, suffix, content, mime, *, deadline=None):
+        state, run = job.word_preview_state, job.word_preview_state.current_run
+        if deadline is not None and utc_now() >= deadline:
+            raise PreviewFailure("preview_timeout")
+        with _preview_storage_io():
+            expires = min(source.expires_at, utc_now() + timedelta(days=self.file_service.retention_days_resolver(file_type)))
+            return self.file_service.register_generated_content(tenant_id=job.tenant_id, company_id=job.company_id,
+                job_id=job.id, created_by=job.created_by, file_type=file_type,
+                filename=f"g{job.retry_count}-{source.id}-{run.run_id}-a{run.attempt_count}-{suffix}", mime_type=mime,
+                content=content, expires_at=expires, metadata={"retry_count": job.retry_count,
+                    "source_result_file_id": source.id, "source_docx_sha256": source.checksum_sha256,
+                    "profile_sha256": state.profile_sha256, "run_id": run.run_id, "attempt": run.attempt_count})
+
+    @staticmethod
+    def _descriptor(file):
+        return {"file_id": file.id, "sha256": file.checksum_sha256, "mime_type": file.mime_type,
+                "size_bytes": file.size_bytes}
+
+    def _event(self, job, event_type, *, trace_id, duration_ms=None):
+        state, run = job.word_preview_state, job.word_preview_state.current_run
+        summary = job.quality_summary.get("checks_v1", {}).get("word_preview", {})
+        page_summary = job.quality_summary.get("checks_v1", {}).get("word_page_quality", {}).get("summary")
+        page_event = {"page_quality": {key: page_summary[key] for key in (
+            "schema_version", "evaluation_state", "quality_status", "reason_code", "counts") if key in page_summary}
+        } if isinstance(page_summary, dict) else {}
+        event = DocumentJobEventRecord(id="event_" + uuid4().hex[:12], tenant_id=job.tenant_id,
+            company_id=job.company_id, job_id=job.id, created_by=job.created_by, stage=job.stage,
+            event_type=event_type, message="Word 预览状态已记录。", trace_id=trace_id, duration_ms=duration_ms,
+            payload={"generation": state.source_generation, "source_result_file_id": state.source_result_file_id,
+                     "source_docx_sha256": state.source_docx_sha256, "profile_sha256": state.profile_sha256,
+                     "run_id": run.run_id, "attempt": run.attempt_count, "status": run.status,
+                     "error_code": run.error_code, "manifest_file_id": run.manifest_file_id,
+                     **{key: summary[key] for key in ("provider_id", "provider_version", "page_count") if key in summary},
+                     **page_event})
+        try:
+            self.event_repository.append_document_job_event(job.id, event)
+        except Exception:
+            # 状态提交后事件失败不能触发重渲染；保留现有无 outbox 的诊断边界。
+            self.logger.error("[job_id=%s stage=%s] 预览事件追加失败，已提交状态保持有效。", job.id, job.stage)
+
+
+def _frozen_page_policy(job):
+    """旧快照缺字段保持缺失；配置只影响未来新任务。"""
+    if "page_quality" not in job.request_snapshot:
+        return None
+    try:
+        policy = parse_page_quality_policy(job.request_snapshot["page_quality"])
+    except ValueError:
+        raise ValueError("冻结页面质量策略无效或版本不受支持。") from None
+    if policy.enabled:
+        preview = PreviewPolicy.model_validate(job.request_snapshot["word_preview"])
+        if ((policy.profile_id, policy.profile_sha256) != (preview.profile_id, preview.profile_sha256)
+                or policy.render_budget_seconds + policy.observe_budget_seconds + policy.registration_budget_seconds
+                > preview.timeout_seconds):
+            raise ValueError("冻结页面策略与预览 profile 或 attempt 预算不一致。")
+    return policy
+
+
+def _page_quality_binding(job, source, state, run, policy, *, pdf, page_count, mapping, authenticated_plan):
+    # 可选 mapping 的坏内层 hash 不得破坏已认证 PDF/页面的下载资格。
+    mapping_hash = mapping.get("mapping_sha256") if isinstance(mapping, dict) else None
+    if not isinstance(mapping_hash, str) or re.fullmatch(r"[0-9a-f]{64}", mapping_hash) is None:
+        mapping_hash = None
+    return PageQualityBinding(source_generation=state.source_generation, result_file_id=source.id,
+        docx_sha256=source.checksum_sha256, preview_run_id=run.run_id, attempt=run.attempt_count,
+        preview_pdf_file_id=pdf.id, preview_pdf_sha256=pdf.checksum_sha256, page_count=page_count,
+        profile_id=state.profile_id, profile_sha256=state.profile_sha256, policy_sha256=policy_sha256(policy),
+        mapping_sha256=mapping_hash, actual_context_sha256=page_quality_context_sha256(job, authenticated_plan=authenticated_plan, require_authenticated=True))
+
+
+def _read_page_quality(job, run, records, body, file_repository, file_service, *, authenticated_plan=_UNREAD_QUALITY_PLAN):
+    policy = _frozen_page_policy(job)
+    if policy is None or not policy.enabled or body["status"] != "succeeded":
+        return None
+    if read_page_quality_run(body.get("page_quality_run"), policy=policy) is None:
+        return None
+    if authenticated_plan is _UNREAD_QUALITY_PLAN:
+        # 原件已通过外层身份与字节校验；实际校准上下文还须认证同次 renderer 证据。
+        source_content = _read_artifact(records[0], file_service)
+        try:
+            authenticated_plan, _, _ = _mapping_source(job.prepared_result.file, source_content,
+                                                       file_repository, file_service)
+        except ValueError:
+            # 严格新 key 不能把原 IR 字节或描述符完整性失败误当作缺报告。
+            raise ValueError("当前页面质量上下文无法认证。") from None
+    pdf = next(record for record in records if record.file_type == "word_preview_pdf")
+    binding = _page_quality_binding(job, job.prepared_result.file, job.word_preview_state, run, policy,
+        pdf=pdf, page_count=body["page_count"], mapping=body.get("page_mapping"), authenticated_plan=authenticated_plan)
+    return read_page_quality_run(body.get("page_quality_run"), binding=binding, policy=policy)
+
+
+def _page_quality_contribution(job, run, policy, report, manifest_file_id):
+    state = job.word_preview_state
+    return {"quality_status": report["quality_status"], "evaluation_state": report["evaluation_state"],
+        "run_sha256": report["run_sha256"], "summary": page_quality_summary(report),
+        "source_generation": state.source_generation, "source_result_file_id": state.source_result_file_id,
+        "source_docx_sha256": state.source_docx_sha256, "profile_id": state.profile_id,
+        "profile_sha256": state.profile_sha256, "run_id": run.run_id, "attempt": run.attempt_count,
+        "policy_sha256": policy_sha256(policy), "manifest_file_id": manifest_file_id}
+
+
+def _mapping_source(source, content, file_repository, file_service, *, authentication_files=None):
+    """只读取选定主件的原始 IR 与持久证据；存储/原件损坏不能借映射降级。"""
+    metadata = source.metadata
+    if metadata.get("render_trace_status") != "complete":
+        return None, None, None
+    ir_id = metadata.get("document_ir_file_id")
+    if not isinstance(ir_id, str) or not ir_id:
+        return None, None, None
+    with _preview_storage_io():
+        ir_file = file_repository.get_document_file(ir_id)
+    if (ir_file is None or ir_file.status != "uploaded" or ir_file.file_type != "document_ir"
+            or file_lifecycle_unavailable(ir_file, file_repository, now=utc_now())
+            or (ir_file.tenant_id, ir_file.company_id, ir_file.job_id)
+            != (source.tenant_id, source.company_id, source.job_id)):
+        # 原 IR 生命周期与 scope 不能成为历史主件的新可用性门，也不能扩展读取权限。
+        return None, None, None
+    try:
+        ir_bytes = _read_artifact(ir_file, file_service)
+    except _PreviewUnavailable:
+        return None, None, None
+    try:
+        document_ir = DocumentIR.model_validate_json(ir_bytes)
+    except (ValidationError, ValueError):
+        raise ValueError("主件的原始 IR 数据无法认证。") from None
+    validate_persisted_renderer_content(document_ir, content, metadata,
+        expected_template_version_id=metadata.get("template_version_id"))
+    verified = validate_persisted_render_evidence(document_ir, content,
+        render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"))
+    if verified is None:
+        return None, None, None
+    plan, trace = verified
+    anchors = validate_block_anchor_evidence(metadata.get("block_anchor_evidence"), plan=plan,
+        block_evidence=trace, word_content=content)
+    if plan.schema_version == "render-plan/v2" and anchors is None:
+        return None, None, None
+    if authentication_files is not None:
+        authentication_files[ir_file.id] = ir_file
+    return plan, trace, anchors
+
+
+def _mapping_binding(source, state, run, *, pdf=None, page_count=None, plan=None):
+    """文件及 run 身份都来自同次选定 receipt/已验证预览，不接受外部请求覆盖。"""
+    source_id, ir_id = source.metadata.get("source_file_id"), source.metadata.get("document_ir_file_id")
+    return MappingBinding(source_pdf_file_id=source_id if isinstance(source_id, str) else None,
+        document_ir_file_id=ir_id if isinstance(ir_id, str) else None,
+        input_ir_sha256=plan.input_ir_sha256 if plan is not None else None,
+        plan_sha256=plan.plan_sha256 if plan is not None else None,
+        source_generation=state.source_generation, result_file_id=source.id,
+        docx_sha256=source.checksum_sha256, run_id=run.run_id, attempt=run.attempt_count,
+        profile_sha256=state.profile_sha256, preview_pdf_file_id=pdf.id if pdf is not None else None,
+        preview_pdf_sha256=pdf.checksum_sha256 if pdf is not None else None, page_count=page_count)
+
+
+def current_page_mapping(job, file_repository, file_service):
+    """内部只读视图；沿原完整预览认证后，独立解析可选 mapping，不修改 manifest。"""
+    state = job.word_preview_state
+    run = state.current_run
+    records, body = _artifact_evidence(job, run, file_repository, file_service)
+    return _mapping_from_current_evidence(job, records, body, file_repository, file_service)
+
+
+def _mapping_from_current_evidence(job, records, body, file_repository, file_service):
+    """复用同次已认证的 manifest/预览集合，避免内容读取再次下载预览 PDF。"""
+    state, run = job.word_preview_state, job.word_preview_state.current_run
+    source = records[0]
+    with _preview_storage_io():
+        content = file_service.read_file_content(source)
+    selected_source = job.prepared_result.file
+    plan, _, _ = _mapping_source(selected_source, content, file_repository, file_service) if body["status"] == "succeeded" else (None, None, None)
+    pdf = next((record for record in records if record.file_type == "word_preview_pdf"), None)
+    binding = _mapping_binding(selected_source, state, run, pdf=pdf, page_count=body.get("page_count"), plan=plan)
+    return read_page_mapping(body.get("page_mapping"), binding=binding)
+
+
+class _PreviewUnavailable(Exception):
+    """仅表示预览件已确定过期、删除或不存在，不能代表未知存储错误。"""
+
+
+def _read_artifact(file, file_service):
+    try:
+        content = file_service.read_file_content(file)
+    except FileNotFoundError:
+        raise _PreviewUnavailable() from None
+    except ClientError as exc:
+        # S3只把明确的对象不存在分类为生命周期失效，超时/权限/连接错误继续传播。
+        if exc.response.get("Error", {}).get("Code") in {"NoSuchKey", "404", "NotFound"}:
+            raise _PreviewUnavailable() from None
+        raise _PreviewStorageError() from None
+    except Exception as error:
+        if _is_preview_storage_error(error):
+            raise _PreviewStorageError() from None
+        raise
+    if len(content) != file.size_bytes or sha256(content) != file.checksum_sha256:
+        raise ValueError("预览Artifact字节与描述符不一致。")
+    return content
+
+
+def _artifact_evidence(job, run, file_repository, file_service, *, manifest_file_id=None, expected_status=None, expected_error_code=None):
+    """一次完整读取manifest与所有必需输出；列表、重试和Token共用同一身份校验。"""
+    from app.services.preview.models import PreviewPage
+
+    state, receipt = job.word_preview_state, job.prepared_result
+    policy = PreviewPolicy.model_validate(job.request_snapshot["word_preview"])
+    now = utc_now()
+    with _preview_storage_io():
+        source = file_repository.get_document_file(state.source_result_file_id)
+    if (source is None or receipt is None or source.status != "uploaded" or source.expires_at is None
+            or file_lifecycle_unavailable(source, file_repository, now=now) or source.file_type != "generated_word"
+            or (source.tenant_id, source.company_id, source.job_id) != (job.tenant_id, job.company_id, job.id)
+            or source.id != receipt.file.id or source.checksum_sha256 != state.source_docx_sha256
+            or source.size_bytes != receipt.file.size_bytes or source.mime_type != receipt.file.mime_type
+            or state.source_generation != job.retry_count or receipt.generation != job.retry_count
+            or (state.profile_id, state.profile_sha256) != (policy.profile_id, policy.profile_sha256)):
+        raise ValueError("预览主件身份或有效期无法确认。")
+    ensure_result_descriptor_matches(source, receipt.file)
+    # 主件缺失不能作为预览失效再生成的理由。
+    with _preview_storage_io():
+        source_bytes = file_service.read_file_content(source)
+    if len(source_bytes) != source.size_bytes or sha256(source_bytes) != state.source_docx_sha256:
+        raise ValueError("预览主件字节与凭据不一致。")
+    records = [source]
+
+    def artifact(file_id, file_type, mime, descriptor=None):
+        if not isinstance(file_id, str) or not file_id:
+            raise ValueError("预览Artifact描述符缺少文件身份。")
+        with _preview_storage_io():
+            record = file_repository.get_document_file(file_id)
+        if record is None:
+            raise _PreviewUnavailable()
+        if (record.tenant_id, record.company_id, record.job_id) != (job.tenant_id, job.company_id, job.id):
+            raise ValueError("预览Artifact归属与任务不一致。")
+        if file_lifecycle_unavailable(record, file_repository, now=now):
+            raise _PreviewUnavailable()
+        if (record.status != "uploaded" or record.expires_at is None
+                or record.file_type != file_type or record.mime_type != mime):
+            raise ValueError("预览Artifact状态、类型或保留期不一致。")
+        expected_metadata = {"retry_count": state.source_generation, "source_result_file_id": source.id,
+            "source_docx_sha256": state.source_docx_sha256, "profile_sha256": state.profile_sha256,
+            "run_id": run.run_id, "attempt": run.attempt_count, "word_preview_artifact_protocol": 1}
+        if any(record.metadata.get(key) != value or (type(value) is int and type(record.metadata.get(key)) is not int)
+               for key, value in expected_metadata.items()):
+            raise ValueError("预览Artifact来源或attempt不一致。")
+        if descriptor is not None:
+            expected = DocumentJobPreviewService._descriptor(record)
+            if not isinstance(descriptor, dict) or any(descriptor.get(key) != value for key, value in expected.items()):
+                raise ValueError("预览manifest与Artifact描述符不一致。")
+        content = _read_artifact(record, file_service)
+        records.append(record)
+        return record, content
+
+    manifest, raw = artifact(manifest_file_id or run.manifest_file_id, "word_preview_manifest", "application/json")
+    try:
+        body = json.loads(raw)
+    except (ValueError, UnicodeError):
+        raise ValueError("预览manifest不是有效JSON。") from None
+    identity = {"schema_version": "word-preview/v1", "source_generation": state.source_generation,
+        "source_result_file_id": source.id, "source_docx_sha256": state.source_docx_sha256,
+        "profile_id": state.profile_id, "profile_sha256": state.profile_sha256,
+        "run_id": run.run_id, "attempt": run.attempt_count, "status": expected_status or run.status}
+    if not isinstance(body, dict) or any(body.get(key) != value for key, value in identity.items()):
+        raise ValueError("预览manifest来源、run或attempt不一致。")
+    if body.get("error_code") != (expected_error_code if expected_status is not None else run.error_code):
+        raise ValueError("预览manifest错误码与当前attempt不一致。")
+    if body["status"] == "succeeded":
+        pdf_desc, pages_desc = body.get("pdf"), body.get("pages")
+        if body.get("error_code") is not None or not isinstance(pdf_desc, dict) or not isinstance(pages_desc, list):
+            raise ValueError("成功预览manifest的输出描述无效。")
+        pdf, pdf_bytes = artifact(pdf_desc.get("file_id"), "word_preview_pdf", "application/pdf", pdf_desc)
+        pages = []
+        if len(pages_desc) > policy.max_pages:
+            raise ValueError("预览manifest页数超出预算。")
+        for descriptor in pages_desc:
+            if not isinstance(descriptor, dict):
+                raise ValueError("预览页面描述符无效。")
+            page, content = artifact(descriptor.get("file_id"), "word_preview_page", "image/png", descriptor)
+            try:
+                pages.append(PreviewPage(page_index=descriptor.get("page_index"), content=content,
+                                         width=descriptor.get("width"), height=descriptor.get("height")))
+            except ValidationError:
+                raise ValueError("预览页面描述符无效。") from None
+        try:
+            output = PreviewResult(pdf=pdf_bytes, page_count=body.get("page_count"), pages=tuple(pages),
+                provider_id=body.get("provider_id"), provider_version=body.get("provider_version"), profile_sha256=state.profile_sha256)
+            validate_result(output, policy)
+        except (ValidationError, PreviewFailure):
+            raise ValueError("预览manifest的输出或预算校验失败。") from None
+        if body.get("pdf_file_id") != pdf.id or body.get("page_file_ids") != [item["file_id"] for item in pages_desc]:
+            raise ValueError("预览manifest输出引用不一致。")
+        if len({record.id for record in records}) != len(records):
+            raise ValueError("预览Artifact不能重复引用同一物理身份。")
+    elif (body["status"] not in {"failed", "unavailable"} or body.get("error_code") is None
+          or any(body.get(key) for key in ("pdf", "pages", "page_count", "pdf_file_id", "page_file_ids"))):
+        raise ValueError("失败预览manifest不能包含成功输出。")
+    return tuple(records), body
+
+
+@dataclass(frozen=True)
+class CurrentPreviewEvidence:
+    """同次严格读取的私有结果；公共 API 必须再经显式白名单投影。"""
+    observation: PreviewArtifactObservation
+    manifest: dict | None
+    page_quality_run: dict | None
+    page_mapping: dict | None = None
+    authentication_files: tuple[DocumentFileRecord, ...] = ()
+    render_plan: object | None = None
+
+
+def read_current_preview_evidence(job, file_repository, file_service, *, include_page_quality=False, include_mapping=False, include_render=False) -> CurrentPreviewEvidence:
+    """复用原 Artifact/policy/context 认证，一次读取供预览与页级 API 使用。"""
+    state = job.word_preview_state
+    run = state.current_run
+    quality_policy = _frozen_page_policy(job) if include_page_quality else None
+    quality_report = None
+    mapping = None
+    body = None
+    authentication_files = {}
+    authenticated_plan = None
+    try:
+        records, body = _artifact_evidence(job, run, file_repository, file_service)
+        if include_render:
+            source = records[0]
+            authenticated_plan, _, _ = _mapping_source(source, _read_artifact(source, file_service),
+                file_repository, file_service, authentication_files=authentication_files)
+        if include_mapping:
+            mapping = _mapping_from_current_evidence(job, records, body, file_repository, file_service)
+        if include_page_quality:
+            quality_report = _read_page_quality(job, run, records, body, file_repository, file_service)
+        summary = job.quality_summary.get("checks_v1", {}).get("word_preview", {})
+        expected = {"manifest_file_id": run.manifest_file_id, "run_id": run.run_id,
+                    "profile_sha256": state.profile_sha256}
+        if run.status == "succeeded":
+            expected.update(pdf_file_id=body["pdf_file_id"], page_file_ids=body["page_file_ids"])
+        if any(summary.get(key) != value for key, value in expected.items()):
+            raise ValueError("当前预览质量摘要与manifest不一致。")
+        available = True
+        earliest = min((retained_file_expiry(record, file_repository) or datetime.max.replace(tzinfo=timezone.utc))
+                       for record in records)
+    except _PreviewUnavailable:
+        with _preview_storage_io():
+            source = file_repository.get_document_file(state.source_result_file_id)
+        # _artifact_evidence先验证主件；此处期限只限定失效观测本身的使用窗口。
+        records, available, earliest = (source,), False, source.expires_at
+        body = None
+    observation = PreviewArtifactObservation(source_generation=state.source_generation,
+        source_result_file_id=state.source_result_file_id, source_docx_sha256=state.source_docx_sha256,
+        profile_id=state.profile_id, profile_sha256=state.profile_sha256, revision=state.revision,
+        current_request_key=state.current_request_key, run_id=run.run_id, attempt=run.attempt_count,
+        manifest_file_id=run.manifest_file_id, files=records, earliest_expires_at=earliest, available=available,
+        page_quality_policy_sha256=policy_sha256(quality_policy) if quality_policy is not None and quality_policy.enabled else None,
+        page_quality_run_sha256=quality_report["run_sha256"] if quality_report is not None else None,
+        page_quality_reusable=(quality_report is not None and quality_report["evaluation_state"] == "complete")
+        if include_page_quality else None)
+    return CurrentPreviewEvidence(observation, body, quality_report, mapping, tuple(authentication_files.values()), authenticated_plan)
+
+
+def observe_current_preview(job, file_repository, file_service, *, check_page_quality=False) -> PreviewArtifactObservation:
+    """保留原预览状态机的观察接口，认证事实与新读取入口共用同一 owner。"""
+    return read_current_preview_evidence(job, file_repository, file_service,
+        include_page_quality=check_page_quality).observation
+
+
+def verified_current_preview_files(job, file_repository, file_service) -> dict[str, DocumentFileRecord]:
+    """一次观测产生本次调用可见的完整预览集合；列表和单件授权不共享缓存。"""
+    current_ids = current_preview_ids(job)
+    if not current_ids or file_service is None:
+        return {}
+    try:
+        observation = observe_current_preview(job, file_repository, file_service)
+        if not observation.available or observation.earliest_expires_at <= utc_now():
+            return {}
+        return {record.id: record for record in observation.files if record.id in current_ids}
+    except (OSError, ValueError, PreviewFailure, _PreviewUnavailable):
+        return {}
+
+
+def preview_download_ttl(job, record, file_repository, file_service, *, expires_seconds: int) -> int:
+    """签发时以完整当前预览的最早期限截断，直连URL仍不承诺即时撤销。"""
+    observation = observe_current_preview(job, file_repository, file_service)
+    if (not observation.available or record.id not in current_preview_ids(job) or record not in observation.files):
+        raise ApiError(409, "conflict", "当前预览引用已失效。")
+    with _preview_storage_io():
+        ttl = min(file_service.preview_download_ttl(record, expires_seconds=expires_seconds),
+                  int((observation.earliest_expires_at - utc_now()).total_seconds()))
+    if ttl <= 0:
+        raise ApiError(409, "conflict", "当前预览引用已过期。")
+    return ttl

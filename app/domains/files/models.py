@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
 from app.domains.resources.models import utc_now
 
@@ -17,6 +17,10 @@ DocumentFileType = Literal[
     "image_asset",
     "image_assets_archive",
     "generated_word",
+    "word_preview_pdf",
+    "word_preview_page",
+    "word_preview_manifest",
+    "quality_report",
     "translation_batch_result",
     "ai_call_log",
     "ai_debug_archive",
@@ -24,6 +28,9 @@ DocumentFileType = Literal[
     "template_config",
     "term_file",
 ]
+WORD_PREVIEW_FILE_TYPES = frozenset({"word_preview_pdf", "word_preview_page", "word_preview_manifest"})
+
+
 DocumentFileStatus = Literal["pending_upload", "uploaded", "expired", "deleted"]
 DocumentFileStorageProvider = Literal["local_file", "local_object", "s3"]
 
@@ -47,6 +54,8 @@ class DocumentFileRecord(BaseModel):
     status: DocumentFileStatus = "pending_upload"
     expires_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    deletion_claim: str | None = None
+    review_source_revision: StrictInt = Field(default=0, ge=0)
     created_by: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

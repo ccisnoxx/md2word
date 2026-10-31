@@ -280,9 +280,9 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
                 )
                 for index, tail, bbox in (
                     (1, "Left first", (10, 80, 170, 180)),
-                    (2, "Right first", (220, 82, 380, 180)),
+                    (2, "Right first", (190, 82, 350, 180)),
                     (3, "Left second", (10, 220, 170, 320)),
-                    (4, "Right second", (220, 218, 380, 320)),
+                    (4, "Right second", (190, 218, 350, 320)),
                 )
             ],
         )
@@ -300,12 +300,50 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertLess(xml.index("Left second"), xml.index("Right second"))
         self.assertNotIn('<w:br w:type="column"', xml)
         self.assertEqual(len(Document(io.BytesIO(content)).sections), 1)
-        self.assertEqual(xml.count('<w:tabs>'), 4)
-        self.assertEqual(xml.count('w:val="center"'), 8)
+        self.assertNotIn('<w:tabs>', xml)
+        self.assertEqual(len(Document(io.BytesIO(content)).tables), 2)
+        self.assertEqual(xml.count('<w:tblLayout w:type="fixed"'), 2)
         self.assertGreaterEqual(xml.count("<w:keepNext/>"), 3)
         self.assertEqual(xml.count(" SEQ Figure \\* ARABIC "), 4)
 
-    def test_render_to_bytes_keeps_multi_annotation_images_in_native_columns(self) -> None:
+    def test_mixed_column_images_keep_native_flow_and_actual_column_width(self) -> None:
+        for uncertain in (False, True):
+            with self.subTest(uncertain=uncertain):
+                def text(block_id, order, bbox):
+                    return DocumentIRBlock(id=block_id, type="paragraph", order=order, page_index=0,
+                        text=block_id, layout=DocumentIRBlockLayout(page_index=0, bbox=bbox))
+                blocks = [text("left_before", 0, (10, 10, 180, 100)),
+                    DocumentIRBlock(id="image_left", type="image", order=1, page_index=0, asset_ref="asset_chart",
+                        captions=["Figure 1: left"], layout=DocumentIRBlockLayout(page_index=0, bbox=(10, 110, 180, 210)))]
+                if uncertain:
+                    blocks.append(DocumentIRBlock(id="image_right", type="image", order=2, page_index=0,
+                        asset_ref="asset_chart", captions=["Figure 2: right"],
+                        layout=DocumentIRBlockLayout(page_index=0, bbox=(220, 110, 390, 210))))
+                blocks.extend([text("left_after", 3, (10, 220, 180, 310)),
+                    text("right_top", 4, (220, 10, 390, 150)), text("right_bottom", 5, (220, 160, 390, 310))])
+                document = DocumentIR(schema_version="document-ir/v2",
+                    metadata=DocumentIRMetadata(job_id="mixed", source_file_id="source", document_language="en"),
+                    pages=[DocumentIRPage(index=0, width=400, height=600)], blocks=blocks,
+                    assets=[DocumentIRAsset(id="asset_chart", kind="image", source_path="images/chart.png")],
+                    quality_flags=["caption_binding_uncertain"] if uncertain else [])
+                self.assertEqual([region.kind for region in build_layout_plan(document).pages[0].regions], ["two_col"])
+                result = DocumentIRWordRenderer().render_to_result(document, template_path=None, config_path=None,
+                    image_loader=lambda _asset: MINIMAL_PNG_BYTES)
+                rendered = Document(io.BytesIO(result.content))
+                xml = self._document_xml(result.content)
+                self.assertEqual(xml.count('w:num="2"'), 1)
+                self.assertEqual(xml.count('<w:br w:type="column"'), 1)
+                self.assertEqual([p.text for p in rendered.paragraphs if p.text],
+                    ["left_before", "Figure 1: left", "left_after", "right_top"]
+                    + (["Figure 2: right"] if uncertain else []) + ["right_bottom"])
+                frozen = result.image_layout_report["render_inputs"]["spans"][0]
+                self.assertEqual(frozen["geometry"]["columns"], 2)
+                self.assertNotIn("image_geometries", frozen)
+                self.assertEqual(rendered.inline_shapes[0].width, int(frozen["geometry"]["effective_width"] * 170 / 200))
+                ensure_renderer_integrity(build_renderer_evidence(document, result.content,
+                    formula_report=result.formula_report, image_layout_report=result.image_layout_report))
+
+    def test_render_to_bytes_keeps_multi_annotation_images_in_own_layout_cells(self) -> None:
         document = DocumentIR(
             schema_version="document-ir/v2",
             metadata=DocumentIRMetadata(job_id="docjob_image_notes", source_file_id="file_image_notes", document_language="en"),
@@ -326,7 +364,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
                         column_hint="left" if index == 1 else "right",
                     ),
                 )
-                for index, bbox in ((1, (10, 80, 170, 180)), (2, (220, 82, 380, 180)))
+                for index, bbox in ((1, (10, 80, 170, 180)), (2, (190, 82, 350, 180)))
             ],
         )
 
@@ -338,8 +376,11 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         )
         xml = self._document_xml(content)
 
-        self.assertIn('<w:cols w:space="720" w:num="2"', xml)
-        self.assertIn('<w:br w:type="column"', xml)
+        self.assertNotIn('<w:cols w:space="720" w:num="2"', xml)
+        self.assertNotIn('<w:br w:type="column"', xml)
+        cells = Document(io.BytesIO(content)).tables[0].rows[0].cells
+        self.assertIn("Source note", cells[0].text)
+        self.assertNotIn("Source note", cells[1].text)
         self.assertIn("Source note", xml)
         self.assertNotIn("<w:tabs>", xml)
 
@@ -1043,12 +1084,12 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertIn("R", visible_text)
         self.assertIn("θJA", visible_text)
         self.assertIn("Table 1: RθJA formulas", visible_text)
-        self.assertIn("nV/√Hz", visible_text)
+        self.assertIn("nV/", visible_text)
+        self.assertIn("<m:rad>", xml)
         self.assertIn("Note: E=mc2", visible_text)
         self.assertIn(" SEQ Table ", xml)
         self.assertIn("<m:oMath>", xml)
         self.assertIn("<m:sSub>", xml)
-        self.assertIn('w:val="subscript"', xml)
         self.assertIn('w:val="superscript"', xml)
         self.assertNotIn(r"\theta", xml)
         self.assertNotIn(r"\sqrt", xml)
@@ -1153,7 +1194,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         xml = self._document_xml(content)
         visible_text = " ".join(self._document_text(content).split())
 
-        for expected in ("Hz", "5 μs", "PACKAGE", "-40°C", "θJC(top)", "ψJT", "±5", "CM", "nV/√Hz", "μV / ° C"):
+        for expected in ("Hz", "5 μs", "PACKAGE", "-40°C", "θJC(top)", "ψJT", "±5", "CM", "nV/", "μV / ° C"):
             self.assertIn(expected, visible_text)
         self.assertIn("<m:sSub>", xml)
         self.assertIn("<m:sSup>", xml)
@@ -1203,9 +1244,9 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertLess(xml.index("<w:keepNext/>"), xml.index("<w:drawing>"))
         self.assertLess(xml.index("<w:drawing>"), xml.index(" SEQ Figure "))
         self.assertGreaterEqual(xml.count("<w:keepNext/>"), 2)
-        self.assertIn('w:val="subscript"', xml)
+        self.assertIn("<m:sSub>", xml)
         self.assertNotIn(r"\mu", xml)
-        self.assertTrue(any(paragraph.text == "Figure 1: VOS bbox-sized chart" for paragraph in rendered.paragraphs))
+        self.assertIn("Figure 1: VOS bbox-sized chart", self._document_text(content))
         self.assertIn("Source: 5 μs MinerU", self._document_text(content))
         self.assertIn('<w:doNotAutoCompressPictures w:val="true"', settings_xml)
         self.assertEqual(self._first_media_bytes(content), MINIMAL_PNG_BYTES)
@@ -1432,15 +1473,20 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual([region.kind for region in plan.pages[0].regions], ["two_col", "two_col"])
         self.assertEqual([block.id for block in plan.pages[0].regions[0].blocks], ["left", "right", "tail"])
 
-        content = DocumentIRWordRenderer().render_to_bytes(
-            document,
-            template_path=None,
-            config_path=None,
-            image_loader=lambda _asset: MINIMAL_PNG_BYTES,
-        )
-        xml = self._document_xml(content)
-        self.assertEqual(xml.count('w:num="2"'), 1)
-        self.assertEqual(analyze_docx_quality_bytes(content)["inline_shape_count"], 2)
+        # 原夹具间隔 40/400=0.10，应留在第二个原生栏区；确认组须满足 0.08 上限。
+        for right_x, expected_columns, expected_tables in ((220, 2, 0), (190, 1, 1)):
+            with self.subTest(right_x=right_x):
+                document.blocks[-1].layout.bbox = (right_x, 220, right_x + 170, 330)
+                result = DocumentIRWordRenderer().render_to_result(document, template_path=None, config_path=None,
+                    image_loader=lambda _asset: MINIMAL_PNG_BYTES)
+                xml = self._document_xml(result.content)
+                self.assertEqual(xml.count('w:num="2"'), expected_columns)
+                self.assertEqual(len(Document(io.BytesIO(result.content)).tables), expected_tables)
+                self.assertEqual(analyze_docx_quality_bytes(result.content)["inline_shape_count"], 2)
+                if right_x == 220:
+                    self.assertIn("gap_too_large", result.image_layout_report["spans"][0]["reasons"])
+                ensure_renderer_integrity(build_renderer_evidence(document, result.content,
+                    formula_report=result.formula_report, image_layout_report=result.image_layout_report))
 
     def test_layout_keeps_text_after_image_only_region_outside_image_flow(self) -> None:
         document = DocumentIR(

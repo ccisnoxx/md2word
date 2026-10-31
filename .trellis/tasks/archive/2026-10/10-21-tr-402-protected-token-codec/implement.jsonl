@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "遵循 translation domain 唯一 owner，区分正式 DocumentIR 与 legacy runtime。"}
+{"file": ".trellis/spec/backend/document-job-mode-contract.md", "reason": "保持 direct 零翻译加载与既有资源/发布边界。"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-tr-402-protected-token-codec/research/current-state.md", "reason": "复用真实调用路径、碰撞/重复反例、基线和最小样本；不提前接线 TR-403。"}
+{"file": ".trellis/spec/backend/protected-token-codec.md", "reason": "实施后唯一 Codec 合同：语法/跨度、碰撞、逐项计数、恢复与隐私边界。"}

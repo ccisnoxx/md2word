@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 from unittest import TestCase
 from unittest.mock import patch
+from xml.etree import ElementTree
 
 import yaml
 
@@ -243,23 +244,26 @@ class FakeDocumentJobTranslationProvider:
         if self.raise_error:
             raise RuntimeError("provider unavailable")
         translations = {
-            "block_0001.text": "1 特性",
-            "block_0002.text": "输入失调电压很低。",
-            "block_0003.text": "电气特性",
-            "block_0003.html.0000": "参数",
-            "block_0003.html.0001": "输入电压",
-            "block_0004.text": "图 1. 引脚图",
-            "block_0005.list_items.0000": "低噪声",
-            "block_0005.list_items.0001": "高压摆率",
+            "block_0001.text": ("Features", "特性"),
+            "block_0002.text": ("The input offset voltage is low.", "输入失调电压很低。"),
+            "block_0003.text": ("Electrical Characteristics", "电气特性"),
+            "block_0003.html.0000": ("Parameter", "参数"),
+            "block_0003.html.0001": ("Input voltage", "输入电压"),
+            "block_0004.text": ("Figure", "图"),
+            "block_0005.list_items.0000": ("Low noise", "低噪声"),
+            "block_0005.list_items.0001": ("High slew rate", "高压摆率"),
         }
         from app.domains.translation.models import TranslationProviderResult, TranslationTextItem
 
-        return TranslationProviderResult(
-            items=tuple(
-                TranslationTextItem(id=item.id, text=translations.get(item.id, f"译文:{item.text}"))
-                for item in request.items
-            )
-        )
+        items = []
+        for item in request.items:
+            replacement = translations.get(item.id)
+            # 只替换自然语言，保留实际请求中的编号和技术占位符。
+            text = item.text.replace(*replacement) if replacement is not None else f"译文:{item.text}"
+            if item.id == "block_0004.text":
+                text = text.replace("Pin diagram", "引脚图")
+            items.append(TranslationTextItem(id=item.id, text=text))
+        return TranslationProviderResult(items=tuple(items))
 
 
 class TruncatingOnceDocumentJobTranslationProvider(FakeDocumentJobTranslationProvider):
@@ -7755,6 +7759,7 @@ class FastAPIJobsBackendTests(TestCase):
                     queued_job_id,
                     status="queued",
                     stage="uploaded",
+                    review_status="needs_fix",
                     translation_qa_status="needs_fix",
                     translation_qa_issue_type="terminology",
                     translation_qa_note="Term mismatch",
@@ -7765,6 +7770,7 @@ class FastAPIJobsBackendTests(TestCase):
                     running_job_id,
                     status="running",
                     stage="parsing",
+                    review_status="blocked",
                     translation_qa_status="blocked",
                     translation_qa_issue_type="artifact_missing",
                     translation_qa_note="Missing IR",
@@ -7857,7 +7863,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(default_response.status_code, 200)
         self.assertEqual(default_response.json()["total"], 4)
         expected_default_summary = {"failed": 1, "pending": 1, "queued": 1, "running": 1}
-        expected_qa_summary = {"unreviewed": 0, "approved": 1, "needs_fix": 1, "blocked": 1}
+        expected_qa_summary = {"unreviewed": 1, "approved": 0, "needs_fix": 1, "blocked": 1}
         self.assertEqual(default_response.json()["summary"], expected_default_summary)
         self.assertEqual(default_response.json()["filtered_summary"], expected_default_summary)
         self.assertEqual(
@@ -7894,8 +7900,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(active_group_response.json()["filtered_summary"], {"pending": 1, "queued": 1, "running": 1})
         self.assertEqual(active_group_response.json()["translation_qa_summary"], expected_qa_summary)
         self.assertEqual(qa_status_response.status_code, 200)
-        self.assertEqual([item["id"] for item in qa_status_response.json()["items"]], [beta_job_id])
-        self.assertEqual(qa_status_response.json()["filtered_summary"], {"pending": 1})
+        self.assertEqual(qa_status_response.json()["items"], [])
+        self.assertEqual(qa_status_response.json()["filtered_summary"], {})
         self.assertEqual(
             qa_status_response.json()["translation_qa_summary"],
             expected_qa_summary,
@@ -7907,8 +7913,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(qa_all_response.json()["filtered_summary"], {"pending": 1, "queued": 1, "running": 1})
         self.assertEqual(qa_all_response.json()["translation_qa_summary"], expected_qa_summary)
         self.assertEqual(qa_unreviewed_response.status_code, 200)
-        self.assertEqual(qa_unreviewed_response.json()["items"], [])
-        self.assertEqual(qa_unreviewed_response.json()["filtered_summary"], {})
+        self.assertEqual([item["id"] for item in qa_unreviewed_response.json()["items"]], [beta_job_id])
+        self.assertEqual(qa_unreviewed_response.json()["filtered_summary"], {"pending": 1})
         self.assertEqual(qa_unreviewed_response.json()["translation_qa_summary"], expected_qa_summary)
         self.assertEqual(status_group_conflict_response.status_code, 400)
         self.assertEqual(status_group_conflict_response.json()["error_code"], "invalid_request")
@@ -7956,7 +7962,7 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(create_response.status_code, 201)
         pending_actions = list_response.json()["items"][0]["available_actions"]
-        self.assertEqual(set(pending_actions), {"download", "retry", "cancel", "archive", "unarchive", "clone", "delete"})
+        self.assertEqual(set(pending_actions), {"download", "retry", "cancel", "archive", "unarchive", "clone", "delete", "publish"})
         self.assertTrue(pending_actions["cancel"]["enabled"])
         self.assertTrue(pending_actions["clone"]["enabled"])
         self.assertFalse(pending_actions["delete"]["enabled"])
@@ -8016,6 +8022,7 @@ class FastAPIJobsBackendTests(TestCase):
                     mode="en2zh_pdf_to_word",
                     status="running",
                     stage="parsing",
+                    review_status="blocked",
                     translation_qa_status="blocked",
                     translation_qa_issue_type="artifact_missing",
                     translation_qa_note="DocumentIR missing",
@@ -9709,7 +9716,7 @@ class FastAPIJobsBackendTests(TestCase):
             for event in events
             if event.event_type == "file_registered" and event.payload.get("file_type") == "document_ir"
         )
-        rendered_event = next(event for event in events if event.event_type == "stage_succeeded" and event.stage == "rendering")
+        checked_event = next(event for event in events if event.event_type == "stage_succeeded" and event.stage == "quality_checking")
         word_registered_event = next(
             event
             for event in events
@@ -9717,8 +9724,8 @@ class FastAPIJobsBackendTests(TestCase):
         )
         self.assertEqual(ir_registered_event.payload["schema_version"], "document-ir/v2")
         self.assertEqual(ir_registered_event.payload["layout_block_count"], 6)
-        self.assertEqual(rendered_event.payload["renderer_mode"], "layout_v2")
-        self.assertIn("layout_wide_table:block_0003", rendered_event.payload["layout_quality_flags"])
+        self.assertEqual(checked_event.payload["renderer_mode"], "layout_v2")
+        self.assertIn("layout_wide_table:block_0003", checked_event.payload["layout_quality_flags"])
         self.assertEqual(word_registered_event.payload["renderer_mode"], "layout_v2")
         self.assertIn("layout_wide_table:block_0003", word_registered_event.payload["layout_quality_flags"])
 
@@ -9769,7 +9776,17 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("<m:sSub>", document_xml)
         self.assertIn("<m:sSup>", document_xml)
         self.assertLess(document_xml.index(" SEQ Table "), table_index)
-        self.assertLess(table_index, document_xml.index("Note: E=mc"))
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main", "m": "http://schemas.openxmlformats.org/officeDocument/2006/math"}
+        body = ElementTree.fromstring(document_xml).find("w:body", ns)
+        body_nodes = list(body)
+        table_position = next(index for index, node in enumerate(body_nodes) if node.tag == f"{{{ns['w']}}}tbl")
+        note_position, note = next((index, node) for index, node in enumerate(body_nodes)
+            if node.tag == f"{{{ns['w']}}}p" and "".join(child.text or "" for child in node.iter()
+                if child.tag in {f"{{{ns['w']}}}t", f"{{{ns['m']}}}t"}) == "Note: E=mc2")
+        self.assertLess(table_position, note_position)
+        script_run = next(run for run in note.findall("w:r", ns)
+            if run.find("w:rPr/w:vertAlign[@w:val='superscript']", ns) is not None)
+        self.assertEqual("".join(script_run.itertext()), "2")
         self.assertIn("<w:keepNext/>", document_xml[:table_index])
         self.assertNotIn("• Low noise", document_xml)
         self.assertNotIn(r"\sqrt", document_xml)
@@ -10320,6 +10337,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(create_response.json()["status"], "failed")
         self.assertIsNotNone(stored_job)
         self.assertEqual(stored_job.error_code, "translation_failed")
+        self.assertEqual(stored_job.failed_stage, "translating")
         self.assertEqual(len(provider.requests), 2)
         self.assertEqual(len(ai_logs), 2)
         self.assertEqual(debug_archives, [])
@@ -10431,6 +10449,8 @@ class FastAPIJobsBackendTests(TestCase):
                     if file.job_id == job_id and file.file_type == "ai_call_log"
                 )
 
+                source_ir_before = runtime.document_file_repository.get_document_file(first_job.source_document_ir_file_id)
+                source_ir_bytes_before = runtime.file_upload_service.read_file_content(source_ir_before)
                 provider.raise_error = False
                 retry_response = client.post(
                     f"/api/v1/document-jobs/{job_id}/retry",
@@ -10444,6 +10464,13 @@ class FastAPIJobsBackendTests(TestCase):
                     params={"file_id": old_ai_log.id},
                 )
 
+            retried_job = runtime.document_job_repository.get_document_job(job_id)
+            source_ir_after = runtime.document_file_repository.get_document_file(retried_job.source_document_ir_file_id)
+            source_ir_bytes_after = runtime.file_upload_service.read_file_content(source_ir_after)
+            new_batch = runtime.document_job_translation_batch_repository.list_translation_batches(job_id, generation=1)[0]
+            batch_payload = json.loads(runtime.file_upload_service.read_file_content(
+                runtime.document_file_repository.get_document_file(new_batch.result_file_id)
+            ))
             all_job_files = [
                 file
                 for file in runtime.document_file_repository.list_document_files()
@@ -10463,6 +10490,15 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(retry_response.status_code, 200)
         self.assertEqual(retry_response.json()["status"], "succeeded")
         self.assertEqual(retry_response.json()["retry_count"], 1)
+        self.assertEqual(source_ir_after.id, source_ir_before.id)
+        self.assertEqual(source_ir_after, source_ir_before)
+        self.assertEqual(source_ir_bytes_after, source_ir_bytes_before)
+        self.assertEqual(source_ir_after.checksum_sha256, "sha256:" + hashlib.sha256(source_ir_bytes_after).hexdigest())
+        self.assertEqual(new_batch.source_document_ir_file_id, source_ir_before.id)
+        self.assertEqual(batch_payload["integrity"]["binding"]["generation"], 1)
+        self.assertEqual(batch_payload["integrity"]["binding"]["attempt"], 1)
+        self.assertEqual(batch_payload["integrity"]["binding"]["source_document_ir_file_id"], source_ir_before.id)
+        self.assertEqual(batch_payload["integrity"]["binding"]["source_document_ir_sha256"], source_ir_before.checksum_sha256)
         self.assertEqual(len(provider.requests), 3)
         self.assertEqual(len(runtime.document_job_execution_service.fake_mineru_client.calls), 1)
         self.assertEqual(len(runtime.document_job_execution_service.fake_mineru_client.download_calls), 1)
@@ -10867,14 +10903,10 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
             )
-            original_register = runtime.file_upload_service.register_generated_content
+            def broken_register_result_candidate(**kwargs):
+                raise RuntimeError("结果候选对象写入失败")
 
-            def broken_register_generated_content(**kwargs):
-                if kwargs["file_type"] == "generated_word":
-                    raise RuntimeError("oss boom")
-                return original_register(**kwargs)
-
-            runtime.file_upload_service.register_generated_content = broken_register_generated_content
+            runtime.file_upload_service.register_result_candidate = broken_register_result_candidate
             app = create_app(runtime)
             with TestClient(app) as client:
                 headers = build_auth_header(client)
@@ -10955,7 +10987,7 @@ class FastAPIJobsBackendTests(TestCase):
             ]
 
         failed_job = response.json()["job"]
-        self.assertEqual(failed_job["failed_stage"], "rendering")
+        self.assertEqual(failed_job["failed_stage"], "quality_checking")
         self.assertEqual(failed_job["error_code"], "render_failed")
         self.assertNotIn("generated_word", {file.file_type for file in job_files})
 

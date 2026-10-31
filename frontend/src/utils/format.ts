@@ -5,6 +5,8 @@ import type {
   DocumentFileSummaryResponse,
   DocumentLanguage,
   DocumentJobActionId,
+  DocumentJobDisabledReason,
+  DocumentJobDownloadAvailability,
   DocumentJobMode,
   DocumentJobResponse,
   DocumentJobStage,
@@ -29,12 +31,17 @@ export const jobStageText: Record<DocumentJobStage, string> = {
   parsing: "解析 PDF",
   parsed: "解析完成",
   ir_converting: "转换文档结构",
+  translating: "翻译中",
+  translation_validating: "校验翻译完整性",
   rendering: "生成 Word",
+  quality_checking: "检查文档质量",
   uploading: "保存结果",
   completed: "完成",
   failed: "失败",
   canceled: "已取消",
 };
+
+export const documentJobStages = Object.keys(jobStageText) as DocumentJobStage[];
 
 export type DocumentJobModeDefinition = {
   mode: DocumentJobMode;
@@ -210,6 +217,25 @@ export function documentJobActionDisabledReason(job: DocumentJobResponse, action
     return serverAction.disabled_reason;
   }
   return serverAction?.enabled ? "" : "后端未返回该操作的可用性。";
+}
+
+export function documentJobActionDisabledReasons(job: DocumentJobResponse, action: DocumentJobActionId): DocumentJobDisabledReason[] {
+  const serverAction = job.available_actions[action];
+  if (serverAction?.disabled_reasons?.length) {
+    return serverAction.disabled_reasons;
+  }
+  if (!serverAction && action === "publish") {
+    return [{ code: "", message: "后端未提供发布可用性。" }];
+  }
+  const message = documentJobActionDisabledReason(job, action);
+  return message ? [{ code: serverAction?.disabled_reason_code || "", message }] : [];
+}
+
+export function documentJobDownloadNotice(availability?: DocumentJobDownloadAvailability, isPrimaryResult = true): string {
+  const classification = availability?.classification === "internal_only"
+    ? "仅供内部使用"
+    : isPrimaryResult ? "下载分类未提供，不能确认交付资格" : "";
+  return [classification, availability?.warning_message].filter(Boolean).join("；");
 }
 
 const ADMIN_ONLY_DOCUMENT_JOB_DELETE_REASON = "只有 admin 可以删除文档任务。";

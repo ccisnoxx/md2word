@@ -3,10 +3,11 @@ from __future__ import annotations
 # app/services/renderer/word_renderer.py: 将 DocumentIR v1/v2 按模板配置渲染为可编辑 DOCX。
 
 import io
-from collections import Counter
+import hashlib
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from docx import Document
@@ -20,11 +21,17 @@ from docx.shared import Cm, Mm, Twips
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
 from app.services.renderer.image_renderer import WordImageRendererMixin
-from app.services.renderer.layout_plan import LayoutPage, LayoutRegion, build_layout_plan
-from app.services.renderer.semantic_text import parse_toc_entry_text
-from app.services.renderer.table_renderer import WordTableRendererMixin
+from app.services.renderer.image_evidence import caption_bookmark_inventory, new_image_report, finish_image_report
+from app.services.renderer.layout_plan import build_layout_plan, build_image_plan
+from app.services.renderer.render_plan import ResourceIdentity, build_render_plan, content_hash
+from app.services.renderer.block_evidence import RenderCollector, WordRenderResult, ItemEvidence, paragraph_target
+from app.services.renderer.block_anchors import bookmark_inventory, materialize_block_anchors
+from app.services.renderer.table_renderer import WordTableRendererMixin, prepare_table_input
 from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
 from app.services.renderer.text_renderer import WordTextRendererMixin
+from app.services.renderer.logical_table_plan import build_content_table_plan
+from app.services.renderer.content_contract import CONTENT_VERSION, build_formula_source_coverage, formula_sources, content_failure
+from app.services.document_ir.table_placeholder import decode_placeholders
 
 
 ImageContentLoader = Callable[[DocumentIRAsset], bytes | None]
@@ -38,15 +45,39 @@ class DocumentIRRenderOptions:
 
     subscript_config_path: Path | None = None
     document_language: str | None = None
+    template_version_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentIRRenderResult:
+    """同一次渲染生成的 DOCX 与私有公式、图片报告。"""
+
+    content: bytes = field(repr=False)
+    formula_report: dict[str, Any]
+    image_layout_report: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
 class _RenderContext:
-    """单次渲染的字段目标；不得存到可并发复用的 renderer 实例。"""
+    """单次渲染的字段目标、图片计划和报告，不写入可并发复用的实例。"""
 
     caption_bookmarks: dict[tuple[str, int], tuple[str, int]]
-    allow_heading_inference: bool
-    toc_written: bool = False
+    collector: RenderCollector | None = None
+    formula_sources: list[dict[str, Any]] = field(default_factory=list)
+    formula_entries: list[dict[str, Any]] = field(default_factory=list)
+    used_formula_sources: set[int] = field(default_factory=set)
+    formula_location: tuple[str, str] | None = None
+    image_report: dict[str, Any] = field(default_factory=dict)
+    image_spans: dict[str, Any] = field(default_factory=dict)
+    image_blocks: dict[str, DocumentIRBlock] = field(default_factory=dict)
+    image_records: dict[str, tuple[dict[str, Any], dict[str, Any]]] = field(default_factory=dict)
+    consumed_images: set[str] = field(default_factory=set)
+    image_bookmark_ids: dict[str, int] = field(default_factory=dict)
+    source_blocks: list[DocumentIRBlock] = field(default_factory=list)
+    fragment_markers: list[tuple[str, Any]] = field(default_factory=list)
+    placeholders: list[Any] = field(default_factory=list)
+    assets: dict[str, Any] = field(default_factory=dict)
+    image_loader: Any = None
 
 
 class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, WordImageRendererMixin):
@@ -63,44 +94,110 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
     ) -> bytes:
         """按模板 DOCX 与配置包生成 Word 二进制。"""
 
-        template_config = self._load_template_config(document_ir, config_path, options)
-        document = self._create_document(template_path)
+        return self.render_to_result(document_ir, template_path=template_path, config_path=config_path, image_loader=image_loader, options=options).content
+
+    def render_to_result(
+        self,
+        document_ir: DocumentIR,
+        *,
+        template_path: Path | None,
+        config_path: Path | None,
+        image_loader: ImageContentLoader,
+        options: DocumentIRRenderOptions | None = None,
+    ) -> WordRenderResult:
+        """以单次文档上下文生成字节和私有报告，兼容入口共用此核心。"""
+
+        config_content = config_path.read_bytes() if config_path is not None else None
+        template_content = template_path.read_bytes() if template_path is not None else None
+        template_config = self._load_template_config(document_ir, config_path, options, content=config_content)
+        from app.services.renderer.evidence import render_contract_failure
+        logo_path = self._resolve_asset_path(template_config.header.logo_path, config_path)
+        logo_content = logo_path.read_bytes() if template_config.header.enabled and logo_path is not None and logo_path.exists() else None
+        from app.services.renderer.resource_identity import normalized_resource_identity
+        resources = normalized_resource_identity(template_content=template_content, config=template_config,
+            logo_content=logo_content, document_language=options.document_language if options and options.document_language else document_ir.metadata.document_language)
+        layout_plan = build_layout_plan(document_ir)
+        table_plan = build_content_table_plan(document_ir, layout_plan)
+        grid_by_block = {fragment.source.block_id: fragment.render.grid for unit in table_plan.units
+                        for fragment in unit.fragments if fragment.render is not None}
+        tables = {block.id: (SimpleNamespace(rows=range(grid_by_block[block.id].rows),
+                    max_columns=grid_by_block[block.id].columns), "standard") if block.id in grid_by_block
+                    else prepare_table_input(block, template_config)
+                  for block in document_ir.blocks if block.type == "table"}
+        try:
+            plan = build_render_plan(document_ir, layout_plan=layout_plan, effective_config=template_config,
+                resource_identity=resources, table_models={key: value[0] for key, value in tables.items()},
+                table_strategies={key: value[1] for key, value in tables.items()}, logical_table_plan=table_plan)
+            collector = RenderCollector(document_ir, plan)
+        except (ValueError, TypeError, UnicodeError) as error:
+            raise render_contract_failure(error) from None
+        # 资源快照和计划在创建 Word 对象前固定；后续 writer 只消费同一计划。
+        document = Document(io.BytesIO(template_content)) if template_content is not None else Document()
+        reserved_bookmarks = bookmark_inventory(document)
         self._clear_body(document)
         self._apply_page_setup(document, template_config)
-        self._apply_header_footer(document, template_config, config_path=config_path)
+        self._apply_header_footer(document, template_config, logo_bytes=logo_content)
         self._apply_document_settings(document)
 
         assets_by_id = {asset.id: asset for asset in document_ir.assets}
-        render_context = self._build_render_context(document_ir)
-        layout_plan = build_layout_plan(document_ir)
-        if layout_plan.mode == "legacy_v1_fallback":
-            for block in layout_plan.pages[0].regions[0].blocks:
-                self._render_block(document, block, assets_by_id, template_config, image_loader, render_context)
-        else:
-            previous_page_landscape = False
-            for page_index, page in enumerate(layout_plan.pages):
-                page_landscape = self._layout_page_requires_landscape(page)
-                page_break_before_block_id = None
-                if page_index > 0:
-                    if page_landscape != previous_page_landscape:
-                        document.add_section(WD_SECTION_START.NEW_PAGE)
-                    else:
-                        page_break_before_block_id = self._semantic_page_break_block_id(page)
-                self._configure_layout_page_section(document, page, template_config, landscape=page_landscape)
-                self._render_layout_page(
-                    document,
-                    page,
-                    assets_by_id,
-                    template_config,
-                    image_loader,
-                    render_context,
-                    page_break_before_block_id=page_break_before_block_id,
-                )
-                previous_page_landscape = page_landscape
-
+        render_context = self._build_render_context(document_ir, table_plan, plan.table_units)
+        render_context.collector = collector
+        render_context.assets, render_context.image_loader = assets_by_id, image_loader
+        expected_formulas = len(render_context.formula_sources)
+        if any(1_000_001 <= value <= 1_000_000 + expected_formulas for value in reserved_bookmarks[1]):
+            raise content_failure("ir_render_evidence:target_mismatch")
+        render_context.image_report = new_image_report(document_ir, template_config=template_config,
+            template_content=template_content, config_content=config_content,
+            template_version_id=options.template_version_id if options else None,
+            language=(options.document_language if options and options.document_language else document_ir.metadata.document_language))
+        render_context.source_blocks = sorted(document_ir.blocks, key=lambda block: block.order)
+        render_context.image_blocks = {block.id: block for block in document_ir.blocks if block.type == "image"}
+        render_context.image_spans = {block_id: span for span in build_image_plan(document_ir) for block_id in span.block_ids}
+        document.part._md2word_formula_context = render_context
+        blocks = {block.id: block for block in document_ir.blocks}
+        decisions = {decision.block_id: decision for decision in plan.decisions}
+        native_units = {unit.key: unit for unit in table_plan.units}
+        unit_contracts = {unit.unit_id: unit for unit in plan.table_units}
+        for operation in plan.operations:
+            if operation.kind == "section":
+                if operation.start_kind != "initial":
+                    section = document.add_section(WD_SECTION_START.NEW_PAGE if operation.start_kind == "new_page" else WD_SECTION_START.CONTINUOUS)
+                    if operation.start_kind == "continuous":
+                        self._set_section_columns(section, operation.columns)
+            elif operation.kind == "configure_page":
+                self._configure_layout_page_section(document, template_config, landscape=operation.landscape)
+            elif operation.kind == "decoration":
+                self._render_page_decoration(document, operation, blocks, template_config, collector)
+            elif operation.kind == "column_break":
+                document.add_paragraph().add_run().add_break(WD_BREAK.COLUMN)
+            elif operation.kind == "logical_table":
+                self._render_native_unit(document, native_units[operation.unit_id], unit_contracts[operation.unit_id],
+                    blocks, template_config, render_context, page_break_before=decisions[operation.block_ids[0]].page_break_before)
+            elif operation.kind == "block":
+                block = blocks[operation.block_ids[0]]
+                if block.type == "image":
+                    self._render_image_span(document, render_context.image_spans[block.id], [blocks[key] for key in operation.block_ids],
+                        assets_by_id, template_config, image_loader, render_context, page_width=operation.page_width)
+                else:
+                    self._render_block(document, block, assets_by_id, template_config, image_loader, render_context,
+                        decision=decisions[block.id], table_model=tables.get(block.id, (None, None))[0], page_width=operation.page_width)
+        self._materialize_fragment_markers(document, render_context, reserved_bookmarks)
+        collector.created_anchors, collector.block_anchor_counts = materialize_block_anchors(
+            document, collector.records, collector.targets, reserved_bookmarks)
         buffer = io.BytesIO()
         document.save(buffer)
-        return buffer.getvalue()
+        content = buffer.getvalue()
+        try:
+            evidence, ownership, anchors, anchor_ownership = collector.freeze(document, content, plan)
+        except (ValueError, TypeError, KeyError, UnicodeError) as error:
+            raise render_contract_failure(error) from None
+        formula_report = {"schema_version": "formula-render/v1", "entries": render_context.formula_entries}
+        coverage = build_formula_source_coverage(document_ir, content, table_plan, formula_report)
+        return WordRenderResult(content, plan, evidence, CONTENT_VERSION, coverage, ownership,
+            formula_report=formula_report,
+            image_layout_report=finish_image_report(render_context.image_report),
+            block_anchor_evidence=anchors, _anchor_ownership=anchor_ownership,
+            block_anchor_counts=collector.block_anchor_counts)
 
     def _apply_document_settings(self, document: Any) -> None:
         settings = document.settings.element
@@ -130,52 +227,53 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         available_width = total_width - Twips(column_space * (column_count - 1))
         return max(int(available_width / column_count), 1), column_count
 
-    def _build_render_context(self, document_ir: DocumentIR) -> _RenderContext:
-        caption_keys: list[tuple[str, int]] = []
-        for block in document_ir.blocks:
-            if block.type == "table":
-                annotations = self._unique_annotation_texts(block.captions)
-            elif block.type == "image":
-                annotations = self._image_annotation_texts(block)
-            else:
-                continue
-            for annotation in annotations:
-                parsed = self._parse_caption_text(annotation.strip())
-                if parsed is None:
-                    continue
-                _prefix, label, _spacing, source_number, _tail = parsed
-                kind = "figure" if label.lower() == "figure" or label == "图" else "table"
-                caption_keys.append((kind, source_number))
+    def _build_render_context(self, document_ir: DocumentIR, table_plan, contracts) -> _RenderContext:
+        placeholders = decode_placeholders(document_ir)
+        return _RenderContext(caption_bookmarks=caption_bookmark_inventory(document_ir, table_contracts=contracts,
+                primary_table_block_ids={document_ir.blocks[unit.anchor_block_index].id
+                                         for unit in table_plan.units if unit.is_group_primary}),
+            formula_sources=[source.binding for source in formula_sources(document_ir, table_plan) if source.representative is None],
+            placeholders=placeholders,
+            image_bookmark_ids={f"reserved-placeholder:{index}": 2_000_000 + index for index in range(len(placeholders))})
 
-        counts = Counter(caption_keys)
-        bookmarks: dict[tuple[str, int], tuple[str, int]] = {}
-        for key in caption_keys:
-            if counts[key] != 1 or key in bookmarks:
-                continue
-            kind, source_number = key
-            bookmarks[key] = (f"_md2word_{kind}_{source_number}", len(bookmarks) + 1)
-        return _RenderContext(
-            caption_bookmarks=bookmarks,
-            allow_heading_inference=document_ir.schema_version == "document-ir/v1",
-        )
-
-    def _create_document(self, template_path: Path | None) -> Any:
-        if template_path is not None and template_path.exists():
-            return Document(str(template_path))
-        return Document()
+    def _materialize_fragment_markers(self, document, context, reserved):
+        """全部固定公式完成后分配 TAB 数字 ID，通用 block 锚点随后读取实际占用集。"""
+        if len(context.used_formula_sources) != len(context.formula_sources):
+            raise content_failure("ir_render_evidence:target_mismatch")
+        names, ids = bookmark_inventory(document)
+        if len(context.formula_entries) != len(context.formula_sources):
+            raise content_failure("ir_render_evidence:target_mismatch")
+        names.update(reserved[0])
+        ids.update(reserved[1])
+        next_id = max(max(ids, default=-1), 1_000_000 + len(context.formula_entries)) + 1
+        if next_id + len(context.fragment_markers) > 2_147_483_647:
+            raise content_failure("ir_render_evidence:target_mismatch")
+        for name, paragraph in context.fragment_markers:
+            if name in names:
+                raise content_failure("ir_render_evidence:target_mismatch")
+            start, end = OxmlElement("w:bookmarkStart"), OxmlElement("w:bookmarkEnd")
+            start.set(qn("w:name"), name)
+            start.set(qn("w:id"), str(next_id))
+            end.set(qn("w:id"), str(next_id))
+            paragraph.append(start)
+            paragraph.append(end)
+            names.add(name)
+            next_id += 1
 
     def _load_template_config(
         self,
         document_ir: DocumentIR,
         config_path: Path | None,
         options: DocumentIRRenderOptions | None,
+        *,
+        content: bytes | None = None,
     ) -> TemplateConfigPackage:
         document_language = (
             options.document_language
             if options is not None and options.document_language
             else document_ir.metadata.document_language
         )
-        template_config = TemplateConfigPackage.load(config_path).for_document_language(document_language)
+        template_config = (TemplateConfigPackage.load_content(content) if content is not None else TemplateConfigPackage.load(config_path)).for_document_language(document_language)
         subscript_config_path = options.subscript_config_path if options is not None else None
         if subscript_config_path is not None:
             terminology = TerminologyReplacer(subscript_config_path)
@@ -218,7 +316,6 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
     def _configure_layout_page_section(
         self,
         document: Any,
-        page: LayoutPage,
         template_config: TemplateConfigPackage,
         *,
         landscape: bool,
@@ -240,15 +337,12 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         height = Cm(setup.page_height_cm) if setup.page_height_cm is not None else A4_PORTRAIT_HEIGHT
         return width, height
 
-    def _layout_page_requires_landscape(self, page: LayoutPage) -> bool:
-        return page.width is not None and page.height is not None and page.width > page.height
-
     def _apply_header_footer(
         self,
         document: Any,
         template_config: TemplateConfigPackage,
         *,
-        config_path: Path | None,
+        logo_bytes: bytes | None,
     ) -> None:
         if not document.sections:
             return
@@ -264,11 +358,10 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 color=template_config.header.title_color,
                 alignment="left",
             )
-            logo_path = self._resolve_asset_path(template_config.header.logo_path, config_path)
-            if logo_path is not None and logo_path.exists():
+            if logo_bytes is not None:
                 run = paragraph.add_run()
                 try:
-                    run.add_picture(str(logo_path), height=Cm(template_config.header.logo_height_cm or 1.0))
+                    run.add_picture(io.BytesIO(logo_bytes), height=Cm(template_config.header.logo_height_cm or 1.0))
                     paragraph.add_run("  ")
                 except (InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError):
                     paragraph.text = ""
@@ -323,182 +416,78 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         return candidate.resolve()
 
     def _render_block(
-        self,
-        document: Any,
-        block: DocumentIRBlock,
-        assets_by_id: dict[str, DocumentIRAsset],
-        template_config: TemplateConfigPackage,
-        image_loader: ImageContentLoader,
-        render_context: _RenderContext,
-        *,
-        page_width: float | None = None,
-        page_break_before: bool = False,
+        self, document: Any, block: DocumentIRBlock, assets_by_id: dict[str, DocumentIRAsset],
+        template_config: TemplateConfigPackage, image_loader: ImageContentLoader, render_context: _RenderContext,
+        *, decision: Any, table_model: Any = None, page_width: float | None = None,
     ) -> None:
-        if block.type == "heading":
-            paragraph = document.add_paragraph()
-            self._fill_heading_paragraph(paragraph, block.text or "", block.level, template_config)
-            paragraph.paragraph_format.keep_with_next = True
-            if page_break_before:
-                paragraph.paragraph_format.page_break_before = True
-            return
-        if block.type == "paragraph":
-            text = block.text or ""
-            if parse_toc_entry_text(text) is not None:
-                if render_context.toc_written:
-                    return
-                render_context.toc_written = True
-            paragraph = document.add_paragraph()
-            if block.metadata.get("annotation_role") == "table_context":
-                paragraph.paragraph_format.keep_with_next = True
-                if page_break_before:
-                    paragraph.paragraph_format.page_break_before = True
-                self._fill_table_context_paragraph(paragraph, text, template_config)
-                return
-            self._fill_auto_list_or_paragraph(
-                paragraph,
-                text,
-                template_config,
-                reference_bookmarks=render_context.caption_bookmarks,
-                allow_heading_inference=render_context.allow_heading_inference,
-            )
-            return
-        if block.type == "list":
-            for item in block.list_items or []:
-                if parse_toc_entry_text(item) is not None:
-                    if render_context.toc_written:
-                        continue
-                    render_context.toc_written = True
+        collector = render_context.collector
+        if decision.mode == "native_text":
+            texts = block.list_items or [] if block.type == "list" else [block.latex or block.text or "" if block.type == "formula" else block.text or ""]
+            for index, (text, policy) in enumerate(zip(texts, decision.text_policies, strict=True)):
+                if policy.mode == "coalesced":
+                    collector.records[block.id].items.append(ItemEvidence(item_index=index, disposition="coalesced",
+                        representative_block_id=policy.representative_block_id, representative_item_index=policy.representative_item_index))
+                    collector.representatives[block.id, index] = (block.id, policy.representative_block_id, index, policy.representative_item_index)
+                    continue
+                render_context.formula_location = (block.id, f"list_items/{index}" if block.type == "list"
+                    else "latex" if block.type == "formula" and block.latex else "text")
                 paragraph = document.add_paragraph()
-                self._fill_auto_list_item_paragraph(
-                    paragraph,
-                    item,
-                    template_config,
-                    reference_bookmarks=render_context.caption_bookmarks,
-                )
-            return
-        if block.type == "formula":
-            paragraph = document.add_paragraph()
-            self._fill_formula_paragraph(paragraph, block.latex or block.text or "", template_config)
-            return
-        if block.type == "table":
-            self._render_table(
-                document,
-                block,
-                template_config,
-                caption_bookmarks=render_context.caption_bookmarks,
-                reference_bookmarks=render_context.caption_bookmarks,
-                page_break_before=page_break_before,
-            )
-            return
-        if block.type == "image":
-            self._render_image(
-                document,
-                block,
-                assets_by_id,
-                template_config,
-                image_loader,
-                page_width=page_width,
-                caption_bookmarks=render_context.caption_bookmarks,
-            )
-
-    def _render_layout_page(
-        self,
-        document: Any,
-        page: LayoutPage,
-        assets_by_id: dict[str, DocumentIRAsset],
-        template_config: TemplateConfigPackage,
-        image_loader: ImageContentLoader,
-        render_context: _RenderContext,
-        *,
-        page_break_before_block_id: str | None = None,
-    ) -> None:
-        self._render_page_decorations(document, page, template_config)
-        for region in page.regions:
-            self._render_layout_region(
-                document,
-                region,
-                assets_by_id,
-                template_config,
-                image_loader,
-                render_context,
-                page_width=page.width,
-                page_break_before_block_id=page_break_before_block_id,
-            )
-
-    def _semantic_page_break_block_id(self, page: LayoutPage) -> str | None:
-        first_block = next((block for region in page.regions for block in region.blocks), None)
-        if first_block is None:
-            return None
-        if first_block.type == "heading":
-            return first_block.id
-        if first_block.type == "table" and first_block.captions:
-            return first_block.id
-        if first_block.type == "paragraph" and first_block.metadata.get("annotation_role") == "table_context":
-            return first_block.id
-        return None
-
-    def _render_page_decorations(
-        self,
-        document: Any,
-        page: LayoutPage,
-        template_config: TemplateConfigPackage,
-    ) -> None:
-        if not document.sections:
+                self._fill_planned_text(paragraph, text, policy, template_config,
+                    reference_bookmarks=render_context.caption_bookmarks)
+                if decision.keep_with_next:
+                    paragraph.paragraph_format.keep_with_next = True
+                if decision.page_break_before and (block.type == "heading" or policy.mode == "table_context"):
+                    paragraph.paragraph_format.page_break_before = True
+                role = "list_item" if block.type == "list" else "formula" if block.type == "formula" else "body"
+                collector.add(block.id, [paragraph_target(paragraph, role, index)])
+                if block.type == "list":
+                    collector.records[block.id].items.append(ItemEvidence(item_index=index, disposition="rendered"))
+            if block.type == "list" and not texts:
+                collector.records[block.id].reason_code = "empty_list"
+        elif decision.table_strategy is not None:
+            placeholders = [item for item in render_context.placeholders if item.owner_block_id == block.id]
+            if placeholders and not (block.html or "").strip():
+                collector.add(block.id, self._render_table_captions(document, block, template_config,
+                    caption_bookmarks=render_context.caption_bookmarks, page_break_before=decision.page_break_before,
+                    style_groups=decision.annotation_styles))
+                if block.text and block.text not in block.captions:
+                    paragraph = document.add_paragraph()
+                    self._set_formula_source(document, block.id, "text")
+                    self._fill_paragraph(paragraph, block.text, template_config.normal, terminology=template_config.terminology)
+                    collector.add(block.id, [paragraph_target(paragraph)])
+                self._render_table_placeholders(document, {item.fragment_id for item in placeholders},
+                    assets_by_id, image_loader, render_context, template_config)
+                collector.add(block.id, self._render_table_notes(document, block, template_config))
+                return
+            collector.add(block.id, self._render_table(document, block, template_config,
+                caption_bookmarks=render_context.caption_bookmarks, reference_bookmarks=render_context.caption_bookmarks,
+                page_break_before=decision.page_break_before, table_model=table_model, table_strategy=decision.table_strategy, annotation_styles=decision.annotation_styles))
+    def _render_page_decoration(self, document, operation, blocks, template_config, collector):
+        ids = operation.block_ids
+        if operation.decoration_policy != "replace":
+            for block_id in ids:
+                record = collector.records[block_id]
+                record.disposition = "suppressed"
+                record.reason_code = "custom_footer" if operation.decoration_policy == "custom" else "decoration_disabled"
             return
         section = document.sections[-1]
-        if template_config.header.enabled and page.header_blocks:
-            paragraph = section.header.paragraphs[0] if section.header.paragraphs else section.header.add_paragraph()
-            paragraph.text = ""
-            # 抽取装饰块历史上沿用正文排版，这里只用页眉/页脚配置覆盖字体。
-            header_font_name = template_config.header.title_font_name
-            header_style = template_config.normal.model_copy(
-                update={
-                    "font_name": template_config.normal.font_name if header_font_name is None else header_font_name,
-                    "western_font_name": self._resolve_decoration_font(
-                        template_config.header.title_western_font_name,
-                        header_font_name,
-                        template_config.normal.western_font_name,
-                    ),
-                    "complex_script_font_name": self._resolve_decoration_font(
-                        template_config.header.title_complex_script_font_name,
-                        header_font_name,
-                        template_config.normal.complex_script_font_name,
-                    ),
-                }
-            )
-            self._fill_paragraph(
-                paragraph,
-                " ".join(block.text or "" for block in page.header_blocks).strip(),
-                header_style,
-                terminology=template_config.terminology,
-            )
-        footer_blocks = page.footer_blocks + page.page_number_blocks
-        custom_footer = bool(template_config.footer.left_text or template_config.footer.right_text)
-        if template_config.footer.enabled and footer_blocks and not custom_footer:
-            paragraph = section.footer.paragraphs[0] if section.footer.paragraphs else section.footer.add_paragraph()
-            paragraph.text = ""
-            footer_font_name = template_config.footer.font_name
-            footer_style = template_config.normal.model_copy(
-                update={
-                    "font_name": template_config.normal.font_name if footer_font_name is None else footer_font_name,
-                    "western_font_name": self._resolve_decoration_font(
-                        template_config.footer.western_font_name,
-                        footer_font_name,
-                        template_config.normal.western_font_name,
-                    ),
-                    "complex_script_font_name": self._resolve_decoration_font(
-                        template_config.footer.complex_script_font_name,
-                        footer_font_name,
-                        template_config.normal.complex_script_font_name,
-                    ),
-                }
-            )
-            self._fill_paragraph(
-                paragraph,
-                " ".join(block.text or "" for block in footer_blocks).strip(),
-                footer_style,
-                terminology=template_config.terminology,
-            )
+        header = operation.decoration_kind == "header"
+        decoration = section.header if header else section.footer
+        paragraph = decoration.paragraphs[0] if decoration.paragraphs else decoration.add_paragraph()
+        # 同一物理段落被复用时先撤销旧贡献，即使跨 section 链接也不能保留旧 owner。
+        collector.replace_decoration(ids, paragraph, operation.decoration_kind)
+        paragraph.text = ""
+        settings = template_config.header if header else template_config.footer
+        font_name = settings.title_font_name if header else settings.font_name
+        western = settings.title_western_font_name if header else settings.western_font_name
+        complex_font = settings.title_complex_script_font_name if header else settings.complex_script_font_name
+        style = template_config.normal.model_copy(update={
+            "font_name": template_config.normal.font_name if font_name is None else font_name,
+            "western_font_name": self._resolve_decoration_font(western, font_name, template_config.normal.western_font_name),
+            "complex_script_font_name": self._resolve_decoration_font(complex_font, font_name, template_config.normal.complex_script_font_name),
+        })
+        self._fill_paragraph(paragraph, " ".join(blocks[key].text or "" for key in ids).strip(), style,
+            terminology=template_config.terminology)
 
     @staticmethod
     def _resolve_decoration_font(configured: str | None, legacy: str | None, inherited: str | None) -> str | None:
@@ -510,138 +499,9 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             return legacy
         return inherited
 
-    def _render_layout_region(
-        self,
-        document: Any,
-        region: LayoutRegion,
-        assets_by_id: dict[str, DocumentIRAsset],
-        template_config: TemplateConfigPackage,
-        image_loader: ImageContentLoader,
-        render_context: _RenderContext,
-        *,
-        page_width: float | None = None,
-        page_break_before_block_id: str | None = None,
-    ) -> None:
-        if region.kind != "two_col":
-            for block in region.blocks:
-                self._render_block(
-                    document,
-                    block,
-                    assets_by_id,
-                    template_config,
-                    image_loader,
-                    render_context,
-                    page_width=page_width,
-                    page_break_before=block.id == page_break_before_block_id,
-                )
-            return
-
-        image_rows = self._split_two_column_image_rows(region.blocks)
-        if image_rows is not None:
-            for row_index, (left, right) in enumerate(image_rows):
-                self._render_two_column_image_row(
-                    document,
-                    left,
-                    right,
-                    assets_by_id,
-                    template_config,
-                    image_loader,
-                    page_width=page_width,
-                    caption_bookmarks=render_context.caption_bookmarks,
-                    keep_with_next=row_index < len(image_rows) - 1,
-                )
-            return
-
-        left_blocks, right_blocks = self._split_two_col_blocks(region.blocks)
-        two_column_section = document.add_section(WD_SECTION_START.CONTINUOUS)
-        self._set_section_columns(two_column_section, 2)
-        for block in left_blocks:
-            self._render_block(
-                document,
-                block,
-                assets_by_id,
-                template_config,
-                image_loader,
-                render_context,
-                page_width=page_width,
-                page_break_before=block.id == page_break_before_block_id,
-            )
-        column_break = document.add_paragraph()
-        column_break.add_run().add_break(WD_BREAK.COLUMN)
-        for block in right_blocks:
-            self._render_block(
-                document,
-                block,
-                assets_by_id,
-                template_config,
-                image_loader,
-                render_context,
-                page_width=page_width,
-                page_break_before=block.id == page_break_before_block_id,
-            )
-        one_column_section = document.add_section(WD_SECTION_START.CONTINUOUS)
-        self._set_section_columns(one_column_section, 1)
-
     def _set_section_columns(self, section: Any, count: int) -> None:
         columns = section._sectPr.find(qn("w:cols"))
         if columns is None:
             columns = OxmlElement("w:cols")
             section._sectPr.append(columns)
         columns.set(qn("w:num"), str(count))
-
-    def _split_two_col_blocks(
-        self,
-        blocks: list[DocumentIRBlock],
-    ) -> tuple[list[DocumentIRBlock], list[DocumentIRBlock]]:
-        left_blocks: list[DocumentIRBlock] = []
-        right_blocks: list[DocumentIRBlock] = []
-        for block in blocks:
-            column_hint = block.layout.column_hint if block.layout is not None else None
-            if column_hint == "left":
-                left_blocks.append(block)
-                continue
-            if column_hint == "right":
-                right_blocks.append(block)
-                continue
-            if column_hint == "wide":
-                left_blocks.append(block)
-                continue
-            bbox = block.layout.bbox if block.layout is not None else None
-            if bbox is None:
-                left_blocks.append(block)
-                continue
-            page_width = max((candidate.layout.bbox[2] for candidate in blocks if candidate.layout and candidate.layout.bbox), default=bbox[2])
-            center_x = (bbox[0] + bbox[2]) / 2
-            if center_x < page_width / 2:
-                left_blocks.append(block)
-            else:
-                right_blocks.append(block)
-        return left_blocks, right_blocks
-
-    def _split_two_column_image_rows(
-        self,
-        blocks: list[DocumentIRBlock],
-    ) -> list[tuple[DocumentIRBlock, DocumentIRBlock]] | None:
-        """把 bbox 明确成对的纯图片双栏区按行切分，保持题注字段的阅读顺序。"""
-
-        if (
-            len(blocks) < 2
-            or any(block.type != "image" for block in blocks)
-            or any(len(self._image_annotation_texts(block)) > 1 for block in blocks)
-        ):
-            return None
-        left_blocks, right_blocks = self._split_two_col_blocks(blocks)
-        if len(left_blocks) != len(right_blocks) or not left_blocks:
-            return None
-        left_blocks.sort(key=lambda block: block.layout.bbox[1] if block.layout and block.layout.bbox else float("inf"))
-        right_blocks.sort(key=lambda block: block.layout.bbox[1] if block.layout and block.layout.bbox else float("inf"))
-        rows: list[tuple[DocumentIRBlock, DocumentIRBlock]] = []
-        for left, right in zip(left_blocks, right_blocks, strict=True):
-            left_bbox = left.layout.bbox if left.layout is not None else None
-            right_bbox = right.layout.bbox if right.layout is not None else None
-            if left_bbox is None or right_bbox is None:
-                return None
-            if min(left_bbox[3], right_bbox[3]) <= max(left_bbox[1], right_bbox[1]):
-                return None
-            rows.append((left, right))
-        return rows

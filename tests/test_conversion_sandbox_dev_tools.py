@@ -1,4 +1,4 @@
-"""Validate local conversion sandbox helper scripts."""
+"""验证本地转换沙箱辅助脚本。"""
 
 from __future__ import annotations
 
@@ -25,6 +25,36 @@ from scripts.dev import (
 
 
 class LocalMinerUConversionCliTests(TestCase):
+    def test_formal_adapter_saves_same_image_report_and_rejects_missing_inline(self) -> None:
+        from tests.test_image_group_rendering import write_numbered_image_zip, change_docx, NS
+        from app.services.renderer.word_renderer import DocumentIRWordRenderer
+        from dataclasses import replace
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "images.zip"
+            write_numbered_image_zip(package, (24, 25))
+            kwargs = dict(input_path=str(package), output_path=str(root / "images.docx"), template_path=None,
+                layout_config_path=None, subscript_config=None, no_template=True, use_mineru_header_footer=False,
+                document_language="zh", translation_mode="direct")
+            result = formal_mineru_conversion.run_conversion(**kwargs)
+            report = result.renderer_metadata["image_layout_report"]
+            self.assertEqual(report["schema_version"], "image-layout/v1")
+            self.assertEqual(report["render_inputs"]["schema_version"], "image-render-inputs/v1")
+            self.assertEqual(result.renderer_metadata["layout_table_count"], 1)
+            self.assertEqual(result.renderer_metadata["content_table_count"], 0)
+            self.assertIn("图 24", Document(result.output_docx_path).tables[0].cell(0, 0).text)
+            original = DocumentIRWordRenderer.render_to_result
+            def remove_inline(renderer, *args, **options):
+                rendered = original(renderer, *args, **options)
+                def remove(root):
+                    parent = next(node for node in root.iter() if node.find("./wp:inline", NS) is not None)
+                    parent.remove(parent.find("./wp:inline", NS))
+                return replace(rendered, content=change_docx(rendered.content, remove))
+            kwargs["output_path"] = str(root / "rejected.docx")
+            with mock.patch.object(DocumentIRWordRenderer, "render_to_result", remove_inline), self.assertRaises(ValueError):
+                formal_mineru_conversion.run_conversion(**kwargs)
+            self.assertFalse(Path(kwargs["output_path"]).exists())
+
     def test_build_conversion_kwargs_uses_official_runtime_contract(self) -> None:
         args = run_local_mineru_conversion.parse_args(
             [
@@ -293,7 +323,7 @@ class LocalMinerUConversionCliTests(TestCase):
                     )
 
             payload = json.loads(request_path.read_text(encoding="utf-8"))
-            self.assertEqual(payload["schema_version"], "document-ir-local-translation-request/v1")
+            self.assertEqual(payload["schema_version"], "document-ir-local-translation-request/v2")
             self.assertEqual(payload["language_pair"], "en2zh")
             self.assertEqual(payload["items"][0]["text"], "Low noise amplifier")
 
@@ -576,3 +606,112 @@ class OfficialConversionRuntimeBindingTests(TestCase):
         self.assertEqual(source_path, payload_path)
         self.assertEqual(len(pages), 1)
         self.assertEqual(pages[0].blocks[0].text, "Title")
+
+
+class LocalTranslationIntegrityTests(TestCase):
+    """本地工具导出、严格响应和同步零回填边界。"""
+
+    def make_case(self, *, technical=True):
+        temporary = TemporaryDirectory(prefix="local_translation_integrity_")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        package = root / "package"
+        package.mkdir()
+        texts = ["Amplifier OPA228 uses 10 V.", "Supply 5 V."] if technical else ["Quiet amplifier", "Stable supply"]
+        (package / "content_list_v2.json").write_text(json.dumps([
+            {"type": "text", "text": text, "page_idx": index} for index, text in enumerate(texts)
+        ]), encoding="utf-8")
+        request_path = root / "request.json"
+        response_path = root / "response.json"
+        output = root / "out.docx"
+        kwargs = dict(
+            input_path=str(package), output_path=str(output), template_path=None, layout_config_path=None,
+            subscript_config=None, no_template=True, use_mineru_header_footer=False,
+            document_language="en", translation_mode="en2zh", translation_request_output=str(request_path),
+            translation_max_pages=1, translation_max_chars=500,
+        )
+        with mock.patch.object(formal_mineru_conversion, "_build_openai_provider", side_effect=RuntimeError("离线导出")):
+            with self.assertRaisesRegex(RuntimeError, "离线导出"):
+                formal_mineru_conversion.run_conversion(**kwargs)
+        payload = json.loads(request_path.read_text(encoding="utf-8"))
+        kwargs["translation_response"] = str(response_path)
+        return kwargs, payload, response_path, output, texts
+
+    def test_v2_export_matches_actual_encoded_requests_and_page_plan(self):
+        kwargs, payload, response, output, texts = self.make_case()
+        self.assertEqual(payload["schema_version"], "document-ir-local-translation-request/v2")
+        self.assertEqual(len(payload["batches"]), 2)
+        self.assertNotIn("OPA228", json.dumps(payload))
+        self.assertIn("MD2W_PT_v1", payload["items"][0]["text"])
+        self.assertGreater(payload["batches"][0]["encoded_char_count"], payload["batches"][0]["char_count"])
+        response.write_text(json.dumps({"batches": [
+            {"batch_id": batch["batch_id"], "items": [{**item, "text": "译文：" + item["text"]} for item in batch["items"]]}
+            for batch in payload["batches"]
+        ]}), encoding="utf-8")
+        translate = formal_mineru_conversion.LocalTranslationResponseProvider.translate
+        with mock.patch.object(formal_mineru_conversion.LocalTranslationResponseProvider, "translate", autospec=True, side_effect=translate) as calls:
+            result = formal_mineru_conversion.run_conversion(**kwargs)
+        self.assertTrue(output.exists())
+        actual = [[{"id": item.id, "text": item.text} for item in call.args[1].items] for call in calls.call_args_list]
+        self.assertEqual(actual, [batch["items"] for batch in payload["batches"]])
+        translated = json.loads(result.document_ir_path.read_text(encoding="utf-8"))
+        self.assertEqual([block["text"] for block in translated["blocks"]], ["译文：" + text for text in texts])
+        self.assertEqual(len(actual), 2)
+
+    def test_invalid_local_envelope_rejected_before_any_apply_or_output(self):
+        from app.domains.translation.document_ir_translator import DocumentIRTranslationService
+        mutations = {
+            "missing": lambda p: {"items": p["items"][:1]},
+            "extra": lambda p: {"items": p["items"] + [{"id": "extra", "text": "extra"}]},
+            "duplicate": lambda p: {"items": [p["items"][0], p["items"][0]]},
+            "order": lambda p: {"items": list(reversed(p["items"]))},
+            "extra_batch": lambda p: {"batches": [{"items": batch["items"]} for batch in p["batches"]] + [{"items": []}]},
+            "missing_batch": lambda p: {"batches": [{"items": p["batches"][0]["items"]}]},
+            "batch_order": lambda p: {"batches": [{"items": batch["items"]} for batch in reversed(p["batches"])]},
+            "type": lambda p: {"items": [{**p["items"][0], "text": 42}, p["items"][1]]},
+            "field": lambda p: {"items": [{**p["items"][0], "extra": "bad"}, p["items"][1]]},
+            "wrapper": lambda p: {"response": {"items": p["items"]}},
+        }
+        for name, mutation in mutations.items():
+            with self.subTest(name=name):
+                kwargs, payload, response, output, _texts = self.make_case()
+                response.write_text(json.dumps(mutation(payload)), encoding="utf-8")
+                with mock.patch.object(DocumentIRTranslationService, "apply_replacements") as apply:
+                    with self.assertRaises((ValueError, RuntimeError)):
+                        formal_mineru_conversion.run_conversion(**kwargs)
+                apply.assert_not_called()
+                self.assertFalse(output.exists())
+                self.assertFalse(output.with_suffix(".document-ir.json").exists())
+
+    def test_old_technical_response_is_not_repaired_but_plain_text_response_remains_valid(self):
+        from app.domains.translation.document_ir_translator import DocumentIRTranslationService, DocumentIRTranslationError
+        kwargs, payload, response, output, texts = self.make_case()
+        response.write_text(json.dumps({"items": [{**item, "text": text} for item, text in zip(payload["items"], texts)]}), encoding="utf-8")
+        with mock.patch.object(DocumentIRTranslationService, "apply_replacements") as apply:
+            with self.assertRaises(DocumentIRTranslationError) as raised:
+                formal_mineru_conversion.run_conversion(**kwargs)
+        self.assertEqual(raised.exception.code, "translation_integrity_placeholder_missing")
+        apply.assert_not_called()
+        self.assertFalse(output.exists())
+        kwargs, payload, response, output, _texts = self.make_case(technical=False)
+        response.write_text(json.dumps({"items": [{**item, "text": "安静且稳定"} for item in payload["items"]]}), encoding="utf-8")
+        result = formal_mineru_conversion.run_conversion(**kwargs)
+        self.assertTrue(output.exists())
+        self.assertIn("安静且稳定", result.document_ir_path.read_text(encoding="utf-8"))
+
+    def test_duplicate_json_keys_and_added_technical_content_have_zero_apply(self):
+        from app.domains.translation.document_ir_translator import DocumentIRTranslationService
+        for name in ("duplicate_key", "technical_injection"):
+            with self.subTest(name=name):
+                kwargs, payload, response, output, _texts = self.make_case()
+                if name == "duplicate_key":
+                    text = '{"items": [], "items": ' + json.dumps(payload["items"]) + '}'
+                else:
+                    payload["items"][1]["text"] += " extra 999 V"
+                    text = json.dumps({"items": payload["items"]})
+                response.write_text(text, encoding="utf-8")
+                with mock.patch.object(DocumentIRTranslationService, "apply_replacements") as apply:
+                    with self.assertRaises((ValueError, RuntimeError)):
+                        formal_mineru_conversion.run_conversion(**kwargs)
+                apply.assert_not_called()
+                self.assertFalse(output.exists())

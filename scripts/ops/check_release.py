@@ -309,7 +309,8 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
 
     for needle in (
         'export type DocumentJobStatusGroup = "active"',
-        "available_actions: Record<DocumentJobActionId, DocumentJobAvailableAction>",
+        'available_actions: Record<Exclude<DocumentJobActionId, "publish">, DocumentJobAvailableAction> & {',
+        "publish?: DocumentJobAvailableAction;",
         "filtered_summary?: Record<string, number>",
         "translation_qa_summary?: Partial<Record<TranslationQaStatus, number>>",
         "ai_debug_archive_expires_at: string | null",

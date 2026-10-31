@@ -1,0 +1,37 @@
+{
+  "branch": "md2word/RND-502",
+  "head": "c56e12832ff30212cc067d0909430cf5f091f79b",
+  "index_preserved": true,
+  "baseline_file_count": 99,
+  "unrelated_original_changed": [],
+  "review_changed_existing": [
+    ".trellis/tasks/10-23-rnd-502-formula-omml-fallback/implementation-validation.md",
+    ".trellis/tasks/10-23-rnd-502-formula-omml-fallback/research/word-formula-contracts.md",
+    ".trellis/tasks/10-23-rnd-502-formula-omml-fallback/task.json",
+    "app/conversion/docx_rules/formula.py",
+    "tests/test_formula_rendering.py",
+    ".trellis/spec/backend/word-generation-rules.md",
+    "docs/implementation/codex-task-manifest.yaml"
+  ],
+  "new_files": [
+    ".trellis/tasks/10-23-rnd-502-formula-omml-fallback/post-implementation-review.md"
+  ],
+  "manifest_changed_ids": [
+    "RND-502"
+  ],
+  "other_task_count_preserved": 44,
+  "BAS-001": "done",
+  "approved_v2_preserved": true,
+  "tested_code_unchanged": true,
+  "word_excerpt_source_hash_current": true,
+  "manifest_status": "review",
+  "trellis_status": "in_progress",
+  "current_task_source": [
+    "session",
+    "codex_01a166c3-673e-7191-a780-0a1f04bd0f16",
+    ".trellis/tasks/10-23-rnd-502-formula-omml-fallback"
+  ],
+  "code_snapshot_sha256": "15eeffed1bfcc1fdbe1dcd771dcfb1acc27fb8c0d13fe200e5c953f9e7932a7f",
+  "task_validate": "implement=8 check=8 passed no warnings",
+  "diff_check": "passed"
+}

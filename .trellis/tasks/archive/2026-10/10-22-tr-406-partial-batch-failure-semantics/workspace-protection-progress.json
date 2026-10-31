@@ -1,0 +1,9 @@
+{
+  "protected_original_dirty_files": 332,
+  "unexpected_original_dirty_changes": [],
+  "manifest_outside_tr406_unchanged": true,
+  "original_index_unchanged": true,
+  "original_deleted_paths_still_absent": true,
+  "head_unchanged": true,
+  "current_branch": "codex/tr-406-partial-batch-failure-semantics"
+}

@@ -363,6 +363,7 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         payload LONGTEXT NOT NULL,
         created_at VARCHAR(40) NOT NULL,
         updated_at VARCHAR(40) NOT NULL,
+        review_query_json LONGTEXT NULL,
         KEY idx_document_files_created_at (created_at, file_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
@@ -403,7 +404,47 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         payload LONGTEXT NOT NULL,
         created_at VARCHAR(40) NOT NULL,
         updated_at VARCHAR(40) NOT NULL,
+        quality_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        review_status VARCHAR(32) NOT NULL DEFAULT 'unreviewed',
+        delivery_status VARCHAR(32) NOT NULL DEFAULT 'internal_draft',
+        quality_summary_json LONGTEXT NULL,
+        list_query_json LONGTEXT NULL,
         KEY idx_document_jobs_created_at (created_at, job_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS document_job_publications (
+        publication_id VARCHAR(128) PRIMARY KEY,
+        job_id VARCHAR(128) NOT NULL,
+        tenant_id VARCHAR(128) NOT NULL,
+        company_id VARCHAR(128) NOT NULL,
+        generation BIGINT NOT NULL,
+        source_file_id VARCHAR(128) NOT NULL,
+        result_file_id VARCHAR(128) NOT NULL,
+        result_sha256 VARCHAR(71) NOT NULL,
+        request_id VARCHAR(128) NOT NULL,
+        published_at VARCHAR(40) NOT NULL,
+        protected_file_ids LONGTEXT NOT NULL,
+        payload LONGTEXT NOT NULL,
+        UNIQUE KEY uniq_publication_result (result_file_id),
+        UNIQUE KEY uniq_publication_job_generation (job_id, generation),
+        UNIQUE KEY uniq_publication_job_request (job_id, request_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS document_job_review_records (
+        record_id VARCHAR(128) PRIMARY KEY,
+        job_id VARCHAR(128) NOT NULL,
+        tenant_id VARCHAR(128) NOT NULL,
+        company_id VARCHAR(128) NOT NULL,
+        sequence BIGINT NOT NULL,
+        result_file_id VARCHAR(128) NULL,
+        result_sha256 VARCHAR(71) NULL,
+        origin VARCHAR(32) NOT NULL,
+        import_version VARCHAR(32) NULL,
+        payload LONGTEXT NOT NULL,
+        UNIQUE KEY uniq_document_job_review_sequence (job_id, sequence),
+        KEY idx_document_job_reviews_scope (tenant_id, company_id, job_id, sequence)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
@@ -470,6 +511,12 @@ MYSQL_SCHEMA_POST_COLUMN_MAINTENANCE_STATEMENTS: tuple[str, ...] = (
 )
 
 MYSQL_SCHEMA_COLUMN_MAINTENANCE: tuple[tuple[str, str, str], ...] = (
+    ("document_jobs", "list_query_json", "list_query_json LONGTEXT NULL"),
+    ("document_files", "review_query_json", "review_query_json LONGTEXT NULL"),
+    ("document_jobs", "quality_status", "quality_status VARCHAR(32) NOT NULL DEFAULT 'pending'"),
+    ("document_jobs", "review_status", "review_status VARCHAR(32) NOT NULL DEFAULT 'unreviewed'"),
+    ("document_jobs", "delivery_status", "delivery_status VARCHAR(32) NOT NULL DEFAULT 'internal_draft'"),
+    ("document_jobs", "quality_summary_json", "quality_summary_json LONGTEXT NULL"),
     ("term_rules", "normalized_term", "normalized_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT ''"),
     ("term_rules", "scope_type", "scope_type VARCHAR(32) NOT NULL DEFAULT 'global'"),
     ("term_rules", "scope_id", "scope_id VARCHAR(128) NULL"),

@@ -1,11 +1,16 @@
-// File: frontend/src/utils/translationBatches.ts
-// Purpose: Shared display helpers for read-only document_job translation provider batch diagnostics.
-import type { DocumentJobTranslationBatchSummaryResponse } from "@/api/types";
+// 文件：frontend/src/utils/translationBatches.ts
+// 用途：集中维护 document_job 翻译批次诊断与后端执行摘要的只读展示规则。
+import type {
+  DocumentJobTranslationBatchExecutionResponse,
+  DocumentJobTranslationBatchFailureDisposition,
+  DocumentJobTranslationBatchSummaryResponse,
+} from "@/api/types";
 
 export type TranslationBatchTagType = "success" | "warning" | "danger" | "info";
 
 export type TranslationBatchSummaryCounts = {
   total: number;
+  leafCount: number;
   succeeded: number;
   active: number;
   failed: number;
@@ -15,6 +20,8 @@ export type TranslationBatchSummaryCounts = {
   aiCallLogCount: number;
   providerCallBudget: number | null;
   deterministicBatchCount: number | null;
+  executionAvailable: boolean;
+  outcome: DocumentJobTranslationBatchExecutionResponse["outcome"] | null;
 };
 
 const ACTIVE_BATCH_STATUSES = new Set(["pending", "queued", "running"]);
@@ -33,13 +40,28 @@ export function translationBatchStatusText(status: string): string {
 }
 
 export function isTranslationBatchAttention(batch: DocumentJobTranslationBatchSummaryResponse): boolean {
-  if (batch.status === "failed" || batch.status === "split") {
+  if (batch.failure_disposition === "superseded" || batch.is_effective_leaf === false) {
+    return false;
+  }
+  if (batch.failure_disposition === "terminal" || batch.status === "failed") {
+    return true;
+  }
+  if (batch.status === "split") {
     return true;
   }
   return batch.truncation_retry || batch.retryable || batch.finish_reason === "length";
 }
 
 export function translationBatchStatusTagType(batch: DocumentJobTranslationBatchSummaryResponse): TranslationBatchTagType {
+  if (batch.failure_disposition === "terminal") {
+    return "danger";
+  }
+  if (batch.failure_disposition === "retrying" || batch.failure_disposition === "stopped") {
+    return "warning";
+  }
+  if (batch.failure_disposition === "superseded") {
+    return "info";
+  }
   if (batch.status === "failed") {
     return "danger";
   }
@@ -53,6 +75,18 @@ export function translationBatchStatusTagType(batch: DocumentJobTranslationBatch
 }
 
 export function translationBatchRowClassName(batch: DocumentJobTranslationBatchSummaryResponse): string {
+  if (batch.failure_disposition === "terminal") {
+    return "is-translation-batch-failed";
+  }
+  if (batch.failure_disposition === "stopped") {
+    return "is-translation-batch-stopped";
+  }
+  if (batch.failure_disposition === "retrying") {
+    return "is-translation-batch-retrying";
+  }
+  if (batch.failure_disposition === "superseded") {
+    return "is-translation-batch-superseded";
+  }
   if (batch.status === "failed") {
     return "is-translation-batch-failed";
   }
@@ -72,6 +106,17 @@ export function translationBatchRowClassName(batch: DocumentJobTranslationBatchS
 
 export function translationBatchFlagTexts(batch: DocumentJobTranslationBatchSummaryResponse): string[] {
   const flags: string[] = [];
+  const dispositionLabels: Record<DocumentJobTranslationBatchFailureDisposition, string> = {
+    none: "",
+    retrying: "自动重试中",
+    terminal: "终态失败",
+    stopped: "其他批次已停止",
+    superseded: "拆分父项",
+  };
+  const dispositionLabel = batch.failure_disposition ? dispositionLabels[batch.failure_disposition] : "";
+  if (dispositionLabel) {
+    flags.push(dispositionLabel);
+  }
   if (batch.status === "split") {
     flags.push("已拆分");
   }
@@ -114,6 +159,58 @@ export function translationBatchErrorSummaryText(batch: DocumentJobTranslationBa
   return batch.error_code || batch.error_message || "-";
 }
 
+export function translationBatchDispositionText(
+  batch: DocumentJobTranslationBatchSummaryResponse,
+): string | null {
+  if (!batch.failure_disposition) {
+    return null;
+  }
+  const labels: Record<DocumentJobTranslationBatchFailureDisposition, string> = {
+    none: "正常",
+    retrying: "自动重试中",
+    terminal: "终态失败",
+    stopped: "其他批次已停止",
+    superseded: "拆分父项",
+  };
+  return labels[batch.failure_disposition];
+}
+
+export function translationBatchOutcomeText(
+  execution: DocumentJobTranslationBatchExecutionResponse | null | undefined,
+): string | null {
+  if (!execution) {
+    return null;
+  }
+  const labels: Record<DocumentJobTranslationBatchExecutionResponse["outcome"], string> = {
+    not_started: "尚未开始",
+    running: "翻译进行中",
+    retrying: "自动重试中",
+    validating: "正在校验翻译完整性",
+    failed: "翻译失败，未生成可交付 Word",
+    completed: "翻译批次已完成",
+    canceled: "翻译已取消",
+  };
+  return labels[execution.outcome];
+}
+
+export function translationBatchOutcomeTagType(
+  execution: DocumentJobTranslationBatchExecutionResponse | null | undefined,
+): TranslationBatchTagType {
+  if (!execution) {
+    return "info";
+  }
+  if (execution.outcome === "failed") {
+    return "danger";
+  }
+  if (execution.outcome === "retrying") {
+    return "warning";
+  }
+  if (execution.outcome === "completed") {
+    return "success";
+  }
+  return "info";
+}
+
 export function translationBatchAiCallLogSummaryText(batch: DocumentJobTranslationBatchSummaryResponse): string {
   const count = batch.ai_call_log_file_ids.length;
   if (!count) {
@@ -128,19 +225,23 @@ export function translationBatchFileIdsText(fileIds: string[]): string {
 
 export function summarizeTranslationBatches(
   batches: DocumentJobTranslationBatchSummaryResponse[],
+  execution?: DocumentJobTranslationBatchExecutionResponse | null,
 ): TranslationBatchSummaryCounts {
   const providerBudgets = batches.map((batch) => batch.provider_call_budget).filter((value) => value > 0);
   const deterministicCounts = batches.map((batch) => batch.deterministic_batch_count).filter((value) => value > 0);
   return {
     total: batches.length,
-    succeeded: batches.filter((batch) => batch.status === "succeeded").length,
-    active: batches.filter((batch) => ACTIVE_BATCH_STATUSES.has(batch.status)).length,
-    failed: batches.filter((batch) => batch.status === "failed").length,
+    leafCount: execution?.leaf_count ?? batches.filter((batch) => batch.is_effective_leaf !== false && batch.status !== "split").length,
+    succeeded: execution?.succeeded_leaf_count ?? batches.filter((batch) => batch.status === "succeeded" && batch.is_effective_leaf !== false).length,
+    active: execution?.active_leaf_count ?? batches.filter((batch) => ACTIVE_BATCH_STATUSES.has(batch.status) && batch.is_effective_leaf !== false).length,
+    failed: execution?.terminal_failed_leaf_count ?? batches.filter((batch) => batch.status === "failed" && batch.is_effective_leaf !== false).length,
     split: batches.filter((batch) => batch.status === "split").length,
     attention: batches.filter(isTranslationBatchAttention).length,
     itemCount: batches.reduce((sum, batch) => sum + batch.item_count, 0),
     aiCallLogCount: batches.reduce((sum, batch) => sum + batch.ai_call_log_file_ids.length, 0),
     providerCallBudget: providerBudgets.length ? Math.max(...providerBudgets) : null,
     deterministicBatchCount: deterministicCounts.length ? Math.max(...deterministicCounts) : null,
+    executionAvailable: execution !== undefined && execution !== null,
+    outcome: execution?.outcome ?? null,
   };
 }

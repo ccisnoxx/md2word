@@ -10,6 +10,13 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
+from app.conversion.docx_rules.formula import (
+    FORMULA_OUTPUT_VERSION,
+    FORMULA_REASONS,
+    FORMULA_REPORT_VERSION,
+    canonical_sha256,
+    output_sha256,
+)
 from app.conversion.docx_rules.text_semantics import looks_like_heading_text, parse_toc_entry_text
 
 
@@ -26,14 +33,14 @@ MANUAL_LIST_MARKER_RE = re.compile(r"^\s*(?:[•■*]|[-–—])\s+")
 WIDE_TABLE_MIN_COLUMNS = 6
 
 
-def analyze_docx_quality_bytes(content: bytes | None) -> dict[str, Any]:
+def analyze_docx_quality_bytes(content: bytes | None, *, formula_report: dict[str, Any] | None = None) -> dict[str, Any]:
     """从 DOCX bytes 中提取可编辑性和 Word 标准结构证据。"""
 
     if not content:
         return {}
     try:
         with zipfile.ZipFile(BytesIO(content)) as package:
-            return _analyze_docx_package(package)
+            return _analyze_docx_package(package, formula_report=formula_report)
     except zipfile.BadZipFile:
         return {}
 
@@ -83,7 +90,7 @@ def build_docx_quality_flags(quality: Mapping[str, Any] | None) -> list[str]:
     return flags
 
 
-def _analyze_docx_package(package: zipfile.ZipFile) -> dict[str, Any]:
+def _analyze_docx_package(package: zipfile.ZipFile, *, formula_report: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
         document_xml = package.read("word/document.xml")
     except KeyError:
@@ -98,6 +105,10 @@ def _analyze_docx_package(package: zipfile.ZipFile) -> dict[str, Any]:
 
     paragraphs = root.findall(".//w:p", DOCX_XML_NS)
     tables = root.findall(".//w:tbl", DOCX_XML_NS)
+    # 独立分析只能识别候选，正式 evidence 另行认证其源图片与注释绑定。
+    layout_candidates = [table for table in tables if (marker := table.find("./w:tblPr/w:tblCaption", DOCX_XML_NS)) is not None
+                         and marker.get(_w_attr("val"), "").startswith("md2w_image_layout:")]
+    content_tables = [table for table in tables if table not in layout_candidates]
     table_cell_paragraphs = [paragraph for table in tables for paragraph in table.findall(".//w:tc/w:p", DOCX_XML_NS)]
     table_cell_paragraph_ids = {id(paragraph) for paragraph in table_cell_paragraphs}
     paragraph_texts = [_paragraph_text(paragraph) for paragraph in paragraphs]
@@ -111,20 +122,27 @@ def _analyze_docx_package(package: zipfile.ZipFile) -> dict[str, Any]:
     ]
     semantic_body_paragraph_texts = [_paragraph_text(paragraph) for paragraph in semantic_body_paragraphs]
     joined_text = "\n".join(text for text in paragraph_texts if text)
-    latex_matches = _unique_latex_residue(joined_text)
+    residue_text = joined_text
+    if formula_report is not None:
+        validate_formula_report(formula_report)
+        ranges = _formula_ranges(root, formula_report)
+        excluded = {id(node) for entry, nodes in ranges if entry["mode"] == "text_fallback" for node in nodes for node in node.iter()}
+        residue_text = "\n".join("".join(node.text or "" for node in paragraph.iter() if node.tag in {_w_attr("t"), f"{{{DOCX_XML_NS['m']}}}t"} and id(node) not in excluded) for paragraph in paragraphs)
+    latex_matches = _unique_latex_residue(residue_text)
     text_chars = len(joined_text)
     table_count = len(tables)
     table_shapes = [_table_shape(table) for table in tables]
-    wide_table_count = sum(1 for table in tables if _table_column_count(table) >= WIDE_TABLE_MIN_COLUMNS)
+    wide_table_count = sum(1 for table in content_tables if _table_column_count(table) >= WIDE_TABLE_MIN_COLUMNS)
     inline_shape_count = len(root.findall(".//wp:inline", DOCX_XML_NS))
     editable_text_available = text_chars >= EDITABLE_TEXT_MIN_CHARS
-    editable_content_available = editable_text_available or table_count > 0
+    editable_content_available = editable_text_available or bool(content_tables)
     heading_paragraphs = sum(1 for paragraph in paragraphs if _paragraph_has_heading_style(paragraph, heading_style_ids))
     toc_tab_leader_paragraphs = sum(1 for paragraph in paragraphs if _paragraph_has_dot_tab_leader(paragraph))
-    return {
+    result = {
         "paragraph_count": len(paragraphs),
         "table_count": table_count,
         "table_shapes": table_shapes,
+        "table_observations": [_table_observation(table, index) for index, table in enumerate(tables)],
         "wide_table_count": wide_table_count,
         "media_count": media_count,
         "inline_shape_count": inline_shape_count,
@@ -144,9 +162,9 @@ def _analyze_docx_package(package: zipfile.ZipFile) -> dict[str, Any]:
             if _looks_like_plain_toc_entry(text) and not _paragraph_has_dot_tab_leader(paragraph)
         ),
         "keep_next_paragraphs": sum(1 for paragraph in paragraphs if paragraph.find("./w:pPr/w:keepNext", DOCX_XML_NS) is not None),
-        "table_header_rows": sum(1 for table in tables for row in table.findall("./w:tr", DOCX_XML_NS) if _row_has_table_header(row)),
-        "table_no_split_rows": sum(1 for table in tables for row in table.findall("./w:tr", DOCX_XML_NS) if _row_has_cant_split(row)),
-        "shaded_table_cells": sum(1 for table in tables for cell in table.findall(".//w:tc", DOCX_XML_NS) if _cell_has_fill(cell)),
+        "table_header_rows": sum(1 for table in content_tables for row in table.findall("./w:tr", DOCX_XML_NS) if _row_has_table_header(row)),
+        "table_no_split_rows": sum(1 for table in content_tables for row in table.findall("./w:tr", DOCX_XML_NS) if _row_has_cant_split(row)),
+        "shaded_table_cells": sum(1 for table in content_tables for cell in table.findall(".//w:tc", DOCX_XML_NS) if _cell_has_fill(cell)),
         "table_cell_zero_spacing_paragraphs": sum(1 for paragraph in table_cell_paragraphs if _paragraph_has_zero_spacing(paragraph)),
         "landscape_sections": sum(1 for section in root.findall(".//w:sectPr", DOCX_XML_NS) if _section_is_landscape(section)),
         "latex_residue_count": len(latex_matches),
@@ -156,6 +174,9 @@ def _analyze_docx_package(package: zipfile.ZipFile) -> dict[str, Any]:
         "editable_content_available": editable_content_available,
         "image_only_suspected": media_count > 0 and not editable_content_available,
     }
+    if layout_candidates:
+        result["candidate_layout_table_count"] = len(layout_candidates)
+    return result
 
 
 def _heading_style_ids(package: zipfile.ZipFile) -> set[str]:
@@ -272,3 +293,122 @@ def _unique_latex_residue(text: str) -> list[str]:
         seen.add(value)
         values.append(value)
     return values
+
+
+def validate_formula_report(report: object) -> dict[str, Any]:
+    """严格校验持久化报告并派生安全摘要；此函数不进行文件 I/O。"""
+    if not isinstance(report, dict) or set(report) != {"schema_version", "entries"} or report.get("schema_version") != FORMULA_REPORT_VERSION:
+        raise ValueError("公式报告版本或结构无效")
+    entries = report.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError("公式报告条目无效")
+    counts = {"omml": 0, "semantic_runs": 0, "text_fallback": 0}
+    reasons: dict[str, int] = {}
+    entry_keys = {"occurrence", "source", "anchor", "mode", "reason", "output_projection_version", "expected_output_sha256"}
+    source_keys = {"block_id", "field", "start", "end", "boundary", "source_sha256"}
+    for index, entry in enumerate(entries, 1):
+        if not isinstance(entry, dict) or set(entry) != entry_keys:
+            raise ValueError("公式报告条目结构无效")
+        if type(entry["occurrence"]) is not int or entry["occurrence"] != index or entry["anchor"] != f"md2w_formula_{index:06d}":
+            raise ValueError("公式报告锚点或次序无效")
+        mode = entry["mode"]
+        if not isinstance(mode, str) or mode not in counts or entry["output_projection_version"] != FORMULA_OUTPUT_VERSION:
+            raise ValueError("公式报告输出模式无效")
+        reason = entry["reason"]
+        if (mode == "text_fallback" and (not isinstance(reason, str) or reason not in FORMULA_REASONS)) or (mode != "text_fallback" and reason is not None):
+            raise ValueError("公式报告降级原因无效")
+        source = entry["source"]
+        if not isinstance(source, dict) or set(source) != source_keys:
+            raise ValueError("公式报告源绑定无效")
+        if not isinstance(source["block_id"], str) or not source["block_id"] or not isinstance(source["field"], str) or not re.fullmatch(r"(?:text|latex|html/\d+/\d+|list_items/\d+|captions/\d+|footnotes/\d+|metadata/caption)", source["field"]):
+            raise ValueError("公式报告源位置无效")
+        if type(source["start"]) is not int or type(source["end"]) is not int or not 0 <= source["start"] < source["end"]:
+            raise ValueError("公式报告源范围无效")
+        if not isinstance(source["boundary"], str) or source["boundary"] not in {"block", "dollar", "display_dollar", "paren", "bracket", "eq", "bare_command", "semantic", "semantic_script"}:
+            raise ValueError("公式报告数学边界无效")
+        for value in (source["source_sha256"], entry["expected_output_sha256"]):
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+                raise ValueError("公式报告内容绑定无效")
+        counts[mode] += 1
+        if reason:
+            reasons[reason] = reasons.get(reason, 0) + 1
+    return {
+        "schema_version": "formula-summary/v1",
+        "formula_count": len(entries),
+        "omml_count": counts["omml"],
+        "semantic_count": counts["semantic_runs"],
+        "fallback_count": counts["text_fallback"],
+        "warning_codes": ["formula_text_fallback"] if counts["text_fallback"] else [],
+        "reason_counts": dict(sorted(reasons.items())),
+        "report_sha256": canonical_sha256(report),
+    }
+
+
+def _formula_ranges(root: ElementTree.Element, report: dict[str, Any]) -> list[tuple[dict[str, Any], list[ElementTree.Element]]]:
+    entries = {entry["anchor"]: entry for entry in report["entries"]}
+    found: set[str] = set()
+    ranges: list[tuple[dict[str, Any], list[ElementTree.Element]]] = []
+    all_starts = root.findall(".//w:bookmarkStart", DOCX_XML_NS)
+    all_ends = root.findall(".//w:bookmarkEnd", DOCX_XML_NS)
+    for parent in root.iter():
+        children = list(parent)
+        for index, child in enumerate(children):
+            if child.tag != _w_attr("bookmarkStart"):
+                continue
+            anchor = child.get(_w_attr("name")) or ""
+            if not anchor.startswith("md2w_formula_"):
+                continue
+            if anchor not in entries or anchor in found:
+                raise ValueError("DOCX 公式锚点缺失、重复或未登记")
+            found.add(anchor)
+            bookmark_id = child.get(_w_attr("id"))
+            if sum(node.get(_w_attr("id")) == bookmark_id for node in all_starts) != 1 or sum(node.get(_w_attr("id")) == bookmark_id for node in all_ends) != 1:
+                raise ValueError("DOCX 公式锚点身份无效")
+            end = next((end_index for end_index in range(index + 1, len(children)) if children[end_index].tag == _w_attr("bookmarkEnd") and children[end_index].get(_w_attr("id")) == bookmark_id), None)
+            if end is None:
+                raise ValueError("DOCX 公式锚点范围未闭合")
+            nodes = children[index + 1:end]
+            entry = entries[anchor]
+            math_count = sum(node.tag == f"{{{DOCX_XML_NS['m']}}}oMath" for node in nodes)
+            if not nodes or (entry["mode"] == "omml" and (math_count != 1 or len(nodes) != 1)) or (entry["mode"] != "omml" and (math_count or any(node.tag != _w_attr("r") for node in nodes))):
+                raise ValueError("DOCX 公式实际输出模式不匹配")
+            if output_sha256(nodes) != entry["expected_output_sha256"]:
+                raise ValueError("DOCX 公式实际输出与预期绑定不匹配")
+            ranges.append((entry, nodes))
+    if found != set(entries):
+        raise ValueError("DOCX 公式锚点缺失")
+    covered_math = {id(node) for _entry, nodes in ranges for element in nodes for node in element.iter() if node.tag == f"{{{DOCX_XML_NS['m']}}}oMath"}
+    if covered_math != {id(node) for node in root.findall(".//m:oMath", DOCX_XML_NS)}:
+        raise ValueError("DOCX 包含未登记的数学对象")
+    return ranges
+
+
+def verify_docx_formula_report(content: bytes, report: dict[str, Any]) -> None:
+    """从最终 DOCX 锚点范围重建投影，拒绝改值、错位、截断和漏提示。"""
+    validate_formula_report(report)
+    with zipfile.ZipFile(BytesIO(content)) as package:
+        root = ElementTree.fromstring(package.read("word/document.xml"))
+    _formula_ranges(root, report)
+
+
+def _table_observation(table: ElementTree.Element, index: int) -> dict[str, Any]:
+    """只观察实际 OOXML 的无文本结构，机器锚点也必须符合固定格式。"""
+    caption = table.find("w:tblPr/w:tblCaption", DOCX_XML_NS)
+    anchor = caption.get(_w_attr("val"), "") if caption is not None else ""
+    rows = []
+    for row in table.findall("w:tr", DOCX_XML_NS):
+        cells = []
+        for cell in row.findall("w:tc", DOCX_XML_NS):
+            span = cell.find("w:tcPr/w:gridSpan", DOCX_XML_NS)
+            merge = cell.find("w:tcPr/w:vMerge", DOCX_XML_NS)
+            value = span.get(_w_attr("val"), "1") if span is not None else "1"
+            cells.append({"grid_span": int(value) if value.isdigit() else 0,
+                          "vertical_merge": merge.get(_w_attr("val"), "continue") if merge is not None else None})
+        def enabled(name):
+            marker = row.find("w:trPr/w:" + name, DOCX_XML_NS)
+            return marker is not None and marker.get(_w_attr("val"), "true").lower() not in {"0", "false", "off"}
+        rows.append({"cells": cells, "header": enabled("tblHeader"), "cant_split": enabled("cantSplit"),
+                     "bookmarks": [node.get(_w_attr("name")) for node in row.findall(".//w:bookmarkStart", DOCX_XML_NS)
+                                   if re.fullmatch(r"_md2tf_[0-9a-f]{30}", node.get(_w_attr("name"), ""))]})
+    return {"table_index": index, "anchor": anchor if re.fullmatch(r"md2word-table-[0-9a-f]{32}", anchor) else None,
+            "grid_columns": len(table.findall("w:tblGrid/w:gridCol", DOCX_XML_NS)), "rows": rows}

@@ -1,209 +1,179 @@
+"""图片写入只消费一次计划；每图保留独立来源、比例和完整注释。"""
+
 from __future__ import annotations
 
-# app/services/renderer/image_renderer.py: 提供 DocumentIR Word 渲染器的图片、宽度和图注 helper。
-
+import hashlib
 import io
 from collections.abc import Callable
 from typing import Any
 
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.image.image import Image
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Twips
+
+from app.conversion.docx_rules.formula import sha256_text
 from app.services.document_ir.models import DocumentIRAsset, DocumentIRBlock
+from app.services.renderer.image_evidence import (IMAGE_TABLE_PREFIX, expected_annotation, image_anchor,
+    image_dimensions, image_slots, section_geometry, single_image_width, source_image_position)
+from app.services.renderer.layout_plan import ImageSpan, image_annotations
+from app.services.renderer.block_evidence import LocalTarget, paragraph_target
 from app.services.renderer.template_config import TemplateConfigPackage
 
-
 ImageContentLoader = Callable[[DocumentIRAsset], bytes | None]
+_IMAGE_ERRORS = (InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError)
 
 
 class WordImageRendererMixin:
-    """封装图片、缺图回退策略、bbox 宽度约束和图注渲染逻辑。"""
+    """无边框组和顺序单图共享逐图写入职责，不在写入阶段重新归组。"""
 
-    def _render_image(
-        self,
-        document: Any,
-        block: DocumentIRBlock,
-        assets_by_id: dict[str, DocumentIRAsset],
-        template_config: TemplateConfigPackage,
-        image_loader: ImageContentLoader,
-        *,
-        page_width: float | None = None,
-        caption_bookmarks: Any | None = None,
-    ) -> None:
-        asset = assets_by_id.get(block.asset_ref or "")
-        image_content = image_loader(asset) if asset is not None else None
-        annotations = self._image_annotation_texts(block)
-        paragraph = document.add_paragraph()
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        if not image_content:
-            fallback_text = self._image_fallback_text(block)
-            if not self._fill_caption_paragraph(
-                paragraph,
-                fallback_text,
-                template_config.caption,
-                terminology=template_config.terminology,
-                caption_bookmarks=caption_bookmarks,
-            ):
-                self._fill_paragraph(
-                    paragraph,
-                    fallback_text,
-                    template_config.caption,
-                    terminology=template_config.terminology,
-                )
-            return
-
-        try:
-            available_width = self._available_width(document, block=block, page_width=page_width)
-            run = paragraph.add_run()
-            run.add_picture(io.BytesIO(image_content), width=available_width)
-        except (InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError):
-            paragraph.text = ""
-            fallback_text = self._image_fallback_text(block)
-            if not self._fill_caption_paragraph(
-                paragraph,
-                fallback_text,
-                template_config.caption,
-                terminology=template_config.terminology,
-                caption_bookmarks=caption_bookmarks,
-            ):
-                self._fill_paragraph(
-                    paragraph,
-                    fallback_text,
-                    template_config.caption,
-                    terminology=template_config.terminology,
-                )
-            return
-
-        if annotations:
-            paragraph.paragraph_format.keep_with_next = True
-        for index, caption in enumerate(annotations):
-            caption_paragraph = document.add_paragraph()
-            if index < len(annotations) - 1:
-                caption_paragraph.paragraph_format.keep_with_next = True
-            if not self._fill_caption_paragraph(
-                caption_paragraph,
-                caption,
-                template_config.caption,
-                terminology=template_config.terminology,
-                caption_bookmarks=caption_bookmarks,
-            ):
-                self._fill_paragraph(
-                    caption_paragraph,
-                    caption,
-                    template_config.caption,
-                    terminology=template_config.terminology,
-                )
-
-    def _render_two_column_image_row(
-        self,
-        document: Any,
-        left: DocumentIRBlock,
-        right: DocumentIRBlock,
-        assets_by_id: dict[str, DocumentIRAsset],
-        template_config: TemplateConfigPackage,
-        image_loader: ImageContentLoader,
-        *,
-        page_width: float | None,
-        caption_bookmarks: Any | None,
-        keep_with_next: bool,
-    ) -> None:
-        """用原生中心制表位渲染一行两张图片，避免逐行分节触发分页。"""
-
-        content_width, _column_count = self._content_width_and_columns(document)
-        image_paragraph = document.add_paragraph()
-        self._configure_image_row_tabs(image_paragraph, content_width)
-        rendered: list[bool] = []
-        for block in (left, right):
-            image_paragraph.add_run("\t")
+    def _render_image_span(self, document: Any, span: ImageSpan, blocks: list[DocumentIRBlock],
+                           assets_by_id: dict, template_config: TemplateConfigPackage,
+                           image_loader: ImageContentLoader, context: Any, *, page_width: float | None) -> None:
+        geometry = section_geometry(document.sections[-1]._sectPr)
+        inputs = context.image_report["render_inputs"]
+        mode = "group" if span.mode == "group" and inputs["generation_policy"] == "grouped/v1" else "single_sequence"
+        reasons = list(span.reasons)
+        prepared = []
+        for block in blocks:
             asset = assets_by_id.get(block.asset_ref or "")
-            image_content = image_loader(asset) if asset is not None else None
-            if image_content:
+            content = image_loader(asset) if asset is not None else None
+            decoded = None
+            if content:
                 try:
-                    width = min(
-                        self._available_width(document, block=block, page_width=page_width),
-                        max(content_width // 2, 1),
-                    )
-                    image_paragraph.add_run().add_picture(io.BytesIO(image_content), width=width)
-                    rendered.append(True)
-                    continue
-                except (InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError):
+                    decoded = Image.from_blob(content)
+                except _IMAGE_ERRORS:
                     pass
-            rendered.append(False)
+                if decoded is not None and asset.checksum_sha256 and asset.checksum_sha256.removeprefix("sha256:") != hashlib.sha256(content).hexdigest():
+                    raise ValueError("图片字节与源资产 checksum 不一致")
+            prepared.append((content, decoded))
+        if mode == "group" and any(image is None for _, image in prepared):
+            mode, reasons = "single_sequence", ["asset_unavailable"]
+        slots = None
+        if mode == "group":
+            width, slots = image_slots(blocks, page_width, geometry)
+            if width <= 0 or any(slot["inner_width"] <= 0 or min(image_dimensions(decoded.px_width, decoded.px_height,
+                    slot["inner_width"], geometry["effective_height"])) <= 0 for slot, (_, decoded) in zip(slots, prepared, strict=True)):
+                mode, reasons, slots = "single_sequence", ["image_size_unfit"], None
+        record = context.image_records.get(span.id)
+        if record is None:
+            frozen = {"span_id": span.id, "geometry": geometry}
+            inputs["spans"].append(frozen)
+            entry = {"span_id": span.id, "block_ids": list(span.block_ids), "page_index": span.page_index,
+                     "planned_mode": span.mode, "metrics": dict(span.metrics), "mode": mode,
+                     "reasons": reasons, "marker": IMAGE_TABLE_PREFIX + span.id if mode == "group" else None, "images": []}
+            context.image_report["spans"].append(entry)
+            context.image_records[span.id] = (entry, frozen)
+        else:
+            entry, frozen = record
+            if geometry != frozen["geometry"]:
+                # 不确定 run 可跨原生栏区域；仅为实际变化的成员冻结几何差异。
+                frozen.setdefault("image_geometries", {}).update({block.id: geometry for block in blocks})
+        cells = None
+        if mode == "group":
+            cells = self._image_layout_cells(document, width, slots, entry["marker"])
+        for index, (block, (content, decoded)) in enumerate(zip(blocks, prepared, strict=True)):
+            available = slots[index]["inner_width"] if slots else single_image_width(block, page_width, geometry)
+            self._write_image(document, cells[index] if cells else document, block, content, decoded,
+                              available, geometry["effective_height"], template_config, context, entry)
 
-        annotations: list[list[str]] = []
-        for block, was_rendered in zip((left, right), rendered, strict=True):
-            values = self._image_annotation_texts(block)
-            if not values and not was_rendered:
-                fallback = self._image_fallback_text(block)
-                values = [fallback] if fallback else []
-            annotations.append(values)
-        if keep_with_next:
-            image_paragraph.paragraph_format.keep_with_next = True
-        if not any(annotations):
-            return
+    def _image_layout_cells(self, document: Any, width: int, slots: list[dict], marker: str) -> list:
+        table = document.add_table(rows=1, cols=len(slots))
+        table.autofit = False
+        table.alignment = WD_TABLE_ALIGNMENT.LEFT
+        props = table._tbl.tblPr
+        indent = OxmlElement("w:tblInd")
+        indent.set(qn("w:w"), "0")
+        indent.set(qn("w:type"), "dxa")
+        props.insert_element_before(indent, "w:tblBorders", "w:shd", "w:tblLayout", "w:tblCellMar", "w:tblLook", "w:tblCaption", "w:tblDescription", "w:tblPrChange")
+        table_width = props.find(qn("w:tblW"))
+        table_width.set(qn("w:type"), "dxa")
+        table_width.set(qn("w:w"), str(width))
+        caption = OxmlElement("w:tblCaption")
+        caption.set(qn("w:val"), marker)
+        props.append(caption)
+        borders = OxmlElement("w:tblBorders")
+        for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            border = OxmlElement("w:" + side)
+            border.set(qn("w:val"), "nil")
+            borders.append(border)
+        props.insert_element_before(borders, "w:shd", "w:tblLayout", "w:tblCellMar", "w:tblLook", "w:tblCaption", "w:tblDescription", "w:tblPrChange")
+        split = OxmlElement("w:cantSplit")
+        table.rows[0]._tr.get_or_add_trPr().append(split)
+        for column, cell, slot in zip(table.columns, table.rows[0].cells, slots, strict=True):
+            column.width = Twips(slot["width"])
+            cell.width = Twips(slot["width"])
+            margins = OxmlElement("w:tcMar")
+            for side in ("top", "left", "bottom", "right"):
+                node = OxmlElement("w:" + side)
+                node.set(qn("w:w"), str(slot.get(side, 0)))
+                node.set(qn("w:type"), "dxa")
+                margins.append(node)
+            cell._tc.get_or_add_tcPr().append(margins)
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+        return list(table.rows[0].cells)
 
-        image_paragraph.paragraph_format.keep_with_next = True
-        caption_paragraph = document.add_paragraph()
-        self._configure_image_row_tabs(caption_paragraph, content_width)
-        if keep_with_next:
-            caption_paragraph.paragraph_format.keep_with_next = True
-        for captions in annotations:
-            caption_paragraph.add_run("\t")
-            if not captions:
-                continue
-            caption = captions[0]
-            if not self._fill_caption_paragraph(
-                caption_paragraph,
-                caption,
-                template_config.caption,
-                terminology=template_config.terminology,
-                caption_bookmarks=caption_bookmarks,
-            ):
-                self._fill_paragraph(
-                    caption_paragraph,
-                    caption,
-                    template_config.caption,
-                    terminology=template_config.terminology,
-                )
+    def _write_image(self, root: Any, container: Any, block: DocumentIRBlock, content: bytes | None,
+                     decoded: Any, available_width: int, available_height: int,
+                     config: TemplateConfigPackage, context: Any, entry: dict) -> None:
+        annotations = image_annotations(block)
+        paragraph = container.add_paragraph() if container is root else container.paragraphs[0]
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        paragraph.paragraph_format.left_indent = Twips(0)
+        paragraph.paragraph_format.right_indent = Twips(0)
+        paragraph.paragraph_format.first_line_indent = Twips(0)
+        anchor = image_anchor(block.id)
+        self._image_bookmark(paragraph, anchor, context, start=True)
+        width = height = 0
+        if decoded is not None:
+            width, height = image_dimensions(decoded.px_width, decoded.px_height, available_width, available_height)
+            if min(width, height) <= 0:
+                raise ValueError("图片无法放入有效内容区域")
+            inline = paragraph.add_run().add_picture(io.BytesIO(content), width=width, height=height)
+            # 客户端对省略距离可继承对象外距，必须显式清零以闭合 cell 内宽。
+            for key in ("distT", "distB", "distL", "distR"):
+                inline._inline.set(key, "0")
+            inline._inline.docPr.set("name", anchor)
+        else:
+            paragraph.add_run("【图片缺失或无效，需复核】")
+        self._image_bookmark(paragraph, anchor, context, start=False)
+        paragraph.paragraph_format.keep_with_next = bool(annotations)
+        targets = [LocalTarget(inline._inline.getparent(), paragraph.part, "image")
+            if decoded is not None else paragraph_target(paragraph, "image_fallback")]
+        image = {"block_id": block.id, "asset_ref": block.asset_ref, "asset_sha256": hashlib.sha256(content).hexdigest() if content else None,
+                 "anchor": anchor, "width": width, "height": height,
+                 "source": source_image_position(block), "annotations": []}
+        entry["images"].append(image)
+        for index, (field, text) in enumerate(annotations):
+            annotation_anchor = image_anchor(block.id, field)
+            expected_hash = expected_annotation(text, context.image_report["render_inputs"], context.caption_bookmarks)
+            caption = container.add_paragraph()
+            caption.paragraph_format.keep_with_next = index < len(annotations) - 1
+            self._image_bookmark(caption, annotation_anchor, context, start=True)
+            self._set_formula_source(root, block.id, field)
+            if not self._fill_caption_paragraph(caption, text, config.caption, terminology=config.terminology, caption_bookmarks=context.caption_bookmarks):
+                self._fill_paragraph(caption, text, config.caption, terminology=config.terminology, reference_bookmarks=context.caption_bookmarks)
+            self._image_bookmark(caption, annotation_anchor, context, start=False)
+            targets.append(paragraph_target(caption, "caption", index))
+            image["annotations"].append({"field": field, "source_sha256": sha256_text(text), "anchor": annotation_anchor,
+                                         "expected_output_sha256": expected_hash})
+        if not annotations and block.text and decoded is None:
+            # 没有结构化注释的历史缺图仍保留其源文本和公式来源。
+            self._set_formula_source(root, block.id, "text")
+            self._fill_paragraph(paragraph, block.text, config.caption, terminology=config.terminology)
 
-    def _configure_image_row_tabs(self, paragraph: Any, content_width: int) -> None:
-        tab_stops = paragraph.paragraph_format.tab_stops
-        tab_stops.add_tab_stop(content_width // 4, WD_TAB_ALIGNMENT.CENTER)
-        tab_stops.add_tab_stop(content_width * 3 // 4, WD_TAB_ALIGNMENT.CENTER)
+        context.collector.add(block.id, targets)
+        context.collector.images.append((block.id, tuple(targets)))
 
-    def _available_width(
-        self,
-        document: Any,
-        *,
-        block: DocumentIRBlock | None = None,
-        page_width: float | None = None,
-    ) -> Any:
-        base_width, column_count = self._content_width_and_columns(document)
-
-        bbox = block.layout.bbox if block is not None and block.layout is not None else None
-        if bbox is None or page_width is None or page_width <= 0:
-            return base_width
-
-        source_column_width = page_width / column_count
-        ratio = min(max((bbox[2] - bbox[0]) / source_column_width, 0.0), 1.0)
-        return max(min(int(base_width * ratio), int(base_width)), 1)
-
-    def _image_fallback_text(self, block: DocumentIRBlock) -> str:
-        captions = self._image_annotation_texts(block)
-        return captions[0] if captions else block.text or ""
-
-    def _image_annotation_texts(self, block: DocumentIRBlock) -> list[str]:
-        values: list[str] = []
-        values.extend(block.captions)
-        metadata_caption = block.metadata.get("caption")
-        if isinstance(metadata_caption, str):
-            values.append(metadata_caption)
-        values.extend(block.footnotes)
-
-        seen: set[str] = set()
-        texts: list[str] = []
-        for value in values:
-            text = value.strip()
-            if text and text not in seen:
-                texts.append(text)
-                seen.add(text)
-        return texts
+    @staticmethod
+    def _image_bookmark(paragraph: Any, name: str, context: Any, *, start: bool) -> None:
+        if start:
+            context.image_bookmark_ids[name] = 2000000 + len(context.image_bookmark_ids)
+        node = OxmlElement("w:bookmarkStart" if start else "w:bookmarkEnd")
+        node.set(qn("w:id"), str(context.image_bookmark_ids[name]))
+        if start:
+            node.set(qn("w:name"), name)
+        paragraph._p.append(node)

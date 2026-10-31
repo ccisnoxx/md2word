@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from app.conversion.docx_rules.text_semantics import is_list_item_text, normalize_formula_text
+from app.conversion.docx_rules.formula import scan_math_spans
+from app.conversion.docx_rules.text_semantics import is_list_item_text
 
 
 DETAILS_BLOCK_RE = re.compile(r"<details\b[^>]*>.*?</details>", re.IGNORECASE | re.DOTALL)
@@ -48,8 +49,17 @@ def clean_markdown_document(text: str) -> str:
 
 
 def clean_text(text: str) -> str:
-    cleaned = clean_markdown_document(str(text or ""))
-    return " ".join(cleaned.replace("\n", " ").split()).strip()
+    """清理普通正文；数学片段保留源字符与内部空白，供翻译保护和渲染共同消费。"""
+
+    source = str(text or "")
+    parts: list[str] = []
+    cursor = 0
+    for span in scan_math_spans(source):
+        parts.append(re.sub(r"\s+", " ", clean_markdown_document(source[cursor:span.start])))
+        parts.append(span.source)
+        cursor = span.end
+    parts.append(re.sub(r"\s+", " ", clean_markdown_document(source[cursor:])))
+    return "".join(parts).strip()
 
 
 def join_text_fragments(nodes: list[dict[str, Any]], *, clean: bool = True) -> str:
@@ -95,6 +105,107 @@ def split_toc_like_lines(text: str) -> list[str]:
     return lines
 
 
+def select_mineru_text_source(
+    block: dict[str, Any],
+) -> tuple[str, Any, Literal["string", "runs", "texts"]] | None:
+    """按正式消费优先级选择正文，空权威 runs 也必须保留其选择结果。"""
+
+    for key in ("text", "content"):
+        value = block.get(key)
+        if isinstance(value, str):
+            return key, value, "string"
+        if isinstance(value, list) and all(isinstance(item, dict) for item in value):
+            return key, value, "runs"
+        if isinstance(value, dict):
+            for field in ("title_content", "paragraph_content", "page_header_content", "page_footer_content", "page_number_content"):
+                nodes = value.get(field)
+                if isinstance(nodes, list) and all(isinstance(item, dict) for item in nodes):
+                    return f"{key}/{field}", nodes, "runs"
+        texts = coerce_text_list(value)
+        if texts:
+            return key, texts, "texts"
+    return None
+
+
+def mineru_raw_text_preserving_lines(block: dict[str, Any]) -> str:
+    """验证器与转换器消费同一正文选择，避免旁支叶字段冒充已保留内容。"""
+
+    selected = select_mineru_text_source(block)
+    if selected is None:
+        return ""
+    _field, value, mode = selected
+    if mode == "string":
+        return clean_markdown_document(value)
+    if mode == "runs":
+        return join_text_fragments(value, clean=False)
+    return "\n".join(value)
+
+
+def select_mineru_list_source(
+    block: dict[str, Any],
+) -> tuple[str, Literal["legacy_items", "v2_items", "selected_text", "content"], Any]:
+    """只选择实际列表分支；验证器可先检查原始 runs，再让消费器读取。"""
+
+    raw_items = block.get("items", block.get("list_items"))
+    if isinstance(raw_items, list):
+        return "items" if "items" in block else "list_items", "legacy_items", raw_items
+    content = block.get("content")
+    if isinstance(content, dict) and isinstance(content.get("list_items"), list):
+        return "content/list_items", "v2_items", content["list_items"]
+    raw_text = mineru_raw_text_preserving_lines(block)
+    items = split_multiline_list_items(raw_text) or split_toc_like_lines(raw_text)
+    if items:
+        selected = select_mineru_text_source(block)
+        return selected[0] if selected is not None else "text", "selected_text", items
+    return "content", "content", content
+
+
+def mineru_list_items(block: dict[str, Any]) -> list[str]:
+    """消费经过输入验证的实际列表分支，保持既有分组、公式与 legacy 字符串语义。"""
+
+    _field, mode, value = select_mineru_list_source(block)
+    if mode == "legacy_items":
+        items: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                items.extend(coerce_text_list(item))
+            else:
+                text = clean_text(str(item))
+                if text:
+                    items.append(text)
+        return items
+    if mode == "v2_items":
+        items = [join_text_fragments(item.get("item_content", [])) for item in value
+                 if isinstance(item, dict) and isinstance(item.get("item_content"), list)]
+        return [item for item in items if item]
+    if mode == "selected_text":
+        return value
+    return coerce_text_list(value)
+
+
+def classify_mineru_block(
+    block: dict[str, Any], source_type: str,
+) -> Literal["heading", "paragraph", "table", "image", "list", "formula"]:
+    """正式有效类型的唯一 owner；保留既有类型及 legacy 字段推断优先级。"""
+
+    if source_type in {"header", "footer", "page_header", "page_footer", "page_number"}:
+        return "paragraph"
+    if source_type in {"title", "heading"} or block.get("text_level") is not None:
+        return "heading"
+    if source_type == "table" or block.get("table_body") or block.get("table_html"):
+        return "table"
+    if source_type in {"chart", "image", "figure"} or block.get("img_path") or block.get("image_path"):
+        return "image"
+    if source_type in {"equation", "formula", "interline_equation", "inline_equation", "equation_interline"}:
+        return "formula"
+    if source_type in {"list", "index"} or isinstance(block.get("items"), list):
+        return "list"
+    text = mineru_raw_text_preserving_lines(block)
+    if split_multiline_list_items(text) or split_toc_like_lines(text):
+        return "list"
+    return "paragraph"
+
+
 def coerce_text_list(value: Any) -> list[str]:
     texts: list[str] = []
     if value is None:
@@ -119,9 +230,9 @@ def coerce_text_list(value: Any) -> list[str]:
                 texts.append(text)
             return texts
         if node_type in {"equation_inline", "inline_formula"} and isinstance(value.get("content"), str):
-            text = clean_text(normalize_formula_text(value["content"]))
-            if text:
-                texts.append(text)
+            # semantic 公式的原式和边界必须先于任何正文归一化保留。
+            if value["content"].strip():
+                texts.append(f"${value['content']}$")
             return texts
 
         for key, child in value.items():
@@ -281,7 +392,9 @@ def should_join_footnote_fragment(previous: str, fragment: str) -> bool:
         return True
     if stripped_previous[-1] in ",;:([{（【/":
         return True
-    if INLINE_FORMULA_MARKUP_RE.search(stripped_fragment) and not stripped_previous.endswith((".", "。", ";", "；")):
+    if (
+        INLINE_FORMULA_MARKUP_RE.search(stripped_fragment) or scan_math_spans(stripped_fragment)
+    ) and not stripped_previous.endswith((".", "。", ";", "；")):
         return True
 
     lower_previous = stripped_previous.lower()
@@ -401,6 +514,15 @@ def extract_first_html(node: Any) -> str | None:
     return None
 
 
+def select_mineru_table_html(block: dict[str, Any]) -> str | None:
+    """共享既有表格字段优先级，保证验证报告与转换消费同一份 HTML。"""
+    for key in ("table_body", "table_html", "html", "content"):
+        html = extract_first_html(block.get(key))
+        if html:
+            return html
+    return extract_first_html(block)
+
+
 def is_empty_table_placeholder(
     *,
     block_type: str,
@@ -423,3 +545,118 @@ def is_empty_table_placeholder(
         return True
 
     return image_path is not None and bbox[0] <= 130 and bbox[1] <= 100 and bbox[2] >= 860 and bbox[3] >= 880
+
+
+def select_mineru_text_source(
+    block: dict[str, Any],
+) -> tuple[str, Any, Literal["string", "runs", "texts"]] | None:
+    """按正式消费优先级选择正文，空权威 runs 也必须保留其选择结果。"""
+
+    for key in ("text", "content"):
+        value = block.get(key)
+        if isinstance(value, str):
+            return key, value, "string"
+        if isinstance(value, list) and all(isinstance(item, dict) for item in value):
+            return key, value, "runs"
+        if isinstance(value, dict):
+            for field in ("title_content", "paragraph_content", "page_header_content", "page_footer_content", "page_number_content"):
+                nodes = value.get(field)
+                if isinstance(nodes, list) and all(isinstance(item, dict) for item in nodes):
+                    return f"{key}/{field}", nodes, "runs"
+        texts = coerce_text_list(value)
+        if texts:
+            return key, texts, "texts"
+    return None
+
+
+
+def mineru_raw_text_preserving_lines(block: dict[str, Any]) -> str:
+    """验证器与转换器消费同一正文选择，避免旁支叶字段冒充已保留内容。"""
+
+    selected = select_mineru_text_source(block)
+    if selected is None:
+        return ""
+    _field, value, mode = selected
+    if mode == "string":
+        return clean_markdown_document(value)
+    if mode == "runs":
+        return join_text_fragments(value, clean=False)
+    return "\n".join(value)
+
+
+
+def select_mineru_list_source(
+    block: dict[str, Any],
+) -> tuple[str, Literal["legacy_items", "v2_items", "selected_text", "content"], Any]:
+    """只选择实际列表分支；验证器可先检查原始 runs，再让消费器读取。"""
+
+    raw_items = block.get("items", block.get("list_items"))
+    if isinstance(raw_items, list):
+        return "items" if "items" in block else "list_items", "legacy_items", raw_items
+    content = block.get("content")
+    if isinstance(content, dict) and isinstance(content.get("list_items"), list):
+        return "content/list_items", "v2_items", content["list_items"]
+    raw_text = mineru_raw_text_preserving_lines(block)
+    items = split_multiline_list_items(raw_text) or split_toc_like_lines(raw_text)
+    if items:
+        selected = select_mineru_text_source(block)
+        return selected[0] if selected is not None else "text", "selected_text", items
+    return "content", "content", content
+
+
+
+def mineru_list_items(block: dict[str, Any]) -> list[str]:
+    """消费经过输入验证的实际列表分支，保持既有分组、公式与 legacy 字符串语义。"""
+
+    _field, mode, value = select_mineru_list_source(block)
+    if mode == "legacy_items":
+        items: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                items.extend(coerce_text_list(item))
+            else:
+                text = clean_text(str(item))
+                if text:
+                    items.append(text)
+        return items
+    if mode == "v2_items":
+        items = [join_text_fragments(item.get("item_content", [])) for item in value
+                 if isinstance(item, dict) and isinstance(item.get("item_content"), list)]
+        return [item for item in items if item]
+    if mode == "selected_text":
+        return value
+    return coerce_text_list(value)
+
+
+
+def classify_mineru_block(
+    block: dict[str, Any], source_type: str,
+) -> Literal["heading", "paragraph", "table", "image", "list", "formula"]:
+    """正式有效类型的唯一 owner；保留既有类型及 legacy 字段推断优先级。"""
+
+    if source_type in {"header", "footer", "page_header", "page_footer", "page_number"}:
+        return "paragraph"
+    if source_type in {"title", "heading"} or block.get("text_level") is not None:
+        return "heading"
+    if source_type == "table" or block.get("table_body") or block.get("table_html"):
+        return "table"
+    if source_type in {"chart", "image", "figure"} or block.get("img_path") or block.get("image_path"):
+        return "image"
+    if source_type in {"equation", "formula", "interline_equation", "inline_equation", "equation_interline"}:
+        return "formula"
+    if source_type in {"list", "index"} or isinstance(block.get("items"), list):
+        return "list"
+    text = mineru_raw_text_preserving_lines(block)
+    if split_multiline_list_items(text) or split_toc_like_lines(text):
+        return "list"
+    return "paragraph"
+
+
+
+def select_mineru_table_html(block: dict[str, Any]) -> str | None:
+    """共享既有表格字段优先级，保证验证报告与转换消费同一份 HTML。"""
+    for key in ("table_body", "table_html", "html", "content"):
+        html = extract_first_html(block.get(key))
+        if html:
+            return html
+    return extract_first_html(block)

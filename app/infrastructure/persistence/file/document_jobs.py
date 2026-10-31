@@ -2,71 +2,332 @@ from __future__ import annotations
 
 # app/infrastructure/persistence/file/document_jobs.py: file backend 的 document_jobs adapter。
 
-from typing import Any
+import json
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager, ExitStack
+from datetime import datetime, timezone
+from typing import Any, Literal
 
+from app.domains.document_jobs.new_generation import (
+    GENERATION_REQUESTS_ENVELOPE, NewGenerationAcceptance, NewGenerationSubmission, NewGenerationLedgerEntry,
+    NewGenerationCommitUnknownError, accept_new_generation, decode_generation_requests,
+    ensure_generation_ledger_not_patched, read_generation_request, replay_generation_request,
+)
+from app.domains.document_jobs.publication import (
+    PUBLICATION_ENVELOPE, PublicationRecord, PublicationSubmission, commit_publication, decode_file_publications, validate_publication_history,
+)
+from app.domains.document_jobs.review import (
+    REVIEW_ENVELOPE, ReviewRecord, ReviewSubmission, decode_file_history, validate_history, submit_review,
+)
 from app.domains.document_jobs.models import (
     DocumentJobCallbackMessage,
     DocumentJobEventRecord,
     DocumentJobRecord,
     DocumentJobTranslationBatchRecord,
 )
+from app.domains.document_jobs.delivery_state import backfill_document_job_state_payload
+from app.domains.document_jobs.list_query import DocumentJobListQuery, DocumentJobListResult, query_document_job_records
+from app.domains.document_jobs.table_evidence import table_evidence_snapshot_values
+from app.domains.document_jobs.repository import (
+    TranslationBatchTreeInvalidError,
+    reduce_translation_batch_generation,
+    reducer_blocks_result_promotion,
+    translation_plan_record,
+    validate_expected_root_plans_or_raise,
+    validate_translation_batch_tree_or_raise,
+)
 from app.infrastructure.persistence.file.backend import FilePersistenceBackend
+from app.infrastructure.persistence.file.files import FileDocumentFileRepository
+from app.domains.document_jobs.result_state import lifecycle_job, matches_current, patched_job, prepare_result, retry_job
+from app.domains.files.models import DocumentFileRecord
+from app.domains.resources.models import utc_now
+from app.domains.document_jobs.preview_state import (
+    PreviewArtifactObservation, PreviewClaim, PreviewClaimRequest, begin_preview_registration, claim_preview, finish_preview,
+)
+from app.infrastructure.persistence.file.record_lock import record_lock
 
 
 class FileDocumentJobRepository:
-    """用 file backend 读写 DocumentJobRecord 主记录。"""
+    """同一主记录的全部写入共享短锁；对象 I/O 在调用方锁外进行。"""
 
     def __init__(self, backend: FilePersistenceBackend) -> None:
         self.backend = backend
 
     def create_document_job(self, record: DocumentJobRecord) -> DocumentJobRecord:
-        self.backend.write_json(
-            self.backend.document_jobs_dir / record.id / "job.json",
-            record.model_dump(mode="json"),
-        )
-        return record
+        with record_lock(self.backend.document_jobs_dir / record.id / "job.lock"):
+            existing = self.get_document_job(record.id)
+            if existing is not None:
+                if existing != record:
+                    raise ValueError("任务 ID 已存在，不能覆盖主记录。")
+                return existing
+            self._write_job(None, record)
+            return record
+
+    def _write_job(self, connection: Any, record: DocumentJobRecord, *,
+        generation_entry: NewGenerationLedgerEntry | None = None,
+    ) -> None:
+        payload = {**(connection or {}), **record.model_dump(mode="json")}
+        if generation_entry is not None:
+            payload[GENERATION_REQUESTS_ENVELOPE] = {
+                **payload.get(GENERATION_REQUESTS_ENVELOPE, {}),
+                generation_entry.acceptance.request_id: generation_entry.model_dump(mode="json"),
+            }
+        decode_generation_requests(payload)
+        validate_history(record, decode_file_history(payload))
+        validate_publication_history(record, decode_file_publications(payload))
+        path = self.backend.document_jobs_dir / record.id / "job.json"
+        if generation_entry is None:
+            self.backend.write_json(path, payload)
+        else:
+            # temp 写入失败发生在提交前；只有 replace 已开始后才报告接受结果未知。
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(path.suffix + ".tmp")
+            temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            try:
+                temporary.replace(path)
+            except Exception as exc:
+                raise NewGenerationCommitUnknownError() from exc
+
+    @contextmanager
+    def _locked_payload(self, job_id: str) -> Iterator[tuple[Any, Any]]:
+        with record_lock(self.backend.document_jobs_dir / job_id / "job.lock"):
+            path = self.backend.document_jobs_dir / job_id / "job.json"
+            if not path.exists():
+                raise FileNotFoundError(f"文档任务不存在: {job_id}")
+            payload = self.backend.read_json(path, {})
+            job = DocumentJobRecord.model_validate(payload)
+            if job.id != job_id:
+                raise ValueError("任务寻址与 payload 的 id 不一致。")
+            validate_history(job, decode_file_history(payload))
+            validate_publication_history(job, decode_file_publications(payload))
+            yield payload, payload
+
+    @contextmanager
+    def _locked_job(self, job_id: str) -> Iterator[tuple[Any, DocumentJobRecord]]:
+        with self._locked_payload(job_id) as (connection, payload):
+            yield connection, DocumentJobRecord.model_validate(payload)
 
     def get_document_job(self, job_id: str) -> DocumentJobRecord | None:
         path = self.backend.document_jobs_dir / job_id / "job.json"
         if not path.exists():
             return None
-        return DocumentJobRecord.model_validate(self.backend.read_json(path, {}))
+        payload = self.backend.read_json(path, {})
+        job = DocumentJobRecord.model_validate(payload)
+        validate_history(job, decode_file_history(payload))
+        validate_publication_history(job, decode_file_publications(payload))
+        return job
 
     def list_document_jobs(self) -> list[DocumentJobRecord]:
         records: list[DocumentJobRecord] = []
         for path in sorted(self.backend.document_jobs_dir.glob("*/job.json")):
-            records.append(DocumentJobRecord.model_validate(self.backend.read_json(path, {})))
+            payload = self.backend.read_json(path, {})
+            job = DocumentJobRecord.model_validate(payload)
+            validate_history(job, decode_file_history(payload))
+            validate_publication_history(job, decode_file_publications(payload))
+            records.append(job)
         return sorted(records, key=lambda record: (record.created_at, record.id))
 
-    def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord:
-        existing = self.get_document_job(job_id)
-        if existing is None:
-            raise FileNotFoundError(f"文档任务不存在: {job_id}")
-        updated = DocumentJobRecord.model_validate(existing.model_copy(update=patch).model_dump(mode="python"))
-        self.create_document_job(updated)
-        return updated
+    def query_document_jobs(self, query: DocumentJobListQuery) -> DocumentJobListResult:
+        """在单次可见任务/文件观察上筛选汇总；文件后端不提供跨全表原子快照。"""
+        return query_document_job_records(self.list_document_jobs(), query,
+            file_repository=FileDocumentFileRepository(self.backend))
+
+    def is_document_job_table_evidence_snapshot_current(self, expected: DocumentJobRecord) -> bool:
+        """每次沿原读取入口校验历史与当前字段，不缓存上次的重核结论。"""
+        current = self.get_document_job(expected.id)
+        return (current is not None and current.deleted_at is None
+            and table_evidence_snapshot_values(current) == table_evidence_snapshot_values(expected))
 
     def update_document_job_if_current(
-        self,
-        job_id: str,
-        *,
-        allowed_statuses: set[str],
-        allowed_stages: set[str],
-        expected_retry_count: int | None = None,
+        self, job_id: str, *, allowed_statuses: set[str], allowed_stages: set[str],
+        expected_retry_count: int | None = None, expected_document_ir_file_id: str | None = None,
+        require_no_prepared_result: bool = False, expected_prepared_result_file_id: str | None = None,
+        preview_contribution: dict | None = None,
         **patch: Any,
     ) -> DocumentJobRecord | None:
-        existing = self.get_document_job(job_id)
-        if existing is None:
-            raise FileNotFoundError(f"文档任务不存在: {job_id}")
-        if existing.status in {"succeeded", "failed", "canceled"}:
-            return None
-        if existing.status not in allowed_statuses or existing.stage not in allowed_stages:
-            return None
-        if expected_retry_count is not None and existing.retry_count != expected_retry_count:
-            return None
-        updated = DocumentJobRecord.model_validate(existing.model_copy(update=patch).model_dump(mode="python"))
-        self.create_document_job(updated)
+        ensure_generation_ledger_not_patched(patch)
+        with self._locked_job(job_id) as (connection, existing):
+            if not matches_current(existing, allowed_statuses=allowed_statuses, allowed_stages=allowed_stages,
+                                   expected_retry_count=expected_retry_count,
+                                   expected_document_ir_file_id=expected_document_ir_file_id,
+                                   require_no_prepared_result=require_no_prepared_result,
+                                   expected_prepared_result_file_id=expected_prepared_result_file_id):
+                return None
+            if patch.get("status") == "succeeded" and existing.timeout_at is not None and existing.timeout_at <= utc_now():
+                return None
+            updated = patched_job(existing, patch, preview_contribution=preview_contribution)
+            self._write_job(connection, updated)
+            return updated
+
+    def prepare_document_job_result(
+        self, job_id: str, *, expected_retry_count: int, expected_document_ir_file_id: str,
+        candidate: DocumentFileRecord,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = prepare_result(existing, expected_retry_count=expected_retry_count,
+                                     expected_document_ir_file_id=expected_document_ir_file_id, candidate=candidate)
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def retry_document_job(
+        self, job_id: str, *, expected_retry_count: int, max_retries: int, **patch: Any,
+    ) -> DocumentJobRecord | None:
+        ensure_generation_ledger_not_patched(patch)
+        with self._locked_job(job_id) as (connection, existing):
+            updated = retry_job(existing, expected_retry_count=expected_retry_count, max_retries=max_retries, **patch)
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def claim_document_job_preview(self, job_id: str, *, request: PreviewClaimRequest,
+        observation: PreviewArtifactObservation | None = None,
+    ) -> PreviewClaim:
+        with self._locked_job(job_id) as (connection, existing):
+            claim = claim_preview(existing, request, observation=observation, now=utc_now())
+            if claim.job != existing:
+                self._write_job(connection, claim.job)
+            return claim
+
+    def finish_document_job_preview(
+        self, job_id: str, *, request: PreviewClaimRequest, revision: int, lease_token: str,
+        status: str, manifest_file_id: str, error_code: str | None, retryable: bool, evidence: dict,
+        page_quality_contribution: dict | None = None,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = finish_preview(existing, request, revision=revision, lease_token=lease_token,
+                status=status, manifest_file_id=manifest_file_id, error_code=error_code,
+                retryable=retryable, evidence=evidence, page_quality_contribution=page_quality_contribution, now=utc_now())
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def begin_document_job_preview_registration(
+        self, job_id: str, *, request: PreviewClaimRequest, revision: int, lease_token: str, attempt: int,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = begin_preview_registration(existing, request, revision=revision, lease_token=lease_token,
+                                                 attempt=attempt, now=utc_now())
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def update_document_job_review_if_current(self, job_id: str, *, submission: ReviewSubmission) -> DocumentJobRecord | None:
+        with self._locked_payload(job_id) as (payload, _):
+            existing = DocumentJobRecord.model_validate(payload)
+            records = decode_file_history(payload)
+            validate_history(existing, records)
+            prior = next((r for r in records if r.id == submission.record_id), None)
+            updated, record = submit_review(existing, submission, prior)
+            if record is not None:
+                self._insert_review(payload, record)
+                self._write_job(payload, updated)
+            return updated
+
+    def backfill_document_job_state_if_missing(self, job_id: str) -> bool:
+        with self._locked_payload(job_id) as (_, payload):
+            updated = backfill_document_job_state_payload(payload)
+            changed = updated != payload
+            if changed:
+                self.backend.write_json(self.backend.document_jobs_dir / job_id / "job.json", updated)
+            return changed
+
+    def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord:
+        ensure_generation_ledger_not_patched(patch)
+        with self._locked_job(job_id) as (connection, existing):
+            updated = patched_job(existing, patch)
+            self._write_job(connection, updated)
+            return updated
+
+
+    def update_document_job_lifecycle_if_current(
+        self, job_id: str, *, expected_retry_count: int, action: Literal["archive", "delete"],
+        actor_id: str, occurred_at: datetime, delete_reason: str | None = None,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = lifecycle_job(existing, expected_retry_count=expected_retry_count, action=action,
+                actor_id=actor_id, occurred_at=occurred_at, delete_reason=delete_reason)
+            if updated is not None and updated != existing:
+                self._write_job(connection, updated)
         return updated
+
+    def get_document_job_generation_request(
+        self, job_id: str, *, request_id: str, actor_id: str,
+    ) -> tuple[NewGenerationAcceptance, DocumentJobRecord] | None:
+        with self._locked_payload(job_id) as (_, payload):
+            entry = read_generation_request(payload, request_id=request_id, actor_id=actor_id)
+            result = (entry.acceptance, DocumentJobRecord.model_validate(payload)) if entry is not None else None
+        return result
+
+    def accept_document_job_new_generation(
+        self, job_id: str, *, submission: NewGenerationSubmission, max_retries: int,
+    ) -> tuple[NewGenerationAcceptance, DocumentJobRecord, bool]:
+        from app.infrastructure.persistence.file.files import FileDocumentFileRepository
+
+        files = FileDocumentFileRepository(self.backend)
+        with self.backend.publication_lifecycle_lock(), self._locked_payload(job_id) as (payload, _):
+            job = DocumentJobRecord.model_validate(payload)
+            prior = replay_generation_request(payload, submission)
+            if prior is not None:
+                return prior.acceptance, job, True
+            with ExitStack() as locks:
+                current_files = {}
+                for file_id in sorted({job.source_file_id, *([job.result_file_id] if job.result_file_id else [])}):
+                    locks.enter_context(record_lock(self.backend.document_files_dir / f"{file_id}.lock"))
+                    file = files.get_document_file(file_id)
+                    if file is not None:
+                        current_files[file_id] = file
+                updated, entry = accept_new_generation(job, submission, current_files=current_files,
+                    max_retries=max_retries, now=utc_now())
+                self._write_job(payload, updated, generation_entry=entry)
+            return entry.acceptance, updated, False
+
+    def list_document_job_publications(self, job_id: str) -> list[PublicationRecord]:
+        path = self.backend.document_jobs_dir / job_id / "job.json"
+        if not path.exists():
+            raise FileNotFoundError("文档任务不存在。")
+        return decode_file_publications(self.backend.read_json(path, {}))
+
+    def is_document_file_protected(self, file_id: str) -> bool:
+        return any(file_id in record.protected_file_ids for record in self.backend.list_publication_records())
+
+    def publish_document_job(self, job_id: str, *, submission: PublicationSubmission) -> tuple[PublicationRecord, bool]:
+        from app.infrastructure.persistence.file.files import FileDocumentFileRepository
+
+        files = FileDocumentFileRepository(self.backend)
+        with self.backend.publication_lifecycle_lock(), self._locked_payload(job_id) as (payload, _), ExitStack() as locks:
+            current_files = []
+            for file_id in sorted({file.id for file in submission.files}):
+                locks.enter_context(record_lock(self.backend.document_files_dir / f"{file_id}.lock"))
+                current = files.get_document_file(file_id)
+                if current is not None:
+                    current_files.append(current)
+            updated, record, created = commit_publication(DocumentJobRecord.model_validate(payload), submission,
+                prior=self.backend.list_publication_records(), current_files=current_files,
+                all_files=files.list_document_files(), reviews=decode_file_history(payload), now=utc_now())
+            if created:
+                payload[PUBLICATION_ENVELOPE] = [
+                    *[item.model_dump(mode="json") for item in decode_file_publications(payload)],
+                    record.model_dump(mode="json"),
+                ]
+                self._write_job(payload, updated)
+            return record, created
+
+    def _insert_review(self, payload: dict, record: ReviewRecord) -> None:
+        records = decode_file_history(payload)
+        payload[REVIEW_ENVELOPE] = [r.model_dump(mode="json") for r in [*records, record]]
+
+
+    def list_document_job_reviews(self, job_id: str, *, after_sequence: int = 0, limit: int = 100) -> list[ReviewRecord]:
+        if after_sequence < 0 or not 1 <= limit <= 200:
+            raise ValueError("复核历史游标或数量非法。")
+        path = self.backend.document_jobs_dir / job_id / "job.json"
+        if not path.exists():
+            raise FileNotFoundError("文档任务不存在。")
+        payload = self.backend.read_json(path, {})
+        records = decode_file_history(payload)
+        validate_history(DocumentJobRecord.model_validate(payload), records)
+        return [r for r in records if r.sequence > after_sequence][:limit]
 
 
 class FileDocumentJobEventRepository:
@@ -244,8 +505,19 @@ class FileDocumentJobTranslationBatchRepository:
         self.backend = backend
 
     def create_translation_batch(self, record: DocumentJobTranslationBatchRecord) -> DocumentJobTranslationBatchRecord:
-        self._write_record(record)
-        return record
+        with record_lock(self.backend.document_jobs_dir / record.job_id / "job.lock"):
+            job = self._read_job_unlocked(record.job_id)
+            if job is None:
+                raise FileNotFoundError(f"文档任务不存在: {record.job_id}")
+            if job.retry_count != record.generation:
+                raise TranslationBatchTreeInvalidError("批次写入与当前任务代次不一致。")
+            existing = self._read_record_by_id(record.id)
+            if existing is not None:
+                if existing != record:
+                    raise ValueError("翻译批次 ID 已存在，不能覆盖已有记录。")
+                return existing
+            self._write_record(record)
+            return record
 
     def get_translation_batch(self, batch_id: str) -> DocumentJobTranslationBatchRecord | None:
         path = self.backend.document_job_translation_batches_dir / f"{batch_id}.json"
@@ -274,11 +546,317 @@ class FileDocumentJobTranslationBatchRepository:
         existing = self.get_translation_batch(batch_id)
         if existing is None:
             raise FileNotFoundError(f"translation batch 不存在: {batch_id}")
-        updated = DocumentJobTranslationBatchRecord.model_validate(
-            existing.model_copy(update=patch).model_dump(mode="python")
+        with record_lock(self.backend.document_jobs_dir / existing.job_id / "job.lock"):
+            current = self._read_record_by_id(batch_id)
+            if current is None:
+                raise FileNotFoundError(f"translation batch 不存在: {batch_id}")
+            updated = self._updated_record(current, patch)
+            self._write_record(updated)
+            return updated
+
+    def ensure_translation_batch_roots(
+        self,
+        job_id: str,
+        *,
+        generation: int,
+        expected_plans: Sequence[Any],
+    ) -> list[DocumentJobTranslationBatchRecord]:
+        validate_expected_root_plans_or_raise(
+            job_id=job_id, generation=generation, expected_plans=expected_plans,
         )
-        self._write_record(updated)
-        return updated
+        expected_records = [translation_plan_record(plan) for plan in expected_plans]
+        with record_lock(self.backend.document_jobs_dir / job_id / "job.lock"):
+            job = self._read_job_unlocked(job_id)
+            if job is None:
+                raise FileNotFoundError(f"文档任务不存在: {job_id}")
+            actual = self._list_records_unlocked(job_id, generation=generation)
+            if job.retry_count != generation or job.status in {"failed", "succeeded", "canceled"}:
+                return self._list_records_unlocked(job_id, generation=job.retry_count)
+            if not actual:
+                if not expected_records:
+                    return []
+                for record in expected_records:
+                    if record.job_id != job_id or record.generation != generation:
+                        raise TranslationBatchTreeInvalidError("根计划与当前任务代次不一致。")
+                    self._write_record(record)
+                return expected_records
+            validate_translation_batch_tree_or_raise(
+                job_id=job_id,
+                generation=generation,
+                expected_plans=expected_plans,
+                batches=actual,
+            )
+            return actual
+
+    def get_translation_batch_snapshot(
+        self,
+        job_id: str,
+        *,
+        generation: int | None = None,
+    ) -> tuple[DocumentJobRecord, list[DocumentJobTranslationBatchRecord]]:
+        with record_lock(self.backend.document_jobs_dir / job_id / "job.lock"):
+            job = self._read_job_unlocked(job_id)
+            if job is None:
+                raise FileNotFoundError(f"文档任务不存在: {job_id}")
+            return job, self._list_records_unlocked(job_id, generation=generation)
+
+    def enqueue_translation_batch(
+        self,
+        batch_id: str,
+        *,
+        expected_generation: int,
+        expected_attempt_count: int,
+        provider_call_budget: int,
+        expected_plans: Sequence[Any],
+    ) -> DocumentJobTranslationBatchRecord | None:
+        existing = self.get_translation_batch(batch_id)
+        if existing is None:
+            raise FileNotFoundError(f"translation batch 不存在: {batch_id}")
+        with record_lock(self.backend.document_jobs_dir / existing.job_id / "job.lock"):
+            job = self._read_job_unlocked(existing.job_id)
+            if job is None:
+                raise FileNotFoundError(f"文档任务不存在: {existing.job_id}")
+            batches = self._list_records_unlocked(existing.job_id, generation=expected_generation)
+            if job.retry_count != expected_generation or job.status != "running" or job.stage != "translating":
+                return None
+            validate_translation_batch_tree_or_raise(
+                job_id=existing.job_id, generation=expected_generation,
+                expected_plans=expected_plans, batches=batches,
+            )
+            summary = reduce_translation_batch_generation(
+                job=job, expected_plans=expected_plans, batches=batches,
+                provider_call_budget=provider_call_budget, as_of=utc_now(),
+            )
+            if summary.outcome in {"failed", "completed", "canceled"}:
+                return None
+            current = self._read_record_by_id(batch_id)
+            if current is None or current.status not in {"pending", "failed"}:
+                return None
+            if (
+                current.attempt_count != expected_attempt_count
+                or current.attempt_count >= current.max_attempts
+                or (current.status == "failed" and not current.retryable)
+                or sum(max(0, item.attempt_count) for item in batches) >= provider_call_budget
+            ):
+                return None
+            updated = self._updated_record(current, {
+                "status": "queued", "lease_owner": None, "leased_at": None,
+                "lease_expires_at": None,
+            })
+            self._write_record(updated)
+            return updated
+
+    def claim_translation_batch(
+        self,
+        batch_id: str,
+        *,
+        expected_generation: int,
+        expected_attempt_count: int,
+        lease_owner: str,
+        leased_at: datetime,
+        lease_expires_at: datetime,
+        provider_call_budget: int,
+        expected_plans: Sequence[Any],
+    ) -> DocumentJobTranslationBatchRecord | None:
+        existing = self.get_translation_batch(batch_id)
+        if existing is None:
+            raise FileNotFoundError(f"translation batch 不存在: {batch_id}")
+        with record_lock(self.backend.document_jobs_dir / existing.job_id / "job.lock"):
+            job = self._read_job_unlocked(existing.job_id)
+            if job is None:
+                raise FileNotFoundError(f"文档任务不存在: {existing.job_id}")
+            batches = self._list_records_unlocked(existing.job_id, generation=expected_generation)
+            if job.retry_count != expected_generation or job.status != "running" or job.stage != "translating":
+                return None
+            validate_translation_batch_tree_or_raise(
+                job_id=existing.job_id,
+                generation=expected_generation,
+                expected_plans=expected_plans,
+                batches=batches,
+            )
+            summary = reduce_translation_batch_generation(
+                job=job, expected_plans=expected_plans, batches=batches,
+                provider_call_budget=provider_call_budget, as_of=utc_now(),
+            )
+            if summary.outcome in {"failed", "completed", "canceled"}:
+                return None
+            current = self._read_record_by_id(batch_id)
+            if current is None or current.generation != expected_generation:
+                return None
+            if current.status not in {"pending", "queued", "failed"}:
+                return None
+            if current.attempt_count != expected_attempt_count or current.attempt_count >= current.max_attempts:
+                return None
+            if current.status == "failed" and not current.retryable:
+                return None
+            used = sum(max(0, batch.attempt_count) for batch in batches)
+            if used >= provider_call_budget:
+                return None
+            updated = self._updated_record(
+                current,
+                {
+                    "status": "running",
+                    "attempt_count": current.attempt_count + 1,
+                    "lease_owner": lease_owner,
+                    "leased_at": leased_at,
+                    "lease_expires_at": lease_expires_at,
+                    "error_code": None,
+                    "error_message": None,
+                    "retryable": False,
+                },
+            )
+            self._write_record(updated)
+            return updated
+
+    def release_translation_batch_lease(
+        self,
+        batch_id: str,
+        *,
+        expected_generation: int,
+        expected_attempt_count: int,
+        expected_lease_owner: str,
+        now: datetime,
+        expected_plans: Sequence[Any],
+        **patch: Any,
+    ) -> DocumentJobTranslationBatchRecord | None:
+        existing = self.get_translation_batch(batch_id)
+        if existing is None:
+            raise FileNotFoundError(f"translation batch 不存在: {batch_id}")
+        with record_lock(self.backend.document_jobs_dir / existing.job_id / "job.lock"):
+            job = self._read_job_unlocked(existing.job_id)
+            current = self._read_record_by_id(batch_id)
+            batches = self._list_records_unlocked(existing.job_id, generation=expected_generation)
+            if (
+                job is None
+                or job.retry_count != expected_generation
+                or job.status != "running"
+                or job.stage != "translating"
+            ):
+                return None
+            validate_translation_batch_tree_or_raise(
+                job_id=existing.job_id,
+                generation=expected_generation,
+                expected_plans=expected_plans,
+                batches=batches,
+            )
+            # 过期租约的自身回收是恢复动作，即使 reducer 将整代归约为失败也必须允许。
+            reduce_translation_batch_generation(
+                job=job, expected_plans=expected_plans, batches=batches,
+                provider_call_budget=None, as_of=now,
+            )
+            if current is None or current.generation != expected_generation:
+                return None
+            expires = current.lease_expires_at
+            now_utc = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
+            if (
+                current.status != "running"
+                or current.attempt_count != expected_attempt_count
+                or current.lease_owner != expected_lease_owner
+                or expires is None
+                or (expires if expires.tzinfo is not None else expires.replace(tzinfo=timezone.utc)) > now_utc
+            ):
+                return None
+            updated = self._updated_record(
+                current,
+                {
+                    "status": "failed",
+                    "lease_owner": None,
+                    "leased_at": None,
+                    "lease_expires_at": None,
+                    **patch,
+                },
+            )
+            self._write_record(updated)
+            return updated
+
+    def split_translation_batch(
+        self,
+        batch_id: str,
+        *,
+        expected_generation: int,
+        expected_attempt_count: int,
+        expected_lease_owner: str,
+        expected_plans: Sequence[Any],
+        children: Sequence[DocumentJobTranslationBatchRecord],
+    ) -> tuple[DocumentJobTranslationBatchRecord, tuple[DocumentJobTranslationBatchRecord, ...]] | None:
+        existing = self.get_translation_batch(batch_id)
+        if existing is None:
+            raise FileNotFoundError(f"translation batch 不存在: {batch_id}")
+        with record_lock(self.backend.document_jobs_dir / existing.job_id / "job.lock"):
+            job = self._read_job_unlocked(existing.job_id)
+            batches = self._list_records_unlocked(existing.job_id, generation=expected_generation)
+            if (
+                job is None
+                or job.retry_count != expected_generation
+                or job.status != "running"
+                or job.stage != "translating"
+            ):
+                return None
+            validate_translation_batch_tree_or_raise(
+                job_id=existing.job_id,
+                generation=expected_generation,
+                expected_plans=expected_plans,
+                batches=batches,
+            )
+            summary = reduce_translation_batch_generation(
+                job=job, expected_plans=expected_plans, batches=batches,
+                provider_call_budget=None, as_of=utc_now(),
+            )
+            parent = self._read_record_by_id(batch_id)
+            if parent is None or parent.generation != expected_generation:
+                return None
+            if parent.status != "split" and reducer_blocks_result_promotion(summary):
+                return None
+            if parent.status == "split":
+                stored = tuple(self._read_record_by_id(child.id) for child in children)
+                if all(record is not None for record in stored):
+                    return parent, tuple(record for record in stored if record is not None)
+                raise TranslationBatchTreeInvalidError("split 父节点缺少已登记子节点。")
+            if (
+                parent.status != "running"
+                or parent.attempt_count != expected_attempt_count
+                or parent.lease_owner != expected_lease_owner
+                or len(children) != 2
+                or any(not child.item_ids for child in children)
+            ):
+                return None
+            expected_ids = {
+                f"{parent.id}_s{parent.split_level + 1}_01",
+                f"{parent.id}_s{parent.split_level + 1}_02",
+            }
+            if {child.id for child in children} != expected_ids:
+                raise TranslationBatchTreeInvalidError("split 子节点 ID 不符合确定性身份。")
+            stored_children: list[DocumentJobTranslationBatchRecord] = []
+            for child in children:
+                if (
+                    child.job_id != parent.job_id
+                    or child.generation != parent.generation
+                    or child.job_retry_count != parent.job_retry_count
+                    or child.root_batch_id != parent.root_batch_id
+                    or child.parent_batch_id != parent.id
+                    or child.split_level != parent.split_level + 1
+                    or child.item_count != len(child.item_ids)
+                ):
+                    raise TranslationBatchTreeInvalidError("split 子节点绑定或 item 计数不一致。")
+                stored = self._read_record_by_id(child.id)
+                if stored is not None and stored != child:
+                    raise TranslationBatchTreeInvalidError("split 子节点 ID 已绑定其他内容。")
+                stored_children.append(stored or child)
+            updated_parent = self._updated_record(
+                parent,
+                {
+                    "status": "split",
+                    "lease_owner": None,
+                    "leased_at": None,
+                    "lease_expires_at": None,
+                    "retryable": False,
+                },
+            )
+            self._write_record(updated_parent)
+            for child, stored in zip(children, stored_children):
+                if self._read_record_by_id(child.id) is None:
+                    self._write_record(child)
+            return updated_parent, tuple(stored_children)
 
     def update_translation_batch_if_current(
         self,
@@ -286,18 +864,96 @@ class FileDocumentJobTranslationBatchRepository:
         *,
         allowed_statuses: set[str],
         expected_generation: int,
+        expected_attempt_count: int | None = None,
+        expected_lease_owner: str | None = None,
+        expected_job_id: str | None = None,
+        expected_job_status: set[str] | None = None,
+        expected_job_stages: set[str] | None = None,
+        expected_plans: Sequence[Any] | None = None,
         **patch: Any,
     ) -> DocumentJobTranslationBatchRecord | None:
         existing = self.get_translation_batch(batch_id)
         if existing is None:
             raise FileNotFoundError(f"translation batch 不存在: {batch_id}")
-        if existing.generation != expected_generation or existing.status not in allowed_statuses:
+        if expected_job_id is not None and existing.job_id != expected_job_id:
             return None
-        updated = DocumentJobTranslationBatchRecord.model_validate(
+        with record_lock(self.backend.document_jobs_dir / existing.job_id / "job.lock"):
+            current = self._read_record_by_id(batch_id)
+            if current is None:
+                raise FileNotFoundError(f"translation batch 不存在: {batch_id}")
+            job = self._read_job_unlocked(current.job_id)
+            if job is not None:
+                if job.retry_count != expected_generation:
+                    return None
+                if expected_job_status is not None and job.status not in expected_job_status:
+                    return None
+                if expected_job_stages is not None and job.stage not in expected_job_stages:
+                    return None
+            if (
+                current.generation != expected_generation
+                or current.status not in allowed_statuses
+                or (expected_attempt_count is not None and current.attempt_count != expected_attempt_count)
+                or (expected_lease_owner is not None and current.lease_owner != expected_lease_owner)
+            ):
+                return None
+            if expected_plans is not None:
+                current_batches = self._list_records_unlocked(current.job_id, generation=expected_generation)
+                validate_translation_batch_tree_or_raise(
+                    job_id=current.job_id,
+                    generation=expected_generation,
+                    expected_plans=expected_plans,
+                    batches=current_batches,
+                )
+                summary = reduce_translation_batch_generation(
+                    job=job, expected_plans=expected_plans, batches=current_batches,
+                    provider_call_budget=None, as_of=utc_now(),
+                )
+                if reducer_blocks_result_promotion(summary) and not (
+                    current.status == "failed" and patch.get("status") == "failed"
+                ):
+                    return None
+            updated = self._updated_record(current, patch)
+            self._write_record(updated)
+            return updated
+
+    def _updated_record(
+        self,
+        existing: DocumentJobTranslationBatchRecord,
+        patch: dict[str, Any],
+    ) -> DocumentJobTranslationBatchRecord:
+        return DocumentJobTranslationBatchRecord.model_validate(
             existing.model_copy(update=patch).model_dump(mode="python")
         )
-        self._write_record(updated)
-        return updated
+
+    def _read_job_unlocked(self, job_id: str) -> DocumentJobRecord | None:
+        path = self.backend.document_jobs_dir / job_id / "job.json"
+        if not path.exists():
+            return None
+        return DocumentJobRecord.model_validate(self.backend.read_json(path, {}))
+
+    def _read_record_by_id(self, batch_id: str) -> DocumentJobTranslationBatchRecord | None:
+        path = self.backend.document_job_translation_batches_dir / f"{batch_id}.json"
+        if not path.exists():
+            return None
+        return DocumentJobTranslationBatchRecord.model_validate(self.backend.read_json(path, {}))
+
+    def _list_records_unlocked(
+        self,
+        job_id: str,
+        *,
+        generation: int | None = None,
+    ) -> list[DocumentJobTranslationBatchRecord]:
+        records = [
+            self._read_record(path)
+            for path in sorted(self.backend.document_job_translation_batches_dir.glob("*.json"))
+        ]
+        return sorted(
+            [
+                record for record in records
+                if record.job_id == job_id and (generation is None or record.generation == generation)
+            ],
+            key=lambda item: (item.created_at, item.id),
+        )
 
     def _write_record(self, record: DocumentJobTranslationBatchRecord) -> None:
         self.backend.write_json(

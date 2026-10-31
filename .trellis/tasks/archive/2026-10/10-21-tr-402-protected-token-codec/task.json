@@ -1,0 +1,70 @@
+{
+  "id": "tr-402-protected-token-codec",
+  "name": "tr-402-protected-token-codec",
+  "title": "TR-402：ProtectedTokenCodec",
+  "description": "R4：纯函数、确定性、collision-safe技术Token Codec及测试已获人工验收；仅执行当前任务提交与Trellis收尾。",
+  "status": "completed",
+  "dev_type": "backend",
+  "scope": "translation-protected-tokens",
+  "package": null,
+  "priority": "P2",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-10-21",
+  "completedAt": "2026-10-21",
+  "branch": "md2word/TR-402",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "24ed6a717ca86cf5ed086f2eda58030e4af66810",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-12-datasheet-docx-delivery-quality",
+  "relatedFiles": [
+    "app/domains/translation/protected_tokens.py",
+    "tests/test_protected_tokens.py",
+    "docs/design/translation-design.md",
+    ".trellis/spec/backend/protected-token-codec.md",
+    ".trellis/spec/backend/index.md",
+    "docs/implementation/codex-task-manifest.yaml"
+  ],
+  "notes": "2026-10-21：用户明确授权本子任务调查、创建和三份规划；未授权实施。create --no-start，不激活会话、不运行 task.py start；实际 main，建议分支仅为元数据。已有 386 个 dirty/untracked 文件按启动哈希保护；仅追加父 child 和当前 manifest stanza。 2026-10-21：用户明确接受三份规划并授权实现；已创建建议分支 md2word/TR-402、准确 start，仅实施当前 Codec。 实现已交付，manifest=review/Trellis=in_progress；P1认证及translation-core样本缺口保留。待人工验收和commit plan授权，不提交/push/archive。 2026-10-21：用户已人工验收实现、验证与残余风险并确认commit plan，授权只提交/归档/记账当前任务，不push。 工作提交24ed6a717ca86cf5ed086f2eda58030e4af66810已完成；本轮按授权仅归档当前子任务并独立记账。 已归档至.trellis/tasks/archive/2026-10/10-21-tr-402-protected-token-codec；manifest保持done，当前任务会话指针由archive清除。",
+  "meta": {
+    "task_id": "TR-402",
+    "phase": "R4",
+    "depends_on": [
+      "BAS-001"
+    ],
+    "suggested_branch": "md2word/TR-402",
+    "planning_baseline": "4c40e6c52bde072a7ad3afab67eb425f757bd33c",
+    "planning_branch": "main",
+    "planning_review": "approved",
+    "implementation_authorized": true,
+    "planning_approval": {
+      "date": "2026-10-21",
+      "source": "用户明确审核三份规划并授权实现 TR-402"
+    },
+    "implementation_result": "done",
+    "validation": {
+      "codec_tests": 24,
+      "existing_regression_tests": 32,
+      "p1_preflight": "blocked_auth_missing",
+      "translation_core_matrix": "sample_set_missing",
+      "independent_contract_review": "closed_no_new_blocker",
+      "audit_id": "20261021T041920Z-tr-402-protectedtokencodec-implementation-de863c8c"
+    },
+    "human_acceptance": {
+      "date": "2026-10-21",
+      "scope": "TR-402",
+      "accepted": [
+        "implementation",
+        "validation",
+        "residual_risks"
+      ],
+      "commit_plan_confirmed": true,
+      "commit_authorized": true,
+      "archive_authorized": true,
+      "push_authorized": false
+    }
+  }
+}

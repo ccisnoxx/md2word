@@ -1,0 +1,60 @@
+{
+  "previous_report": "tests/tmp/rnd503/direct/20261023T080952Z/report.json",
+  "current_report": "tests/tmp/rnd503/post-review/closure-direct/20261023T092817Z/report.json",
+  "issues_equal": true,
+  "summary": {
+    "sample_set": "phase2-core",
+    "sample_count": 5,
+    "entry_count": 5,
+    "modes": [
+      "direct"
+    ],
+    "succeeded": 5,
+    "failed": 0,
+    "blocked": 0,
+    "dry_run": 0,
+    "p0_entries": 4,
+    "p0_succeeded": 4,
+    "p0_issues": 0,
+    "docx_quality_flagged_entries": 3,
+    "docx_quality_flags": [
+      "docx_latex_residue:2",
+      "docx_unstyled_heading_candidates:1",
+      "docx_unstyled_heading_candidates:11",
+      "docx_unstyled_heading_candidates:3"
+    ],
+    "automated_matrix_ok": true,
+    "phase3_entry_ready": false,
+    "phase3_entry_blocker": "p1_p2_backlog_required"
+  },
+  "issues": [
+    {
+      "severity": "P1",
+      "code": "docx_unstyled_heading_candidates:1",
+      "sample_id": "OPA228_P1",
+      "mode": "direct",
+      "message": "DOCX quality flag: docx_unstyled_heading_candidates:1"
+    },
+    {
+      "severity": "P1",
+      "code": "docx_unstyled_heading_candidates:3",
+      "sample_id": "OPA228_P6",
+      "mode": "direct",
+      "message": "DOCX quality flag: docx_unstyled_heading_candidates:3"
+    },
+    {
+      "severity": "P1",
+      "code": "docx_latex_residue:2",
+      "sample_id": "RS2G04",
+      "mode": "direct",
+      "message": "DOCX quality flag: docx_latex_residue:2"
+    },
+    {
+      "severity": "P2",
+      "code": "docx_unstyled_heading_candidates:11",
+      "sample_id": "RS2G04",
+      "mode": "direct",
+      "message": "DOCX quality flag: docx_unstyled_heading_candidates:11"
+    }
+  ]
+}

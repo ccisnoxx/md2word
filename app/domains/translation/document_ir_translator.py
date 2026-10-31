@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString
 
+from app.conversion.docx_rules.formula import scan_math_spans
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
 from app.domains.translation.models import (
     TermVersionSnapshot,
@@ -22,17 +23,36 @@ from app.domains.translation.models import (
     TranslationTextItem,
     normalize_translation_source_term,
 )
-from app.domains.translation.provider import TranslationProvider
+from app.domains.translation.provider import TranslationProvider, TranslationProviderResponseError
+from app.domains.translation.integrity import (
+    TranslationIntegrityEvidence, TranslationIntegrityError, TranslationIntegrityValidator,
+)
+from app.domains.translation.protected_tokens import EncodedTokenBatch, ProtectedTokenKind, encode
 
 
 _TRACE_CONTEXT_RADIUS = 40
 _TRACE_CONTEXT_MAX_CHARS = 120
 DEFAULT_MAX_ITEMS_PER_PROVIDER_REQUEST = 300
 DEFAULT_MAX_CHARS_PER_PROVIDER_REQUEST = 8000
+_FORMULA_BOUNDARY_ERROR = "translation_formula_boundary_unprotected"
+_FORMULA_BOUNDARY_MESSAGE = "公式翻译保护边界无法完整闭合，已停止翻译。"
 
 
 class DocumentIRTranslationError(RuntimeError):
-    """翻译 provider 调用或返回结构异常时抛出的领域错误。"""
+    """翻译失败的安全领域错误；保留专用机器码与脱敏证据。"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "translation_provider_failed",
+        evidence: TranslationIntegrityEvidence | None = None,
+        formula_protection: dict[str, str | int] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.evidence = evidence
+        self.formula_protection = formula_protection
 
 
 class TranslationCallRecorder(Protocol):
@@ -44,6 +64,7 @@ class TranslationCallRecorder(Protocol):
         result: TranslationProviderResult,
         *,
         duration_ms: int,
+        integrity: TranslationIntegrityEvidence | None = None,
     ) -> None: ...
 
     def record_failure(
@@ -53,6 +74,7 @@ class TranslationCallRecorder(Protocol):
         *,
         error: Exception,
         duration_ms: int,
+        integrity: TranslationIntegrityEvidence | None = None,
     ) -> None: ...
 
 
@@ -89,12 +111,21 @@ class _TermMatch:
     item_index: int
     match_start: int
     match_end: int
-    context_snippet: str
+    context_snippet: str = field(repr=False)
     term_index: int
 
     @property
     def matched_length(self) -> int:
         return self.match_end - self.match_start
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedTranslationRequest:
+    """单次调用的原文、真实请求与内存 ledger；不得把该载体落盘或发给 Provider。"""
+
+    source_items: tuple[TranslationTextItem, ...] = field(repr=False)
+    request: TranslationProviderRequest = field(repr=False)
+    encoded_batch: EncodedTokenBatch = field(repr=False)
 
 
 class DocumentIRTranslationService:
@@ -108,6 +139,7 @@ class DocumentIRTranslationService:
         max_chars_per_request: int = DEFAULT_MAX_CHARS_PER_PROVIDER_REQUEST,
     ) -> None:
         self.provider = provider
+        self.validator = TranslationIntegrityValidator()
         self.max_items_per_request = max(1, int(max_items_per_request))
         self.max_chars_per_request = max(1, int(max_chars_per_request))
 
@@ -119,36 +151,52 @@ class DocumentIRTranslationService:
         language_pair: str = "en2zh",
         prompt: TranslationPromptSnapshot | None = None,
         call_recorder: TranslationCallRecorder | None = None,
+        max_pages_per_batch: int | None = None,
     ) -> DocumentIR:
         """返回翻译后的 DocumentIR 副本；blocks/assets 数量和顺序保持不变。"""
 
         translated = document_ir.model_copy(deep=True)
-        targets, items = self.extract_translation_items(translated)
+        try:
+            targets, items, batches = self.build_translation_plan(
+                document_ir,
+                max_pages_per_batch=max_pages_per_batch or max(1, len(document_ir.pages)),
+                max_chars_per_batch=self.max_chars_per_request,
+                batch_id_prefix="document_ir_provider_request",
+            )
+        except TranslationIntegrityError as exc:
+            raise DocumentIRTranslationError(str(exc), code=exc.code, evidence=exc.evidence) from None
         if not items:
             return translated
+        items_by_id = {item.id: item for item in items}
         replacements: dict[str, str] = {}
-        for batch_index, batch_items in enumerate(self._split_provider_batches(items), start=1):
-            request = self.build_provider_request(
-                document_ir,
-                batch_items,
-                term_version=term_version,
-                language_pair=language_pair,
-                prompt=prompt,
-                batch_id=f"document_ir_provider_request_{batch_index:04d}",
+        for batch in batches:
+            prepared = self.build_provider_request(
+                document_ir, [items_by_id[item_id] for item_id in batch.item_ids],
+                term_version=term_version, language_pair=language_pair, prompt=prompt,
+                batch_id=batch.batch_id, page_start=batch.page_start, page_end=batch.page_end,
             )
+            request = prepared.request
             started_at = time.perf_counter()
             result: TranslationProviderResult | None = None
             try:
                 result = self.provider.translate(request)
-                replacements.update(self.validate_result(batch_items, result))
+                validated = self.validator.validate(prepared.source_items, prepared.encoded_batch, result)
             except Exception as exc:
                 duration_ms = int((time.perf_counter() - started_at) * 1000)
+                code = exc.code if isinstance(exc, TranslationIntegrityError) else (
+                    "translation_provider_truncated" if isinstance(exc, TranslationProviderResponseError) and exc.suspected_truncation else
+                    "translation_provider_invalid_response" if isinstance(exc, TranslationProviderResponseError) else "translation_provider_failed"
+                )
+                evidence = exc.evidence if isinstance(exc, TranslationIntegrityError) else self.validator.call_failure_evidence(
+                    prepared.source_items, prepared.encoded_batch, error_code=code,
+                )
                 if call_recorder is not None:
-                    call_recorder.record_failure(request, result, error=exc, duration_ms=duration_ms)
-                raise DocumentIRTranslationError(str(exc)) from exc
+                    call_recorder.record_failure(request, result, error=exc, duration_ms=duration_ms, integrity=evidence)
+                raise DocumentIRTranslationError("翻译 Provider 调用或完整性校验失败。", code=code, evidence=evidence) from None
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             if call_recorder is not None:
-                call_recorder.record_success(request, result, duration_ms=duration_ms)
+                call_recorder.record_success(request, result, duration_ms=duration_ms, integrity=validated.evidence)
+            replacements.update(validated.replacements)
         self.apply_replacements(translated, targets, replacements)
         translated.metadata.document_language = self._target_document_language(language_pair)
         return translated
@@ -165,7 +213,7 @@ class DocumentIRTranslationService:
         list[TranslationTextItem],
         list[DocumentIRTranslationBatchPlan],
     ]:
-        """按页数优先、字符数兜底生成 provider batch task 输入。"""
+        """按页数、实际编码字符和 item 数生成确定性计划；char_count 仍表示源文。"""
 
         targets, items = self.extract_translation_items(document_ir)
         if not items:
@@ -202,6 +250,8 @@ class DocumentIRTranslationService:
         for item in items:
             target = targets_by_id[item.id]
             item_chars = len(item.text)
+            encoded_item = self.validator.prepare((item,), max_chars=max_chars)
+            self._validate_formula_protection((item,), encoded_item)
             item_page = target.page_number
             next_page_start = current_page_start
             next_page_end = current_page_end
@@ -214,7 +264,8 @@ class DocumentIRTranslationService:
                 and next_page_end is not None
                 and next_page_end - next_page_start + 1 > max_pages
             )
-            exceeds_chars = bool(current) and current_chars + item_chars > max_chars
+            candidate = encode(tuple([*current, item]))
+            exceeds_chars = bool(current) and sum(len(value.text) for value in candidate.items) > max_chars
             exceeds_items = bool(current) and len(current) >= self.max_items_per_request
             if exceeds_pages or exceeds_chars or exceeds_items:
                 flush()
@@ -226,26 +277,6 @@ class DocumentIRTranslationService:
             current_page_end = next_page_end
         flush()
         return targets, items, batches
-
-    def _split_provider_batches(self, items: list[TranslationTextItem]) -> list[list[TranslationTextItem]]:
-        batches: list[list[TranslationTextItem]] = []
-        current: list[TranslationTextItem] = []
-        current_chars = 0
-        for item in items:
-            item_chars = len(item.text)
-            should_flush = bool(current) and (
-                len(current) >= self.max_items_per_request
-                or current_chars + item_chars > self.max_chars_per_request
-            )
-            if should_flush:
-                batches.append(current)
-                current = []
-                current_chars = 0
-            current.append(item)
-            current_chars += item_chars
-        if current:
-            batches.append(current)
-        return batches
 
     def build_provider_request(
         self,
@@ -261,19 +292,26 @@ class DocumentIRTranslationService:
         parent_batch_id: str | None = None,
         page_start: int | None = None,
         page_end: int | None = None,
-    ) -> TranslationProviderRequest:
+        max_chars_per_request: int | None = None,
+    ) -> PreparedTranslationRequest:
+        source_items = tuple(items)
+        encoded = self.validator.prepare(
+            source_items, max_chars=max_chars_per_request if max_chars_per_request is not None else self.max_chars_per_request,
+        )
+        self._validate_formula_protection(source_items, encoded)
         matched_terms, term_traces = self._match_request_terms(
             items=items,
             term_version=term_version,
             language_pair=language_pair,
             job_id=document_ir.metadata.job_id or "",
             batch_id=batch_id,
+            encoded_batch=encoded,
         )
-        return TranslationProviderRequest(
+        request = TranslationProviderRequest(
             language_pair=language_pair,
             source_language=self._source_language(language_pair),
             target_language=self._target_language(language_pair),
-            items=tuple(items),
+            items=encoded.items,
             prompt_id=prompt.id if prompt is not None else None,
             prompt_content_hash=prompt.content_hash if prompt is not None else None,
             system_prompt_markdown=prompt.markdown if prompt is not None else None,
@@ -286,6 +324,42 @@ class DocumentIRTranslationService:
             page_start=page_start,
             page_end=page_end,
         )
+        return PreparedTranslationRequest(source_items, request, encoded)
+
+    @staticmethod
+    def _validate_formula_protection(
+        source_items: tuple[TranslationTextItem, ...],
+        encoded: EncodedTokenBatch,
+    ) -> None:
+        """共享数学边界必须由同次 Codec 的单个完整公式 Token 覆盖。"""
+
+        formula_count = 0
+        unprotected_count = 0
+        for item in source_items:
+            for span in scan_math_spans(item.text):
+                formula_count += 1
+                if not any(
+                    token.item_id == item.id
+                    and token.kind == ProtectedTokenKind.FORMULA
+                    and token.start <= span.start
+                    and span.end <= token.end
+                    for token in encoded.occurrences
+                ):
+                    unprotected_count += 1
+        if unprotected_count:
+            DocumentIRTranslationService._raise_formula_boundary_error(formula_count, unprotected_count)
+
+    @staticmethod
+    def _raise_formula_boundary_error(formula_count: int, unprotected_count: int) -> None:
+        raise DocumentIRTranslationError(
+            _FORMULA_BOUNDARY_MESSAGE,
+            code=_FORMULA_BOUNDARY_ERROR,
+            formula_protection={
+                "code": _FORMULA_BOUNDARY_ERROR,
+                "formula_count": formula_count,
+                "unprotected_count": unprotected_count,
+            },
+        ) from None
 
     def _match_request_terms(
         self,
@@ -295,6 +369,7 @@ class DocumentIRTranslationService:
         language_pair: str,
         job_id: str,
         batch_id: str,
+        encoded_batch: EncodedTokenBatch,
     ) -> tuple[tuple[TranslationTermEntry, ...], tuple[TranslationTermMatchTraceRecord, ...]]:
         if term_version is None:
             return (), ()
@@ -308,6 +383,11 @@ class DocumentIRTranslationService:
                 if pattern is None:
                     continue
                 for match in pattern.finditer(item.text):
+                    if any(
+                        token.item_id == item.id and match.start() < token.end and token.start < match.end()
+                        for token in encoded_batch.occurrences
+                    ):
+                        continue
                     item_matches.append(
                         _TermMatch(
                             entry=entry,
@@ -432,25 +512,28 @@ class DocumentIRTranslationService:
             return snippet[: _TRACE_CONTEXT_MAX_CHARS - 3] + "..."
         return snippet
 
+    @classmethod
     def extract_translation_items(
-        self,
+        cls,
         document_ir: DocumentIR,
     ) -> tuple[list[DocumentIRTranslationTarget], list[TranslationTextItem]]:
+        """纯提取稳定单元；类调用与原实例调用共享同一排序及校验。"""
         targets: list[DocumentIRTranslationTarget] = []
         items: list[TranslationTextItem] = []
         for block in sorted(document_ir.blocks, key=lambda item: item.order):
-            self._append_block_text(block, targets, items)
-            self._append_list_items(block, targets, items)
-            self._append_table_text_nodes(block, targets, items)
+            cls._append_block_text(block, targets, items)
+            cls._append_list_items(block, targets, items)
+            cls._append_table_text_nodes(block, targets, items)
         return targets, items
 
+    @classmethod
     def _append_block_text(
-        self,
+        cls,
         block: DocumentIRBlock,
         targets: list[DocumentIRTranslationTarget],
         items: list[TranslationTextItem],
     ) -> None:
-        if block.type in {"formula", "list"} or not self._has_text(block.text):
+        if block.type in {"formula", "list"} or not cls._has_text(block.text):
             return
         item_id = f"{block.id}.text"
         targets.append(
@@ -458,14 +541,15 @@ class DocumentIRTranslationService:
                 item_id=item_id,
                 block_id=block.id,
                 field="text",
-                page_number=self._block_page_number(block),
+                page_number=cls._block_page_number(block),
                 order=block.order,
             )
         )
         items.append(TranslationTextItem(id=item_id, text=block.text.strip()))
 
+    @classmethod
     def _append_list_items(
-        self,
+        cls,
         block: DocumentIRBlock,
         targets: list[DocumentIRTranslationTarget],
         items: list[TranslationTextItem],
@@ -473,7 +557,7 @@ class DocumentIRTranslationService:
         if block.type != "list" or not block.list_items:
             return
         for index, item in enumerate(block.list_items):
-            if not self._has_text(item):
+            if not cls._has_text(item):
                 continue
             item_id = f"{block.id}.list_items.{index:04d}"
             targets.append(
@@ -482,14 +566,15 @@ class DocumentIRTranslationService:
                     block_id=block.id,
                     field="list_items",
                     index=index,
-                    page_number=self._block_page_number(block),
+                    page_number=cls._block_page_number(block),
                     order=block.order,
                 )
             )
             items.append(TranslationTextItem(id=item_id, text=item.strip()))
 
+    @classmethod
     def _append_table_text_nodes(
-        self,
+        cls,
         block: DocumentIRBlock,
         targets: list[DocumentIRTranslationTarget],
         items: list[TranslationTextItem],
@@ -497,10 +582,15 @@ class DocumentIRTranslationService:
         if block.type != "table" or not block.html:
             return
         soup = BeautifulSoup(block.html, "html.parser")
+        cls._validate_html_formula_boundaries(soup)
         text_index = 0
         for node in soup.find_all(string=True):
             text = str(node).strip()
             if not text:
+                continue
+            # 数学后代仍占用原索引，后续正文 ID 与旧回填位置保持一致。
+            if node.find_parent("eq") is not None:
+                text_index += 1
                 continue
             item_id = f"{block.id}.html.{text_index:04d}"
             targets.append(
@@ -509,23 +599,44 @@ class DocumentIRTranslationService:
                     block_id=block.id,
                     field="html",
                     index=text_index,
-                    page_number=self._block_page_number(block),
+                    page_number=cls._block_page_number(block),
                     order=block.order,
                 )
             )
             items.append(TranslationTextItem(id=item_id, text=text))
             text_index += 1
 
-    def validate_result(
-        self,
-        items: list[TranslationTextItem],
-        result: TranslationProviderResult,
-    ) -> dict[str, str]:
-        expected_ids = [item.id for item in items]
-        returned_ids = [item.id for item in result.items]
-        if returned_ids != expected_ids:
-            raise ValueError("翻译 provider 返回的 item id 与请求不一致。")
-        return {item.id: item.text for item in result.items}
+    @staticmethod
+    def _validate_html_formula_boundaries(soup: BeautifulSoup) -> None:
+        """仅投影同一单元格的 DOM 文字，拒绝跨节点且无数学子树归属的公式。"""
+
+        groups: dict[int, list[NavigableString]] = {}
+        for node in soup.find_all(string=True):
+            cell = node.find_parent(["td", "th"])
+            groups.setdefault(id(cell if cell is not None else soup), []).append(node)
+        # HTML 上下标的数学语义会在纯文字投影中丢失；共享 scanner 在完整 DOM 串上认领。
+        semantic_spans = [span for span in scan_math_spans(str(soup)) if span.boundary == "semantic"]
+        formula_count = len(semantic_spans)
+        unprotected_count = len(semantic_spans)
+        for nodes in groups.values():
+            text = "".join(str(node) for node in nodes)
+            spans = scan_math_spans(text)
+            formula_count += len(spans)
+            positions = []
+            cursor = 0
+            for node in nodes:
+                end = cursor + len(str(node))
+                positions.append((cursor, end, node))
+                cursor = end
+            for span in spans:
+                owners = [node for start, end, node in positions if start < span.end and span.start < end]
+                math_owner = owners[0].find_parent("eq")
+                if math_owner is not None and all(node.find_parent("eq") is math_owner for node in owners):
+                    continue
+                if len(owners) != 1 or math_owner is not None:
+                    unprotected_count += 1
+        if unprotected_count:
+            DocumentIRTranslationService._raise_formula_boundary_error(formula_count, unprotected_count)
 
     def apply_replacements(
         self,

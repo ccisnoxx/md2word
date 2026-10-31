@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run local MinerU packages through the formal DocumentIR Word renderer."""
+"""通过正式 DocumentIR Word renderer 转换本地 MinerU 结果包。"""
 
 from __future__ import annotations
 
@@ -11,15 +11,17 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import Settings
-from app.domains.translation.document_ir_translator import DocumentIRTranslationService
-from app.domains.translation.models import TranslationProviderRequest, TranslationProviderResult, TranslationTextItem
+from app.domains.translation.document_ir_translator import DocumentIRTranslationBatchPlan, DocumentIRTranslationService
+from app.domains.translation.models import TranslationProviderRequest, TranslationProviderResult
 from app.domains.translation.modes import is_translation_mode, language_pair_for_translation_mode, normalize_translation_mode
-from app.domains.translation.provider import OpenAICompatibleTranslationProvider
+from app.domains.translation.provider import OpenAICompatibleTranslationProvider, TranslationProviderResponseError
 from app.domains.translation.provider_config import EffectiveAiProviderConfig
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
+from app.services.renderer.word_renderer import DocumentIRRenderResult
 from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer import image_evidence
 
 
 LOCAL_JOB_ID = "local_mineru_debug"
@@ -28,7 +30,7 @@ LOCAL_SOURCE_FILE_ID = "local_mineru_input"
 
 @dataclass(frozen=True, slots=True)
 class FormalMinerUConversionRequest:
-    """Local filesystem request for the formal DocumentIR conversion core."""
+    """正式 DocumentIR 转换核心的本地文件请求。"""
 
     input_path: Path
     output_path: Path
@@ -53,7 +55,7 @@ class FormalMinerUConversionRequest:
 
 @dataclass(frozen=True, slots=True)
 class FormalMinerUConversionResult:
-    """Local artifacts and diagnostics produced by the formal renderer path."""
+    """正式渲染链路产生的本地文件与诊断。"""
 
     source_path: Path
     output_docx_path: Path
@@ -69,49 +71,65 @@ class FormalMinerUConversionResult:
 
 
 class LocalTranslationResponseProvider:
-    """Translation provider backed by a local response JSON file."""
+    """按原顺序消费本地响应；禁止以字典覆盖、筛选或重排修复返回项。"""
 
-    def __init__(self, response_path: Path) -> None:
+    def __init__(self, response_path: Path, expected_requests: tuple[TranslationProviderRequest, ...]) -> None:
         self.response_path = response_path
-        self._translations = self._load_translations(response_path)
+        self._position = 0
+
+        def unique_object(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise TranslationProviderResponseError("本地翻译响应包含重复 JSON 键。")
+                result[key] = value
+            return result
+
+        payload = json.loads(response_path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+        self._batches = None
+        if isinstance(payload, dict) and set(payload) == {"batches"} and isinstance(payload["batches"], list):
+            self._batches = []
+            for batch in payload["batches"]:
+                if not isinstance(batch, dict) or set(batch) not in ({"items"}, {"batch_id", "items"}):
+                    raise TranslationProviderResponseError("本地翻译响应批次字段无效。")
+                if "batch_id" in batch and (not isinstance(batch["batch_id"], str) or not batch["batch_id"].strip()):
+                    raise TranslationProviderResponseError("本地翻译响应批次 ID 无效。")
+                items = OpenAICompatibleTranslationProvider._parse_items({"items": batch["items"]})
+                self._batches.append((batch.get("batch_id"), items))
+            self._items = ()
+        else:
+            self._items = OpenAICompatibleTranslationProvider._parse_items(payload)
+        if self._batches is not None:
+            if len(self._batches) != len(expected_requests):
+                raise TranslationProviderResponseError("本地翻译响应批次数与实际计划不一致。")
+            for (batch_id, items), request in zip(self._batches, expected_requests):
+                if batch_id is not None and batch_id != request.batch_id:
+                    raise TranslationProviderResponseError("本地翻译响应批次 ID 与实际计划不一致。")
+                if tuple(item.id for item in items) != tuple(item.id for item in request.items):
+                    raise TranslationProviderResponseError("本地翻译响应批次有序 ID 与实际计划不一致。")
+        elif tuple(item.id for item in self._items) != tuple(item.id for request in expected_requests for item in request.items):
+            raise TranslationProviderResponseError("本地翻译响应完整有序 ID 与实际计划不一致。")
 
     def translate(self, request: TranslationProviderRequest) -> TranslationProviderResult:
-        items = []
-        for item in request.items:
-            if item.id not in self._translations:
-                raise RuntimeError(f"本地翻译响应缺少 item: {item.id}")
-            items.append(TranslationTextItem(id=item.id, text=self._translations[item.id]))
-        return TranslationProviderResult(items=tuple(items), response_id=str(self.response_path))
-
-    @classmethod
-    def _load_translations(cls, response_path: Path) -> dict[str, str]:
-        payload = json.loads(response_path.read_text(encoding="utf-8"))
-        raw_items: list[Any] = []
-        if isinstance(payload, dict) and isinstance(payload.get("items"), list):
-            raw_items.extend(payload["items"])
-        if isinstance(payload, dict) and isinstance(payload.get("batches"), list):
-            for batch in payload["batches"]:
-                if isinstance(batch, dict) and isinstance(batch.get("items"), list):
-                    raw_items.extend(batch["items"])
-        if not raw_items:
-            raise RuntimeError(f"本地翻译响应缺少 items/batches.items: {response_path}")
-        translations: dict[str, str] = {}
-        for raw_item in raw_items:
-            if not isinstance(raw_item, dict):
-                raise RuntimeError("本地翻译响应 items 包含非法条目。")
-            item_id = str(raw_item.get("id") or "").strip()
-            text = str(raw_item.get("text") or "").strip()
-            if not item_id or not text:
-                raise RuntimeError("本地翻译响应 item 缺少 id 或 text。")
-            translations[item_id] = text
-        return translations
+        if self._batches is not None:
+            if self._position >= len(self._batches):
+                raise TranslationProviderResponseError("本地翻译响应缺少批次。")
+            batch_id, items = self._batches[self._position]
+            self._position += 1
+            if batch_id is not None and batch_id != request.batch_id:
+                raise TranslationProviderResponseError("本地翻译响应批次 ID 与实际请求不一致。")
+        else:
+            end = self._position + len(request.items)
+            items = self._items[self._position:end]
+            self._position = end
+        return TranslationProviderResult(items=items, response_id=str(self.response_path))
 
 
 class RequestOnlyTranslationProvider:
-    """Placeholder provider used only to access DocumentIR translation planning."""
+    """仅供共享计划与请求准备使用，不执行翻译。"""
 
     def translate(self, request: TranslationProviderRequest) -> TranslationProviderResult:
-        raise RuntimeError("request-only provider cannot translate.")
+        raise RuntimeError("仅规划 Provider 不可执行翻译。")
 
 
 def run_conversion(
@@ -190,9 +208,12 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
         )
         source_document_ir = result.document
         document_ir = _translate_if_needed(source_document_ir, request)
-        word_content = _render_document(document_ir, result.image_assets, request)
+        render_result = _render_document(document_ir, result.image_assets, request)
+        word_content = render_result.content
 
-    renderer_metadata = build_renderer_evidence(document_ir, word_content)
+    renderer_metadata = build_renderer_evidence(document_ir, word_content, formula_report=render_result.formula_report,
+                                                image_layout_report=render_result.image_layout_report,
+                                                expected_generation_policy=image_evidence.IMAGE_GENERATION_POLICY)
     ensure_renderer_integrity(renderer_metadata)
     document_ir_path = _document_ir_output_path(request.output_path)
     document_ir_path.write_text(document_ir.model_dump_json(indent=2), encoding="utf-8")
@@ -230,16 +251,31 @@ def _translate_if_needed(document_ir: DocumentIR, request: FormalMinerUConversio
         RequestOnlyTranslationProvider(),
         max_chars_per_request=request.translation_max_chars,
     )
+    _targets, items, batches = planner.build_translation_plan(
+        document_ir, max_pages_per_batch=request.translation_max_pages,
+        max_chars_per_batch=request.translation_max_chars,
+        batch_id_prefix="document_ir_provider_request",
+    )
+    items_by_id = {item.id: item for item in items}
+    prepared_requests = tuple(planner.build_provider_request(
+        document_ir, [items_by_id[item_id] for item_id in batch.item_ids],
+        term_version=None, language_pair=language_pair, batch_id=batch.batch_id,
+        page_start=batch.page_start, page_end=batch.page_end,
+        max_chars_per_request=request.translation_max_chars,
+    ).request for batch in batches)
     if request.translation_request_output is not None:
-        _write_translation_request(document_ir, planner, request)
-    source_items = {item.id: item.text for item in planner.extract_translation_items(document_ir)[1]}
+        _write_translation_request(request, batches, prepared_requests)
+    source_items = {item.id: item.text for item in items}
     provider = (
-        LocalTranslationResponseProvider(request.translation_response)
+        LocalTranslationResponseProvider(request.translation_response, prepared_requests)
         if request.translation_response is not None
         else _build_openai_provider(request)
     )
     service = DocumentIRTranslationService(provider, max_chars_per_request=request.translation_max_chars)
-    translated = service.translate(document_ir, term_version=None, language_pair=language_pair)
+    translated = service.translate(
+        document_ir, term_version=None, language_pair=language_pair,
+        max_pages_per_batch=request.translation_max_pages,
+    )
     if request.translation_trace_output is not None:
         translated_items = {item.id: item.text for item in service.extract_translation_items(translated)[1]}
         _write_translation_trace(source_items, translated_items, request, language_pair=language_pair)
@@ -264,39 +300,25 @@ def _build_openai_provider(request: FormalMinerUConversionRequest) -> OpenAIComp
 
 
 def _write_translation_request(
-    document_ir: DocumentIR,
-    service: DocumentIRTranslationService,
     request: FormalMinerUConversionRequest,
+    batches: list[DocumentIRTranslationBatchPlan],
+    prepared_requests: tuple[TranslationProviderRequest, ...],
 ) -> None:
-    language_pair = language_pair_for_translation_mode(request.translation_mode) or "en2zh"
-    _targets, items, batches = service.build_translation_plan(
-        document_ir,
-        max_pages_per_batch=request.translation_max_pages,
-        max_chars_per_batch=request.translation_max_chars,
-        batch_id_prefix=f"{request.job_id}_translation_batch",
-    )
-    items_by_id = {item.id: item for item in items}
+    """导出共享准备接口的真实请求，不将原文项冒充编码输入。"""
+    exported_batches = []
+    for batch, prepared in zip(batches, prepared_requests):
+        exported_batches.append({
+            "batch_id": batch.batch_id, "page_start": batch.page_start, "page_end": batch.page_end,
+            "item_count": batch.item_count, "char_count": batch.char_count,
+            "encoded_char_count": sum(len(item.text) for item in prepared.items),
+            "items": [{"id": item.id, "text": item.text} for item in prepared.items],
+        })
     payload = {
-        "schema_version": "document-ir-local-translation-request/v1",
-        "job_id": request.job_id,
-        "language_pair": language_pair,
-        "item_count": len(items),
-        "items": [{"id": item.id, "text": item.text} for item in items],
-        "batches": [
-            {
-                "batch_id": batch.batch_id,
-                "page_start": batch.page_start,
-                "page_end": batch.page_end,
-                "item_count": batch.item_count,
-                "char_count": batch.char_count,
-                "items": [
-                    {"id": item_id, "text": items_by_id[item_id].text}
-                    for item_id in batch.item_ids
-                    if item_id in items_by_id
-                ],
-            }
-            for batch in batches
-        ],
+        "schema_version": "document-ir-local-translation-request/v2",
+        "job_id": request.job_id, "language_pair": language_pair_for_translation_mode(request.translation_mode),
+        "item_count": sum(len(prepared.items) for prepared in prepared_requests),
+        "items": [item for batch in exported_batches for item in batch["items"]],
+        "batches": exported_batches,
     }
     request.translation_request_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -329,14 +351,14 @@ def _render_document(
     document_ir: DocumentIR,
     image_assets: list[Any],
     request: FormalMinerUConversionRequest,
-) -> bytes:
+) -> DocumentIRRenderResult:
     image_content_by_asset_id = {image_asset.asset_id: image_asset.content for image_asset in image_assets}
 
     def load_image(asset: DocumentIRAsset) -> bytes | None:
         return image_content_by_asset_id.get(asset.id)
 
     template_path = None if request.no_template else request.template_path
-    return DocumentIRWordRenderer().render_to_bytes(
+    return DocumentIRWordRenderer().render_to_result(
         document_ir,
         template_path=template_path,
         config_path=request.layout_config_path,

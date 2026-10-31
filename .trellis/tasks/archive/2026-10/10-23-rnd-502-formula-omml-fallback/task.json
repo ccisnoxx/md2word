@@ -1,0 +1,146 @@
+{
+  "id": "rnd-502-formula-omml-fallback",
+  "name": "rnd-502-formula-omml-fallback",
+  "title": "RND-502：公式 OMML 和降级规则",
+  "description": "R5：RND-502实现、复审修复与验证证据已人工接受；仅本任务提交并归档，未push。",
+  "status": "completed",
+  "dev_type": "backend",
+  "scope": "renderer",
+  "package": null,
+  "priority": "P2",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-10-23",
+  "completedAt": "2026-10-23",
+  "branch": "md2word/RND-502",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-12-datasheet-docx-delivery-quality",
+  "relatedFiles": [
+    "docs/implementation/codex-task-manifest.yaml",
+    "docs/design/docx-rendering-template-design.md",
+    "app/services/renderer/text_renderer.py",
+    "app/services/renderer/table_renderer.py",
+    "app/services/renderer/evidence.py"
+  ],
+  "notes": "2026-10-23：用户明确授权规划与必要task create --parent；以--no-start创建，status保持planning，实际分支codex/pre-rnd501-local-wip。建议实施分支记录于meta.suggested_branch；branch为空，本轮未创建/切换。不改业务、不提交/push/archive或其他任务状态。 2026-10-23：按用户要求派全新architect独立只读审查v1，主会话独立复现1P1/1P2后修订三件套v2及最小context；v2待人工审核，未独立复审，不start/业务修改/提交/push。 随后按用户要求由第二位全新architect独立只读复审v2，确认上轮P1/P2在规划层闭合、无新增确认P1/P2/P3；主会话对照真实代码核实，三件套字节保持v2，只补复审记录/状态，仍待人工审核，不start/业务修改/提交/push。 2026-10-23：用户授权v2实施后准确start。实现及完整check修复完成，最终306定向、202 release/OpenAPI current、component1/1和direct矩阵5/5通过；独立只读复验五项闭合。停manifest review/Trellis in_progress，详implementation-validation.md/implementation-review.md；不提交/push/archive。 2026-10-23：应用户要求全新独立实际实现复审，architect因角色约束未执行代码审查，改派全新critical_reviewer；确认1P1/2P2由主会话复现并由checker修复，独立复验全部闭合。最新311项定向、202 release/OpenAPI及样本门通过；详post-implementation-review.md。仍停review，不start/commit/push/archive。 2026-10-23：用户已人工审核接受全部实现、复审修复、验证证据及未验证边界，并明确授权本任务提交/done/归档。工作提交136802cb273c85e94ff65d41aca5aa15c8c70459；本次task archive --no-commit迁移，context自引用已更新，manifest仅RND-502到done。其他任务、原暂存删除与无关dirty保留，不push、不自动启动后续任务。",
+  "meta": {
+    "planning_version": 2,
+    "planning_only": false,
+    "actual_branch_at_planning": "codex/pre-rnd501-local-wip",
+    "baseline_commit": "c56e12832ff30212cc067d0909430cf5f091f79b",
+    "planning_approval": {
+      "accepted": true,
+      "version": 2,
+      "date": "2026-10-23",
+      "source": "用户明确接受v2三件套和独立复审结论，并授权开始实现"
+    },
+    "dependency_check": {
+      "BAS-001": "done",
+      "archived_status": "completed",
+      "human_acceptance_recorded": true
+    },
+    "resolution_recommendation": "implementation_required",
+    "suggested_branch": "md2word/RND-502",
+    "planning_review": {
+      "reviewer": "/root/rnd502_fresh_architect_review",
+      "role": "architect",
+      "fork_turns": "none",
+      "reviewed_version": 1,
+      "findings": {
+        "P1": 1,
+        "P2": 1
+      },
+      "main_verified": true,
+      "revision_version": 2,
+      "revision_independently_reviewed": true,
+      "record": "planning-review.md"
+    },
+    "planning_rereview": {
+      "reviewer": "/root/rnd502_v2_fresh_architect_rereview",
+      "role": "architect",
+      "fork_turns": "none",
+      "reviewed_version": 2,
+      "findings": {
+        "P1": 0,
+        "P2": 0,
+        "P3": 0
+      },
+      "prior_findings_closed_at_planning": {
+        "P1": true,
+        "P2": true
+      },
+      "main_verified": true,
+      "technical_artifacts_unchanged": true,
+      "record": "planning-rereview.md",
+      "implementation_authorized": false
+    },
+    "implementation_authorization": {
+      "authorized": true,
+      "version": 2,
+      "date": "2026-10-23",
+      "stop_at": "review",
+      "commit": false,
+      "push": false,
+      "archive": false,
+      "snapshot": "/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd502-implementation-7_pvoing"
+    },
+    "implementation_status": "done",
+    "final_validation": {
+      "record": "implementation-validation.md",
+      "review_record": "post-implementation-review.md",
+      "targeted_tests": 311,
+      "release_tests": 202,
+      "openapi_current": true,
+      "component": "1/1",
+      "direct_matrix": "5/5",
+      "golden": "blocked_preflight",
+      "word_manual": "not_verified",
+      "real_mysql_s3": "not_verified",
+      "code_snapshot_sha256": "0c2264f7aade7cb6b9eecf135724cb45507750a5d727fcdb1615d8ecbf00c045",
+      "independent_confirmed_findings_remaining": 0,
+      "gates": "tests/tmp/rnd502/post-review-final-gates.json",
+      "code_snapshot": "tests/tmp/rnd502/closeout-code-snapshot.json",
+      "accepted_base_snapshot_sha256": "15eeffed1bfcc1fdbe1dcd771dcfb1acc27fb8c0d13fe200e5c953f9e7932a7f",
+      "closeout_format_only": "formula.py 删除末尾单个多余LF，逐字节与AST相等核实；36项公式测试复跑通过"
+    },
+    "post_implementation_review": {
+      "requested_role": "architect",
+      "initial_reviewer": "/root/rnd502_new_architect_actual_review",
+      "initial_outcome": "ROLE_MISMATCH_without_code_review",
+      "effective_role": "critical_reviewer",
+      "reviewer": "/root/rnd502_new_independent_actual_review",
+      "fork_turns": "none",
+      "confirmed_findings": {
+        "P1": 1,
+        "P2": 2
+      },
+      "main_reproduced": true,
+      "independently_reverified": true,
+      "confirmed_remaining": 0,
+      "record": "post-implementation-review.md"
+    },
+    "final_acceptance": {
+      "accepted": true,
+      "date": "2026-10-23",
+      "source": "用户已审核接受实现、复审修复、验证证据及列明未验证边界，授权仅当前任务提交、done和归档",
+      "accepted_code_snapshot_sha256": "15eeffed1bfcc1fdbe1dcd771dcfb1acc27fb8c0d13fe200e5c953f9e7932a7f",
+      "commit_authorized": true,
+      "archive_authorized": true,
+      "push_authorized": false,
+      "work_commit": "136802cb273c85e94ff65d41aca5aa15c8c70459"
+    },
+    "closeout": {
+      "manifest_status": "done",
+      "archive_path": ".trellis/tasks/archive/2026-10/10-23-rnd-502-formula-omml-fallback",
+      "work_commit": "136802cb273c85e94ff65d41aca5aa15c8c70459",
+      "original_staged_paths_preserved": 302,
+      "other_manifest_tasks_preserved": 44,
+      "push": false
+    }
+  }
+}

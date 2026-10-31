@@ -89,6 +89,8 @@ class DocumentFileRetentionPlanner:
             if record.status == "deleted":
                 totals["already_deleted_files"] += 1
                 continue
+            if self.repository.is_document_file_protected(record.id) or record.deletion_claim is not None:
+                continue
             if record.expires_at is None:
                 continue
             totals["files_with_expires_at"] += 1
@@ -113,14 +115,8 @@ class DocumentFileRetentionPlanner:
         """把候选文件标记为 expired，供后续 OSS 生命周期或人工任务执行物理清理。"""
 
         plan = self.build_plan(now=now)
-        updated_at = plan.generated_at
         for candidate in plan.candidates:
-            if candidate.status == "uploaded":
-                self.repository.update_document_file(
-                    candidate.file_id,
-                    status="expired",
-                    updated_at=updated_at,
-                )
+            self.repository.expire_document_file(candidate.file_id, now=plan.generated_at)
         return plan
 
     def _candidate_from_record(

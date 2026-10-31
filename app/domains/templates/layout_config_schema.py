@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 
 SUPPORTED_SCHEMA_VERSION = "template-config/v1"
@@ -59,6 +59,26 @@ class TemplateParagraphStyleConfig(BaseModel):
     left_indent_pt: float | None = None
     right_indent_pt: float | None = None
     word_style_name: str | None = None
+
+
+class TemplateTableContentStyleConfig(TemplateParagraphStyleConfig):
+    """表格正文样式；最小字号缺失或为空时不允许隐式缩字。"""
+
+    min_font_size: float | None = None
+
+    @model_validator(mode="after")
+    def validate_font_size_range(self) -> "TemplateTableContentStyleConfig":
+        if self.min_font_size is None:
+            return self
+        if not 1 <= self.min_font_size <= 200:
+            raise ValueError("min_font_size 必须在 1 到 200 之间。")
+        if self.font_size is None:
+            raise ValueError("配置 min_font_size 时必须同时配置 font_size。")
+        if self.min_font_size > self.font_size:
+            raise ValueError("min_font_size 不能大于 font_size。")
+        if math.ceil(self.min_font_size * 2) > math.floor(self.font_size * 2):
+            raise ValueError("min_font_size 与 font_size 之间没有 Word 可表示的半磅字号。")
+        return self
 
 
 class TemplateHeaderConfig(BaseModel):
@@ -137,7 +157,7 @@ class TemplateConfigPackage(BaseModel):
     toc_level2: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     toc_level3: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     normal: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
-    table_content: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
+    table_content: TemplateTableContentStyleConfig = Field(default_factory=TemplateTableContentStyleConfig)
     table_style: TemplateTableStyleConfig = Field(default_factory=TemplateTableStyleConfig)
     table_note: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     caption: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
@@ -156,7 +176,14 @@ class TemplateConfigPackage(BaseModel):
             return cls()
         if not config_path.exists() or not config_path.is_file():
             raise FileNotFoundError(f"模板配置文件不存在: {config_path}")
-        raw = _read_yaml_object(config_path)
+        return cls.load_content(config_path.read_bytes())
+
+    @classmethod
+    def load_content(cls, content: bytes) -> "TemplateConfigPackage":
+        """从已冻结字节复用相同校验，确保渲染和输入 hash 使用同一份内容。"""
+        raw = yaml.safe_load(content.decode("utf-8")) or {}
+        if not isinstance(raw, dict):
+            raise ValueError("模板配置必须是 YAML object")
         if raw.get("schema_version") != SUPPORTED_SCHEMA_VERSION:
             raise ValueError(f"schema_version 必须是 {SUPPORTED_SCHEMA_VERSION}。")
         try:
@@ -209,6 +236,7 @@ def _field(
     maximum: float | None = None,
     step: float | None = None,
     options: tuple[str, ...] | None = None,
+    optional: bool = False,
 ) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": field_type, "label": label, "readonly": readonly}
     for key, value in (("unit", unit), ("min", minimum), ("max", maximum), ("step", step)):
@@ -216,6 +244,8 @@ def _field(
             schema[key] = value
     if options is not None:
         schema["options"] = list(options)
+    if optional:
+        schema["optional"] = True
     return schema
 
 
@@ -276,7 +306,12 @@ GROUP_FIELD_SCHEMA: dict[str, dict[str, dict[str, Any]]] = {
     "toc_level2": TOC_FIELDS,
     "toc_level3": TOC_FIELDS,
     "normal": PARAGRAPH_FIELDS,
-    "table_content": {key: value for key, value in PARAGRAPH_FIELDS.items() if key != "bold"},
+    "table_content": {
+        **{key: value for key, value in PARAGRAPH_FIELDS.items() if key != "bold"},
+        "min_font_size": _field(
+            "number", "最小字号", unit="pt", minimum=1, maximum=200, step=0.5, optional=True,
+        ),
+    },
     "table_style": {
         "style_name": _field("text", "表格样式"),
         "header_fill": _field("color", "表头底色"),
@@ -462,6 +497,8 @@ def apply_layout_changes(base: dict[str, Any], changes: dict[str, Any]) -> dict[
 
 
 def _validate_editor_value(value: Any, schema: dict[str, Any], path: str) -> Any:
+    if value is None and schema.get("optional"):
+        return None
     field_type = schema["type"]
     if field_type == "boolean":
         if not isinstance(value, bool):

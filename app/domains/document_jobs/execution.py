@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from app.domains.document_jobs.table_evidence import has_evidence, save_report, verify_report, validate_candidate_binding, recheck_verified_report
+from app.services.tables.evidence import TableEvidenceError
+
 # app/domains/document_jobs/execution.py: 提供 document_jobs Worker 投递端口和幂等执行骨架。
 
 import logging
@@ -7,6 +10,7 @@ import hashlib
 import io
 import json
 import secrets
+import sqlite3
 import tempfile
 import time
 import zipfile
@@ -15,8 +19,16 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 from uuid import uuid4
 
+from billiard.exceptions import SoftTimeLimitExceeded
+
 from app.clients.mineru_client import MinerUClient, MinerUError
 from app.core.config import Settings
+from app.domains.document_jobs.preview import DocumentJobPreviewService
+from app.domains.document_jobs.publication_provenance import (
+    actual_call_fact, batch_publication_provenance, save_translation_publication_provenance,
+    capture_render_publication_provenance,
+)
+from app.domains.document_jobs.review import digest
 from app.domains.jobs.models import JobResourceSnapshot
 from app.domains.jobs.resource_snapshots import (
     JobResourceSnapshotError,
@@ -31,7 +43,15 @@ from app.domains.document_jobs.models import (
     DocumentJobTranslationBatchRecord,
 )
 from app.core.errors import ApiError
-from app.services.document_ir.models import DocumentIR, DocumentIRAsset
+from app.services.document_ir.models import DocumentIR, DocumentIRAsset, TableReferenceProvenance
+from app.services.document_ir.artifact_validator import MinerUArtifactValidationError
+from app.services.document_ir.integrity import DocumentIntegrityError
+from app.services.document_ir.table_reference_assets import (
+    RASTER_EXTENSIONS, TABLE_REFERENCE_ROLE, decode_table_references,
+)
+from app.services.document_ir.table_placeholder import (
+    PdfCropSource, TablePlaceholderError, checksum as placeholder_checksum, decode_placeholders,
+)
 from app.domains.files import FileUploadService
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
@@ -42,10 +62,22 @@ from app.domains.document_jobs.repository import (
     DocumentJobEventRepositoryProtocol,
     DocumentJobRepositoryProtocol,
     DocumentJobTranslationBatchRepositoryProtocol,
+    TranslationBatchTreeInvalidError,
+)
+from app.domains.document_jobs.workflow import (
+    TranslationGenerationSummary,
+    TranslationRootPlan,
+    reduce_translation_generation,
 )
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.evidence import (
+    build_renderer_evidence,
+    build_renderer_event_summary, ensure_renderer_integrity, validate_persisted_render_evidence,
+    validate_persisted_renderer_content,
+)
+from app.services.renderer import image_evidence
+from app.services.renderer.block_anchors import validate_block_anchor_evidence
 from app.services.renderer.layout_plan import build_layout_plan
 from app.domains.translation.audit import (
     TranslationAuditService,
@@ -60,8 +92,27 @@ from app.domains.translation.document_ir_translator import (
 from app.domains.translation.models import (
     TranslationProfileSnapshot,
     TranslationProviderResult,
+    TranslationTextItem,
+    TermVersionSnapshot,
 )
-from app.domains.translation.provider import TranslationProviderResponseError
+from app.domains.translation.integrity import (
+    TranslationIntegrityBinding,
+    TranslationIntegrityError,
+    TranslationIntegrityEvidence,
+    ValidatedTranslationBatch,
+)
+from app.domains.translation.provider import OpenAICompatibleTranslationProvider, TranslationProviderCallError, TranslationProviderResponseError
+
+
+class _TranslationBatchStorageError(RuntimeError):
+    """翻译成功响应已审计，但批次结果或状态提交写入失败。"""
+
+
+def _is_metadata_storage_error(error: Exception) -> bool:
+    """识别仓储驱动异常，避免把数据库故障当成 Provider 失败重试。"""
+
+    error_module = type(error).__module__
+    return isinstance(error, (OSError, sqlite3.Error)) or error_module.startswith("pymysql.")
 
 
 class DocumentJobTaskQueueProtocol(Protocol):
@@ -104,7 +155,10 @@ class DocumentJobExecutionService:
         job_resource_snapshot_service: JobResourceSnapshotService | None = None,
         translation_batch_task_queue: DocumentTranslationBatchTaskQueueProtocol | None = None,
         mineru_client_factory: Callable[[], Any] | None = None,
+        word_preview_service: DocumentJobPreviewService | None = None,
     ) -> None:
+        self.word_preview_service = word_preview_service or DocumentJobPreviewService(
+            settings, job_repository, event_repository, file_repository, file_service)
         self.settings = settings
         self.job_repository = job_repository
         self.event_repository = event_repository
@@ -138,20 +192,26 @@ class DocumentJobExecutionService:
         job = self.job_repository.get_document_job(job_id)
         if job is None:
             return None
-        job = self._process_replayable_callback_messages(job, trace_id=trace_id)
-        if job.status in {"succeeded", "failed", "canceled"}:
-            return job
-        timed_out = self._mark_timed_out_if_needed(job, trace_id=trace_id)
-        if timed_out is not None:
-            return timed_out
-        if job.status == "running" and job.stage not in {"parsing", "parsed", "ir_converting", "rendering", "uploading"}:
-            return job
-
+        latest = job
         try:
+            job = self._process_replayable_callback_messages(job, trace_id=trace_id)
+            latest = job
+            if job.status in {"succeeded", "failed", "canceled"}:
+                return job
+            timed_out = self._mark_timed_out_if_needed(job, trace_id=trace_id)
+            if timed_out is not None:
+                return timed_out
+            if job.status == "running" and job.stage not in {
+                "parsing", "parsed", "ir_converting", "translating", "translation_validating",
+                "rendering", "quality_checking", "uploading",
+            }:
+                return job
             if job.status == "pending":
                 job = self._mark_queued_from_worker(job, trace_id=trace_id)
+                latest = job
             if job.status == "queued":
                 job = self._mark_parsing_started(job, trace_id=trace_id)
+                latest = job
 
             latest = self.job_repository.get_document_job(job_id)
             if latest is None:
@@ -162,36 +222,24 @@ class DocumentJobExecutionService:
                 latest = self._mark_ir_converting_started(latest, trace_id=trace_id)
             if latest.status == "running" and latest.stage == "ir_converting":
                 latest = self._convert_and_save_document_ir(latest, trace_id=trace_id)
-            if latest.status == "running" and latest.stage in {"rendering", "uploading"}:
+            elif latest.status == "running" and latest.stage == "translating":
+                source_file, source_document_ir = self._read_translation_source(
+                    latest, latest.source_document_ir_file_id,
+                )
+                del source_file
+                latest = self._ensure_translation_batches_and_enqueue(
+                    latest, source_document_ir, trace_id=trace_id,
+                )
+            elif latest.status == "running" and latest.stage == "translation_validating":
+                latest = self._finalize_translation_generation(
+                    latest.id, generation=latest.retry_count, trace_id=trace_id,
+                )
+            if latest.status == "running" and latest.stage in {"rendering", "quality_checking", "uploading"}:
                 return self._render_and_save_word(latest, trace_id=trace_id)
             return latest
-        except (ApiError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile) as exc:
-            current = self.job_repository.get_document_job(job_id) or job
-            failed_stage, error_code = self._classify_worker_failure(exc, current)
-            return self._mark_failed(
-                current,
-                failed_stage=failed_stage,
-                error_code=error_code,
-                error_message=str(exc),
-                trace_id=trace_id,
-            )
         except Exception as exc:
-            current = self.job_repository.get_document_job(job_id) or job
-            failed_stage = self._failed_stage_for_current_job(current)
-            error_message = f"Worker 未预期异常: {type(exc).__name__}: {exc}"
-            self.logger.exception(
-                "[trace_id=%s job_id=%s stage=%s status=unexpected_error]",
-                trace_id,
-                job_id,
-                failed_stage,
-            )
-            return self._mark_failed(
-                current,
-                failed_stage=failed_stage,
-                error_code="document_job_unexpected_error",
-                error_message=error_message,
-                trace_id=trace_id,
-            )
+            # latest 是本次阶段调用实际接收的快照，不能拿事后读到的新代归属旧错误。
+            return self._fail_stage_attempt(latest, exc, trace_id=trace_id)
 
     def mark_job_timed_out(self, job_id: str, *, trace_id: str | None = None) -> DocumentJobRecord | None:
         """供 Worker 超时保护调用，保证 Celery 超时时 MySQL/file 状态也落到 failed。"""
@@ -227,6 +275,7 @@ class DocumentJobExecutionService:
 
     def _mark_parsing_started(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         now = utc_now()
+        started_at = job.started_at or now
         running = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"queued"},
@@ -235,7 +284,8 @@ class DocumentJobExecutionService:
             status="running",
             stage="parsing",
             progress=max(job.progress, 10),
-            started_at=job.started_at or now,
+            started_at=started_at,
+            timeout_at=job.timeout_at or started_at + timedelta(seconds=self.settings.p0_document_job_timeout_seconds),
             error_code=None,
             error_message=None,
             failed_stage=None,
@@ -243,17 +293,24 @@ class DocumentJobExecutionService:
         )
         if running is None:
             return self.job_repository.get_document_job(job.id) or job
-        self._record_event(
-            running,
-            event_type="stage_started",
-            stage="parsing",
-            message="Worker 已开始执行解析阶段骨架。",
-            payload={"worker_backend": self.settings.document_jobs_worker_backend},
-            trace_id=trace_id,
-        )
+        try:
+            self._record_event(
+                running,
+                event_type="stage_started",
+                stage="parsing",
+                message="Worker 已开始执行解析阶段骨架。",
+                payload={"worker_backend": self.settings.document_jobs_worker_backend},
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            return self._fail_stage_attempt(running, exc, trace_id=trace_id)
         return running
 
     def _run_mineru_parse(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
+        current, can_continue = self._refresh_mineru_parse_attempt(job, trace_id=trace_id)
+        if not can_continue:
+            return current
+        job = current
         if job.mineru_raw_result_file_id:
             parsed = self.job_repository.update_document_job_if_current(
                 job.id,
@@ -267,15 +324,15 @@ class DocumentJobExecutionService:
             )
             return parsed or self.job_repository.get_document_job(job.id) or job
 
-        source_file = self._get_uploaded_file(job.source_file_id)
         with tempfile.TemporaryDirectory(prefix="document_job_mineru_") as temp_dir:
-            source_path = Path(temp_dir) / source_file.original_filename
-            source_path.write_bytes(self.file_service.read_file_content(source_file))
             client = self.mineru_client_factory()
             data_id = job.mineru_data_id or job.id
             batch_id = job.mineru_batch_id
             if not batch_id:
-                callback = self.settings.mineru_callback_url or None
+                source_file = self._get_uploaded_file(job.source_file_id)
+                source_path = Path(temp_dir) / source_file.original_filename
+                source_path.write_bytes(self.file_service.read_file_content(source_file))
+                callback = self.settings.mineru_callback_url.strip() or None
                 callback_seed = self._build_callback_seed() if callback else None
                 batch_id, _file_urls = client.upload_files_batch(
                     [source_path],
@@ -310,8 +367,16 @@ class DocumentJobExecutionService:
                 )
 
             payload = client.query_batch_extract_results(batch_id)
-            result_item = self._select_mineru_result(payload, data_id)
+            current, can_continue = self._refresh_mineru_parse_attempt(job, trace_id=trace_id)
+            if not can_continue:
+                return current
+            result_item = self._select_mineru_result(payload, data_id, batch_id=batch_id)
             state = str(result_item.get("state") or "").lower()
+            if state == "failed":
+                return self._mark_failed(
+                    job, failed_stage="parsing", error_code="mineru_failed",
+                    error_message="MinerU 查询返回解析失败。", trace_id=trace_id,
+                )
             full_zip_url = result_item.get("full_zip_url")
             if state not in {"done", "success", "succeeded"} or not full_zip_url:
                 waiting = self.job_repository.update_document_job_if_current(
@@ -330,7 +395,7 @@ class DocumentJobExecutionService:
                     waiting,
                     event_type="stage_started",
                     stage="parsing",
-                    message="MinerU 结果尚未就绪，等待后续重投递或重试。",
+                    message="MinerU 结果尚未就绪，等待后续查询或回调。",
                     payload={"mineru_batch_id": batch_id, "mineru_state": state or "unknown"},
                     trace_id=trace_id,
                 )
@@ -663,10 +728,8 @@ class DocumentJobExecutionService:
     ) -> DocumentJobRecord:
         """下载 MinerU 原始结果包，登记为 document_file 并把任务推进到 parsed。"""
 
-        latest = self.job_repository.get_document_job(job.id)
-        if latest is None:
-            return job
-        if latest.status in {"succeeded", "failed", "canceled"}:
+        latest, can_continue = self._refresh_mineru_parse_attempt(job, trace_id=trace_id)
+        if not can_continue:
             return latest
         if latest.mineru_raw_result_file_id:
             updated = self.job_repository.update_document_job_if_current(
@@ -680,11 +743,11 @@ class DocumentJobExecutionService:
                 updated_at=utc_now(),
             )
             return updated or self.job_repository.get_document_job(job.id) or latest
-        if latest.status != "running" or latest.stage != "parsing":
-            return latest
-
         raw_zip_path = temp_dir / "mineru_raw_result.zip"
         client.download_result_zip(full_zip_url, raw_zip_path)
+        latest, can_continue = self._refresh_mineru_parse_attempt(job, trace_id=trace_id)
+        if not can_continue:
+            return latest
         raw_file = self.file_service.register_generated_content(
             tenant_id=latest.tenant_id,
             company_id=latest.company_id,
@@ -715,28 +778,31 @@ class DocumentJobExecutionService:
         )
         if parsed is None:
             return self.job_repository.get_document_job(latest.id) or latest
-        self._record_event(
-            parsed,
-            event_type="file_registered",
-            stage="parsing",
-            message="MinerU 原始结果已保存。",
-            payload={"file_id": raw_file.id, "file_type": raw_file.file_type, "object_key": raw_file.object_key},
-            trace_id=trace_id,
-        )
-        self._record_event(
-            parsed,
-            event_type="stage_succeeded",
-            stage="parsing",
-            message="解析阶段已完成。",
-            payload={"mineru_raw_result_file_id": raw_file.id},
-            trace_id=trace_id,
-        )
-        self.logger.info(
-            "[trace_id=%s job_id=%s stage=parsing status=parsed] mineru_raw_result_file_id=%s",
-            trace_id,
-            latest.id,
-            raw_file.id,
-        )
+        try:
+            self._record_event(
+                parsed,
+                event_type="file_registered",
+                stage="parsing",
+                message="MinerU 原始结果已保存。",
+                payload={"file_id": raw_file.id, "file_type": raw_file.file_type, "object_key": raw_file.object_key},
+                trace_id=trace_id,
+            )
+            self._record_event(
+                parsed,
+                event_type="stage_succeeded",
+                stage="parsing",
+                message="解析阶段已完成。",
+                payload={"mineru_raw_result_file_id": raw_file.id},
+                trace_id=trace_id,
+            )
+            self.logger.info(
+                "[trace_id=%s job_id=%s stage=parsing status=parsed] mineru_raw_result_file_id=%s",
+                trace_id,
+                latest.id,
+                raw_file.id,
+            )
+        except Exception as exc:
+            return self._fail_stage_attempt(parsed, exc, trace_id=trace_id)
         return parsed
 
     def _mark_ir_converting_started(
@@ -758,14 +824,17 @@ class DocumentJobExecutionService:
         )
         if converting is None:
             return self.job_repository.get_document_job(job.id) or job
-        self._record_event(
-            converting,
-            event_type="stage_started",
-            stage="ir_converting",
-            message="DocumentIR 转换已开始。",
-            payload={"mineru_raw_result_file_id": job.mineru_raw_result_file_id},
-            trace_id=trace_id,
-        )
+        try:
+            self._record_event(
+                converting,
+                event_type="stage_started",
+                stage="ir_converting",
+                message="DocumentIR 转换已开始。",
+                payload={"mineru_raw_result_file_id": job.mineru_raw_result_file_id},
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            return self._fail_stage_attempt(converting, exc, trace_id=trace_id)
         return converting
 
     def _convert_and_save_document_ir(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
@@ -782,20 +851,30 @@ class DocumentJobExecutionService:
             )
             return rendering or self.job_repository.get_document_job(job.id) or job
         if is_translation_document_job_mode(job.mode) and job.source_document_ir_file_id:
-            source_file = self._get_uploaded_file(job.source_document_ir_file_id)
-            source_document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(source_file))
+            _source_file, source_document_ir = self._read_translation_source(job, job.source_document_ir_file_id)
             return self._ensure_translation_batches_and_enqueue(job, source_document_ir, trace_id=trace_id)
 
         raw_file = self._get_mineru_raw_result_file(job)
         with tempfile.TemporaryDirectory(prefix="document_job_ir_") as temp_dir:
             raw_zip_path = Path(temp_dir) / raw_file.original_filename
             raw_zip_path.write_bytes(self.file_service.read_file_content(raw_file))
-            result = self.document_ir_service.convert_zip(
-                raw_zip_path,
-                job_id=job.id,
-                source_file_id=job.source_file_id,
-                document_language=job.document_language,
-            )
+            validation_input = {
+                "mineru_raw_result_file_id": raw_file.id,
+                "mineru_raw_result_sha256": raw_file.checksum_sha256,
+                "retry_count": job.retry_count,
+            }
+            try:
+                result = self.document_ir_service.convert_zip(
+                    raw_zip_path,
+                    job_id=job.id,
+                    source_file_id=job.source_file_id,
+                    document_language=job.document_language,
+                    placeholder_source_loader=lambda: self._load_placeholder_source(job),
+                )
+            except (MinerUArtifactValidationError, DocumentIntegrityError, TablePlaceholderError) as error:
+                error.mineru_validation_input = validation_input
+                return self._fail_stage_attempt(job, error, trace_id=trace_id)
+            result.document.metadata.mineru_validation_input = validation_input
 
         image_file_ids: list[str] = []
         for image_asset in result.image_assets:
@@ -832,7 +911,42 @@ class DocumentJobExecutionService:
             image_file_ids=image_file_ids,
         )
 
+        # QA 图只由 IR 引用，不能混入渲染图片列表、资源包或主记录 image_asset_file_ids。
+        assets_by_id = {asset.id: asset for asset in result.document.assets}
+        for reference in result.table_reference_assets:
+            reference_file = self.file_service.register_generated_content(
+                tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+                file_type="image_asset",
+                filename=f"table_reference_{reference.asset_id.split(':')[-1]}.{RASTER_EXTENSIONS[reference.mime_type]}",
+                mime_type=reference.mime_type, content=reference.content,
+                object_version=f"g{job.retry_count}_{uuid4().hex}",
+                metadata={
+                    "asset_role": TABLE_REFERENCE_ROLE, "asset_id": reference.asset_id,
+                    "block_id": reference.block_id, "fragment_id": reference.fragment_id,
+                    "logical_group_id": reference.logical_group_id, "source_file_id": job.source_file_id,
+                    "mineru_raw_result_file_id": raw_file.id, "source_path": reference.source_path,
+                    "retry_count": job.retry_count,
+                },
+            )
+            asset = assets_by_id[reference.asset_id]
+            asset.file_id, asset.object_key = reference_file.id, reference_file.object_key
+            asset.mime_type, asset.checksum_sha256 = reference_file.mime_type, reference_file.checksum_sha256
+
+        for pending in result.table_placeholder_assets:
+            binding = next(item for item in result.document.metadata.table_placeholders if item.asset_ref == pending.asset_id)
+            file = self.file_service.register_generated_content(
+                tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+                file_type="image_asset", filename="table_placeholder.png", mime_type=pending.mime_type,
+                content=pending.content, object_version=f"g{job.retry_count}_{uuid4().hex}",
+                metadata={"asset_role": "table_placeholder", "asset_id": pending.asset_id,
+                          "source_file_id": job.source_file_id, "source_pdf_sha256": binding.source_pdf_sha256,
+                          "fragment_id": binding.fragment_id, "retry_count": job.retry_count},
+            )
+            asset = next(asset for asset in result.document.assets if asset.id == pending.asset_id)
+            asset.file_id, asset.object_key = file.id, file.object_key
         document_ir = result.document
+        decode_table_references(document_ir, require_bound=True)
+        decode_placeholders(document_ir, require_bound=True)
         if is_translation_document_job_mode(job.mode):
             return self._register_source_ir_and_enqueue_translation(
                 job,
@@ -853,6 +967,7 @@ class DocumentJobExecutionService:
             created_by=job.created_by,
             file_type="document_ir",
             filename="document_ir_v2.json",
+            object_version=(f"g{job.retry_count}_{uuid4().hex}" if document_ir.metadata.table_references_version else None),
             mime_type="application/json",
             content=ir_content,
             metadata={
@@ -879,65 +994,68 @@ class DocumentJobExecutionService:
         )
         if updated is None:
             return self.job_repository.get_document_job(job.id) or job
-        if image_file_ids:
+        try:
+            if image_file_ids:
+                self._record_event(
+                    updated,
+                    event_type="file_registered",
+                    stage="ir_converting",
+                    message="DocumentIR 图片资产已保存。",
+                    payload={
+                        "file_ids": image_file_ids,
+                        "file_type": "image_asset",
+                        "image_assets_archive_file_id": image_archive_file.id if image_archive_file is not None else None,
+                    },
+                    trace_id=trace_id,
+                )
+            if image_archive_file is not None:
+                self._record_event(
+                    updated,
+                    event_type="file_registered",
+                    stage="ir_converting",
+                    message="DocumentIR 图片资源包已保存。",
+                    payload={
+                        "file_id": image_archive_file.id,
+                        "file_type": image_archive_file.file_type,
+                        "image_asset_count": len(image_file_ids),
+                    },
+                    trace_id=trace_id,
+                )
             self._record_event(
                 updated,
                 event_type="file_registered",
                 stage="ir_converting",
-                message="DocumentIR 图片资产已保存。",
+                message="DocumentIR 已保存。",
                 payload={
-                    "file_ids": image_file_ids,
-                    "file_type": "image_asset",
+                    "file_id": ir_file.id,
+                    "file_type": ir_file.file_type,
+                    "object_key": ir_file.object_key,
+                    **ir_layout_metadata,
+                },
+                trace_id=trace_id,
+            )
+            self._record_event(
+                updated,
+                event_type="stage_succeeded",
+                stage="ir_converting",
+                message="DocumentIR 转换已完成，等待 Word 渲染。",
+                payload={
+                    "document_ir_file_id": ir_file.id,
+                    "image_asset_file_ids": image_file_ids,
                     "image_assets_archive_file_id": image_archive_file.id if image_archive_file is not None else None,
+                    **ir_layout_metadata,
                 },
                 trace_id=trace_id,
             )
-        if image_archive_file is not None:
-            self._record_event(
-                updated,
-                event_type="file_registered",
-                stage="ir_converting",
-                message="DocumentIR 图片资源包已保存。",
-                payload={
-                    "file_id": image_archive_file.id,
-                    "file_type": image_archive_file.file_type,
-                    "image_asset_count": len(image_file_ids),
-                },
-                trace_id=trace_id,
+            self.logger.info(
+                "[trace_id=%s job_id=%s stage=ir_converting status=rendering] document_ir_file_id=%s image_assets=%s",
+                trace_id,
+                job.id,
+                ir_file.id,
+                len(image_file_ids),
             )
-        self._record_event(
-            updated,
-            event_type="file_registered",
-            stage="ir_converting",
-            message="DocumentIR 已保存。",
-            payload={
-                "file_id": ir_file.id,
-                "file_type": ir_file.file_type,
-                "object_key": ir_file.object_key,
-                **ir_layout_metadata,
-            },
-            trace_id=trace_id,
-        )
-        self._record_event(
-            updated,
-            event_type="stage_succeeded",
-            stage="ir_converting",
-            message="DocumentIR 转换已完成，等待 Word 渲染。",
-            payload={
-                "document_ir_file_id": ir_file.id,
-                "image_asset_file_ids": image_file_ids,
-                "image_assets_archive_file_id": image_archive_file.id if image_archive_file is not None else None,
-                **ir_layout_metadata,
-            },
-            trace_id=trace_id,
-        )
-        self.logger.info(
-            "[trace_id=%s job_id=%s stage=ir_converting status=rendering] document_ir_file_id=%s image_assets=%s",
-            trace_id,
-            job.id,
-            ir_file.id,
-            len(image_file_ids),
-        )
+        except Exception as exc:
+            return self._fail_stage_attempt(updated, exc, trace_id=trace_id)
         return updated
 
     def _register_source_ir_and_enqueue_translation(
@@ -952,6 +1070,7 @@ class DocumentJobExecutionService:
     ) -> DocumentJobRecord:
         """保存翻译 source IR，并把后续 provider 调用切换到批次任务。"""
 
+        decode_table_references(document_ir, require_bound=True)
         source_ir_file = self.file_service.register_generated_content(
             tenant_id=job.tenant_id,
             company_id=job.company_id,
@@ -959,6 +1078,7 @@ class DocumentJobExecutionService:
             created_by=job.created_by,
             file_type="document_ir",
             filename="document_ir_source_v2.json",
+            object_version=(f"g{job.retry_count}_{uuid4().hex}" if document_ir.metadata.table_references_version else None),
             mime_type="application/json",
             content=document_ir.model_dump_json(indent=2).encode("utf-8"),
             metadata={
@@ -1052,104 +1172,183 @@ class DocumentJobExecutionService:
         *,
         trace_id: str | None,
     ) -> DocumentJobRecord:
-        if self.document_ir_translation_service is None:
-            raise DocumentIRTranslationError("DocumentIR 翻译服务未配置。")
-        spec = spec_for_document_job_mode(job.mode)
-        if spec.language_pair is None:
-            raise DocumentIRTranslationError("当前任务不是翻译任务。")
-        if not job.source_document_ir_file_id:
-            raise DocumentIRTranslationError("翻译任务缺少 source DocumentIR 文件。")
-
         generation = job.retry_count
-        batches = self.translation_batch_repository.list_translation_batches(job.id, generation=generation)
-        if not batches:
-            batches = self._create_initial_translation_batches(
-                job,
-                source_document_ir,
-                language_pair=spec.language_pair,
-                generation=generation,
-                trace_id=trace_id,
+        if job.stage == "ir_converting":
+            transitioned = self.job_repository.update_document_job_if_current(
+                job.id,
+                allowed_statuses={"running"},
+                allowed_stages={"ir_converting"},
+                expected_retry_count=generation,
+                stage="translating",
+                updated_at=utc_now(),
             )
-        if not batches:
-            return self._register_translated_document_ir_and_continue(
-                job,
-                source_document_ir,
-                succeeded_batches=[],
-                trace_id=trace_id,
-            )
-        self._reset_expired_translation_batch_leases(job, generation=generation, trace_id=trace_id)
-        self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
-        refreshed = self.job_repository.get_document_job(job.id) or job
-        return refreshed
+            if transitioned is None:
+                return self.job_repository.get_document_job(job.id) or job
+            job = transitioned
+            try:
+                self._record_event(
+                    job,
+                    event_type="stage_started",
+                    stage="translating",
+                    message="DocumentIR 翻译已开始。",
+                    payload={"source_document_ir_file_id": job.source_document_ir_file_id},
+                    trace_id=trace_id,
+                )
+            except Exception as exc:
+                return self._fail_stage_attempt(job, exc, trace_id=trace_id)
+        if job.status != "running" or job.stage != "translating" or job.retry_count != generation:
+            return job
+        try:
+            if self.document_ir_translation_service is None:
+                raise DocumentIRTranslationError("DocumentIR 翻译服务未配置。")
+            spec = spec_for_document_job_mode(job.mode)
+            if spec.language_pair is None:
+                raise DocumentIRTranslationError("当前任务不是翻译任务。")
+            if not job.source_document_ir_file_id:
+                raise DocumentIRTranslationError("翻译任务缺少 source DocumentIR 文件。")
+            expected_plans = self._build_expected_translation_plans(job, source_document_ir)
+            try:
+                batches = self.translation_batch_repository.ensure_translation_batch_roots(
+                    job.id,
+                    generation=generation,
+                    expected_plans=expected_plans,
+                )
+            except TranslationBatchTreeInvalidError as exc:
+                return self._mark_failed(
+                    job,
+                    failed_stage="translating",
+                    error_code=exc.code,
+                    error_message="翻译批次树与当前权威计划不一致。",
+                    trace_id=trace_id,
+                )
+            except TranslationIntegrityError as exc:
+                return self._mark_failed(
+                    job,
+                    failed_stage="translating",
+                    error_code="translation_failed",
+                    error_message=str(exc),
+                    trace_id=trace_id,
+                    integrity=exc.evidence,
+                )
+            if not batches:
+                return self._finalize_translation_generation(
+                    job.id, generation=generation, trace_id=trace_id,
+                ) or job
+            self._reset_expired_translation_batch_leases(job, generation=generation, trace_id=trace_id)
+            self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
+            return self._finalize_translation_generation(job.id, generation=generation, trace_id=trace_id) or job
+        except Exception as exc:
+            return self._fail_stage_attempt(job, exc, trace_id=trace_id)
 
-    def _create_initial_translation_batches(
+    def _get_translation_execution_snapshot(
+        self,
+        job_id: str,
+        *,
+        generation: int,
+    ) -> tuple[DocumentJobRecord | None, list[DocumentJobTranslationBatchRecord]]:
+        """从批次仓储的同任务锁快照读取 job 与当前代批次。"""
+
+        try:
+            snapshot_job, batches = self.translation_batch_repository.get_translation_batch_snapshot(job_id)
+        except (FileNotFoundError, OSError):
+            return None, []
+        if snapshot_job.retry_count != generation:
+            return snapshot_job, []
+        return snapshot_job, [batch for batch in batches if batch.generation == snapshot_job.retry_count]
+
+    def summarize_translation_generation(
+        self,
+        job: DocumentJobRecord,
+        batches: list[DocumentJobTranslationBatchRecord] | None = None,
+    ) -> TranslationGenerationSummary | None:
+        """以当前 job 的 source/config 重新计算权威批次结论。
+
+        API 和执行入口共用这条纯 reducer 接线；权威根计划来自 source/config，不能
+        从已落库批次反推。direct 任务不读取翻译资源，旧记录无法重建计划时返回 None。
+        """
+
+        current_batches = batches
+        if current_batches is None:
+            requested_generation = job.retry_count
+            job, current_batches = self._get_translation_execution_snapshot(
+                job.id, generation=requested_generation,
+            )
+            if job is None or job.retry_count != requested_generation:
+                return None
+        if not is_translation_document_job_mode(job.mode):
+            return None
+        if self.document_ir_translation_service is None or not job.source_document_ir_file_id:
+            return None
+        try:
+            _source_file, source_document_ir = self._read_translation_source(
+                job, job.source_document_ir_file_id,
+            )
+            expected_plans = self._build_expected_translation_plans(job, source_document_ir)
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError):
+            # 旧任务可能缺少本轮重建所需的 source；API 仍返回旧诊断字段，不伪造新结论。
+            return None
+        return reduce_translation_generation(
+            job_id=job.id,
+            job_status=job.status,
+            job_stage=job.stage,
+            generation=job.retry_count,
+            expected_plans=expected_plans,
+            batches=current_batches,
+            provider_call_budget=(
+                expected_plans[0].provider_call_budget if expected_plans else 0
+            ),
+        )
+
+    def _build_expected_translation_plans(
         self,
         job: DocumentJobRecord,
         source_document_ir: DocumentIR,
-        *,
-        language_pair: str,
-        generation: int,
-        trace_id: str | None,
-    ) -> list[DocumentJobTranslationBatchRecord]:
-        translation_profile = self._translation_profile_for_job(
-            job,
-            language_pair=language_pair,
-        )
-        max_pages, max_chars = self._translation_profile_batch_limits(
-            translation_profile
-        )
+    ) -> list[TranslationRootPlan]:
+        """由不可变 source、资源快照计算本代根计划，供 reducer 与安装端口共用。"""
+
+        spec = spec_for_document_job_mode(job.mode)
+        if spec.language_pair is None:
+            return []
+        if self.document_ir_translation_service is None:
+            raise DocumentIRTranslationError("DocumentIR 翻译服务未配置。")
+        profile = self._translation_profile_for_job(job, language_pair=spec.language_pair)
+        max_pages, max_chars = self._translation_profile_batch_limits(profile)
         term_version = self._resolve_term_version_for_job(job)
         _targets, _items, plans = self.document_ir_translation_service.build_translation_plan(
             source_document_ir,
             max_pages_per_batch=max_pages,
             max_chars_per_batch=max_chars,
-            batch_id_prefix=f"{job.id}_retry{generation}_translation_batch",
+            batch_id_prefix=f"{job.id}_retry{job.retry_count}_translation_batch",
         )
-        deterministic_count = len(plans)
-        provider_call_budget = min(200, deterministic_count * 12)
-        now = utc_now()
-        records: list[DocumentJobTranslationBatchRecord] = []
-        for plan in plans:
-            record = DocumentJobTranslationBatchRecord(
-                id=plan.batch_id,
+        provider_call_budget = min(200, len(plans) * 12)
+        max_attempts = max(1, self.settings.translation_provider_batch_max_attempts)
+        return [
+            TranslationRootPlan(
+                batch_id=plan.batch_id,
                 job_id=job.id,
+                generation=job.retry_count,
                 job_retry_count=job.retry_count,
-                generation=generation,
-                root_batch_id=plan.batch_id,
-                parent_batch_id=plan.parent_batch_id,
-                status="pending",
-                page_start=plan.page_start,
-                page_end=plan.page_end,
-                item_ids=list(plan.item_ids),
+                source_document_ir_file_id=job.source_document_ir_file_id or "",
+                language_pair=spec.language_pair,
+                item_ids=tuple(plan.item_ids),
                 item_count=plan.item_count,
                 char_count=plan.char_count,
+                page_start=plan.page_start,
+                page_end=plan.page_end,
+                term_version_id=(
+                    term_version.term_version_id
+                    if term_version is not None else job.term_version_id
+                ),
+                term_snapshot_hash=(
+                    term_version.snapshot_hash if term_version is not None else None
+                ),
                 split_level=plan.split_level,
-                max_attempts=max(1, self.settings.translation_provider_batch_max_attempts),
-                deterministic_batch_count=deterministic_count,
+                deterministic_batch_count=len(plans),
                 provider_call_budget=provider_call_budget,
-                source_document_ir_file_id=job.source_document_ir_file_id,
-                language_pair=language_pair,
-                term_version_id=term_version.term_version_id if term_version is not None else job.term_version_id,
-                term_snapshot_hash=term_version.snapshot_hash if term_version is not None else None,
-                created_at=now,
-                updated_at=now,
+                max_attempts=max_attempts,
             )
-            records.append(self.translation_batch_repository.create_translation_batch(record))
-        self._record_event(
-            job,
-            event_type="stage_started",
-            stage="ir_converting",
-            message="DocumentIR 翻译批次已创建。",
-            payload={
-                "generation": generation,
-                "batch_count": len(records),
-                "max_pages_per_batch": max_pages,
-                "max_chars_per_batch": max_chars,
-                "language_pair": language_pair,
-            },
-            trace_id=trace_id,
-        )
-        return records
+            for plan in plans
+        ]
 
     def execute_translation_batch(self, batch_id: str, *, trace_id: str | None = None) -> DocumentJobTranslationBatchRecord | None:
         """执行单个 provider batch task；重复投递依赖 batch 状态幂等收敛。"""
@@ -1162,21 +1361,45 @@ class DocumentJobExecutionService:
             return batch
         if job.status == "canceled":
             return self._cancel_translation_batch(batch, trace_id=trace_id)
-        if job.status in {"succeeded", "failed"} or job.retry_count != batch.job_retry_count:
+        if job.status in {"succeeded", "failed"} or job.retry_count != batch.job_retry_count or job.retry_count != batch.generation:
             return batch
-        if job.status != "running" or job.stage != "ir_converting":
+        if job.status == "running" and job.stage == "ir_converting" and job.source_document_ir_file_id:
+            job = self._mark_translating_started(job, trace_id=trace_id)
+        if (
+            job.status != "running" or job.stage != "translating"
+            or job.retry_count != batch.job_retry_count or job.retry_count != batch.generation
+        ):
             return batch
+        if batch.status == "failed" and not batch.retryable:
+            self._finalize_translation_generation(
+                job.id, generation=batch.generation, trace_id=trace_id,
+            )
+            return self.translation_batch_repository.get_translation_batch(batch.id) or batch
         claimed = self._claim_translation_batch(batch, trace_id=trace_id)
         if claimed is None:
-            return self.translation_batch_repository.get_translation_batch(batch.id)
+            reconciled = self._reconcile_translation_batch_atomic_rejection(
+                batch, generation=batch.generation, trace_id=trace_id,
+            )
+            # _claim 已完成预算失败的条件写与任务收口；保留 execute 既有失败批次返回合同，
+            # 但绝不把该记录当作已获 lease 的批次继续执行。
+            if (
+                reconciled.status == "failed"
+                and reconciled.error_code == "translation_request_budget_exceeded"
+            ):
+                return reconciled
+            return None
 
+        prepared = None
         request = None
+        binding = None
+        provider_called = False
+        audit_started = False
+        audit_completed = False
         result: TranslationProviderResult | None = None
         recorder: TranslationCallAuditRecorder | None = None
         started_at = time.perf_counter()
         try:
-            source_file = self._get_uploaded_file(claimed.source_document_ir_file_id)
-            source_document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(source_file))
+            source_file, source_document_ir = self._read_translation_source(job, claimed.source_document_ir_file_id)
             _targets, items = self.document_ir_translation_service.extract_translation_items(source_document_ir)
             items_by_id = {item.id: item for item in items}
             batch_items = [items_by_id[item_id] for item_id in claimed.item_ids]
@@ -1195,7 +1418,7 @@ class DocumentJobExecutionService:
                 if self.translation_audit_service is not None
                 else None
             )
-            request = self.document_ir_translation_service.build_provider_request(
+            prepared = self.document_ir_translation_service.build_provider_request(
                 source_document_ir,
                 batch_items,
                 term_version=term_version,
@@ -1211,45 +1434,100 @@ class DocumentJobExecutionService:
                 parent_batch_id=claimed.parent_batch_id,
                 page_start=claimed.page_start,
                 page_end=claimed.page_end,
+                max_chars_per_request=self._translation_profile_batch_limits(translation_profile)[1],
             )
-            result = self.document_ir_translation_service.provider.translate(request)
-            replacements = self.document_ir_translation_service.validate_result(batch_items, result)
+            request = prepared.request
+            binding = self._translation_integrity_binding(job, claimed, source_file, translation_profile, term_version)
+            provider_called = True
+            try:
+                result = self.document_ir_translation_service.provider.translate(request)
+            except TranslationProviderCallError:
+                raise
+            except Exception:
+                # 外部异常可夹带正文；在调用边界转成固定安全描述，保留既有失败路径。
+                raise RuntimeError("翻译 Provider 调用失败。") from None
+            validated = self.document_ir_translation_service.validator.validate(
+                prepared.source_items, prepared.encoded_batch, result,
+            )
+            integrity = validated.evidence.bind(binding)
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             if recorder is not None:
-                recorder.record_success(request, result, duration_ms=duration_ms)
+                audit_started = True
+                recorder.record_success(request, result, duration_ms=duration_ms, integrity=integrity)
                 self._record_translation_audit_events(job, recorder, trace_id=trace_id)
-            result_file = self._register_translation_batch_result(
-                job,
-                batch=claimed,
-                result=result,
-                replacements=replacements,
-                recorder=recorder,
-            )
-            succeeded = self.translation_batch_repository.update_translation_batch_if_current(
-                claimed.id,
-                allowed_statuses={"running"},
-                expected_generation=claimed.generation,
-                status="succeeded",
-                result_file_id=result_file.id,
-                ai_call_log_file_ids=self._recorder_call_log_file_ids(recorder),
-                debug_archive_file_ids=self._recorder_debug_archive_file_ids(recorder),
-                finish_reason=result.finish_reason,
-                usage=result.usage,
-                response_id=result.response_id,
-                error_code=None,
-                error_message=None,
-                retryable=False,
-                lease_owner=None,
-                leased_at=None,
-                lease_expires_at=None,
-                updated_at=utc_now(),
-            )
-            if succeeded is None:
+                audit_completed = True
+            current = self.job_repository.get_document_job(job.id)
+            if current is None or current.retry_count != claimed.generation or current.status != "running" or current.stage != "translating":
                 return self.translation_batch_repository.get_translation_batch(claimed.id)
+            current_summary = self.summarize_translation_generation(current)
+            if current_summary is not None and current_summary.outcome in {
+                "failed", "completed", "canceled", "validating",
+            }:
+                # Provider 调用已经真实发生，但终态闸门先于结果登记；该响应只能保留审计。
+                self._finalize_translation_generation(
+                    current.id, generation=claimed.generation, trace_id=trace_id,
+                )
+                return self.translation_batch_repository.get_translation_batch(claimed.id) or claimed
+            _source_file, current_source_ir = self._read_translation_source(
+                current, claimed.source_document_ir_file_id,
+            )
+            expected_plans = self._build_expected_translation_plans(current, current_source_ir)
+            try:
+                result_file = self._register_translation_batch_result(
+                    job,
+                    batch=claimed,
+                    result=result,
+                    validated=validated,
+                    integrity=integrity,
+                    recorder=recorder,
+                    publication_provenance=batch_publication_provenance(result=result, integrity=integrity,
+                        batch=claimed, profile=translation_profile, term_version=term_version),
+                )
+            except (RuntimeError, ValueError, FileNotFoundError, OSError) as exc:
+                # Provider 已成功且审计已落盘；结果 Artifact 的 I/O 失败不能再次调用 Provider。
+                raise _TranslationBatchStorageError("翻译批次结果 Artifact 写入失败。") from exc
+            try:
+                succeeded = self.translation_batch_repository.update_translation_batch_if_current(
+                    claimed.id,
+                    allowed_statuses={"running"},
+                    expected_generation=claimed.generation,
+                    expected_attempt_count=claimed.attempt_count,
+                    expected_lease_owner=claimed.lease_owner,
+                    expected_job_id=claimed.job_id,
+                    expected_job_status={"running"},
+                    expected_job_stages={"translating"},
+                    expected_plans=expected_plans,
+                    status="succeeded",
+                    result_file_id=result_file.id,
+                    ai_call_log_file_ids=self._recorder_call_log_file_ids(recorder),
+                    debug_archive_file_ids=self._recorder_debug_archive_file_ids(recorder),
+                    finish_reason=result.finish_reason,
+                    usage=result.usage,
+                    response_id=result.response_id,
+                    error_code=None,
+                    error_message=None,
+                    retryable=False,
+                    lease_owner=None,
+                    leased_at=None,
+                    lease_expires_at=None,
+                    updated_at=utc_now(),
+                )
+            except TranslationBatchTreeInvalidError:
+                raise
+            except (RuntimeError, ValueError, FileNotFoundError, OSError, sqlite3.Error) as exc:
+                raise _TranslationBatchStorageError("翻译批次状态提交失败。") from exc
+            except Exception as exc:
+                if not _is_metadata_storage_error(exc):
+                    raise
+                raise _TranslationBatchStorageError("翻译批次状态提交失败。") from exc
+            if succeeded is None:
+                return self._reconcile_translation_batch_atomic_rejection(
+                    claimed, generation=claimed.generation, trace_id=trace_id,
+                )
             self._record_event(
                 job,
                 event_type="translation_batch_succeeded",
-                stage="ir_converting",
+                stage="translating",
                 message="翻译批次已完成。",
                 payload={
                     "batch_id": succeeded.id,
@@ -1260,21 +1538,63 @@ class DocumentJobExecutionService:
                     "finish_reason": succeeded.finish_reason,
                 },
                 trace_id=trace_id,
+                duration_ms=duration_ms,
             )
             self._finalize_translation_generation(job.id, generation=succeeded.generation, trace_id=trace_id)
             return succeeded
-        except (KeyError, ValueError, RuntimeError, FileNotFoundError, OSError) as exc:
-            duration_ms = int((time.perf_counter() - started_at) * 1000)
-            if recorder is not None and request is not None:
-                recorder.record_failure(request, result, error=exc, duration_ms=duration_ms)
-                self._record_translation_audit_events(job, recorder, trace_id=trace_id)
-            return self._handle_translation_batch_failure(
-                claimed,
+        except TranslationBatchTreeInvalidError:
+            # 权威 source/config 与持久化批次树不一致时，不能把它伪装成 Provider 失败。
+            current = self.job_repository.get_document_job(claimed.job_id)
+            if current is None or current.retry_count != claimed.generation:
+                return self.translation_batch_repository.get_translation_batch(claimed.id) or claimed
+            self._mark_failed(
                 job,
-                error=exc,
-                recorder=recorder,
+                failed_stage="translating",
+                error_code="translation_batch_tree_invalid",
+                error_message="翻译批次计划与当前 source/config 不一致。",
                 trace_id=trace_id,
             )
+            return self.translation_batch_repository.get_translation_batch(claimed.id) or claimed
+        except _TranslationBatchStorageError as exc:
+            return self._fail_translation_batch_storage(
+                claimed,
+                job,
+                expected_plans=expected_plans,
+                error_message=str(exc),
+                trace_id=trace_id,
+            )
+        except (KeyError, ValueError, RuntimeError, FileNotFoundError, OSError) as exc:
+            # 审计自身失败须可见，不能再把同一次调用登记成另一份失败审计。
+            if audit_started and not audit_completed:
+                raise
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            if recorder is not None and provider_called and not audit_started:
+                integrity = exc.evidence if isinstance(exc, TranslationIntegrityError) else self.document_ir_translation_service.validator.call_failure_evidence(
+                    prepared.source_items, prepared.encoded_batch, error_code=self._translation_batch_error_code(exc),
+                )
+                recorder.record_failure(request, result, error=exc, duration_ms=duration_ms, integrity=integrity.bind(binding))
+                self._record_translation_audit_events(job, recorder, trace_id=trace_id)
+            try:
+                return self._handle_translation_batch_failure(
+                    claimed,
+                    job,
+                    error=exc,
+                    recorder=recorder,
+                    trace_id=trace_id,
+                    duration_ms=duration_ms,
+                )
+            except TranslationBatchTreeInvalidError:
+                current = self.job_repository.get_document_job(claimed.job_id)
+                if current is None or current.retry_count != claimed.generation:
+                    return self.translation_batch_repository.get_translation_batch(claimed.id) or claimed
+                self._mark_failed(
+                    job,
+                    failed_stage="translating",
+                    error_code="translation_batch_tree_invalid",
+                    error_message="翻译批次计划与当前 source/config 不一致。",
+                    trace_id=trace_id,
+                )
+                return self.translation_batch_repository.get_translation_batch(claimed.id) or claimed
 
     def _claim_translation_batch(
         self,
@@ -1282,29 +1602,141 @@ class DocumentJobExecutionService:
         *,
         trace_id: str | None,
     ) -> DocumentJobTranslationBatchRecord | None:
+        current_job = self.job_repository.get_document_job(batch.job_id)
+        if (
+            current_job is None
+            or current_job.status != "running"
+            or current_job.stage != "translating"
+            or current_job.retry_count != batch.generation
+        ):
+            return None
+        try:
+            summary = self.summarize_translation_generation(current_job)
+        except TranslationBatchTreeInvalidError:
+            self._mark_failed(
+                current_job,
+                failed_stage="translating",
+                error_code="translation_batch_tree_invalid",
+                error_message="翻译批次计划与当前 source/config 不一致。",
+                trace_id=trace_id,
+            )
+            return None
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, sqlite3.Error, ValueError) as exc:
+            self._mark_failed(
+                current_job,
+                failed_stage="translating",
+                error_code="oss_failed" if _is_metadata_storage_error(exc) else "translation_failed",
+                error_message="翻译批次计划校验失败。",
+                trace_id=trace_id,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
+            )
+            return None
+        if summary is not None and summary.outcome in {"failed", "completed", "canceled", "validating"}:
+            self._finalize_translation_generation(
+                current_job.id, generation=batch.generation, trace_id=trace_id,
+            )
+            return None
+        try:
+            _source_file, source_document_ir = self._read_translation_source(
+                current_job, current_job.source_document_ir_file_id,
+            )
+            expected_plans = self._build_expected_translation_plans(current_job, source_document_ir)
+        except TranslationBatchTreeInvalidError:
+            self._finalize_translation_generation(
+                current_job.id, generation=batch.generation, trace_id=trace_id,
+            )
+            return None
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, sqlite3.Error, ValueError) as exc:
+            if isinstance(exc, TranslationIntegrityError) and exc.code == "translation_request_budget_exceeded":
+                _snapshot_job, installed_batches = self._get_translation_execution_snapshot(
+                    current_job.id, generation=batch.generation,
+                )
+                failed = self.translation_batch_repository.update_translation_batch_if_current(
+                    batch.id,
+                    allowed_statuses={"pending", "queued"},
+                    expected_generation=batch.generation,
+                    expected_attempt_count=batch.attempt_count,
+                    expected_lease_owner=batch.lease_owner,
+                    expected_job_id=batch.job_id,
+                    expected_job_status={"running"},
+                    expected_job_stages={"translating"},
+                    expected_plans=installed_batches,
+                    status="failed",
+                    error_code=exc.code,
+                    error_message=str(exc),
+                    retryable=False,
+                    updated_at=utc_now(),
+                )
+                self._mark_failed(
+                    current_job,
+                    failed_stage="translating",
+                    error_code="translation_failed",
+                    error_message=str(exc),
+                    trace_id=trace_id,
+                )
+                return None
+            self._mark_failed(
+                current_job,
+                failed_stage="translating",
+                error_code="oss_failed" if _is_metadata_storage_error(exc) else "translation_failed",
+                error_message="翻译批次计划校验失败。",
+                trace_id=trace_id,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
+            )
+            return None
         now = utc_now()
-        claimed = self.translation_batch_repository.update_translation_batch_if_current(
-            batch.id,
-            allowed_statuses={"pending", "queued", "failed"},
-            expected_generation=batch.generation,
-            status="running",
-            attempt_count=batch.attempt_count + 1,
-            lease_owner="translation_batch_worker",
-            leased_at=now,
-            lease_expires_at=now + timedelta(seconds=self.settings.translation_provider_batch_lease_seconds),
-            error_code=None,
-            error_message=None,
-            retryable=False,
-            updated_at=now,
-        )
+        lease_owner = f"translation_batch_worker:{uuid4().hex}"
+        try:
+            claimed = self.translation_batch_repository.claim_translation_batch(
+                batch.id,
+                expected_generation=batch.generation,
+                expected_attempt_count=batch.attempt_count,
+                lease_owner=lease_owner,
+                leased_at=now,
+                lease_expires_at=now + timedelta(seconds=self.settings.translation_provider_batch_lease_seconds),
+                provider_call_budget=batch.provider_call_budget,
+                expected_plans=expected_plans,
+            )
+        except TranslationBatchTreeInvalidError:
+            self._mark_failed(
+                current_job,
+                failed_stage="translating",
+                error_code="translation_batch_tree_invalid",
+                error_message="翻译批次计划与当前 source/config 不一致。",
+                trace_id=trace_id,
+            )
+            return None
+        except (FileNotFoundError, OSError, sqlite3.Error) as exc:
+            self._mark_failed(
+                current_job,
+                failed_stage="translating",
+                error_code="oss_failed" if _is_metadata_storage_error(exc) else "translation_failed",
+                error_message="翻译批次计划读取失败。",
+                trace_id=trace_id,
+            )
+            return None
+        except Exception as exc:
+            if not _is_metadata_storage_error(exc):
+                raise
+            self._mark_failed(
+                current_job,
+                failed_stage="translating",
+                error_code="oss_failed",
+                error_message="翻译批次计划读取失败。",
+                trace_id=trace_id,
+            )
+            return None
         if claimed is None:
+            self._reconcile_translation_batch_atomic_rejection(
+                batch, generation=batch.generation, trace_id=trace_id,
+            )
             return None
         job = self.job_repository.get_document_job(batch.job_id)
         if job is not None:
             self._record_event(
                 job,
                 event_type="translation_batch_running",
-                stage="ir_converting",
+                stage="translating",
                 message="翻译批次已开始执行。",
                 payload={
                     "batch_id": claimed.id,
@@ -1318,6 +1750,126 @@ class DocumentJobExecutionService:
             )
         return claimed
 
+    def _reconcile_translation_batch_atomic_rejection(
+        self,
+        batch: DocumentJobTranslationBatchRecord,
+        *,
+        generation: int,
+        trace_id: str | None,
+    ) -> DocumentJobTranslationBatchRecord:
+        """原子端口拒绝后重读同代快照，收口终态而不把普通竞争误报为失败。"""
+
+        current_job, current_batches = self._get_translation_execution_snapshot(
+            batch.job_id, generation=generation,
+        )
+        current_batch = next((item for item in current_batches if item.id == batch.id), None)
+        if current_batch is None:
+            current_batch = self.translation_batch_repository.get_translation_batch(batch.id) or batch
+        if (
+            current_job is None
+            or current_job.retry_count != generation
+            or current_job.status in {"succeeded", "failed", "canceled"}
+            or current_job.stage not in {"translating", "translation_validating"}
+        ):
+            return current_batch
+        try:
+            summary = self.summarize_translation_generation(current_job, current_batches)
+        except TranslationBatchTreeInvalidError:
+            self._mark_failed(
+                current_job,
+                failed_stage=current_job.stage,
+                error_code="translation_batch_tree_invalid",
+                error_message="翻译批次计划与当前 source/config 不一致。",
+                trace_id=trace_id,
+            )
+            return current_batch
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError):
+            return current_batch
+        if summary is not None and summary.outcome in {"failed", "completed", "canceled", "validating"}:
+            self._finalize_translation_generation(
+                current_job.id, generation=current_job.retry_count, trace_id=trace_id,
+            )
+            return self.translation_batch_repository.get_translation_batch(batch.id) or current_batch
+        return current_batch
+
+    def _fail_translation_batch_storage(
+        self,
+        batch: DocumentJobTranslationBatchRecord,
+        job: DocumentJobRecord,
+        *,
+        expected_plans: list[TranslationRootPlan],
+        error_message: str,
+        trace_id: str | None,
+    ) -> DocumentJobTranslationBatchRecord:
+        """批次结果或状态写入失败时，以原代次安全收口且不重调 Provider。"""
+
+        current = self.job_repository.get_document_job(batch.job_id)
+        if current is None or current.retry_count != batch.generation:
+            return self.translation_batch_repository.get_translation_batch(batch.id) or batch
+        self._mark_failed(
+            job,
+            failed_stage="translating",
+            error_code="oss_failed",
+            error_message=error_message,
+            trace_id=trace_id,
+        )
+        failed_batch = self.translation_batch_repository.update_translation_batch_if_current(
+            batch.id,
+            allowed_statuses={"running"},
+            expected_generation=batch.generation,
+            expected_attempt_count=batch.attempt_count,
+            expected_lease_owner=batch.lease_owner,
+            expected_plans=expected_plans,
+            status="failed",
+            error_code="oss_failed",
+            error_message=error_message,
+            retryable=False,
+            lease_owner=None,
+            leased_at=None,
+            lease_expires_at=None,
+            updated_at=utc_now(),
+        )
+        return failed_batch or self.translation_batch_repository.get_translation_batch(batch.id) or batch
+
+    def _mark_translating_started(
+        self, job: DocumentJobRecord, *, trace_id: str | None,
+    ) -> DocumentJobRecord:
+        """源 IR 已落盘后提交翻译阶段；事件失败时沿用已提交阶段收尾。"""
+
+        if job.stage != "ir_converting":
+            return job
+        translating = self.job_repository.update_document_job_if_current(
+            job.id,
+            allowed_statuses={"running"},
+            allowed_stages={"ir_converting"},
+            expected_retry_count=job.retry_count,
+            stage="translating",
+            progress=max(job.progress, 45),
+            updated_at=utc_now(),
+        )
+        if translating is None:
+            return self.job_repository.get_document_job(job.id) or job
+        try:
+            self._record_event(
+                translating,
+                event_type="stage_succeeded",
+                stage="ir_converting",
+                message="源 DocumentIR 转换已完成。",
+                payload={"source_document_ir_file_id": translating.source_document_ir_file_id},
+                trace_id=trace_id,
+            )
+            self._record_event(
+                translating,
+                event_type="stage_started",
+                stage="translating",
+                message="DocumentIR 翻译已开始。",
+                payload={"source_document_ir_file_id": translating.source_document_ir_file_id},
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            return self._fail_stage_attempt(translating, exc, trace_id=trace_id)
+        return translating
+
     def _handle_translation_batch_failure(
         self,
         batch: DocumentJobTranslationBatchRecord,
@@ -1326,19 +1878,52 @@ class DocumentJobExecutionService:
         error: Exception,
         recorder: TranslationCallAuditRecorder | None,
         trace_id: str | None,
+        duration_ms: int,
     ) -> DocumentJobTranslationBatchRecord:
         error_code = self._translation_batch_error_code(error)
-        error_message = str(error)
-        if self._should_split_translation_batch(batch, error):
-            split = self._split_translation_batch(
-                batch,
-                job,
-                error_code=error_code,
-                error_message=error_message,
-                error=error,
-                recorder=recorder,
-                trace_id=trace_id,
+        error_message = str(error) if isinstance(error, TranslationIntegrityError) else "翻译 Provider 调用或批次处理失败。"
+        current = self.job_repository.get_document_job(job.id)
+        if current is None or current.retry_count != batch.generation or current.status != "running" or current.stage != "translating":
+            return self.translation_batch_repository.get_translation_batch(batch.id) or batch
+        try:
+            _source_file, source_document_ir = self._read_translation_source(
+                current, batch.source_document_ir_file_id,
             )
+            expected_plans = self._build_expected_translation_plans(current, source_document_ir)
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError) as exc:
+            self._mark_failed(
+                current,
+                failed_stage="translating",
+                error_code="oss_failed" if isinstance(exc, (FileNotFoundError, OSError)) else "translation_failed",
+                error_message="翻译批次计划重建失败。",
+                trace_id=trace_id,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
+            )
+            return self.translation_batch_repository.get_translation_batch(batch.id) or batch
+        if self._should_split_translation_batch(batch, error):
+            try:
+                split = self._split_translation_batch(
+                    batch,
+                    job,
+                    error_code=error_code,
+                    error_message=error_message,
+                    error=error,
+                    recorder=recorder,
+                    trace_id=trace_id,
+                    duration_ms=duration_ms,
+                )
+            except TranslationBatchTreeInvalidError:
+                latest = self.job_repository.get_document_job(batch.job_id)
+                if latest is None or latest.retry_count != batch.generation:
+                    return self.translation_batch_repository.get_translation_batch(batch.id) or batch
+                self._mark_failed(
+                    job,
+                    failed_stage="translating",
+                    error_code="translation_batch_tree_invalid",
+                    error_message="翻译批次计划与当前 source/config 不一致。",
+                    trace_id=trace_id,
+                )
+                return self.translation_batch_repository.get_translation_batch(batch.id) or batch
             self._enqueue_runnable_translation_batches(job, generation=batch.generation, trace_id=trace_id)
             return split
 
@@ -1346,30 +1931,50 @@ class DocumentJobExecutionService:
             batch.attempt_count < batch.max_attempts
             and self._provider_call_budget_remaining(job, batch)
         )
-        failed = self.translation_batch_repository.update_translation_batch_if_current(
-            batch.id,
-            allowed_statuses={"running"},
-            expected_generation=batch.generation,
-            status="failed",
-            ai_call_log_file_ids=self._recorder_call_log_file_ids(recorder),
-            debug_archive_file_ids=self._recorder_debug_archive_file_ids(recorder),
-            finish_reason=error.finish_reason if isinstance(error, TranslationProviderResponseError) else None,
-            usage=error.usage if isinstance(error, TranslationProviderResponseError) else {},
-            response_id=error.response_id if isinstance(error, TranslationProviderResponseError) else None,
-            error_code=error_code,
-            error_message=error_message,
-            retryable=retryable,
-            lease_owner=None,
-            leased_at=None,
-            lease_expires_at=None,
-            updated_at=utc_now(),
-        )
-        if failed is None:
+        try:
+            failed = self.translation_batch_repository.update_translation_batch_if_current(
+                batch.id,
+                allowed_statuses={"running"},
+                expected_generation=batch.generation,
+                expected_attempt_count=batch.attempt_count,
+                expected_lease_owner=batch.lease_owner,
+                expected_job_id=batch.job_id,
+                expected_job_status={"running"},
+                expected_job_stages={"translating"},
+                expected_plans=expected_plans,
+                status="failed",
+                ai_call_log_file_ids=self._recorder_call_log_file_ids(recorder),
+                debug_archive_file_ids=self._recorder_debug_archive_file_ids(recorder),
+                finish_reason=error.finish_reason if isinstance(error, TranslationProviderResponseError) else None,
+                usage=error.usage if isinstance(error, TranslationProviderResponseError) else {},
+                response_id=error.response_id if isinstance(error, TranslationProviderResponseError) else None,
+                error_code=error_code,
+                error_message=error_message,
+                retryable=retryable,
+                lease_owner=None,
+                leased_at=None,
+                lease_expires_at=None,
+                updated_at=utc_now(),
+            )
+        except Exception as exc:
+            if not _is_metadata_storage_error(exc):
+                raise
+            self._mark_failed(
+                current,
+                failed_stage="translating",
+                error_code="oss_failed",
+                error_message="翻译批次状态写入失败。",
+                trace_id=trace_id,
+            )
             return self.translation_batch_repository.get_translation_batch(batch.id) or batch
+        if failed is None:
+            return self._reconcile_translation_batch_atomic_rejection(
+                batch, generation=batch.generation, trace_id=trace_id,
+            )
         self._record_event(
             job,
             event_type="translation_batch_failed",
-            stage="ir_converting",
+            stage="translating",
             message="翻译批次执行失败。",
             payload={
                 "batch_id": failed.id,
@@ -1384,6 +1989,7 @@ class DocumentJobExecutionService:
             },
             trace_id=trace_id,
             level="warning" if failed.retryable else "error",
+            duration_ms=duration_ms,
         )
         self._finalize_translation_generation(job.id, generation=failed.generation, trace_id=trace_id)
         return failed
@@ -1406,45 +2012,23 @@ class DocumentJobExecutionService:
         error: Exception,
         recorder: TranslationCallAuditRecorder | None,
         trace_id: str | None,
+        duration_ms: int,
     ) -> DocumentJobTranslationBatchRecord:
-        source_file = self._get_uploaded_file(batch.source_document_ir_file_id)
-        source_document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(source_file))
+        _source_file, source_document_ir = self._read_translation_source(job, batch.source_document_ir_file_id)
         targets, items = self.document_ir_translation_service.extract_translation_items(source_document_ir)
         targets_by_id = {target.item_id: target for target in targets}
         items_by_id = {item.id: item for item in items}
         midpoint = max(1, len(batch.item_ids) // 2)
         child_item_groups = [batch.item_ids[:midpoint], batch.item_ids[midpoint:]]
         now = utc_now()
-        split = self.translation_batch_repository.update_translation_batch_if_current(
-            batch.id,
-            allowed_statuses={"running"},
-            expected_generation=batch.generation,
-            status="split",
-            ai_call_log_file_ids=self._recorder_call_log_file_ids(recorder),
-            debug_archive_file_ids=self._recorder_debug_archive_file_ids(recorder),
-            finish_reason=error.finish_reason if isinstance(error, TranslationProviderResponseError) else None,
-            usage=error.usage if isinstance(error, TranslationProviderResponseError) else {},
-            response_id=error.response_id if isinstance(error, TranslationProviderResponseError) else None,
-            error_code=error_code,
-            error_message=error_message,
-            retryable=False,
-            truncation_retry=True,
-            lease_owner=None,
-            leased_at=None,
-            lease_expires_at=None,
-            updated_at=now,
-        )
-        if split is None:
-            return self.translation_batch_repository.get_translation_batch(batch.id) or batch
+        child_records: list[DocumentJobTranslationBatchRecord] = []
         for child_index, child_item_ids in enumerate(child_item_groups, start=1):
             if not child_item_ids:
                 continue
             child_id = f"{batch.id}_s{batch.split_level + 1}_{child_index:02d}"
-            if self.translation_batch_repository.get_translation_batch(child_id) is not None:
-                continue
             page_start, page_end = self._page_range_for_item_ids(child_item_ids, targets_by_id)
             char_count = sum(len(items_by_id[item_id].text) for item_id in child_item_ids)
-            self.translation_batch_repository.create_translation_batch(
+            child_records.append(
                 DocumentJobTranslationBatchRecord(
                     id=child_id,
                     job_id=batch.job_id,
@@ -1471,10 +2055,51 @@ class DocumentJobExecutionService:
                     updated_at=now,
                 )
             )
+        expected_plans = self._build_expected_translation_plans(job, source_document_ir)
+        split_result = self.translation_batch_repository.split_translation_batch(
+            batch.id,
+            expected_generation=batch.generation,
+            expected_attempt_count=batch.attempt_count,
+            expected_lease_owner=batch.lease_owner or "",
+            expected_plans=expected_plans,
+            children=child_records,
+        )
+        if split_result is None:
+            return self._reconcile_translation_batch_atomic_rejection(
+                batch, generation=batch.generation, trace_id=trace_id,
+            )
+        split, _children = split_result
+        annotated = self.translation_batch_repository.update_translation_batch_if_current(
+            split.id,
+            allowed_statuses={"split"},
+            expected_generation=split.generation,
+            expected_attempt_count=split.attempt_count,
+            expected_lease_owner=None,
+            expected_job_id=split.job_id,
+            expected_job_status={"running"},
+            expected_job_stages={"translating"},
+            expected_plans=expected_plans,
+            ai_call_log_file_ids=self._recorder_call_log_file_ids(recorder),
+            debug_archive_file_ids=self._recorder_debug_archive_file_ids(recorder),
+            finish_reason=error.finish_reason if isinstance(error, TranslationProviderResponseError) else None,
+            usage=error.usage if isinstance(error, TranslationProviderResponseError) else {},
+            response_id=error.response_id if isinstance(error, TranslationProviderResponseError) else None,
+            error_code=error_code,
+            error_message=error_message,
+            retryable=False,
+            truncation_retry=True,
+            updated_at=now,
+        )
+        if annotated is not None:
+            split = annotated
+        else:
+            return self._reconcile_translation_batch_atomic_rejection(
+                split, generation=split.generation, trace_id=trace_id,
+            )
         self._record_event(
             job,
             event_type="translation_batch_split",
-            stage="ir_converting",
+            stage="translating",
             message="翻译批次疑似截断，已拆分为子批次重试。",
             payload={
                 "batch_id": split.id,
@@ -1486,6 +2111,7 @@ class DocumentJobExecutionService:
             },
             trace_id=trace_id,
             level="warning",
+            duration_ms=duration_ms,
         )
         return split
 
@@ -1499,75 +2125,224 @@ class DocumentJobExecutionService:
         job = self.job_repository.get_document_job(job_id)
         if job is None or job.status in {"succeeded", "failed", "canceled"}:
             return job
-        if job.status != "running" or job.stage != "ir_converting":
+        if job.status != "running" or job.stage not in {"translating", "translation_validating"} or job.retry_count != generation:
             return job
+        failure_stage = job.stage
         self._reset_expired_translation_batch_leases(job, generation=generation, trace_id=trace_id)
-        batches = self.translation_batch_repository.list_translation_batches(job.id, generation=generation)
-        leaf_batches = [batch for batch in batches if batch.status != "split"]
-        if not leaf_batches:
+        snapshot_job, batches = self._get_translation_execution_snapshot(job.id, generation=generation)
+        if snapshot_job is None or snapshot_job.retry_count != generation:
+            return snapshot_job or job
+        job = snapshot_job
+        if job.status in {"succeeded", "failed", "canceled"}:
             return job
-        if any(batch.status in {"pending", "queued", "running"} for batch in leaf_batches):
-            self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
-            return self.job_repository.get_document_job(job.id) or job
-        retryable_failures = [
-            batch
-            for batch in leaf_batches
-            if batch.status == "failed"
-            and batch.retryable
-            and batch.attempt_count < batch.max_attempts
-            and self._provider_call_budget_remaining(job, batch)
-        ]
-        if retryable_failures:
-            self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
-            return self.job_repository.get_document_job(job.id) or job
-        failed_batches = [batch for batch in leaf_batches if batch.status == "failed"]
-        if failed_batches:
-            first_failure = sorted(failed_batches, key=lambda item: (item.updated_at, item.id))[0]
+        failure_stage = job.stage
+        try:
+            summary = self.summarize_translation_generation(job, batches)
+        except TranslationBatchTreeInvalidError:
             return self._mark_failed(
                 job,
-                failed_stage="ir_converting",
-                error_code="translation_failed",
-                error_message=f"翻译批次失败: {first_failure.error_code or 'unknown'} {first_failure.error_message or ''}".strip(),
+                failed_stage=failure_stage,
+                error_code="translation_batch_tree_invalid",
+                error_message="翻译批次计划与当前 source/config 不一致。",
                 trace_id=trace_id,
             )
-        if all(batch.status == "succeeded" for batch in leaf_batches):
-            source_file = self._get_uploaded_file(job.source_document_ir_file_id or leaf_batches[0].source_document_ir_file_id)
-            source_document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(source_file))
-            return self._register_translated_document_ir_and_continue(
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError) as exc:
+            return self._mark_failed(
                 job,
-                source_document_ir,
-                succeeded_batches=leaf_batches,
+                failed_stage=failure_stage,
+                error_code="translation_failed",
+                error_message=f"翻译批次计划校验失败: {self._translation_batch_error_code(exc)}",
+                trace_id=trace_id,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
+            )
+        if summary is None:
+            error_code = "translation_batch_tree_invalid"
+            formula_protection = None
+            batch_source_ids = {batch.source_document_ir_file_id for batch in batches}
+            if batches and job.source_document_ir_file_id not in batch_source_ids:
+                # 当前任务指针与本代批次绑定不一致，属于完整性/代次错误，不是对象存储缺失。
+                error_code = "translation_failed"
+            else:
+                try:
+                    _source_file, source_ir = self._read_translation_source(job, job.source_document_ir_file_id)
+                    self._build_expected_translation_plans(job, source_ir)
+                except (FileNotFoundError, OSError, sqlite3.Error):
+                    error_code = "oss_failed"
+                except DocumentIRTranslationError as exc:
+                    error_code = "translation_failed"
+                    formula_protection = exc.formula_protection
+                except (TranslationIntegrityError, ValueError):
+                    error_code = "translation_failed"
+            return self._mark_failed(
+                job,
+                failed_stage=failure_stage,
+                error_code=error_code,
+                error_message="翻译批次无法由当前 source/config 重建权威计划。",
+                trace_id=trace_id,
+                formula_protection=formula_protection,
+            )
+        leaf_batches = [batch for batch in batches if batch.status != "split"]
+        if summary.outcome == "failed":
+            return self._mark_failed(
+                job,
+                failed_stage=failure_stage,
+                error_code="translation_failed",
+                error_message=(
+                    f"翻译批次失败: {summary.reason_code or 'translation_failed'}"
+                    f" {summary.reason_message or ''}"
+                ).strip(),
                 trace_id=trace_id,
             )
+        if summary.outcome in {"not_started", "running", "retrying"}:
+            self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
+            return self.job_repository.get_document_job(job.id) or job
+        if summary.outcome == "canceled":
+            return job
+        if summary.outcome not in {"completed", "validating"}:
+            return job
+        if all(batch.status == "succeeded" for batch in leaf_batches):
+            if job.stage == "translating":
+                stage_started_at = time.perf_counter()
+                validating = self.job_repository.update_document_job_if_current(
+                    job.id,
+                    allowed_statuses={"running"},
+                    allowed_stages={"translating"},
+                    expected_retry_count=generation,
+                    stage="translation_validating",
+                    progress=max(job.progress, 55),
+                    updated_at=utc_now(),
+                )
+                if validating is None:
+                    return self.job_repository.get_document_job(job.id) or job
+                try:
+                    self._record_event(
+                        validating,
+                        event_type="stage_succeeded",
+                        stage="translating",
+                        message="翻译批次已全部完成。",
+                        payload={"batch_count": len(leaf_batches)},
+                        trace_id=trace_id,
+                        duration_ms=int((time.perf_counter() - stage_started_at) * 1000),
+                    )
+                    self._record_event(
+                        validating,
+                        event_type="stage_started",
+                        stage="translation_validating",
+                        message="翻译完整性校验已开始。",
+                        payload={"batch_count": len(leaf_batches)},
+                        trace_id=trace_id,
+                    )
+                except Exception as exc:
+                    return self._fail_stage_attempt(validating, exc, trace_id=trace_id)
+                job = validating
+            started_at = time.perf_counter()
+            try:
+                updated = self._register_translated_document_ir_and_continue(
+                    job,
+                    succeeded_batches=leaf_batches,
+                    trace_id=trace_id,
+                )
+            except Exception as exc:
+                error_code = (
+                    "oss_failed" if isinstance(exc, (ApiError, FileNotFoundError, OSError))
+                    else "translation_failed"
+                )
+                return self._mark_failed(
+                    job,
+                    failed_stage="translation_validating",
+                    error_code=error_code,
+                    error_message=str(exc),
+                    trace_id=trace_id,
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
+            if updated.status != "running" or updated.stage != "rendering" or updated.retry_count != generation:
+                return updated
+            try:
+                self._record_event(
+                    updated,
+                    event_type="stage_succeeded",
+                    stage="translation_validating",
+                    message="翻译结果完整性校验通过，DocumentIR 已保存。",
+                    payload={"document_ir_file_id": updated.document_ir_file_id, "batch_count": len(leaf_batches)},
+                    trace_id=trace_id,
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
+            except Exception as exc:
+                return self._fail_stage_attempt(updated, exc, trace_id=trace_id)
+            return self.execute_job(updated.id, trace_id=trace_id) or updated
         return job
 
     def _register_translated_document_ir_and_continue(
         self,
         job: DocumentJobRecord,
-        source_document_ir: DocumentIR,
         *,
         succeeded_batches: list[DocumentJobTranslationBatchRecord],
         trace_id: str | None,
     ) -> DocumentJobRecord:
-        translated = source_document_ir.model_copy(deep=True)
-        targets, items = self.document_ir_translation_service.extract_translation_items(translated)
+        current = self.job_repository.get_document_job(job.id)
+        if current is None or current.retry_count != job.retry_count or current.status != "running" or current.stage != "translation_validating":
+            return current or job
+        job = current
+        started_at = time.perf_counter()
+        try:
+            source_file, source_document_ir = self._read_translation_source(job, job.source_document_ir_file_id)
+        except (DocumentIRTranslationError, TranslationIntegrityError, ValueError) as exc:
+            return self._mark_failed(
+                job,
+                failed_stage="translation_validating",
+                error_code="translation_failed",
+                error_message=f"翻译 source 校验失败: {self._translation_batch_error_code(exc)}",
+                trace_id=trace_id,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+            )
+        except (FileNotFoundError, OSError) as exc:
+            return self._mark_failed(
+                job,
+                failed_stage="translation_validating",
+                error_code="oss_failed",
+                error_message=f"翻译 source 校验失败: {self._translation_batch_error_code(exc)}",
+                trace_id=trace_id,
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+            )
+        try:
+            translated = source_document_ir.model_copy(deep=True)
+            targets, items = self.document_ir_translation_service.extract_translation_items(translated)
+            publication_calls = []
+            replacements = self._load_batch_replacements(job, source_file, items, succeeded_batches,
+                                                        publication_calls=publication_calls)
+        except (DocumentIRTranslationError, TranslationIntegrityError, TranslationProviderResponseError, ValueError, FileNotFoundError, OSError) as exc:
+            error_code = (
+                "oss_failed" if isinstance(exc, (FileNotFoundError, OSError))
+                else "translation_fan_in_mismatch" if getattr(exc, "code", None) == "translation_fan_in_mismatch"
+                else "translation_failed"
+            )
+            return self._mark_failed(
+                job,
+                failed_stage="translation_validating",
+                error_code=error_code,
+                error_message=f"翻译批次合并校验失败: {self._translation_batch_error_code(exc)}",
+                trace_id=trace_id,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+            )
         expected_ids = [item.id for item in items]
-        replacements = self._load_batch_replacements(succeeded_batches)
         missing_ids = [item_id for item_id in expected_ids if item_id not in replacements]
         extra_ids = sorted(set(replacements) - set(expected_ids))
         if missing_ids or extra_ids:
             return self._mark_failed(
                 job,
-                failed_stage="ir_converting",
+                failed_stage="translation_validating",
                 error_code="translation_fan_in_mismatch",
                 error_message=f"翻译批次合并结果不完整: missing={len(missing_ids)} extra={len(extra_ids)}",
                 trace_id=trace_id,
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
             )
         self.document_ir_translation_service.apply_replacements(translated, targets, replacements)
         spec = spec_for_document_job_mode(job.mode)
-        translated.metadata.document_language = (
-            self.document_ir_translation_service._target_document_language(spec.language_pair or "en2zh")
-        )
+        if spec.language_pair is None:
+            raise DocumentIRTranslationError("当前任务不是翻译任务。")
+        translated.metadata.document_language = self.document_ir_translation_service._target_document_language(spec.language_pair)
         ai_call_log_file_ids = [
             file_id
             for batch in succeeded_batches
@@ -1590,28 +2365,36 @@ class DocumentJobExecutionService:
             "ai_call_log_file_ids": ai_call_log_file_ids,
             "debug_archive_file_ids": debug_archive_file_ids,
         }
-        ir_file = self.file_service.register_generated_content(
-            tenant_id=job.tenant_id,
-            company_id=job.company_id,
-            job_id=job.id,
-            created_by=job.created_by,
-            file_type="document_ir",
-            filename="document_ir_v2.json",
-            mime_type="application/json",
-            content=translated.model_dump_json(indent=2).encode("utf-8"),
-            metadata={
-                "source_file_id": job.source_file_id,
-                "source_document_ir_file_id": job.source_document_ir_file_id,
-                "image_asset_count": len(job.image_asset_file_ids),
-                "retry_count": job.retry_count,
-                "translation": translation_metadata,
-                **self._document_ir_layout_metadata(translated),
-            },
-        )
+        translation_provenance = save_translation_publication_provenance(job, publication_calls, file_service=self.file_service)
+        translation_metadata["publication_provenance_file_id"] = translation_provenance.id
+        decode_table_references(translated, require_bound=True)
+        ir_content = translated.model_dump_json(indent=2).encode("utf-8")
+        try:
+            ir_file = self.file_service.register_generated_content(
+                tenant_id=job.tenant_id,
+                company_id=job.company_id,
+                job_id=job.id,
+                created_by=job.created_by,
+                file_type="document_ir",
+                filename="document_ir_v2.json",
+                object_version=(f"g{job.retry_count}_{uuid4().hex}" if translated.metadata.table_references_version else None),
+                mime_type="application/json",
+                content=ir_content,
+                metadata={
+                    "source_file_id": job.source_file_id,
+                    "source_document_ir_file_id": job.source_document_ir_file_id,
+                    "image_asset_count": len(job.image_asset_file_ids),
+                    "retry_count": job.retry_count,
+                    "translation": translation_metadata,
+                    **self._document_ir_layout_metadata(translated),
+                },
+            )
+        except (RuntimeError, ValueError) as exc:
+            raise OSError(str(exc)) from exc
         updated = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"running"},
-            allowed_stages={"ir_converting"},
+            allowed_stages={"translation_validating"},
             expected_retry_count=job.retry_count,
             status="running",
             stage="rendering",
@@ -1624,7 +2407,7 @@ class DocumentJobExecutionService:
         self._record_event(
             updated,
             event_type="file_registered",
-            stage="ir_converting",
+            stage="translation_validating",
             message="翻译后的 DocumentIR 已保存。",
             payload={
                 "file_id": ir_file.id,
@@ -1634,36 +2417,141 @@ class DocumentJobExecutionService:
             },
             trace_id=trace_id,
         )
-        self._record_event(
-            updated,
-            event_type="stage_succeeded",
-            stage="ir_converting",
-            message="DocumentIR 翻译批次已全部完成，fan-in 合并成功。",
-            payload={
-                "document_ir_file_id": ir_file.id,
-                "source_document_ir_file_id": job.source_document_ir_file_id,
-                "batch_count": len(succeeded_batches),
-                "ai_call_log_file_ids": ai_call_log_file_ids,
-                "debug_archive_file_ids": debug_archive_file_ids,
-            },
-            trace_id=trace_id,
-        )
-        return self._render_and_save_word(updated, trace_id=trace_id)
+        return updated
 
-    def _load_batch_replacements(self, batches: list[DocumentJobTranslationBatchRecord]) -> dict[str, str]:
+    def _read_translation_artifact(
+        self, job: DocumentJobRecord, file_id: str, *, file_type: str,
+    ) -> tuple[DocumentFileRecord, bytes]:
+        """按已登记的对象读取并验证字节；路径模板和 payload 不能自证归属。"""
+        record = self._get_uploaded_file(file_id)
+        if (
+            record.job_id != job.id or record.tenant_id != job.tenant_id
+            or record.company_id != job.company_id or record.file_type != file_type
+            or (file_type == "translation_batch_result" and (
+                type(record.metadata.get("retry_count")) is not int
+                or record.metadata["retry_count"] != job.retry_count
+            ))
+        ):
+            raise DocumentIRTranslationError("翻译 Artifact 来源或代次不一致。", code="translation_integrity_evidence_mismatch")
+        content = self.file_service.read_file_content(record)
+        checksum = "sha256:" + hashlib.sha256(content).hexdigest()
+        if record.checksum_sha256 != checksum or record.size_bytes != len(content):
+            raise DocumentIRTranslationError("翻译 Artifact 字节校验失败。", code="translation_integrity_evidence_mismatch")
+        return record, content
+
+    def _read_translation_source(
+        self, job: DocumentJobRecord, file_id: str | None,
+    ) -> tuple[DocumentFileRecord, DocumentIR]:
+        if not file_id or file_id != job.source_document_ir_file_id:
+            raise DocumentIRTranslationError("翻译 source IR 引用不一致。", code="translation_integrity_evidence_mismatch")
+        # retry 沿用任务权威指针指向的不可变源件；创建代次不等于本次消费代次。
+        record, content = self._read_translation_artifact(job, file_id, file_type="document_ir")
+        translation = record.metadata.get("translation")
+        if not isinstance(translation, dict) or translation.get("role") != "source" or translation.get("applied") is not False:
+            raise DocumentIRTranslationError("翻译 source IR 角色不一致。", code="translation_integrity_evidence_mismatch")
+        document_ir = DocumentIR.model_validate_json(content)
+        if document_ir.metadata.job_id != job.id or document_ir.metadata.source_file_id != job.source_file_id:
+            raise DocumentIRTranslationError("翻译 source IR 文档来源不一致。", code="translation_integrity_evidence_mismatch")
+        return record, document_ir
+
+    def _translation_integrity_binding(
+        self, job: DocumentJobRecord, batch: DocumentJobTranslationBatchRecord,
+        source_file: DocumentFileRecord, profile: TranslationProfileSnapshot | None,
+        term_version: TermVersionSnapshot | None,
+    ) -> TranslationIntegrityBinding:
+        spec = spec_for_document_job_mode(job.mode)
+        term_hash = term_version.snapshot_hash if term_version is not None else None
+        term_id = term_version.term_version_id if term_version is not None else job.term_version_id
+        if (
+            batch.job_id != job.id or batch.job_retry_count != job.retry_count
+            or batch.generation != job.retry_count or batch.source_document_ir_file_id != source_file.id
+            or batch.language_pair != spec.language_pair or batch.term_snapshot_hash != term_hash
+            or batch.term_version_id != term_id
+        ):
+            raise DocumentIRTranslationError("翻译批次绑定与当前任务快照不一致。", code="translation_integrity_evidence_mismatch")
+        return TranslationIntegrityBinding(
+            job_id=job.id, batch_id=batch.id, root_batch_id=batch.root_batch_id,
+            parent_batch_id=batch.parent_batch_id, attempt=batch.attempt_count, generation=batch.generation,
+            source_document_ir_file_id=source_file.id, source_document_ir_sha256=source_file.checksum_sha256,
+            profile_snapshot_hash=profile.snapshot_hash if profile is not None else None,
+            prompt_content_hash=profile.prompt.content_hash if profile is not None else None,
+            term_snapshot_hash=term_hash,
+        )
+
+    def _load_batch_replacements(
+        self, job: DocumentJobRecord, source_file: DocumentFileRecord,
+        source_items: list[TranslationTextItem], batches: list[DocumentJobTranslationBatchRecord],
+        *, publication_calls: list | None = None,
+    ) -> dict[str, str]:
+        """对全部叶子的本地来源、恢复文本和证据重核，全部通过后才交给 apply。"""
         replacements: dict[str, str] = {}
-        for batch in sorted(batches, key=lambda item: (item.page_start or 0, item.created_at, item.id)):
-            if not batch.result_file_id:
-                continue
-            result_file = self._get_uploaded_file(batch.result_file_id)
-            payload = json.loads(self.file_service.read_file_content(result_file).decode("utf-8"))
-            for item in payload.get("items", []):
-                if not isinstance(item, dict):
-                    continue
-                item_id = str(item.get("id") or "")
-                if item_id in replacements:
-                    raise ValueError(f"翻译批次重复返回 item: {item_id}")
-                replacements[item_id] = str(item.get("text") or "")
+        spec = spec_for_document_job_mode(job.mode)
+        profile = self._translation_profile_for_job(job, language_pair=spec.language_pair)
+        term_version = self._resolve_term_version_for_job(job)
+        for selected in sorted(batches, key=lambda item: (item.page_start or 0, item.created_at, item.id)):
+            batch = self.translation_batch_repository.get_translation_batch(selected.id)
+            if batch is None or batch.status != "succeeded" or not batch.result_file_id or (
+                batch.attempt_count != selected.attempt_count
+            ):
+                raise DocumentIRTranslationError("翻译成功批次已变化或缺少结果。", code="translation_integrity_evidence_mismatch")
+            binding = self._translation_integrity_binding(job, batch, source_file, profile, term_version)
+            local_items = tuple(item for item in source_items if item.id in batch.item_ids)
+            if (
+                tuple(item.id for item in local_items) != tuple(batch.item_ids)
+                or batch.item_count != len(local_items)
+                or batch.char_count != sum(len(item.text) for item in local_items)
+            ):
+                raise DocumentIRTranslationError("翻译批次有序源项边界不一致。", code="translation_integrity_evidence_mismatch")
+            candidate = self._get_uploaded_file(batch.result_file_id)
+            candidate_payload = json.loads(self.file_service.read_file_content(candidate))
+            candidate_items = candidate_payload.get("items") if isinstance(candidate_payload, dict) else None
+            if isinstance(candidate_items, list):
+                candidate_ids = [item.get("id") for item in candidate_items if isinstance(item, dict)]
+                if set(candidate_ids) != set(batch.item_ids) and len(candidate_ids) == len(set(candidate_ids)):
+                    raise DocumentIRTranslationError(
+                        "翻译批次合并结果不完整。", code="translation_fan_in_mismatch",
+                    )
+            result_file, content = self._read_translation_artifact(job, batch.result_file_id, file_type="translation_batch_result")
+            payload = json.loads(content)
+            raw_items = payload.get("items") if isinstance(payload, dict) else None
+            if isinstance(raw_items, list):
+                raw_item_ids = [item.get("id") for item in raw_items if isinstance(item, dict)]
+                if set(raw_item_ids) != set(batch.item_ids) and len(raw_item_ids) == len(set(raw_item_ids)):
+                    raise DocumentIRTranslationError(
+                        "翻译批次合并结果不完整。", code="translation_fan_in_mismatch",
+                    )
+            envelope = {
+                "job_id": job.id, "batch_id": batch.id, "root_batch_id": batch.root_batch_id,
+                "parent_batch_id": batch.parent_batch_id, "generation": batch.generation,
+                "attempt": batch.attempt_count, "source_document_ir_file_id": source_file.id,
+                "language_pair": batch.language_pair,
+            }
+            if (
+                not isinstance(payload, dict) or payload.get("schema_version") != "translation-batch-result/v1"
+                or any(key not in payload or type(payload[key]) is not type(value) or payload[key] != value for key, value in envelope.items())
+                or any(key not in result_file.metadata or type(result_file.metadata[key]) is not type(value) or result_file.metadata[key] != value for key, value in envelope.items() if key not in {"job_id", "attempt"})
+                or type(result_file.metadata.get("attempt_count")) is not int
+                or result_file.metadata["attempt_count"] != batch.attempt_count
+            ):
+                raise DocumentIRTranslationError("翻译结果 Artifact 关联不一致。", code="translation_integrity_evidence_mismatch")
+            restored = OpenAICompatibleTranslationProvider._parse_items({"items": payload.get("items")})
+            validated = self.document_ir_translation_service.validator.validate_persisted(
+                local_items, restored, payload.get("integrity"), binding=binding,
+            )
+            if publication_calls is not None:
+                provenance = payload.get("publication_provenance")
+                if provenance is not None:
+                    if (not isinstance(provenance, dict) or provenance.get("schema_version") != "publication-batch/v1"
+                            or provenance.get("integrity_sha256") != digest(payload["integrity"])
+                            or type(provenance.get("attempt")) is not int or provenance["attempt"] != batch.attempt_count):
+                        raise DocumentIRTranslationError("翻译发布来源与成功尝试不一致。", code="translation_integrity_evidence_mismatch")
+                    actual_call_fact(provenance.get("call"))
+                publication_calls.append({"batch_id": batch.id, "attempt": batch.attempt_count,
+                    "result_file_id": result_file.id, "result_sha256": result_file.checksum_sha256,
+                    "provenance": provenance} if provenance is not None else None)
+            if replacements.keys() & validated.replacements.keys():
+                raise DocumentIRTranslationError("翻译叶子批次包含重复合并项。", code="translation_integrity_item_duplicate")
+            replacements.update(validated.replacements)
         return replacements
 
     def _register_translation_batch_result(
@@ -1672,17 +2560,24 @@ class DocumentJobExecutionService:
         *,
         batch: DocumentJobTranslationBatchRecord,
         result: TranslationProviderResult,
-        replacements: dict[str, str],
+        validated: ValidatedTranslationBatch,
+        integrity: TranslationIntegrityEvidence,
         recorder: TranslationCallAuditRecorder | None,
+        publication_provenance: dict | None = None,
     ) -> DocumentFileRecord:
         payload = {
             "schema_version": "translation-batch-result/v1",
+            "publication_provenance": publication_provenance,
             "job_id": job.id,
             "batch_id": batch.id,
+            "root_batch_id": batch.root_batch_id,
+            "parent_batch_id": batch.parent_batch_id,
+            "attempt": batch.attempt_count,
             "generation": batch.generation,
             "source_document_ir_file_id": batch.source_document_ir_file_id,
             "language_pair": batch.language_pair,
-            "items": [{"id": item_id, "text": replacements[item_id]} for item_id in batch.item_ids],
+            "items": [{"id": item.id, "text": item.text} for item in validated.items],
+            "integrity": integrity.to_dict(),
             "provider": {
                 "finish_reason": result.finish_reason,
                 "usage": result.usage,
@@ -1692,28 +2587,37 @@ class DocumentJobExecutionService:
                 "content_sha256": result.content_sha256,
             },
         }
-        return self.file_service.register_generated_content(
-            tenant_id=job.tenant_id,
-            company_id=job.company_id,
-            job_id=job.id,
-            created_by=job.created_by,
-            file_type="translation_batch_result",
-            filename=f"{batch.id}.json",
-            mime_type="application/json",
-            content=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
-            metadata={
-                "batch_id": batch.id,
-                "generation": batch.generation,
-                "source_document_ir_file_id": batch.source_document_ir_file_id,
-                "language_pair": batch.language_pair,
-                "item_count": batch.item_count,
-                "char_count": batch.char_count,
-                "attempt_count": batch.attempt_count,
-                "ai_call_log_file_ids": self._recorder_call_log_file_ids(recorder),
-                "debug_archive_file_ids": self._recorder_debug_archive_file_ids(recorder),
-                "retry_count": job.retry_count,
-            },
-        )
+        try:
+            return self.file_service.register_generated_content(
+                tenant_id=job.tenant_id,
+                company_id=job.company_id,
+                job_id=job.id,
+                created_by=job.created_by,
+                file_type="translation_batch_result",
+                filename=f"{batch.id}.json",
+                mime_type="application/json",
+                content=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
+                metadata={
+                    "batch_id": batch.id,
+                    "root_batch_id": batch.root_batch_id,
+                    "parent_batch_id": batch.parent_batch_id,
+                    "generation": batch.generation,
+                    "source_document_ir_file_id": batch.source_document_ir_file_id,
+                    "language_pair": batch.language_pair,
+                    "item_count": batch.item_count,
+                    "char_count": batch.char_count,
+                    "attempt_count": batch.attempt_count,
+                    "ai_call_log_file_ids": self._recorder_call_log_file_ids(recorder),
+                    "debug_archive_file_ids": self._recorder_debug_archive_file_ids(recorder),
+                    "retry_count": job.retry_count,
+                },
+            )
+        except (RuntimeError, ValueError, FileNotFoundError, OSError, sqlite3.Error) as exc:
+            raise _TranslationBatchStorageError("翻译批次结果 Artifact 写入失败。") from exc
+        except Exception as exc:
+            if not _is_metadata_storage_error(exc):
+                raise
+            raise _TranslationBatchStorageError("翻译批次结果 Artifact 写入失败。") from exc
 
     def _enqueue_runnable_translation_batches(
         self,
@@ -1725,7 +2629,20 @@ class DocumentJobExecutionService:
         if self.translation_batch_task_queue is None:
             return
         while True:
-            batches = self.translation_batch_repository.list_translation_batches(job.id, generation=generation)
+            current, batches = self._get_translation_execution_snapshot(
+                job.id, generation=generation,
+            )
+            if (
+                current is None or current.status != "running" or current.stage != "translating"
+                or current.retry_count != generation
+                or self._mark_timed_out_if_needed(current, trace_id=trace_id) is not None
+            ):
+                return
+            job = current
+            summary = self.summarize_translation_generation(job, batches)
+            if summary is not None and summary.outcome in {"failed", "completed", "validating", "canceled"}:
+                self._finalize_translation_generation(job.id, generation=generation, trace_id=trace_id)
+                return
             leaf_batches = [batch for batch in batches if batch.status != "split"]
             active_count = sum(1 for batch in leaf_batches if batch.status in {"queued", "running"})
             max_active = max(1, self.settings.translation_provider_batch_max_concurrency_per_job)
@@ -1734,22 +2651,49 @@ class DocumentJobExecutionService:
             candidate = self._next_runnable_translation_batch(job, leaf_batches)
             if candidate is None:
                 return
-            queued = self.translation_batch_repository.update_translation_batch_if_current(
-                candidate.id,
-                allowed_statuses={"pending", "failed"},
-                expected_generation=candidate.generation,
-                status="queued",
-                lease_owner=None,
-                leased_at=None,
-                lease_expires_at=None,
-                updated_at=utc_now(),
-            )
+            try:
+                _source_file, source_document_ir = self._read_translation_source(
+                    job, job.source_document_ir_file_id,
+                )
+                expected_plans = self._build_expected_translation_plans(job, source_document_ir)
+            except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError):
+                self._finalize_translation_generation(job.id, generation=generation, trace_id=trace_id)
+                return
+            try:
+                queued = self.translation_batch_repository.enqueue_translation_batch(
+                    candidate.id,
+                    expected_generation=candidate.generation,
+                    expected_attempt_count=candidate.attempt_count,
+                    provider_call_budget=candidate.provider_call_budget,
+                    expected_plans=expected_plans,
+                )
+            except TranslationBatchTreeInvalidError:
+                self._mark_failed(
+                    job,
+                    failed_stage=job.stage,
+                    error_code="translation_batch_tree_invalid",
+                    error_message="翻译批次计划与当前 source/config 不一致。",
+                    trace_id=trace_id,
+                )
+                return
+            except (FileNotFoundError, OSError):
+                self._mark_failed(
+                    job,
+                    failed_stage=job.stage,
+                    error_code="oss_failed",
+                    error_message="翻译批次队列状态写入失败。",
+                    trace_id=trace_id,
+                )
+                return
             if queued is None:
-                continue
+                self._reconcile_translation_batch_atomic_rejection(
+                    candidate, generation=generation, trace_id=trace_id,
+                )
+                return
             self._record_event(
                 job,
                 event_type="translation_batch_queued",
-                stage="ir_converting",
+                stage="translating",
                 message="翻译批次已投递。",
                 payload={
                     "batch_id": queued.id,
@@ -1790,30 +2734,48 @@ class DocumentJobExecutionService:
         generation: int,
         trace_id: str | None,
     ) -> None:
+        current, batches = self._get_translation_execution_snapshot(
+            job.id, generation=generation,
+        )
+        if (
+            current is None or current.status != "running" or current.stage != "translating"
+            or current.retry_count != generation
+        ):
+            return
         now = utc_now()
-        for batch in self.translation_batch_repository.list_translation_batches(job.id, generation=generation):
+        try:
+            _source_file, source_document_ir = self._read_translation_source(
+                current, current.source_document_ir_file_id,
+            )
+            expected_plans = self._build_expected_translation_plans(current, source_document_ir)
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError):
+            # finalizer 随后会用同一 source/config 失败结论收口；这里不以旧批次自证根树。
+            return
+        for batch in batches:
             if batch.status != "running" or batch.lease_expires_at is None or batch.lease_expires_at > now:
                 continue
             retryable = batch.attempt_count < batch.max_attempts and self._provider_call_budget_remaining(job, batch)
-            expired = self.translation_batch_repository.update_translation_batch_if_current(
+            expired = self.translation_batch_repository.release_translation_batch_lease(
                 batch.id,
-                allowed_statuses={"running"},
                 expected_generation=batch.generation,
-                status="failed",
+                expected_attempt_count=batch.attempt_count,
+                expected_lease_owner=batch.lease_owner or "",
+                now=now,
+                expected_plans=expected_plans,
                 error_code="translation_batch_lease_expired",
                 error_message="翻译批次租约已过期，等待重新投递。",
                 retryable=retryable,
-                lease_owner=None,
-                leased_at=None,
-                lease_expires_at=None,
                 updated_at=now,
             )
             if expired is None:
+                self._reconcile_translation_batch_atomic_rejection(
+                    batch, generation=generation, trace_id=trace_id,
+                )
                 continue
             self._record_event(
                 job,
                 event_type="translation_batch_failed",
-                stage="ir_converting",
+                stage="translating",
                 message="翻译批次租约已过期。",
                 payload={
                     "batch_id": expired.id,
@@ -1837,6 +2799,9 @@ class DocumentJobExecutionService:
             batch.id,
             allowed_statuses={"pending", "queued", "running"},
             expected_generation=batch.generation,
+            expected_attempt_count=batch.attempt_count,
+            expected_lease_owner=batch.lease_owner,
+            expected_job_id=batch.job_id,
             status="canceled",
             lease_owner=None,
             leased_at=None,
@@ -1850,7 +2815,7 @@ class DocumentJobExecutionService:
             self._record_event(
                 job,
                 event_type="translation_batch_failed",
-                stage="ir_converting",
+                stage="translating",
                 message="任务已取消，翻译批次停止执行。",
                 payload={"batch_id": canceled.id, "generation": canceled.generation},
                 trace_id=trace_id,
@@ -1866,11 +2831,17 @@ class DocumentJobExecutionService:
         return self._provider_call_budget_remaining_for_batch(batch)
 
     def _provider_call_budget_remaining_for_batch(self, batch: DocumentJobTranslationBatchRecord) -> bool:
-        batches = self.translation_batch_repository.list_translation_batches(batch.job_id, generation=batch.generation)
+        snapshot_job, batches = self._get_translation_execution_snapshot(
+            batch.job_id, generation=batch.generation,
+        )
+        if snapshot_job is None or snapshot_job.retry_count != batch.generation:
+            return False
         attempts = sum(item.attempt_count for item in batches)
         return attempts < batch.provider_call_budget
 
     def _translation_batch_error_code(self, error: Exception) -> str:
+        if isinstance(error, (TranslationIntegrityError, DocumentIRTranslationError)):
+            return error.code
         if isinstance(error, TranslationProviderResponseError) and error.suspected_truncation:
             return "translation_provider_truncated"
         if isinstance(error, (TranslationProviderResponseError, ValueError, KeyError)):
@@ -2119,7 +3090,7 @@ class DocumentJobExecutionService:
             self._record_event(
                 job,
                 event_type="ai_call_logged",
-                stage="ir_converting",
+                stage="translating",
                 message="AI 翻译调用审计记录已保存。",
                 payload={
                     "file_id": call_log_file_id,
@@ -2132,7 +3103,7 @@ class DocumentJobExecutionService:
             self._record_event(
                 job,
                 event_type="debug_archive_saved",
-                stage="ir_converting",
+                stage="translating",
                 message="AI 翻译全文调试归档已保存。",
                 payload={
                     "file_id": debug_archive_file_id,
@@ -2175,164 +3146,332 @@ class DocumentJobExecutionService:
         return spec.mineru_language or self.settings.mineru_language
 
     def _render_and_save_word(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
-        if job.result_file_id:
-            return self._mark_succeeded(job, trace_id=trace_id)
-        existing_result = self._get_existing_result_file(job)
-        if existing_result is not None:
-            recovered = self.job_repository.update_document_job_if_current(
-                job.id,
-                allowed_statuses={"running"},
-                allowed_stages={"rendering", "uploading"},
-                expected_retry_count=job.retry_count,
-                status="running",
-                stage="uploading",
-                progress=max(job.progress, 90),
-                result_file_id=existing_result.id,
-                updated_at=utc_now(),
-            )
-            if recovered is None:
-                return self.job_repository.get_document_job(job.id) or job
-            return self._mark_succeeded(recovered, trace_id=trace_id)
-
-        rendering = job
-        if job.stage == "rendering":
+        attempt = job
+        validating_legacy = False
+        try:
+            current = self.job_repository.get_document_job(job.id) or job
+            if current.retry_count != job.retry_count or current.status != "running":
+                return current
+            if current.prepared_result is not None:
+                return self._finish_prepared_result(current, trace_id=trace_id)
+            # 明确历史指针优先保留；legacy 扫描必须唯一且可验证。
+            if job.stage != "quality_checking":
+                validating_legacy = True
+                existing_result = self._get_existing_result_file(job)
+                validating_legacy = False
+                if existing_result is not None:
+                    uploading = self.job_repository.update_document_job_if_current(
+                        job.id, allowed_statuses={"running"}, allowed_stages={"rendering", "uploading"},
+                        expected_retry_count=job.retry_count, expected_document_ir_file_id=job.document_ir_file_id,
+                        require_no_prepared_result=True, stage="uploading", updated_at=utc_now(),
+                    )
+                    if uploading is None:
+                        return self._finish_selected_or_current(job, trace_id=trace_id)
+                    if job.result_file_id is not None:
+                        return self._mark_succeeded(uploading, trace_id=trace_id)
+                    prepared = self.job_repository.prepare_document_job_result(
+                        job.id, expected_retry_count=job.retry_count,
+                        expected_document_ir_file_id=job.document_ir_file_id, candidate=existing_result,
+                    )
+                    if prepared is None:
+                        return self._finish_selected_or_current(job, trace_id=trace_id)
+                    return self._finish_prepared_result(prepared, trace_id=trace_id)
+            attempt = job
+            recovery_from = job.stage if job.stage in {"quality_checking", "uploading"} else None
+            rendering = job
+            if recovery_from is not None:
+                rendering = self.job_repository.update_document_job_if_current(
+                    job.id, allowed_statuses={"running"}, allowed_stages={recovery_from},
+                    expected_retry_count=job.retry_count, expected_document_ir_file_id=job.document_ir_file_id,
+                    require_no_prepared_result=True, stage="rendering", updated_at=utc_now(),
+                )
+                if rendering is None:
+                    return self._finish_selected_or_current(job, trace_id=trace_id)
+            attempt = rendering
             self._record_event(
                 rendering,
                 event_type="stage_started",
                 stage="rendering",
-                message="Word 渲染已开始。",
-                payload={"document_ir_file_id": job.document_ir_file_id, "template_version_id": job.template_version_id},
+                message="内存中的 Word 内容已丢失，重新渲染并校验。" if recovery_from else "Word 渲染已开始。",
+                payload={
+                    "document_ir_file_id": rendering.document_ir_file_id,
+                    "template_version_id": rendering.template_version_id,
+                    **({"recovery_from": recovery_from} if recovery_from else {}),
+                },
                 trace_id=trace_id,
             )
+            render_started_at = time.perf_counter()
 
-        ir_file = self._get_document_ir_file(rendering)
-        document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(ir_file))
-        layout_plan = build_layout_plan(document_ir)
-        snapshot_resources = rendering.request_snapshot.get("resources")
-        snapshot_template = snapshot_resources.get("template") if isinstance(snapshot_resources, dict) else None
-        draft_was_authorized_at_creation = (
-            isinstance(snapshot_template, dict)
-            and snapshot_template.get("status") == "draft"
-            and rendering.template_version_id
-            == f"{snapshot_template.get('resource_id')}@{snapshot_template.get('version')}"
-        )
-        # 仅允许执行创建阶段已固化 draft 快照的验证任务，legacy 或不一致记录继续按 published 校验。
-        template_selection = self.template_read_service.resolve_template_version(
-            rendering.template_version_id,
-            allow_draft=draft_was_authorized_at_creation,
-        )
-        word_content = self.word_renderer.render_to_bytes(
-            document_ir,
-            template_path=template_selection.template_path,
-            config_path=template_selection.layout_config_path,
-            image_loader=self._build_image_loader(rendering),
-            options=DocumentIRRenderOptions(
-                subscript_config_path=self.settings.subscript_config_path,
-                document_language=document_ir.metadata.document_language,
-            ),
-        )
-        renderer_metadata = build_renderer_evidence(document_ir, word_content, layout_plan)
-        ensure_renderer_integrity(renderer_metadata)
-        uploading = self.job_repository.update_document_job_if_current(
-            rendering.id,
-            allowed_statuses={"running"},
-            allowed_stages={"rendering"},
-            expected_retry_count=rendering.retry_count,
-            status="running",
-            stage="uploading",
-            progress=max(rendering.progress, 85),
-            template_version_id=template_selection.template_version_id,
-            updated_at=utc_now(),
-        )
-        if uploading is None:
-            return self.job_repository.get_document_job(rendering.id) or rendering
-        self._record_event(
-            uploading,
-            event_type="stage_succeeded",
-            stage="rendering",
-            message="Word 渲染已完成。",
-            payload={
-                "document_ir_file_id": ir_file.id,
-                "template_version_id": template_selection.template_version_id,
-                "block_count": len(document_ir.blocks),
-                **renderer_metadata,
-            },
-            trace_id=trace_id,
-        )
-        self._record_event(
-            uploading,
-            event_type="stage_started",
-            stage="uploading",
-            message="生成 Word 上传登记已开始。",
-            payload={"template_version_id": template_selection.template_version_id},
-            trace_id=trace_id,
-        )
-        word_file = self.file_service.register_generated_content(
-            tenant_id=uploading.tenant_id,
-            company_id=uploading.company_id,
-            job_id=uploading.id,
-            created_by=uploading.created_by,
-            file_type="generated_word",
-            filename=self._result_filename(uploading),
-            mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            content=word_content,
-            metadata={
-                "source_file_id": uploading.source_file_id,
-                "document_ir_file_id": ir_file.id,
-                "template_version_id": template_selection.template_version_id,
-                "template_id": template_selection.template_id,
-                "template_version": template_selection.version,
-                "block_count": len(document_ir.blocks),
-                "image_asset_file_ids": uploading.image_asset_file_ids,
-                "retry_count": uploading.retry_count,
-                **renderer_metadata,
-            },
-        )
-        completed = self.job_repository.update_document_job_if_current(
-            uploading.id,
-            allowed_statuses={"running"},
-            allowed_stages={"uploading"},
-            expected_retry_count=uploading.retry_count,
-            status="succeeded",
-            stage="completed",
-            progress=100,
-            result_file_id=word_file.id,
-            completed_at=utc_now(),
-            updated_at=utc_now(),
-        )
+            ir_file = self._get_document_ir_file(rendering)
+            try:
+                ir_bytes = self.file_service.read_file_content(ir_file)
+                document_ir = DocumentIR.model_validate_json(ir_bytes)
+            except ValueError:
+                raise TablePlaceholderError("table_placeholder_integrity_failed") from None
+            layout_plan = build_layout_plan(document_ir)
+            snapshot_resources = rendering.request_snapshot.get("resources")
+            snapshot_template = snapshot_resources.get("template") if isinstance(snapshot_resources, dict) else None
+            draft_was_authorized_at_creation = (
+                isinstance(snapshot_template, dict)
+                and snapshot_template.get("status") == "draft"
+                and rendering.template_version_id
+                == f"{snapshot_template.get('resource_id')}@{snapshot_template.get('version')}"
+            )
+            # 仅允许执行创建阶段已固化 draft 快照的验证任务，legacy 或不一致记录继续按 published 校验。
+            template_selection = self.template_read_service.resolve_template_version(
+                rendering.template_version_id,
+                allow_draft=draft_was_authorized_at_creation,
+            )
+            render_result = self.word_renderer.render_to_result(
+                document_ir,
+                template_path=template_selection.template_path,
+                config_path=template_selection.layout_config_path,
+                image_loader=self._build_image_loader(rendering, document_ir),
+                options=DocumentIRRenderOptions(
+                    subscript_config_path=self.settings.subscript_config_path,
+                    document_language=document_ir.metadata.document_language,
+                    template_version_id=template_selection.template_version_id,
+                ),
+            )
+            word_content = render_result.content
+            checking = self.job_repository.update_document_job_if_current(
+                rendering.id,
+                allowed_statuses={"running"},
+                allowed_stages={"rendering"},
+                expected_retry_count=rendering.retry_count,
+                expected_document_ir_file_id=rendering.document_ir_file_id, require_no_prepared_result=True,
+                status="running",
+                stage="quality_checking",
+                progress=max(rendering.progress, 80),
+                template_version_id=template_selection.template_version_id,
+                updated_at=utc_now(),
+            )
+            if checking is None:
+                return self._finish_selected_or_current(rendering, trace_id=trace_id)
+            attempt = checking
+            self._record_event(
+                checking,
+                event_type="stage_succeeded",
+                stage="rendering",
+                message="Word 渲染已完成。",
+                payload={
+                    "document_ir_file_id": ir_file.id,
+                    "template_version_id": template_selection.template_version_id,
+                    "block_count": len(document_ir.blocks),
+                },
+                trace_id=trace_id,
+                duration_ms=int((time.perf_counter() - render_started_at) * 1000),
+            )
+            self._record_event(
+                checking, event_type="stage_started", stage="quality_checking",
+                message="Word 文档质量检查已开始。", payload={"document_ir_file_id": ir_file.id}, trace_id=trace_id,
+            )
+            quality_started_at = time.perf_counter()
+            try:
+                renderer_metadata = build_renderer_evidence(
+                    document_ir, word_content, layout_plan, render_result=render_result, formula_report=render_result.formula_report,
+                    image_layout_report=render_result.image_layout_report,
+                    renderer_content_contract_version=render_result.renderer_content_contract_version,
+                    formula_source_coverage=render_result.formula_source_coverage,
+                    expected_template_version_id=template_selection.template_version_id,
+                    expected_generation_policy=image_evidence.IMAGE_GENERATION_POLICY,
+                )
+                ensure_renderer_integrity(renderer_metadata)
+            except Exception as exc:
+                failed = self._mark_failed(
+                    checking, failed_stage="quality_checking", error_code="render_failed",
+                    error_message=self._worker_failure_message(exc), trace_id=trace_id,
+                    failure_evidence=self._worker_failure_evidence(exc),
+                    duration_ms=int((time.perf_counter() - quality_started_at) * 1000),
+                )
+                if failed.status == "running" and failed.retry_count == checking.retry_count and failed.prepared_result is not None:
+                    return self._finish_prepared_result(failed, trace_id=trace_id)
+                return failed
+            uploading = self.job_repository.update_document_job_if_current(
+                checking.id, allowed_statuses={"running"}, allowed_stages={"quality_checking"},
+                expected_retry_count=checking.retry_count, expected_document_ir_file_id=checking.document_ir_file_id,
+                require_no_prepared_result=True, stage="uploading",
+                progress=max(checking.progress, 85), updated_at=utc_now(),
+            )
+            if uploading is None:
+                return self._finish_selected_or_current(checking, trace_id=trace_id)
+            attempt = uploading
+            self._record_event(
+                uploading, event_type="stage_succeeded", stage="quality_checking",
+                message="Word 文档质量检查已通过。",
+                payload={"document_ir_file_id": ir_file.id, **build_renderer_event_summary(renderer_metadata)},
+                trace_id=trace_id, duration_ms=int((time.perf_counter() - quality_started_at) * 1000),
+            )
+            self._record_event(
+                uploading,
+                event_type="stage_started",
+                stage="uploading",
+                message="生成 Word 上传登记已开始。",
+                payload={"template_version_id": template_selection.template_version_id},
+                trace_id=trace_id,
+            )
+            renderer_metadata, preparation = save_report(uploading, ir_file, ir_bytes, renderer_metadata, self.file_service)
+            publication_provenance = capture_render_publication_provenance(uploading, ir_file, document_ir, render_result,
+                renderer=self.word_renderer, snapshot_service=self.job_resource_snapshot_service, file_service=self.file_service)
+            renderer_metadata["publication_provenance_file_id"] = publication_provenance.id
+            word_file = self.file_service.register_result_candidate(
+                tenant_id=uploading.tenant_id,
+                company_id=uploading.company_id,
+                job_id=uploading.id,
+                created_by=uploading.created_by,
+                filename=self._result_filename(uploading),
+                content=word_content,
+                expires_at=preparation.docx_expires_at,
+                metadata={
+                    "source_file_id": uploading.source_file_id,
+                    "document_ir_file_id": ir_file.id,
+                    "template_version_id": template_selection.template_version_id,
+                    "template_id": template_selection.template_id,
+                    "template_version": template_selection.version,
+                    "block_count": len(document_ir.blocks),
+                    "image_asset_file_ids": uploading.image_asset_file_ids,
+                    "retry_count": uploading.retry_count,
+                    **renderer_metadata,
+                },
+            )
+            verify_report(uploading, word_file, file_repository=self.file_repository,
+                          file_service=self.file_service, job_repository=self.job_repository)
+            prepared = self.job_repository.prepare_document_job_result(
+                uploading.id, expected_retry_count=uploading.retry_count,
+                expected_document_ir_file_id=ir_file.id, candidate=word_file,
+            )
+            if prepared is None:
+                return self._finish_selected_or_current(uploading, trace_id=trace_id)
+            return self._finish_prepared_result(prepared, trace_id=trace_id)
+        except Exception as exc:
+            failed_stage, error_code = self._classify_worker_failure(exc, attempt)
+            if not isinstance(exc, (ApiError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile)):
+                error_code = "document_job_unexpected_error"
+                self.logger.exception("[trace_id=%s job_id=%s stage=%s status=unexpected_error]", trace_id, job.id, failed_stage)
+            if isinstance(exc, TableEvidenceError):
+                failed_stage, error_code = "quality_checking", "render_failed"
+            if validating_legacy:
+                failed_stage, error_code = "uploading", "oss_failed"
+                if (isinstance(exc, DocumentIntegrityError)
+                        and exc.evidence.get("renderer_content_contract_version") == "renderer-content/v2"):
+                    failed_stage, error_code = "quality_checking", "render_failed"
+            failed = self._mark_failed(attempt, failed_stage=failed_stage, error_code=error_code,
+                                       error_message=self._worker_failure_message(exc), trace_id=trace_id,
+                                       failure_evidence=self._worker_failure_evidence(exc))
+            if failed.status == "running" and failed.retry_count == attempt.retry_count and failed.prepared_result is not None:
+                return self._finish_prepared_result(failed, trace_id=trace_id)
+            return failed
+
+    def _finish_selected_or_current(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
+        current = self.job_repository.get_document_job(job.id) or job
+        timed_out = self._mark_timed_out_if_needed(current, trace_id=trace_id)
+        if timed_out is not None:
+            return timed_out
+        if current.status == "running" and current.retry_count == job.retry_count and current.prepared_result is not None:
+            return self._finish_prepared_result(current, trace_id=trace_id)
+        return current
+
+    def _finish_prepared_result(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
+        """receipt 后只物化同一身份；两步之间中断可由任意重投继续。"""
+
+        current = self.job_repository.get_document_job(job.id) or job
+        if current.status != "running" or current.retry_count != job.retry_count:
+            return current
+        receipt = job.prepared_result
+        if receipt is None:
+            raise ValueError("任务没有选定结果凭据。")
+        timed_out = self._mark_timed_out_if_needed(job, trace_id=trace_id)
+        if timed_out is not None:
+            return timed_out
+        try:
+            validate_candidate_binding(job, receipt.file)
+            word_file = self.file_repository.materialize_prepared_result(receipt.file)
+            ir_file, final_ir, _ = self._validate_render_result_file(word_file)
+            verified_report = verify_report(job, word_file, file_repository=self.file_repository,
+                          file_service=self.file_service, job_repository=self.job_repository)
+            # 恢复只核对原 receipt 的实物，不重裁图、不重渲染或更换同代身份。
+            proof = word_file.metadata.get("table_placeholder_rendering")
+            placeholders = decode_placeholders(final_ir, require_bound=True)
+            if placeholders or proof is not None:
+                if final_ir.metadata.job_id != job.id or final_ir.metadata.source_file_id != job.source_file_id:
+                    raise TablePlaceholderError("table_placeholder_integrity_failed")
+                self._verify_placeholder_dependencies(job, final_ir)
+                for file in (ir_file, word_file):
+                    self._ensure_placeholder_file_current(job, file, "table_placeholder_integrity_failed")
+            preview_job, preview_finished = self.word_preview_service.ensure_initial(current, trace_id=trace_id)
+            if not preview_finished:
+                return self._mark_timed_out_if_needed(preview_job, trace_id=trace_id) or preview_job
+            if verified_report is not None:
+                recheck_verified_report(verified_report, file_repository=self.file_repository,
+                                        job_repository=self.job_repository)
+            completed = self.job_repository.update_document_job_if_current(
+                job.id, allowed_statuses={"running"}, allowed_stages={"uploading"},
+                expected_retry_count=receipt.generation, expected_document_ir_file_id=receipt.document_ir_file_id,
+                expected_prepared_result_file_id=word_file.id, status="succeeded", stage="completed",
+                progress=100, result_file_id=word_file.id, completed_at=utc_now(), updated_at=utc_now(),
+            )
+        except Exception as exc:
+            return self._mark_failed(job,
+                failed_stage="quality_checking" if isinstance(exc, (TablePlaceholderError, DocumentIntegrityError, TableEvidenceError)) else "uploading",
+                error_code="render_failed" if isinstance(exc, (TablePlaceholderError, DocumentIntegrityError, TableEvidenceError)) else "oss_failed",
+                error_message=(self._worker_failure_message(exc) if isinstance(exc, (TablePlaceholderError, TableEvidenceError, DocumentIntegrityError)) or
+                    "table_placeholder_rendering" not in receipt.file.metadata else "表格占位结果文件读取或完整性校验失败。"),
+                trace_id=trace_id, expected_prepared_result_file_id=receipt.file.id)
         if completed is None:
-            return self.job_repository.get_document_job(uploading.id) or uploading
-        self._record_event(
-            completed,
-            event_type="file_registered",
-            stage="uploading",
-            message="生成 Word 已保存。",
-            payload={
-                "file_id": word_file.id,
-                "file_type": word_file.file_type,
-                "object_key": word_file.object_key,
-                **renderer_metadata,
-            },
-            trace_id=trace_id,
-        )
-        self._record_event(
-            completed,
-            event_type="stage_succeeded",
-            stage="completed",
-            message="文档任务已完成。",
-            payload={"result_file_id": word_file.id, "template_version_id": template_selection.template_version_id},
-            trace_id=trace_id,
-        )
-        self.logger.info(
-            "[trace_id=%s job_id=%s stage=completed status=succeeded] result_file_id=%s",
-            trace_id,
-            completed.id,
-            word_file.id,
-        )
+            current = self.job_repository.get_document_job(job.id) or job
+            return self._mark_timed_out_if_needed(current, trace_id=trace_id) or current
+        self._record_event(completed, event_type="file_registered", stage="uploading", message="生成 Word 已保存。",
+                           payload={"file_id": word_file.id, "file_type": word_file.file_type,
+                                    **build_renderer_event_summary(word_file.metadata)}, trace_id=trace_id)
+        self._record_event(completed, event_type="stage_succeeded", stage="completed", message="文档任务已完成。",
+                           payload={"result_file_id": word_file.id, "template_version_id": completed.template_version_id},
+                           trace_id=trace_id)
         return completed
 
+    def _validate_render_result_file(self, record: DocumentFileRecord) -> tuple[DocumentFileRecord, DocumentIR, bytes]:
+        """先核实原件及绑定 IR 的实物，再由 renderer 按保存的版本认证内容。"""
+
+        if (record.file_type != "generated_word" or record.status != "uploaded"
+                or record.expires_at is not None and record.expires_at <= utc_now()
+                or record.expires_at is None and any(key in record.metadata for key in (
+                    "renderer_content_contract_version", "formula_source_coverage"))):
+            raise ValueError("主 DOCX 的类型、状态或保留期无效。")
+        content = self.file_service.read_file_content(record)
+        if record.size_bytes != len(content) or record.checksum_sha256 != f"sha256:{hashlib.sha256(content).hexdigest()}":
+            raise ValueError("主 DOCX 字节与 SHA-256 描述不一致。")
+        ir_id = record.metadata.get("document_ir_file_id")
+        if not isinstance(ir_id, str) or not ir_id:
+            raise ValueError("主 DOCX 缺少原始 IR 绑定。")
+        ir_file = self._get_uploaded_file(ir_id)
+        if ((ir_file.tenant_id, ir_file.company_id, ir_file.job_id)
+                != (record.tenant_id, record.company_id, record.job_id) or ir_file.file_type != "document_ir"
+                or ir_file.expires_at is not None and ir_file.expires_at <= utc_now()):
+            raise ValueError("主 DOCX 的原始 IR 与文件归属不一致。")
+        ir_bytes = self.file_service.read_file_content(ir_file)
+        if ir_file.size_bytes != len(ir_bytes) or ir_file.checksum_sha256 != placeholder_checksum(ir_bytes):
+            raise ValueError("主 DOCX 的原始 IR 字节与描述不一致。")
+        ir = DocumentIR.model_validate_json(ir_bytes)
+        validate_persisted_renderer_content(ir, content, record.metadata,
+            expected_template_version_id=record.metadata.get("template_version_id"))
+        self._validate_optional_block_anchors(ir, content, record.metadata)
+        return ir_file, ir, content
+
+    def _validate_optional_block_anchors(self, document_ir: DocumentIR, content: bytes, metadata: dict[str, Any]) -> None:
+        """历史恢复只局部认证可选锚点；保留原 metadata，不重建或升级创建事实。"""
+        if "block_anchor_evidence" not in metadata:
+            return
+        verified = validate_persisted_render_evidence(document_ir, content,
+            render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"))
+        anchors = None
+        if verified is not None:
+            plan, trace = verified
+            anchors = validate_block_anchor_evidence(metadata["block_anchor_evidence"], plan=plan,
+                block_evidence=trace, word_content=content)
+        if anchors is None:
+            self.logger.warning("[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。")
+
     def _document_ir_layout_metadata(self, document_ir: DocumentIR) -> dict[str, Any]:
-        """生成 DocumentIR artifact 与事件共用的布局诊断摘要。"""
+        """保存私有 IR 诊断；事件出口另行投影。"""
 
         return {
             "schema_version": document_ir.schema_version,
@@ -2341,6 +3480,10 @@ class DocumentJobExecutionService:
             "block_count": len(document_ir.blocks),
             "layout_block_count": sum(1 for block in document_ir.blocks if block.layout is not None),
             "quality_flags": document_ir.quality_flags,
+            "mineru_validation": (document_ir.metadata.mineru_validation.model_dump(mode="json")
+                                  if document_ir.metadata.mineru_validation is not None else None),
+            "mineru_validation_input": document_ir.metadata.mineru_validation_input,
+            "table_reference_asset_count": sum(item.asset is not None for item in decode_table_references(document_ir)),
         }
 
     def _record_event(
@@ -2353,7 +3496,28 @@ class DocumentJobExecutionService:
         payload: dict,
         trace_id: str | None,
         level: str = "info",
+        duration_ms: int | None = None,
     ) -> None:
+        # renderer 事件只允许固定外层身份与安全摘要；未知新字段不能借嵌套值透传。
+        if (payload.get("file_type") == "generated_word"
+                or any(key in payload for key in ("renderer_content_contract_version", "formula_source_coverage",
+                    "render_plan", "block_render_evidence", "block_anchor_evidence", "page_mapping"))):
+            outer_keys = {"file_id", "file_type", "document_ir_file_id", "result_file_id", "template_version_id",
+                "error_code", "error_message", "prepared_result_file_id"}
+            payload = {**{key: value for key, value in payload.items() if key in outer_keys},
+                **build_renderer_event_summary(payload)}
+        if payload.get("schema_version") in {"document-ir/v1", "document-ir/v2"}:
+            outer_keys = {
+                "file_id", "file_type", "document_ir_file_id", "source_document_ir_file_id",
+                "image_asset_file_ids", "image_assets_archive_file_id", "image_asset_count",
+                "translation", "translation_batch_count", "translation_item_count",
+            }
+            payload = {
+                **{key: value for key, value in payload.items() if key in outer_keys},
+                **build_renderer_event_summary(payload),
+            }
+        if payload.get("mineru_validation") is not None:
+            payload = {**payload, "retry_count": job.retry_count}
         event = DocumentJobEventRecord(
             id=f"event_{uuid4().hex[:12]}",
             tenant_id=job.tenant_id,
@@ -2364,7 +3528,8 @@ class DocumentJobExecutionService:
             level=level,
             event_type=event_type,
             message=message,
-            payload=payload,
+            payload={"retry_count": job.retry_count, "generation": job.retry_count, **payload},
+            duration_ms=duration_ms,
             trace_id=trace_id,
         )
         self.event_repository.append_document_job_event(job.id, event)
@@ -2389,41 +3554,208 @@ class DocumentJobExecutionService:
             raise FileNotFoundError(f"任务缺少 MinerU 原始结果文件: {job.id}")
         return sorted(candidates, key=lambda item: (item.created_at, item.id))[-1]
 
-    def _select_mineru_result(self, payload: dict, data_id: str) -> dict:
+    def _refresh_mineru_parse_attempt(
+        self, job: DocumentJobRecord, *, trace_id: str | None,
+    ) -> tuple[DocumentJobRecord, bool]:
+        """解析外端调用前后核对本次身份和固定期限，避免旧结果归入新代。"""
+
+        latest = self.job_repository.get_document_job(job.id)
+        if latest is None:
+            return job, False
+        if (latest.retry_count != job.retry_count or latest.status != "running" or latest.stage != "parsing"
+                or latest.mineru_batch_id != job.mineru_batch_id or latest.mineru_data_id != job.mineru_data_id):
+            return latest, False
+        if latest.timeout_at is None:
+            # 旧新代可能已提交批次却未保存期限；只能沿本代稳定起点补齐，不能从每轮 now 续期。
+            if latest.started_at is None:
+                return self._mark_failed(
+                    latest, failed_stage="parsing", error_code="document_job_timeout",
+                    error_message="解析记录缺少本代开始时间，无法确定绝对截止期限，已停止执行。",
+                    trace_id=trace_id,
+                ), False
+            updated = self.job_repository.update_document_job_if_current(
+                latest.id, allowed_statuses={"running"}, allowed_stages={"parsing"},
+                expected_retry_count=latest.retry_count,
+                timeout_at=latest.started_at + timedelta(seconds=self.settings.p0_document_job_timeout_seconds),
+                updated_at=utc_now(),
+            )
+            if updated is None:
+                return self.job_repository.get_document_job(latest.id) or latest, False
+            latest = updated
+        timed_out = self._mark_timed_out_if_needed(latest, trace_id=trace_id)
+        return (timed_out, False) if timed_out is not None else (latest, True)
+
+    def _select_mineru_result(self, payload: dict, data_id: str, *, batch_id: str) -> dict:
         results = payload.get("extract_result") if isinstance(payload, dict) else None
         if not isinstance(results, list):
             raise ValueError("MinerU 查询结果缺少 extract_result 数组。")
+        if payload.get("batch_id") and str(payload["batch_id"]) != batch_id:
+            raise MinerUError("MinerU 查询结果的 batch_id 与当前批次不一致。")
         for item in results:
             if isinstance(item, dict) and str(item.get("data_id") or "") == data_id:
                 return item
-        for item in results:
-            if isinstance(item, dict):
-                return item
-        raise ValueError("MinerU 查询结果为空。")
+        if not results:
+            return {}
+        # 历史单文件结果和既有适配器可能不回传 data_id；显式异身份不能借此兜底。
+        if len(results) == 1 and isinstance(results[0], dict) and not results[0].get("data_id"):
+            return results[0]
+        raise MinerUError("MinerU 查询结果缺少匹配当前 data_id 的记录。")
 
     def _get_document_ir_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
-        if job.document_ir_file_id:
-            return self._get_uploaded_file(job.document_ir_file_id)
-        candidates = [
-            file
-            for file in self.file_repository.list_document_files()
-            if file.job_id == job.id and file.file_type == "document_ir" and file.status == "uploaded"
-        ]
-        if not candidates:
-            raise FileNotFoundError(f"任务缺少 DocumentIR 文件: {job.id}")
-        return sorted(candidates, key=lambda item: (item.created_at, item.id))[-1]
+        if job.document_ir_file_id is None:
+            raise FileNotFoundError(f"任务缺少权威最终 DocumentIR 指针: {job.id}")
+        record = self._get_uploaded_file(job.document_ir_file_id)
+        if ((record.tenant_id, record.company_id, record.job_id) != (job.tenant_id, job.company_id, job.id)
+                or record.file_type != "document_ir"):
+            raise ValueError("最终 DocumentIR 文件与任务归属不一致。")
+        return record
 
     def _get_existing_result_file(self, job: DocumentJobRecord) -> DocumentFileRecord | None:
+        if job.result_file_id:
+            record = self._get_uploaded_file(job.result_file_id)
+            if ((record.tenant_id, record.company_id, record.job_id) != (job.tenant_id, job.company_id, job.id)
+                    or record.file_type != "generated_word"
+                    or (record.expires_at is not None and record.expires_at <= utc_now())):
+                raise ValueError("任务指定的结果文件不属于该任务的可用主 DOCX。")
+            if (any(key in record.metadata for key in ("renderer_content_contract_version", "formula_source_coverage",
+                    "formula_report", "formula_summary"))
+                    or image_evidence.IMAGE_EVIDENCE_KEYS.intersection(record.metadata)
+                    or has_evidence(record.metadata)):
+                self._validate_render_result_file(record)
+            elif image_evidence.has_image_markers(self.file_service.read_file_content(record)):
+                raise ValueError("主 DOCX 含图片布局标记但缺少报告。")
+            # 显式历史指针原本允许无报告、无 IR 绑定；仅该已验收路径保留原门。
+            if has_evidence(record.metadata):
+                verify_report(job, record, file_repository=self.file_repository,
+                              file_service=self.file_service, job_repository=self.job_repository)
+            return record
         candidates = [
-            file
-            for file in self.file_repository.list_document_files()
-            if file.job_id == job.id and file.file_type == "generated_word" and file.status == "uploaded"
+            file for file in self.file_repository.list_document_files()
+            if (file.tenant_id, file.company_id, file.job_id) == (job.tenant_id, job.company_id, job.id)
+            and file.file_type == "generated_word" and file.status == "uploaded"
+            and "document_job_result_protocol" not in file.metadata
+            and type(file.metadata.get("retry_count")) is int and file.metadata["retry_count"] == job.retry_count
+            and job.document_ir_file_id is not None
+            and file.metadata.get("document_ir_file_id") == job.document_ir_file_id
         ]
         if not candidates:
             return None
-        return sorted(candidates, key=lambda item: (item.created_at, item.id))[-1]
+        if len(candidates) != 1:
+            raise ValueError("同代最终 IR 存在多份历史主件，不能猜测结果身份。")
+        record = candidates[0]
+        if record.expires_at is None or record.expires_at <= utc_now():
+            raise ValueError("历史主件已过期或缺少保留期。")
+        self._validate_render_result_file(record)
+        if has_evidence(record.metadata):
+            verify_report(job, record, file_repository=self.file_repository,
+                          file_service=self.file_service, job_repository=self.job_repository)
+        return record
 
-    def _build_image_loader(self, job: DocumentJobRecord) -> Callable[[DocumentIRAsset], bytes | None]:
+    def _ensure_placeholder_attempt_current(self, job: DocumentJobRecord, error_code: str) -> None:
+        """慢读两侧核对仍在执行的同代/最终 IR；质量摘要等无关并发更新不影响快照。"""
+        current = self.job_repository.get_document_job(job.id)
+        if (current is None or current.status != "running" or current.deleted_at is not None
+                or current.archived_at is not None or current.retry_count != job.retry_count
+                or current.document_ir_file_id != job.document_ir_file_id
+                or (current.tenant_id, current.company_id, current.source_file_id, current.source_job_id) !=
+                   (job.tenant_id, job.company_id, job.source_file_id, job.source_job_id)):
+            raise TablePlaceholderError(error_code)
+
+    def _ensure_placeholder_file_current(self, job: DocumentJobRecord, file: DocumentFileRecord, error_code: str) -> None:
+        """与 IR-206 相同：按 ID 重取并比较完整描述，不把有 file_id 当作当前可读。"""
+        if (self.file_repository.get_document_file(file.id) != file or file.status != "uploaded"
+                or file.expires_at is not None and file.expires_at <= utc_now()):
+            raise TablePlaceholderError(error_code)
+        self._ensure_placeholder_attempt_current(job, error_code)
+
+    def _read_current_placeholder_file(self, job: DocumentJobRecord, file: DocumentFileRecord,
+                                       error_code: str = "table_placeholder_integrity_failed") -> bytes:
+        """字节读取前后核验同一描述、生命周期、任务快照与实际 hash；错误不带存储定位。"""
+        snapshot = file.model_copy(deep=True)
+        self._ensure_placeholder_file_current(job, snapshot, error_code)
+        try:
+            content = self.file_service.read_file_content(snapshot)
+        except Exception:
+            raise TablePlaceholderError(error_code) from None
+        self._ensure_placeholder_file_current(job, snapshot, error_code)
+        if len(content) != snapshot.size_bytes or placeholder_checksum(content) != snapshot.checksum_sha256:
+            raise TablePlaceholderError("table_placeholder_integrity_failed")
+        return content
+
+    def _get_placeholder_source_file(self, job: DocumentJobRecord,
+                                      error_code: str = "table_placeholder_source_unavailable") -> DocumentFileRecord:
+        """裁图或未完成 receipt 只认绑定源；clone 沿既有同源父链核验归属。"""
+        file = self.file_repository.get_document_file(job.source_file_id)
+        if (file is None or file.file_type != "source_pdf" or file.status != "uploaded"
+                or (file.tenant_id, file.company_id) != (job.tenant_id, job.company_id)
+                or file.expires_at is not None and file.expires_at <= utc_now()
+                or not file.checksum_sha256):
+            raise TablePlaceholderError(error_code)
+        owner = job
+        seen = set()
+        while file.job_id != owner.id:
+            if owner.id in seen or owner.source_job_id is None:
+                raise TablePlaceholderError(error_code)
+            seen.add(owner.id)
+            owner = self.job_repository.get_document_job(owner.source_job_id)
+            if (owner is None or owner.source_file_id != file.id
+                    or (owner.tenant_id, owner.company_id) != (job.tenant_id, job.company_id)):
+                raise TablePlaceholderError(error_code)
+        return file
+
+    def _load_placeholder_source(self, job: DocumentJobRecord) -> PdfCropSource:
+        file = self._get_placeholder_source_file(job)
+        content = self._read_current_placeholder_file(job, file, "table_placeholder_source_unavailable")
+        return PdfCropSource(file.id, file.checksum_sha256, content)
+
+    def _read_placeholder_asset(self, job: DocumentJobRecord, document: DocumentIR, asset: DocumentIRAsset, binding):
+        """仅显式消费的占位图按当前 ID 读取；来源 attempt 可早于翻译 retry，不能硬套最新代。"""
+        file = self.file_repository.get_document_file(asset.file_id)
+        try:
+            provenance = TableReferenceProvenance.model_validate(document.metadata.mineru_validation_input)
+        except ValueError:
+            raise TablePlaceholderError("table_placeholder_integrity_failed") from None
+        expected = {"asset_id": asset.id, "source_file_id": job.source_file_id,
+                    "fragment_id": binding.fragment_id, "retry_count": provenance.retry_count}
+        if binding.source_kind == "mineru_reference":
+            reference = next(item for item in decode_table_references(document, require_bound=True)
+                             if item.fragment.fragment_id == binding.fragment_id)
+            expected.update(asset_role=TABLE_REFERENCE_ROLE, block_id=reference.block_id,
+                logical_group_id=reference.logical_group_id, source_path=asset.source_path,
+                mineru_raw_result_file_id=provenance.mineru_raw_result_file_id)
+        else:
+            expected.update(asset_role="table_placeholder", source_pdf_sha256=binding.source_pdf_sha256)
+        if (file is None or file.file_type != "image_asset" or file.mime_type != asset.mime_type
+                or (file.tenant_id, file.company_id, file.job_id) != (job.tenant_id, job.company_id, job.id)
+                or file.checksum_sha256 != asset.checksum_sha256 or file.object_key != asset.object_key
+                or not provenance.retry_count <= job.retry_count
+                or type(file.metadata.get("retry_count")) is not int
+                or any(file.metadata.get(key) != value for key, value in expected.items())):
+            raise TablePlaceholderError("table_placeholder_integrity_failed")
+        return file, self._read_current_placeholder_file(job, file)
+
+    def _verify_placeholder_dependencies(self, job: DocumentJobRecord, document: DocumentIR) -> None:
+        """未完成 receipt 复核原绑定依赖；只读取原件，不重渲染、重裁图或替换身份。"""
+        bindings = decode_placeholders(document, require_bound=True)
+        if not bindings:
+            return
+        source = self._get_placeholder_source_file(job, "table_placeholder_integrity_failed")
+        snapshots = [source]
+        crop_hashes = {item.source_pdf_sha256 for item in bindings if item.source_kind == "source_pdf_crop"}
+        if crop_hashes:
+            self._read_current_placeholder_file(job, source)
+            if crop_hashes != {source.checksum_sha256}:
+                raise TablePlaceholderError("table_placeholder_integrity_failed")
+        assets = {asset.id: asset for asset in document.assets}
+        for binding in bindings:
+            file, _ = self._read_placeholder_asset(job, document, assets[binding.asset_ref], binding)
+            snapshots.append(file)
+        # 后续图片慢读也可能使前面的源/图片失效；所有 I/O 完成后再次对账。
+        for file in snapshots:
+            self._ensure_placeholder_file_current(job, file, "table_placeholder_integrity_failed")
+
+    def _build_image_loader(self, job: DocumentJobRecord, document_ir: DocumentIR) -> Callable[[DocumentIRAsset], bytes | None]:
+        bindings = {item.asset_ref: item for item in decode_placeholders(document_ir, require_bound=True)}
         image_files = {
             file.id: file
             for file in self.file_repository.list_document_files()
@@ -2431,12 +3763,15 @@ class DocumentJobExecutionService:
         }
 
         def load_image(asset: DocumentIRAsset) -> bytes | None:
+            if asset.id in bindings:
+                return self._read_placeholder_asset(job, document_ir, asset, bindings[asset.id])[1]
+            if asset.id.startswith(("table-reference:", "table-placeholder:")):
+                # 普通 QA 参考图不能借普通 image loader 绕过显式占位消费及其来源核验。
+                raise TablePlaceholderError("table_placeholder_integrity_failed")
             if asset.file_id is None:
                 return None
             record = image_files.get(asset.file_id)
-            if record is None:
-                return None
-            return self.file_service.read_file_content(record)
+            return self.file_service.read_file_content(record) if record is not None else None
 
         return load_image
 
@@ -2448,11 +3783,23 @@ class DocumentJobExecutionService:
         return f"{source_stem}.docx"
 
     def _mark_succeeded(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
+        # legacy 明确主件可下载，但无 receipt 不能生成或伪造与当前来源绑定的预览。
+        preview_contribution = None
+        if "word_preview" in job.request_snapshot:
+            from app.services.preview.models import PreviewPolicy
+            policy = PreviewPolicy.model_validate(job.request_snapshot["word_preview"])
+            preview_contribution = {"quality_status": "blocked" if policy.required else "pending",
+                "status": "unavailable", "error_code": "preview_provider_unavailable",
+                "source_generation": job.retry_count, "source_result_file_id": job.result_file_id,
+                "profile_id": policy.profile_id, "profile_sha256": policy.profile_sha256,
+                "manifest_file_id": None}
         completed = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"running"},
             allowed_stages={"uploading"},
             expected_retry_count=job.retry_count,
+            expected_document_ir_file_id=job.document_ir_file_id, require_no_prepared_result=True,
+            preview_contribution=preview_contribution,
             status="succeeded",
             stage="completed",
             progress=100,
@@ -2474,7 +3821,7 @@ class DocumentJobExecutionService:
     def _failed_stage_for_current_job(self, job: DocumentJobRecord) -> DocumentJobStage:
         if job.stage == "uploaded":
             return "uploaded"
-        if job.stage in {"rendering", "uploading"}:
+        if job.stage in {"translating", "translation_validating", "rendering", "quality_checking", "uploading"}:
             return job.stage
         if job.stage == "ir_converting":
             return "ir_converting"
@@ -2486,7 +3833,7 @@ class DocumentJobExecutionService:
         *,
         trace_id: str | None,
     ) -> DocumentJobRecord | None:
-        if job.timeout_at is None or utc_now() < job.timeout_at:
+        if job.status in {"succeeded", "failed", "canceled"} or job.timeout_at is None or utc_now() < job.timeout_at:
             return None
         return self._mark_timed_out(job, trace_id=trace_id)
 
@@ -2495,6 +3842,7 @@ class DocumentJobExecutionService:
             job,
             failed_stage=self._failed_stage_for_current_job(job),
             error_code="document_job_timeout",
+            allow_prepared_result=True,
             error_message=f"P0 文档任务超过 {self.settings.p0_document_job_timeout_seconds} 秒超时限制。",
             trace_id=trace_id,
         )
@@ -2505,17 +3853,79 @@ class DocumentJobExecutionService:
         job: DocumentJobRecord,
     ) -> tuple[DocumentJobStage, str]:
         failed_stage = self._failed_stage_for_current_job(job)
+        if isinstance(exc, (TablePlaceholderError, DocumentIntegrityError, TableEvidenceError)) and job.stage == "uploading":
+            return "quality_checking", "render_failed"
         if isinstance(exc, MinerUError) or failed_stage == "parsing":
             return failed_stage, "mineru_failed"
-        if isinstance(exc, DocumentIRTranslationError):
+        if isinstance(exc, (DocumentIRTranslationError, TranslationIntegrityError)):
             return failed_stage, "translation_failed"
         if isinstance(exc, zipfile.BadZipFile) or failed_stage == "ir_converting":
             return failed_stage, "document_ir_failed"
-        if failed_stage == "rendering":
+        if failed_stage in {"rendering", "quality_checking"}:
             return failed_stage, "render_failed"
+        if failed_stage in {"translating", "translation_validating"}:
+            if isinstance(exc, (ApiError, FileNotFoundError, OSError)):
+                return failed_stage, "oss_failed"
+            return failed_stage, "translation_failed"
         if failed_stage == "uploading" or isinstance(exc, (ApiError, FileNotFoundError, OSError)):
             return failed_stage, "oss_failed"
         return failed_stage, "document_job_worker_failed"
+
+    @staticmethod
+    def _worker_failure_message(error: Exception) -> str:
+        """完整性异常的自由证据也不能借异常消息进入事件或日志。"""
+        if isinstance(error, DocumentIntegrityError):
+            return str(DocumentIntegrityError(error.boundary, build_renderer_event_summary(dict(error.evidence))))
+        if isinstance(error, MinerUError):
+            return "MinerU 外部调用失败。"
+        if isinstance(error, OSError):
+            return "Worker 文件或对象存储操作失败。"
+        return str(error)
+
+    @staticmethod
+    def _worker_failure_evidence(error: Exception) -> dict[str, Any]:
+        """提取原异常拥有的结构化报告，不读取可能已换代的任务状态。"""
+
+        evidence: dict[str, Any] = {}
+        if isinstance(error, MinerUArtifactValidationError):
+            evidence["mineru_validation"] = error.report.model_dump(mode="json")
+        elif isinstance(error, TablePlaceholderError) and getattr(error, "mineru_validation_report", None) is not None:
+            evidence["mineru_validation"] = error.mineru_validation_report.model_dump(mode="json")
+        elif isinstance(error, DocumentIntegrityError):
+            evidence = dict(error.evidence)
+        validation_input = getattr(error, "mineru_validation_input", None)
+        if validation_input is not None:
+            evidence["mineru_validation_input"] = validation_input
+        return build_renderer_event_summary(evidence)
+
+    def _fail_stage_attempt(
+        self, job: DocumentJobRecord, error: Exception, *, trace_id: str | None,
+    ) -> DocumentJobRecord:
+        """只使用本调用已接收的阶段快照归类失败，持久化仍核对代数、IR 和结果空槽。"""
+
+        if isinstance(error, SoftTimeLimitExceeded):
+            self.logger.error(
+                "[trace_id=%s job_id=%s generation=%s stage=%s status=failure_observed error_code=document_job_timeout]",
+                trace_id, job.id, job.retry_count, job.stage,
+            )
+            return self._mark_timed_out(job, trace_id=trace_id)
+        failed_stage, error_code = self._classify_worker_failure(error, job)
+        error_message = self._worker_failure_message(error)
+        if not isinstance(error, (ApiError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile)):
+            error_code = "document_job_unexpected_error"
+            error_message = "Worker 执行发生未预期异常。"
+        # CAS 落败也保留原调用的安全诊断；外端异常正文和异常链不进入普通日志。
+        self.logger.error(
+            "[trace_id=%s job_id=%s generation=%s stage=%s status=failure_observed error_code=%s error_type=%s]",
+            trace_id, job.id, job.retry_count, failed_stage, error_code, type(error).__name__,
+        )
+        return self._mark_failed(
+            job, failed_stage=failed_stage, error_code=error_code,
+            error_message=error_message, trace_id=trace_id,
+            integrity=error.evidence if isinstance(error, (DocumentIRTranslationError, TranslationIntegrityError)) else None,
+            formula_protection=error.formula_protection if isinstance(error, DocumentIRTranslationError) else None,
+            failure_evidence=self._worker_failure_evidence(error),
+        )
 
     def _mark_failed(
         self,
@@ -2525,13 +3935,23 @@ class DocumentJobExecutionService:
         error_code: str,
         error_message: str,
         trace_id: str | None,
+        integrity: TranslationIntegrityEvidence | None = None,
+        formula_protection: dict[str, str | int] | None = None,
+        duration_ms: int | None = None,
+        expected_prepared_result_file_id: str | None = None,
+        allow_prepared_result: bool = False,
+        failure_evidence: dict[str, Any] | None = None,
     ) -> DocumentJobRecord:
         now = utc_now()
+        # 同代另一执行可能已经提交目标 IR；失败 CAS 不能跨过其原子 rendering 推进。
         failed = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"pending", "queued", "running"},
-            allowed_stages={"uploaded", "parsing", "parsed", "ir_converting", "rendering", "uploading"},
+            allowed_stages={job.stage},
             expected_retry_count=job.retry_count,
+            expected_document_ir_file_id=job.document_ir_file_id,
+            require_no_prepared_result=not allow_prepared_result and expected_prepared_result_file_id is None,
+            expected_prepared_result_file_id=expected_prepared_result_file_id,
             status="failed",
             stage="failed",
             failed_stage=failed_stage,
@@ -2542,14 +3962,25 @@ class DocumentJobExecutionService:
         )
         if failed is None:
             return self.job_repository.get_document_job(job.id) or job
+        payload = {
+            "error_code": error_code,
+            "error_message": error_message,
+            **build_renderer_event_summary(failure_evidence or {}),
+            **({"prepared_result_file_id": failed.prepared_result.file.id} if failed.prepared_result else {}),
+        }
+        if integrity is not None:
+            payload["integrity"] = integrity.to_dict()
+        if formula_protection is not None:
+            payload["formula_protection"] = formula_protection
         self._record_event(
             failed,
             event_type="stage_failed",
             stage=failed_stage,
             message="document_jobs Worker 执行失败。",
-            payload={"error_code": error_code, "error_message": error_message},
+            payload=payload,
             trace_id=trace_id,
             level="error",
+            duration_ms=duration_ms,
         )
         self.logger.error(
             "[trace_id=%s job_id=%s stage=%s status=failed] %s",

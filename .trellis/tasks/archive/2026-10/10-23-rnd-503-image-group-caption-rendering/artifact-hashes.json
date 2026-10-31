@@ -1,0 +1,306 @@
+[
+  {
+    "sample": "pair-5-6",
+    "historical": false,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/pair-5-6.document-ir.json": "877f3e13813370ff53f0391e444381de292d40e0707145b74734609fc4e9f720",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/pair-5-6.docx": "1e342c59afbdfb64af78eb1401e1a1010c242ada18f5e19cc8b4f4c97be36d0f",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/pair-5-6.zip": "03914a99f19d70bc3c9e2f1fde8c98386c7c45a63072e6605592957f6a8243cb",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/pair-5-6.document.xml": "e0f5dc1c52bfbd9e0241bacfa92cf2f6df27246d4c2fe317eabfd4dc110683a1",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/evidence.json": "f910a07006916e0f1852892e16610cf43f8f2e40f4869621eac01f90d34de467",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/pair-5-6.pdf": "9110accf399308ab06ad18d358d56e2475b5a2c9970da964214b5bd751134648",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/pair-5-6.png": "e0fcb5d6b1a9804b5ea35b5432f51c80a4ef2b5ce43eb211ad1fde836794ded2"
+    },
+    "group_count": 1,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": 1
+  },
+  {
+    "sample": "pair-24-25",
+    "historical": false,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/pair-24-25.document-ir.json": "5fdbaa9b83477bd2f2fbe48ca16e1e61ad5e451c9f3de6780d0a147b05725bb3",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/pair-24-25.docx": "b84a5349f53a0702705dbd9cb18e6e844a67c3f1da9f2e3e527eaea69886958b",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/pair-24-25.zip": "4acbf711275b96cc24efc1fbc19a85e2fd73d7ff97f89036a1940be35c7215b3",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/pair-24-25.document.xml": "1328c79ffede194425d8356a784c26a7dd6c3e83fb6e60c6b43a5f566ced268c",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/evidence.json": "f910a07006916e0f1852892e16610cf43f8f2e40f4869621eac01f90d34de467",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/pair-24-25.pdf": "fd8e950fe44d8636b0cf24764353a52f6b0bd3d0238312ec00e1d2b9dbd54d1c",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/pair-24-25.png": "751c7a1da95e9da94594d139e5b5589aafb6fe60cd4e7caf950534d7d5dd9d02"
+    },
+    "group_count": 1,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": 1
+  },
+  {
+    "sample": "single",
+    "historical": false,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/single.document-ir.json": "ae852bf8d37dc350cee78e056c655771761fbbb7cf91c7435a884a17536845eb",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/single.docx": "827b55d2e2f836c0f1ababd96304f40fd359fa7f6325e2bd3aa64d040bc6f585",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/single.zip": "d5365760c221187a8094c1b980b3efddad7bd1692f1001443124ef085c9e3304",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/single.document.xml": "fb1e1543ce00a08b05800a7fd4b7193662517876197ff0f2455c9fad75858c01",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/visual/evidence.json": "f910a07006916e0f1852892e16610cf43f8f2e40f4869621eac01f90d34de467",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/single.pdf": "05239e83e1ee7ef569add676310b4773c2008c717f8464aa356ce7854b1aea96",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/single.png": "8c9761926c75ccb95e7b3a3d4816786ca273c67b2a640ef5cc27fdef09d38679"
+    },
+    "group_count": 0,
+    "inline_shape_count": 1,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": 1
+  },
+  {
+    "sample": "before-pair-5-6",
+    "historical": true,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/pair-5-6.document-ir.json": "1caa70e1d7f51968cb619e1c6d5fea8041e22d50a2b6c48575b53d37d4f7941e",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/pair-5-6.docx": "b49f3a7aa8d6f10ce0d44c87fcfda796e5493b54dee5d0f753a281f64418bd36",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/pair-5-6.zip": "4b5e83d615273c3c6ed43009ccbb8fc565ad59e4c518dd655bdc6f3d67bbc515",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/pair-5-6.document.xml": "79467b96e3f5f1fca47ef989dc9dd6996c2bc7537a15ea12d3e49154ffb258c1",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/evidence.json": "6324693c7f2fdab516f16ed754461c89de910bc47a61e6f7c53a5004a504d26c"
+    },
+    "group_count": 1,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": 1
+  },
+  {
+    "sample": "before-pair-24-25",
+    "historical": true,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/pair-24-25.document-ir.json": "a8f72f799c071a3e7f218496ee715080a71f6069149fd301f4504e835c0247c7",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/pair-24-25.docx": "07fbd6d69db2eba9b702317be99bbccf334d29353cc4a472776e0de4d7d4a21c",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/pair-24-25.zip": "56a53906ec19b06b9eebe664314fa75c7f9cf8125d414ad1b899d8737e440d76",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/pair-24-25.document.xml": "e7b6e1fb3aa0e91d8640aa17ca84c221ae06caa4829fe78afc8544fb3fb5a7db",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/evidence.json": "6324693c7f2fdab516f16ed754461c89de910bc47a61e6f7c53a5004a504d26c"
+    },
+    "group_count": 1,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": 1
+  },
+  {
+    "sample": "before-single",
+    "historical": true,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/single.document-ir.json": "18caa64fd2f60b5ac92ae307248beead4ab8fc88f55211b26ae715812df46207",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/single.docx": "37a7c703630ab0b942b2aa4f87ff51341110844aeccf2046abe96d827d648b9f",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/single.zip": "ef04671b6fc8ba5c95a45b517e2937f78e1f2bd69be833022a5c950d34205762",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/single.document.xml": "fb1e1543ce00a08b05800a7fd4b7193662517876197ff0f2455c9fad75858c01",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-visual/evidence.json": "6324693c7f2fdab516f16ed754461c89de910bc47a61e6f7c53a5004a504d26c"
+    },
+    "group_count": 0,
+    "inline_shape_count": 1,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": 1
+  },
+  {
+    "sample": "mixed-column",
+    "historical": false,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/mixed-column.ir.json": "4b33e76f10d9bf8930da8dc63d9b91940283faf194066cd7453a4e6ffeeef748",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/mixed-column.docx": "7497ce9791dc51038fc7b105103ef97b5150d5276e57707653e32919a04de988",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/mixed-column.reports.json": "6208a79bd4c98f7fce25c4a31733928c211b47c212e427afe6e3727be9208e6e",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/mixed-column.document.xml": "ca658c605aa5ad8b7ba3e5957e37df545090178d0300a7348851e6930d2185fe",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/mixed-column.pdf": "859585a57113c3e42890d00e9c17fcf7f05b95bd2aaa8594b78363c0d737e36a",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/mixed-column.png": "6e32c2dc1e66c434a8544eb05df0530a7a5539bf9e3408cec12636d172e3153d"
+    },
+    "group_count": 0,
+    "inline_shape_count": 1,
+    "blocking_flags": [],
+    "quality_flags": [
+      "docx_latex_residue:4",
+      "docx_unstyled_heading_candidates:2"
+    ],
+    "preview_pages": 1
+  },
+  {
+    "sample": "mixed-geometry",
+    "historical": false,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/mixed-geometry.ir.json": "f2ce1ef1c62f961d3f1bc1b133f2f0513f092559a9f4eb7a68460000a3027c55",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/mixed-geometry.docx": "fb6bb869435925553d8107ecabba39a73df7ffe80ec18b1ec9768905d0947b1e",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/mixed-geometry.reports.json": "79934c404e075cdea8b0217beb3a051aa6a88ae935379d94ea3d4db444856e29",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/mixed-geometry.document.xml": "a3bf15994cb35ca6a0927cee266707ca83d0868b23b3b8c225a9a6a09cc5f2ae",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/mixed-geometry.pdf": "8294ed43ae2a8371417834adca5a84c67db2e25761bcf128ba8b237dc9e4e12a",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/mixed-geometry.png": "6e32c2dc1e66c434a8544eb05df0530a7a5539bf9e3408cec12636d172e3153d",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/mixed-geometry-page-1.png": "6e32c2dc1e66c434a8544eb05df0530a7a5539bf9e3408cec12636d172e3153d",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/mixed-geometry-page-3.png": "46ff7b6000eca0bb69e56ef239186f7532234515fcc12df2a0ccab7b2cdfce58",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/mixed-geometry-page-2.png": "7823622b2ed9433df8690ecfdde78770242efd1be205df065836b6e943a56ce0"
+    },
+    "group_count": 0,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [
+      "docx_latex_residue:4",
+      "docx_unstyled_heading_candidates:4",
+      "image_group_uncertain"
+    ],
+    "preview_pages": 3
+  },
+  {
+    "sample": "large-indent-table",
+    "historical": false,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/large-indent-table.ir.json": "bb8706593646c6f7dcab81f3c071a7cd6fdd7f339f17dbf56b8084ba1d021900",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/large-indent-table.docx": "7fbc71081fcd57df9383fcbc486c84641bfcd45ef116286d71aa221a80ec7cc5",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/large-indent-table.reports.json": "8f9fb01e9123cea5340547d62b529305afad8471378b8f72c0c7293b66ea7fd7",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/large-indent-table.document.xml": "ddeca1c486266532f9e8767f1fcf969121a274de0a76da3055915a0fe25e97c5",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/large-indent-table.pdf": "ebec428af0b2a0bea5e46e77895cb3a1fd946c947d9dbc6cbe60d054e69efcb5",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/previews/large-indent-table.png": "cc22afacb455735c3d91255647ac947cf39f4fe7f24c2b0f8b85eebd7666cccd"
+    },
+    "group_count": 1,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": 1
+  },
+  {
+    "sample": "legacy-indent-dxa",
+    "historical": true,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/dxa.ir.json": "bb8706593646c6f7dcab81f3c071a7cd6fdd7f339f17dbf56b8084ba1d021900",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/dxa.docx": "0423c389f43906189999506f22347d308e10509869b9a16a2b2ed264a11c8402",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/dxa.reports.json": "94b4b5bcbac9ad689f21a35639f3c47cef1e0cc18cc44028f855212f61c95cde",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/dxa-template.docx": "6416e70f01c62eb4120a5d1ffbf9c92d36c540a58ab98c7fc680b644353f278f"
+    },
+    "group_count": 1,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": null
+  },
+  {
+    "sample": "legacy-indent-pct",
+    "historical": true,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/pct.ir.json": "bb8706593646c6f7dcab81f3c071a7cd6fdd7f339f17dbf56b8084ba1d021900",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/pct.docx": "3c85e5a1da30c0063c591e707f5718282738bfaeecfefad48e0d45fd64470901",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/pct.reports.json": "967cd971be37d5ee8eb46a04929c863217a2b73f50e6c28c2e804c3e2371ab56",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/pct-template.docx": "d80a3d1ab94aca2f76fcf345994b5de6d44353a8bac2ee6b15ba91547036dfab"
+    },
+    "group_count": 1,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": null
+  },
+  {
+    "sample": "legacy-indent-auto",
+    "historical": true,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/auto.ir.json": "bb8706593646c6f7dcab81f3c071a7cd6fdd7f339f17dbf56b8084ba1d021900",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/auto.docx": "3bf24e95d45f43fe9fa630b20d719e6d34d434fdfd483c2359fcb400a6aa8bae",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/auto.reports.json": "18ad375ac0b43d5252d4d64735a5c28b2b5cb5c6543d3f4a8f588f0d6a03842f",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/auto-template.docx": "7522493a64a25f1efe3d5b280d0e561d2611a1f1a9301a289133535118f8e011"
+    },
+    "group_count": 1,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": null
+  },
+  {
+    "sample": "legacy-indent-nil",
+    "historical": true,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/nil.ir.json": "bb8706593646c6f7dcab81f3c071a7cd6fdd7f339f17dbf56b8084ba1d021900",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/nil.docx": "4e72acf0b40e63d01cb4c644aa96a60de83282731585965f007beb16c6ecba66",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/nil.reports.json": "2029345382f5767c244f656008de2a24dc0322a09dd3b4fe9217e7c613da457c",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/nil-template.docx": "8f4f4514f6fb78957be329356f51dc9f792555c977e3111684bbcdb5e6d1c017"
+    },
+    "group_count": 1,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": null
+  },
+  {
+    "sample": "legacy-indent-omit-type",
+    "historical": true,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/omit-type.ir.json": "bb8706593646c6f7dcab81f3c071a7cd6fdd7f339f17dbf56b8084ba1d021900",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/omit-type.docx": "7413cf647447fcc18e1f84ba29b39ba40613c8bf272f7dbe5d5ee58cc9c748f8",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/omit-type.reports.json": "4c12740198d94cd253a0113fbc28fc614838e3e53c7bc3d0217bfc3b42be76ad",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/omit-type-template.docx": "39862ff16d8a0ee5a360ea4980cdae59d57d070ae4576462474f48d7dcaff407"
+    },
+    "group_count": 1,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": null
+  },
+  {
+    "sample": "legacy-indent-omit-width",
+    "historical": true,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/omit-width.ir.json": "bb8706593646c6f7dcab81f3c071a7cd6fdd7f339f17dbf56b8084ba1d021900",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/omit-width.docx": "fb5f9091bd0d237ee122c5ee467e83a174ea89f87f97ba7f408f6a5fbf5ce96a",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/omit-width.reports.json": "4114ba87440ec87b8cfbde4de37084b6f5025b98160090496797e936fda47e39",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/omit-width-template.docx": "d550986c04d2549c2cb30378281d0ca8e7a3cb97da01b50c5b37dde2d18e60ea"
+    },
+    "group_count": 1,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": null
+  },
+  {
+    "sample": "legacy-indent-omit-both",
+    "historical": true,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/omit-both.ir.json": "bb8706593646c6f7dcab81f3c071a7cd6fdd7f339f17dbf56b8084ba1d021900",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/omit-both.docx": "14b7a78017067df37dc312faa3c307e7b851a1aa760b0ea913086d7b03b075e5",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/omit-both.reports.json": "555a68144738883f31eb5a1041f7f752fc3a2852719436368637500b792ee376",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/legacy-indent-units/omit-both-template.docx": "d66b8e11f2ec0d9814da9654273edbc032cfe61b8894570ae89ea4ac5f5c273e"
+    },
+    "group_count": 1,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [],
+    "preview_pages": null
+  },
+  {
+    "sample": "actual-B1",
+    "historical": false,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/b1/b1-generated.ir.json": "bb8706593646c6f7dcab81f3c071a7cd6fdd7f339f17dbf56b8084ba1d021900",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/b1/b1-generated.docx": "4a768af92b0aa2804f84be5e9ec06ddc96f93c34b424597faad7f613b293301c",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/b1/b1-generated.reports.json": "d1cef9408987b63034891057da36dfb7e5a0180430bb8506505a20d603ab3a6f",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/b1/build-manifest.json": "ef00b109e7e8b349e78804bf5b9033f5ebb95fb8eb1dfd49025754ca65df9f06",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/b1/image_evidence.b1.py": "5f8d75857937b338f1445bdce3d86a18296df8d5a0c46c1462215ca3e52e825a"
+    },
+    "group_count": 0,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [
+      "docx_unstyled_heading_candidates:4"
+    ],
+    "preview_pages": null
+  },
+  {
+    "sample": "before-B1",
+    "historical": true,
+    "files": {
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-b1/b1-generated.ir.json": "bb8706593646c6f7dcab81f3c071a7cd6fdd7f339f17dbf56b8084ba1d021900",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-b1/b1-generated.docx": "199a0d87958601639e5e0ac04d86a9caf838aa7e248b6b7cfd56ba043ea6ad48",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-b1/b1-generated.reports.json": "d1cef9408987b63034891057da36dfb7e5a0180430bb8506505a20d603ab3a6f",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-b1/build-manifest.json": "3553d49d997867b620c77ed34bd8148483404bc1df58b9c7be320f54cade5f08",
+      "/Users/sc/PycharmProjects/md2word/tests/tmp/rnd503/post-review/before-b1/image_evidence.b1.py": "702b73cbd63b75a9ad099294bc2b852b15f7ad7f5519ab3e8dd97c9b0f3b86ac"
+    },
+    "group_count": 0,
+    "inline_shape_count": 2,
+    "blocking_flags": [],
+    "quality_flags": [
+      "docx_unstyled_heading_candidates:4"
+    ],
+    "preview_pages": null
+  }
+]

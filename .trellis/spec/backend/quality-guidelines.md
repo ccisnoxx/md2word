@@ -45,6 +45,11 @@ Questions to answer:
 
 ## Testing Requirements
 
+### 复核状态与成功渲染夹具
+
+- 区分未渲染任务的初始默认值与成功任务的已有质量证据。同一代、同一结果的复核和重置测试应先确认公式摘要符合夹具预期，再断言 `quality_status`、`quality_summary` 保持不变以及交付状态符合合同；不能把成功任务重新断言为 `quality_summary={}`。
+- 成功回调路径需要可验证的 DOCX 和正式渲染报告。优先复用测试 runtime 已配置的 renderer；确需替身时应实现当前 `render_to_result` 结果合同，不能只返回 `b'fake-docx'`，也不能绕过质量检查。具体报告合同见 [Word 生成规则](./word-generation-rules.md#rnd-502公式报告与结果绑定的可执行合同)。
+
 ### DOCX 渲染验证
 
 - 定向测试应同时断言稳定的结构证据和可见内容，不以单一高层库属性或“文件可打开”代替行为验证。

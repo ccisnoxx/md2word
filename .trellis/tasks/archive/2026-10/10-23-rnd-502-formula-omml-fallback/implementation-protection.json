@@ -1,0 +1,17 @@
+{
+  "branch": "md2word/RND-502",
+  "head": "c56e12832ff30212cc067d0909430cf5f091f79b",
+  "index_preserved": true,
+  "unrelated_original_changed": [],
+  "manifest_changed_ids": [
+    "RND-502"
+  ],
+  "other_task_count_preserved": 44,
+  "approved_v2_preserved": true,
+  "tested_code_unchanged": true,
+  "word_excerpt_source_hash_current": true,
+  "manifest_status": "review",
+  "trellis_status": "in_progress",
+  "final_diff_check": "passed",
+  "task_validate": "implement=8 check=8 passed no warnings"
+}

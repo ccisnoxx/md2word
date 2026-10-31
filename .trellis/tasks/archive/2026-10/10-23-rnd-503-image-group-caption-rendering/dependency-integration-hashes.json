@@ -1,0 +1,25 @@
+{
+  "head": "1835263621a2a18627a5730e7fd62b6bc7cae8c2",
+  "branch": "md2word/RND-503",
+  "sources": [
+    "17cde1f2a93fa007add9e8adb885d225594bfdc6",
+    "7defa41691936bd763a193ad53a784b752d88ed7"
+  ],
+  "sha256": {
+    "app/services/document_ir/models.py": "eb7154eacc42048daccfeeac5f4de7ccc5b5065a1a505bed8b4b0fbb28c29336",
+    "app/services/document_ir/mineru_package.py": "532c28a45a700a9b1eba0bbf549c52825359f2868231857a1f1320bfb841bc76",
+    "app/services/document_ir/layout_signals.py": "714feecb7b995b4d160571598bf886a569f4714665d499ae6c6e755375a4eb6c",
+    "app/services/document_ir/mineru_converter.py": "5c0b3b1ac63f692207b8002fee6b9138f9e7617f55c9dae1af6d61ee1b05ed8f",
+    "app/services/document_ir/table_annotations.py": "4034a587cb58f411a123abca4ccd1c53b5afa1a6df28c029202d732bed131a93",
+    "app/services/document_ir/artifact_validator.py": "d735fc0bf7c4585f27ca5ea9a8cf548bbd9e373cd229e4251b6093d46395ffbf",
+    "app/services/document_ir/caption_reconciler.py": "70c8347e0c4a416b21e931680a0c62335b4488c000d214189e0d1167630cfe88",
+    "app/conversion/docx_rules/mineru_content.py": "c6a76c3c1e2a142c705ba446c639995b053784514bc4994008c138efe23ca577",
+    "app/services/renderer/evidence.py": "71d397c331005d886b7881b7f1d41294fa353c62ad9334eaf45650e455f69f40",
+    "app/domains/document_jobs/execution.py": "61609569bf1ec199af9faa5fceb08b59e8e2d48d4f8a102257527a87b35ef9d7",
+    "tests/test_caption_reconciler.py": "bffbf1f771101904e8533decbf5cab54cec44eb5bfaafe62a67799b3e262cb3d",
+    "tests/test_mineru_artifact_validator.py": "a32d51a56ac426485fd6974fcb19853ebdac003cf143d8f7786b42f3b81d8bf7",
+    "tests/test_document_ir_layout_contract.py": "583ed8a3bf9647dbc5bd4fa4b5b02d56c3ff44273167a4d04fbe7c17b688cd42",
+    "tests/test_document_ir_mineru_converter_layout.py": "f6589e78cf3975a53cc12d45ae25f4611b06ed3f0bfa5c5643ce12feeedd7d06",
+    "tests/test_rnd503_dependency_integration.py": "4345e427b2bce7246f1055aca622b7eb1713c69f24be1c69eced4e407a35bcc2"
+  }
+}

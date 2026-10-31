@@ -71,7 +71,7 @@
           <el-option v-for="status in statuses" :key="status" :label="jobStatusText[status]" :value="status" />
         </el-select>
         <el-select v-model="stageFilter" clearable placeholder="阶段/失败阶段" class="filter-select" @change="handleFilter">
-          <el-option v-for="stage in stages" :key="stage" :label="jobStageText[stage] || stage" :value="stage" />
+          <el-option v-for="stage in documentJobStages" :key="stage" :label="jobStageText[stage] || stage" :value="stage" />
         </el-select>
         <el-select v-model="failureTypeFilter" clearable placeholder="失败类型" class="filter-select" @change="handleFilter">
           <el-option v-for="failureType in incidentFailureTypes" :key="failureType" :label="incidentFailureTypeText[failureType]" :value="failureType" />
@@ -443,7 +443,7 @@ import WorkbenchSectionHeader from "@/components/WorkbenchSectionHeader.vue";
 import WorkbenchSummaryStrip from "@/components/WorkbenchSummaryStrip.vue";
 import WorkbenchTableSettings from "@/components/WorkbenchTableSettings.vue";
 import { normalizeIncidentBatchResult } from "@/utils/batchResults";
-import { formatDateTime, getJobSourceFilename, jobStageText, jobStatusText } from "@/utils/format";
+import { documentJobStages, formatDateTime, getJobSourceFilename, jobStageText, jobStatusText } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import type { ShortcutHint } from "@/utils/keyboardShortcuts";
 import {
@@ -528,7 +528,6 @@ let routeSyncInProgress = false;
 let drawerLoadToken = 0;
 
 const statuses: DocumentJobStatus[] = ["pending", "queued", "running", "succeeded", "failed", "canceled"];
-const stages: DocumentJobStage[] = ["uploaded", "parsing", "parsed", "ir_converting", "rendering", "uploading", "completed", "failed", "canceled"];
 const incidentListShortcutHints: ShortcutHint[] = [
   { keys: ["R"], label: "刷新" },
   { keys: ["Esc"], label: "关闭抽屉" },

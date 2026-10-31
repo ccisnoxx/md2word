@@ -1,0 +1,15 @@
+{"file": ".trellis/spec/backend/document-job-mode-contract.md", "reason": "direct零翻译、快照/原权限与后端动作权威"}
+{"file": ".trellis/spec/backend/translation-integrity-validator.md", "reason": "复用双入口/evidence/同代消费和字节不可变，不补原文"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "三adapter与CON-102同job原子边界，不新增DDL"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "安全专码、实际失败阶段与可见存储/审计异常"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "既有前端质量与权威状态消费规范"}
+{"file": "docs/design/translation-design.md", "reason": "部分失败目标及同代自动retry/跨代用户retry的文档澄清"}
+{"file": ".trellis/tasks/10-22-tr-406-partial-batch-failure-semantics/research/current-state.md", "reason": "真实缺口、依赖基线、源码导航、37项基线与反例证据"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "事件/trace/代次和隐私边界"}
+{"file": ".trellis/tasks/10-22-tr-406-partial-batch-failure-semantics/research/review-decisions.md", "reason": "revision2两项P2处理合同、AC12/13及同代停止/普通竞争/旧代区别；不能回退revision1缺口"}
+{"file": ".trellis/tasks/10-22-tr-406-partial-batch-failure-semantics/implementation-authorization.md", "reason": "最新人工接受、实施及CON103/104基线bootstrap追加授权，保护既存dirty且停验收"}
+{"file": ".trellis/tasks/10-22-tr-406-partial-batch-failure-semantics/dependency-integration.md", "reason": "已整合CON102与TR403兼容基线、receipt接口及真实回归结果"}
+{"file": ".trellis/tasks/10-22-tr-406-partial-batch-failure-semantics/workflow-contract.md", "reason": "唯一typed reducer和权威根计划校验签名，仓储/执行/API不得重复判定"}
+{"file": ".trellis/tasks/10-22-tr-406-partial-batch-failure-semantics/research/verification-navigation.md", "reason": "可执行定向测试、mock smoke和样本runner命令，区分已运行证据与待验证入口"}
+{"file": ".trellis/tasks/10-22-tr-406-partial-batch-failure-semantics/dependency-con103104-integration.md", "reason": "已追加授权的CON103/104状态/下载基线、bootstrap与真实回归及宽模块待分类失败"}
+{"file": ".trellis/spec/backend/translation-batch-lifecycle.md", "reason": "本次实现的唯一批次生命周期/原子边界/错误/API合同，七段code-spec"}

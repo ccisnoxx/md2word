@@ -38,13 +38,14 @@
     <el-alert
       v-if="lastDownloadLink"
       class="page-section download-link-alert"
-      type="success"
+      :type="lastDownloadLink.notice ? 'warning' : 'success'"
       :closable="true"
       show-icon
       :title="lastDownloadLink.label"
       @close="lastDownloadLink = null"
     >
       <div class="download-link-notice">
+        <strong v-if="lastDownloadLink.notice" class="download-policy-notice" role="status">{{ lastDownloadLink.notice }}</strong>
         <span>有效期至 {{ formatDateTime(lastDownloadLink.expiresAt) }}</span>
         <a :href="lastDownloadLink.url" target="_blank" rel="noopener">打开下载链接</a>
         <el-button text size="small" @click="copyLastDownloadLink">复制链接</el-button>
@@ -98,6 +99,25 @@
             </div>
           </div>
         </div>
+      </el-card>
+
+      <el-card class="page-section publication-availability card-flat" shadow="never">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">发布可用性</h2>
+            <p class="section-subtitle">
+              {{ job.available_actions.publish?.eligible === true ? "核心资格通过" : job.available_actions.publish?.eligible === false ? "核心资格未通过" : "核心资格未提供" }}
+              · {{ isDocumentJobActionEnabled(job, "publish") ? "后端已开放发布" : "当前不可发布" }}
+            </p>
+          </div>
+          <el-button :disabled="!isDocumentJobActionEnabled(job, 'publish')" aria-describedby="publication-disabled-reasons">发布</el-button>
+        </div>
+        <ul id="publication-disabled-reasons" class="publication-reasons" tabindex="0" aria-label="发布禁用原因">
+          <li v-for="(reason, index) in documentJobActionDisabledReasons(job, 'publish')" :key="`${reason.code}-${index}`">
+            <span>{{ reason.message }}</span>
+            <small v-if="reason.code" class="mono">{{ reason.code }}</small>
+          </li>
+        </ul>
       </el-card>
 
       <el-tabs v-model="activeTab" class="detail-tabs">
@@ -219,9 +239,9 @@
 
             <EvidenceSurfaceSection
               v-if="usesTranslationResources(job)"
-              title="Provider 批次"
+              title="翻译批次"
               description="翻译 Provider 批次摘要；AI 调用日志仅显示文件 ID，正文内容不进入此视图。"
-              aria-label="Provider 批次"
+              aria-label="翻译批次"
               root-class="diagnostic-section-block"
             >
               <template #actions>
@@ -233,6 +253,19 @@
                 :error="translationBatchesError"
                 :diagnostic-context="jobErrorDiagnosticContext('document_jobs.translation_batches')"
               />
+              <el-alert
+                v-if="translationBatchConclusion"
+                class="translation-batch-conclusion"
+                :type="translationBatchConclusion.type"
+                :closable="false"
+                show-icon
+                :title="translationBatchConclusion.title"
+              >
+                <p>{{ translationBatchConclusion.description }}</p>
+                <p v-if="translationBatchConclusion.reason" class="translation-batch-conclusion-reason mono">
+                  {{ translationBatchConclusion.reason }}
+                </p>
+              </el-alert>
               <div v-if="translationBatches.length" class="translation-batch-summary-grid">
                 <div v-for="item in translationBatchSummaryItems" :key="item.label" class="translation-batch-summary-item">
                   <span>{{ item.label }}</span>
@@ -439,7 +472,7 @@
               </p>
             </el-alert>
             <el-descriptions :column="1" border>
-              <el-descriptions-item label="失败阶段">{{ job.failed_stage || "-" }}</el-descriptions-item>
+              <el-descriptions-item label="失败阶段">{{ job.failed_stage ? jobStageText[job.failed_stage] || job.failed_stage : "-" }}</el-descriptions-item>
               <el-descriptions-item label="错误码">{{ job.error_code || "-" }}</el-descriptions-item>
               <el-descriptions-item label="错误信息">{{ job.error_message || "-" }}</el-descriptions-item>
             </el-descriptions>
@@ -556,7 +589,7 @@
                 </el-select>
                 <el-select v-model="eventStageFilter" clearable placeholder="全部阶段" style="width: 156px">
                   <el-option
-                    v-for="stage in eventStageOptions"
+                    v-for="stage in documentJobStages"
                     :key="stage"
                     :label="jobStageText[stage]"
                     :value="stage"
@@ -755,7 +788,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { DataAnalysis, Download, EditPen, Refresh } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
@@ -771,6 +804,7 @@ import type {
   DocumentJobRetryRequest,
   DocumentJobResponse,
   DocumentJobStage,
+  DocumentJobTranslationBatchExecutionResponse,
   DocumentJobTranslationBatchSummaryResponse,
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
@@ -788,9 +822,12 @@ import {
   formatDateTime,
   getJobSourceFilename,
   documentJobActionDisabledReason,
+  documentJobActionDisabledReasons,
+  documentJobDownloadNotice,
   documentJobQualityFlagText,
   documentJobModeRequiresTranslationResources,
   documentJobModeSupportsTranslationQa,
+  documentJobStages,
   isActiveJobStatus,
   isDocumentJobActionEnabled,
   jobModeText,
@@ -816,6 +853,8 @@ import {
   translationBatchScaleText,
   translationBatchStatusTagType,
   translationBatchStatusText,
+  translationBatchOutcomeTagType,
+  translationBatchOutcomeText,
 } from "@/utils/translationBatches";
 
 const route = useRoute();
@@ -828,6 +867,7 @@ const files = ref<DocumentFileSummaryResponse[]>([]);
 const callbackSummary = ref<DocumentJobCallbackMessageSummaryResponse | null>(null);
 const translationBatches = ref<DocumentJobTranslationBatchSummaryResponse[]>([]);
 const translationBatchGeneration = ref<number | null>(null);
+const translationBatchExecution = ref<DocumentJobTranslationBatchExecutionResponse | null | undefined>(undefined);
 const loading = ref(false);
 const eventsLoading = ref(false);
 const filesLoading = ref(false);
@@ -857,6 +897,9 @@ const configSummary = ref<DocumentJobConfigSummaryResponse | null>(null);
 const lastDownloadLink = ref<DownloadLinkNotice | null>(null);
 let pollTimer: number | undefined;
 let pollRefreshCount = 0;
+let disposed = false;
+let routeEpoch = 0;
+const requestRounds = { all: 0, job: 0, events: 0, files: 0, callbackSummary: 0, translationBatches: 0 };
 
 type RetryStrategy = "keep_original" | "use_latest_term_assets" | "select_term_assets";
 type CloneConfigStrategy = NonNullable<DocumentJobCloneRequest["config_strategy"]>;
@@ -891,18 +934,6 @@ const cloneDialog = reactive({
   translationTermVersion: "",
   translationProfileVersion: "",
 });
-const eventStageOptions: DocumentJobStage[] = [
-  "uploaded",
-  "parsing",
-  "parsed",
-  "ir_converting",
-  "rendering",
-  "uploading",
-  "completed",
-  "failed",
-  "canceled",
-];
-
 const isAdmin = computed(() => auth.user?.role === "admin");
 const requestSnapshotPreview = computed(() => JSON.stringify(
   job.value ? documentJobRequestSnapshotForDisplay(job.value.request_snapshot, job.value.mode) : {},
@@ -1021,9 +1052,13 @@ const filteredEvents = computed(() =>
     return true;
   }),
 );
-const translationBatchSummary = computed(() => summarizeTranslationBatches(translationBatches.value));
+const translationBatchSummary = computed(() => summarizeTranslationBatches(
+  translationBatches.value,
+  translationBatchExecution.value,
+));
 const translationBatchSummaryItems = computed(() => [
   { label: "总批次", value: String(translationBatchSummary.value.total) },
+  { label: "有效叶", value: String(translationBatchSummary.value.leafCount) },
   { label: "成功", value: String(translationBatchSummary.value.succeeded) },
   { label: "运行中", value: String(translationBatchSummary.value.active) },
   { label: "失败", value: String(translationBatchSummary.value.failed) },
@@ -1034,6 +1069,33 @@ const translationBatchSummaryItems = computed(() => [
   { label: "generation", value: translationBatchGeneration.value === null ? "-" : String(translationBatchGeneration.value) },
   { label: "预算", value: translationBatchSummary.value.providerCallBudget === null ? "-" : String(translationBatchSummary.value.providerCallBudget) },
 ]);
+const translationBatchConclusion = computed(() => {
+  if (!translationBatchSummary.value.executionAvailable || !translationBatchExecution.value) {
+    if (translationBatches.value.length) {
+      return {
+        type: "info" as const,
+        title: "详细结论不可用",
+        description: "当前 API 未返回 execution 摘要，页面保留批次诊断；不会据此推导发布或下载资格。",
+        reason: "",
+      };
+    }
+    return null;
+  }
+  const execution = translationBatchExecution.value;
+  const title = translationBatchOutcomeText(execution) || "翻译批次状态未知";
+  const type = translationBatchOutcomeTagType(execution);
+  const reason = execution.reason_code
+    ? `${execution.reason_code}${execution.reason_message ? `: ${execution.reason_message}` : ""}`
+    : "";
+  const description = execution.outcome === "failed"
+    ? "当前代未生成可交付 Word；部分批次只保留在受控诊断路径。"
+    : execution.outcome === "retrying"
+      ? "后端正在同一 generation 自动恢复失败叶子，成功批次不会重复调用。"
+      : execution.outcome === "completed"
+        ? "所有翻译批次已完成；可用的下载和发布操作请以任务页面提示为准。"
+        : "当前代结论由后端 execution 摘要提供。页面不根据批次数量自行改变任务动作。";
+  return { type, title, description, reason };
+});
 const translationBatchHealthText = computed(() => {
   if (!supportsJobTranslationQa(job.value)) {
     return "不适用";
@@ -1044,8 +1106,17 @@ const translationBatchHealthText = computed(() => {
   if (translationBatchesError.value) {
     return "加载失败";
   }
+  if (!translationBatchSummary.value.executionAvailable) {
+    return translationBatches.value.length ? "详细结论不可用" : "暂无批次";
+  }
+  if (translationBatchSummary.value.outcome === "retrying") {
+    return "自动重试中";
+  }
+  if (translationBatchSummary.value.outcome === "failed") {
+    return "翻译失败，未生成可交付 Word";
+  }
   if (!translationBatchSummary.value.total) {
-    return "暂无批次";
+    return translationBatchSummary.value.outcome === "completed" ? "翻译批次已完成" : "暂无批次";
   }
   if (translationBatchSummary.value.failed || translationBatchSummary.value.attention) {
     return `需关注 ${translationBatchSummary.value.attention} / ${translationBatchSummary.value.total}`;
@@ -1059,7 +1130,7 @@ const failureSummary = computed(() => {
   }
   const stage = job.value.failed_stage || job.value.stage || "unknown";
   const code = job.value.error_code || "unknown";
-  return `任务在 ${stage} 阶段失败，错误码 ${code}。`;
+  return `任务在 ${jobStageText[stage as DocumentJobStage] || stage} 阶段失败，错误码 ${code}。`;
 });
 const failureHelpText = computed(() => {
   const code = job.value?.error_code || "";
@@ -1185,7 +1256,7 @@ const dispositionFacts = computed(() => {
     { label: "阶段", value: jobStageText[job.value.stage] || job.value.stage },
     { label: "进度", value: `${job.value.progress}%` },
     { label: "最近更新", value: formatDateTime(job.value.updated_at) },
-    { label: "失败阶段", value: job.value.failed_stage || "-" },
+    { label: "失败阶段", value: job.value.failed_stage ? jobStageText[job.value.failed_stage] || job.value.failed_stage : "-" },
     { label: "错误码", value: job.value.error_code || "-", mono: true },
     { label: "trace_id", value: latestTraceId.value, mono: true },
     { label: "回调", value: callbackHealthText.value },
@@ -1194,7 +1265,7 @@ const dispositionFacts = computed(() => {
     { label: "文件", value: fileAvailabilitySummary.value },
   ];
 });
-const taskActionOrder: DocumentJobActionId[] = ["download", "retry", "clone", "cancel", "archive", "unarchive", "delete"];
+const taskActionOrder: DocumentJobActionId[] = ["download", "retry", "clone", "cancel", "archive", "unarchive", "delete", "publish"];
 const actionSummaries = computed(() => {
   if (!job.value) {
     return [];
@@ -1207,6 +1278,7 @@ const actionSummaries = computed(() => {
     archive: "归档",
     unarchive: "取消归档",
     delete: "删除",
+    publish: "发布",
   };
   return taskActionOrder
     .filter((action) => shouldShowDocumentJobAction(job.value as DocumentJobResponse, action))
@@ -1404,105 +1476,126 @@ function callbackStatusCount(status: string): number {
 }
 
 async function loadJob(targetJobId = jobId.value): Promise<void> {
+  if (disposed || targetJobId !== jobId.value) {
+    return;
+  }
+  const requestRound = ++requestRounds.job;
   loading.value = true;
   error.value = null;
   try {
     const response = await documentJobsApi.get(targetJobId);
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("job", requestRound, targetJobId)) {
       job.value = response;
     }
   } catch (caught) {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("job", requestRound, targetJobId)) {
       error.value = normalizeApiError(caught);
     }
   } finally {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("job", requestRound, targetJobId)) {
       loading.value = false;
     }
   }
 }
 
 async function loadEvents(targetJobId = jobId.value): Promise<void> {
+  if (disposed || targetJobId !== jobId.value) {
+    return;
+  }
+  const requestRound = ++requestRounds.events;
   eventsLoading.value = true;
   eventsError.value = null;
   try {
     const response = await documentJobsApi.listEvents(targetJobId);
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("events", requestRound, targetJobId)) {
       events.value = response.items;
     }
   } catch (caught) {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("events", requestRound, targetJobId)) {
       eventsError.value = normalizeApiError(caught);
     }
   } finally {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("events", requestRound, targetJobId)) {
       eventsLoading.value = false;
     }
   }
 }
 
 async function loadFiles(targetJobId = jobId.value): Promise<void> {
+  if (disposed || targetJobId !== jobId.value) {
+    return;
+  }
+  const requestRound = ++requestRounds.files;
   filesLoading.value = true;
   filesError.value = null;
   try {
     const response = await documentJobsApi.listFiles(targetJobId);
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("files", requestRound, targetJobId)) {
       files.value = response.files;
     }
   } catch (caught) {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("files", requestRound, targetJobId)) {
       filesError.value = normalizeApiError(caught);
     }
   } finally {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("files", requestRound, targetJobId)) {
       filesLoading.value = false;
     }
   }
 }
 
 async function loadCallbackSummary(targetJobId = jobId.value): Promise<void> {
+  if (disposed || targetJobId !== jobId.value) {
+    return;
+  }
+  const requestRound = ++requestRounds.callbackSummary;
   callbackSummaryLoading.value = true;
   callbackSummaryError.value = null;
   try {
     const response = await documentJobsApi.getCallbackMessageSummary(targetJobId);
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("callbackSummary", requestRound, targetJobId)) {
       callbackSummary.value = response;
     }
   } catch (caught) {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("callbackSummary", requestRound, targetJobId)) {
       callbackSummaryError.value = normalizeApiError(caught);
     }
   } finally {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("callbackSummary", requestRound, targetJobId)) {
       callbackSummaryLoading.value = false;
     }
   }
 }
 
 async function loadTranslationBatches(targetJobId = jobId.value): Promise<void> {
+  if (disposed || targetJobId !== jobId.value) {
+    return;
+  }
+  const requestRound = ++requestRounds.translationBatches;
   if (!supportsJobTranslationQa(job.value)) {
-    if (targetJobId === jobId.value) {
-      translationBatches.value = [];
-      translationBatchGeneration.value = null;
-      translationBatchesError.value = null;
-      translationBatchesLoading.value = false;
-    }
+    translationBatches.value = [];
+    translationBatchGeneration.value = null;
+    translationBatchExecution.value = undefined;
+    translationBatchesError.value = null;
+    translationBatchesLoading.value = false;
     return;
   }
   translationBatchesLoading.value = true;
   translationBatchesError.value = null;
   try {
     const response = await documentJobsApi.listTranslationBatches(targetJobId);
-    if (targetJobId === jobId.value) {
+    const isCurrentGeneration = job.value?.retry_count === undefined || response.generation === job.value.retry_count;
+    if (isCurrentRequest("translationBatches", requestRound, targetJobId) && isCurrentGeneration) {
       translationBatches.value = response.items;
       translationBatchGeneration.value = response.generation;
+      translationBatchExecution.value = response.execution;
     }
   } catch (caught) {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("translationBatches", requestRound, targetJobId)) {
       translationBatchesError.value = normalizeApiError(caught);
     }
   } finally {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("translationBatches", requestRound, targetJobId)) {
       translationBatchesLoading.value = false;
     }
   }
@@ -1512,14 +1605,32 @@ type LoadAllOptions = {
   secondary?: "all" | "smart";
 };
 
+function isCurrentRequest(kind: keyof typeof requestRounds, requestRound: number, targetJobId: string): boolean {
+  return !disposed && targetJobId === jobId.value && requestRound === requestRounds[kind];
+}
+
+function invalidateRequests(): void {
+  for (const kind of Object.keys(requestRounds) as Array<keyof typeof requestRounds>) {
+    requestRounds[kind] += 1;
+  }
+}
+
 async function loadAll(options: LoadAllOptions = {}): Promise<void> {
+  if (disposed) {
+    return;
+  }
+  const requestRound = ++requestRounds.all;
   const targetJobId = jobId.value;
   await loadJob(targetJobId);
-  if (targetJobId !== jobId.value) {
+  if (!isCurrentRequest("all", requestRound, targetJobId)) {
     return;
   }
   if (job.value) {
     await loadEvents(targetJobId);
+    // 同一任务的新刷新也会使旧链失效，避免旧链随后启动新的子请求。
+    if (!isCurrentRequest("all", requestRound, targetJobId)) {
+      return;
+    }
     if (options.secondary === "smart" && !shouldRefreshSecondaryDuringPoll()) {
       if (activeTab.value === "files") {
         await loadFiles(targetJobId);
@@ -1534,6 +1645,7 @@ async function loadAll(options: LoadAllOptions = {}): Promise<void> {
     } else {
       translationBatches.value = [];
       translationBatchGeneration.value = null;
+      translationBatchExecution.value = undefined;
       translationBatchesError.value = null;
     }
     await Promise.all(secondaryLoads);
@@ -1543,6 +1655,7 @@ async function loadAll(options: LoadAllOptions = {}): Promise<void> {
     callbackSummary.value = null;
     translationBatches.value = [];
     translationBatchGeneration.value = null;
+    translationBatchExecution.value = undefined;
     eventsError.value = null;
     filesError.value = null;
     callbackSummaryError.value = null;
@@ -1591,10 +1704,13 @@ function stopPolling(): void {
 
 function syncPolling(): void {
   stopPolling();
-  if (!job.value || !isActiveJobStatus(job.value.status) || document.hidden) {
+  if (disposed || !job.value || !isActiveJobStatus(job.value.status) || document.hidden) {
     return;
   }
   pollTimer = window.setInterval(() => {
+    if (loading.value || eventsLoading.value || filesLoading.value || callbackSummaryLoading.value || translationBatchesLoading.value) {
+      return;
+    }
     void loadAll({ secondary: "smart" });
   }, 4000);
 }
@@ -1647,10 +1763,12 @@ async function handleDownload(target: DocumentJobResponse): Promise<void> {
       url: response.download_url,
       expiresAt: response.expires_at,
       fileName: response.file.original_filename,
+      notice: documentJobDownloadNotice(response),
     };
+    await nextTick();
     const opened = openDownloadLink(response.download_url);
     if (opened) {
-      ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+      ElMessage.warning(`${lastDownloadLink.value.notice}。下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
     } else {
       ElMessage.warning("浏览器可能拦截了新窗口，页面已显示下载链接。");
     }
@@ -1674,10 +1792,16 @@ async function handleFileDownload(file: DocumentFileSummaryResponse): Promise<vo
       url: response.download_url,
       expiresAt: response.expires_at,
       fileName: response.file.original_filename,
+      notice: documentJobDownloadNotice(response, response.file.file_type === "generated_word"),
     };
+    await nextTick();
     const opened = openDownloadLink(response.download_url);
     if (opened) {
-      ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+      if (lastDownloadLink.value.notice) {
+        ElMessage.warning(`${lastDownloadLink.value.notice}。下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+      } else {
+        ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+      }
     } else {
       ElMessage.warning("浏览器可能拦截了新窗口，页面已显示下载链接。");
     }
@@ -1951,12 +2075,20 @@ function handleVisibilityChange(): void {
 
 function resetPageStateForRouteChange(): void {
   stopPolling();
+  routeEpoch += 1;
+  invalidateRequests();
+  loading.value = false;
+  eventsLoading.value = false;
+  filesLoading.value = false;
+  callbackSummaryLoading.value = false;
+  translationBatchesLoading.value = false;
   job.value = null;
   events.value = [];
   files.value = [];
   callbackSummary.value = null;
   translationBatches.value = [];
   translationBatchGeneration.value = null;
+  translationBatchExecution.value = undefined;
   error.value = null;
   eventsError.value = null;
   filesError.value = null;
@@ -2049,7 +2181,11 @@ watch(jobId, async (nextJobId, previousJobId) => {
     return;
   }
   resetPageStateForRouteChange();
+  const currentRouteEpoch = routeEpoch;
   await loadAll();
+  if (disposed || currentRouteEpoch !== routeEpoch || nextJobId !== jobId.value) {
+    return;
+  }
   syncPolling();
   if (route.query.retry === "1" && job.value?.status === "failed") {
     openRetryDialog(job.value);
@@ -2058,7 +2194,13 @@ watch(jobId, async (nextJobId, previousJobId) => {
 
 onMounted(async () => {
   document.addEventListener("visibilitychange", handleVisibilityChange);
+  const targetJobId = jobId.value;
+  const currentRouteEpoch = routeEpoch;
   await loadAll();
+  // 同路由刷新只替代请求，不能取消从列表进入时携带的重试意图。
+  if (disposed || currentRouteEpoch !== routeEpoch || targetJobId !== jobId.value) {
+    return;
+  }
   syncPolling();
   if (route.query.retry === "1" && job.value?.status === "failed") {
     openRetryDialog(job.value);
@@ -2066,6 +2208,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
   stopPolling();
   document.removeEventListener("visibilitychange", handleVisibilityChange);
 });
@@ -2141,6 +2284,29 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+}
+
+.download-policy-notice {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+
+.publication-reasons {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--app-color-text);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.publication-reasons small {
+  display: block;
+  color: var(--app-color-text-muted);
+}
+
+.publication-reasons:focus-visible {
+  outline: 2px solid var(--app-color-primary);
+  outline-offset: 4px;
 }
 
 .download-link-notice span {
@@ -2357,6 +2523,31 @@ onBeforeUnmount(() => {
 
 .translation-batch-table :deep(.is-translation-batch-active > td) {
   background: var(--el-color-primary-light-9);
+}
+
+.translation-batch-table :deep(.is-translation-batch-stopped > td) {
+  background: var(--el-color-warning-light-9);
+}
+
+.translation-batch-table :deep(.is-translation-batch-retrying > td) {
+  background: var(--el-color-warning-light-9);
+}
+
+.translation-batch-table :deep(.is-translation-batch-superseded > td) {
+  background: var(--app-color-surface-muted);
+}
+
+.translation-batch-conclusion {
+  margin-bottom: var(--app-space-2);
+}
+
+.translation-batch-conclusion p {
+  margin: 0;
+}
+
+.translation-batch-conclusion-reason {
+  margin-top: 6px !important;
+  overflow-wrap: anywhere;
 }
 
 .diagnostic-section-block {

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+
+from app.services.document_ir.artifact_validator import MinerUValidationReport
+from app.services.document_ir.table_placeholder import TablePlaceholderBinding
 
 
 DocumentIRBlockType = Literal["heading", "paragraph", "table", "image", "list", "formula"]
@@ -14,8 +17,111 @@ DocumentIRBlockRole = Literal["body", "page_header", "page_footer", "page_number
 DocumentIRColumnHint = Literal["left", "right", "wide"]
 
 
+class SourceSpan(BaseModel):
+    """原始数组定位；与归一化后的 layout.source_index 分开保存。"""
+
+    model_config = ConfigDict(extra="forbid")
+    json_pointer: str
+    source_index: int = Field(ge=0)
+    source_index_in_page: int | None = Field(default=None, ge=0)
+    source_type: str
+    page_index: int | None = Field(default=None, ge=0)
+    bbox: tuple[float, float, float, float] | None = None
+
+
+class RepeatedHeaderHint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    start_row: Literal[0] = 0
+    row_count: int = Field(gt=0)
+    signature: str
+
+
+class TableFragment(BaseModel):
+    """原始全文只保存于 raw_fragment；HTML 是定位到该全文的只读投影。"""
+
+    model_config = ConfigDict(extra="forbid")
+    fragment_id: str
+    source_span: SourceSpan
+    block_id: str | None
+    render_owner_block_id: str
+    raw_fragment: dict[str, JsonValue]
+    raw_html_pointer: str | None = None
+    html_state: Literal["missing", "empty", "present"]
+    raw_html_sha256: str | None = None
+    header_signature: str | None = None
+    repeated_header_hint: RepeatedHeaderHint | None = None
+    normalization_rule_id: str | None = None
+    normalization_reason: Literal["explicit_table_placeholder", "strict_empty_table_placeholder"] | None = None
+
+    @property
+    def raw_html(self) -> str | None:
+        if self.raw_html_pointer is None:
+            return None
+        value: Any = self.raw_fragment
+        try:
+            for token in self.raw_html_pointer.split("/")[1:]:
+                token = token.replace("~1", "/").replace("~0", "~")
+                value = value[int(token)] if isinstance(value, list) else value[token]
+        except (KeyError, IndexError, TypeError, ValueError) as error:
+            raise ValueError("逻辑表格来源合同无效：raw_html_pointer。") from error
+        if not isinstance(value, str):
+            raise ValueError("逻辑表格来源合同无效：raw_html_type。")
+        return value
+
+
+class ContinuationRelation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    from_fragment_id: str
+    to_fragment_id: str
+    kind: Literal["verified_continuation", "normalized_empty_placeholder"]
+    rule_id: str
+    evidence_codes: list[Literal["normalization_receipt", "adjacent_page_geometry", "same_table_number_continued",
+                                 "matching_header_consecutive_ordinal"]]
+
+
+class TableContinuationDiagnostic(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    from_fragment_id: str
+    to_fragment_id: str
+    reason: Literal["missing_geometry", "geometry_mismatch", "page_not_adjacent", "page_body_boundary",
+                    "insufficient_evidence", "header_mismatch", "column_mismatch", "unreliable_columns"]
+
+
+class LogicalTableGroup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    logical_group_id: str
+    fragments: list[TableFragment]
+    continuation_relations: list[ContinuationRelation] = Field(default_factory=list)
+    diagnostics: list[TableContinuationDiagnostic] = Field(default_factory=list)
+
+
+class TableReferenceFragment(BaseModel):
+    """片段的源检查事实；文件后续是否可读由任务审核入口动态判断。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    fragment_id: str
+    source_status: Literal["valid", "missing", "invalid"]
+    asset_ref: str | None
+
+
+class TableReferenceEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    schema_version: Literal["table-reference/v1"]
+    asset_role: Literal["table_reference"]
+    fragments: list[TableReferenceFragment]
+
+
+class TableReferenceProvenance(BaseModel):
+    """审核引用绑定转换原尝试，允许后续翻译重试复用 source IR。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    mineru_raw_result_file_id: str = Field(min_length=1)
+    mineru_raw_result_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    retry_count: int = Field(ge=0)
+
+
 class DocumentIRMetadata(BaseModel):
-    """DocumentIR 文档级元数据；只保存追溯和粗粒度解析信息。"""
+    """文档追溯、解析信息及受控 Artifact 内的原始表格来源账本。"""
 
     job_id: str
     source_file_id: str
@@ -24,6 +130,14 @@ class DocumentIRMetadata(BaseModel):
     parser_version: str | None = None
     source_block_count: int | None = None
     source_type_counts: dict[str, int] = Field(default_factory=dict)
+    mineru_validation: MinerUValidationReport | None = None
+    mineru_validation_input: dict[str, Any] | None = None
+    logical_table_groups_version: Literal["logical-table-groups/v1"] | None = None
+    logical_table_groups: list[LogicalTableGroup] = Field(default_factory=list)
+    logical_table_group_counts: dict[str, int] = Field(default_factory=dict)
+    table_references_version: Literal["table-reference/v1"] | None = None
+    table_placeholders_version: Literal["table-placeholder/v1"] | None = None
+    table_placeholders: list[TablePlaceholderBinding] = Field(default_factory=list)
 
 
 class DocumentIRAsset(BaseModel):
@@ -87,3 +201,15 @@ class DocumentIR(BaseModel):
     blocks: list[DocumentIRBlock] = Field(default_factory=list)
     assets: list[DocumentIRAsset] = Field(default_factory=list)
     quality_flags: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_logical_tables(self) -> DocumentIR:
+        # 同一 owner 校验首次构建和 Artifact 重读，避免损坏新合同被静默接受。
+        from app.services.document_ir.logical_table_group import validate_logical_table_groups
+        from app.services.document_ir.table_reference_assets import decode_table_references
+
+        validate_logical_table_groups(self)
+        decode_table_references(self)
+        from app.services.document_ir.table_placeholder import decode_placeholders
+        decode_placeholders(self)
+        return self

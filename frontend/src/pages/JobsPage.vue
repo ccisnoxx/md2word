@@ -1,5 +1,5 @@
-<!-- File: frontend/src/pages/JobsPage.vue -->
-<!-- Purpose: Render the document job list workbench with filtering and batch actions. -->
+<!-- 文件：frontend/src/pages/JobsPage.vue -->
+<!-- 用途：展示带筛选和批量动作的文档任务工作台。 -->
 <template>
   <main class="jobs-page app-page" :class="{ 'has-bulk-actions': selectedJobs.length }" aria-labelledby="jobs-title">
     <WorkbenchPageHeader
@@ -184,13 +184,14 @@
       <el-alert
         v-if="lastDownloadLink"
         class="inline-result-alert"
-        type="success"
+        :type="lastDownloadLink.notice ? 'warning' : 'success'"
         :closable="true"
         show-icon
         :title="lastDownloadLink.label"
         @close="lastDownloadLink = null"
       >
         <div class="download-link-notice">
+          <strong v-if="lastDownloadLink.notice" class="download-policy-notice" role="status">{{ lastDownloadLink.notice }}</strong>
           <span>有效期至 {{ formatDateTime(lastDownloadLink.expiresAt) }}</span>
           <a :href="lastDownloadLink.url" target="_blank" rel="noopener">打开下载链接</a>
           <el-button text size="small" @click="copyLastDownloadLink">复制链接</el-button>
@@ -276,7 +277,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Files, Filter, Plus, Refresh, Search } from "@element-plus/icons-vue";
 import { useRoute, useRouter, type LocationQuery } from "vue-router";
@@ -308,6 +309,7 @@ import {
   canArchiveDocumentJob,
   canCancelDocumentJob,
   canRetryDocumentJob,
+  documentJobDownloadNotice,
   formatDateTime,
   jobStatusText,
   shouldShowDocumentJobAction,
@@ -402,6 +404,8 @@ const backgroundRefreshing = ref(false);
 const nowMs = ref(Date.now());
 let refreshTimer: number | undefined;
 let routeSyncInProgress = false;
+let jobsRequestRound = 0;
+let disposed = false;
 
 const jobsErrorDiagnosticContext = computed(() => ({
   route: route.fullPath,
@@ -565,14 +569,13 @@ const currentSavedViewState = computed<SavedViewState>(() => {
 const activeSavedView = computed(() => activeSavedViewId(currentSavedViewState.value, allSavedViewItems.value));
 
 async function loadJobs(options: LoadJobsOptions = {}): Promise<void> {
-  if (loading.value || backgroundRefreshing.value) {
+  if (disposed || (options.background && (loading.value || backgroundRefreshing.value))) {
     return;
   }
-  if (options.background) {
-    backgroundRefreshing.value = true;
-  } else {
-    loading.value = true;
-  }
+  const requestRound = ++jobsRequestRound;
+  // 前台筛选接管当前状态，旧请求的响应和清理均不得再写回。
+  backgroundRefreshing.value = Boolean(options.background);
+  loading.value = !options.background;
   if (!options.preserveError) {
     error.value = null;
   }
@@ -589,6 +592,9 @@ async function loadJobs(options: LoadJobsOptions = {}): Promise<void> {
       created_from: createdRange.value?.[0],
       created_to: createdRange.value?.[1],
     });
+    if (disposed || requestRound !== jobsRequestRound) {
+      return;
+    }
     jobs.value = response.items;
     selectedJobs.value = [];
     total.value = response.total;
@@ -601,11 +607,12 @@ async function loadJobs(options: LoadJobsOptions = {}): Promise<void> {
     };
     lastRefreshedAt.value = new Date().toISOString();
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    if (!disposed && requestRound === jobsRequestRound) {
+      error.value = normalizeApiError(caught);
+    }
   } finally {
-    if (options.background) {
+    if (!disposed && requestRound === jobsRequestRound) {
       backgroundRefreshing.value = false;
-    } else {
       loading.value = false;
     }
   }
@@ -1085,10 +1092,12 @@ async function handleDownload(job: DocumentJobResponse): Promise<void> {
       url: response.download_url,
       expiresAt: response.expires_at,
       fileName: response.file.original_filename,
+      notice: documentJobDownloadNotice(response),
     };
+    await nextTick();
     const opened = openDownloadLink(response.download_url);
     if (opened) {
-      ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+      ElMessage.warning(`${lastDownloadLink.value.notice}。下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
     } else {
       ElMessage.warning("浏览器可能拦截了新窗口，页面已显示下载链接。");
     }
@@ -1405,6 +1414,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
   if (refreshTimer !== undefined) {
     window.clearInterval(refreshTimer);
   }
@@ -1595,6 +1605,11 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+}
+
+.download-policy-notice {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
 }
 
 .download-link-notice span {

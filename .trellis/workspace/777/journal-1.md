@@ -928,3 +928,187 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Next Steps
 
 - CON-101 已收尾；后续任务只待用户另行授权，不自动开始，不 push。
+
+
+## Session 30: TR-402 人工验收、提交与归档
+
+**Date**: 2026-10-21
+**Task**: TR-402 人工验收、提交与归档
+**Branch**: `md2word/TR-402`
+
+### Summary
+
+TR-402纯函数ProtectedTokenCodec、测试证据和残余风险已获人工接受；仅提交当前任务、归档和记录会话，不push、不开始后续任务。
+
+### Main Changes
+
+- 工作提交24ed6a7只含Codec、24项测试、对应Spec/设计、TR-402正式任务文件及共享文件中的当前任务增量。
+- 归档提交a148bde仅移动当前11份任务文件并同步路径；manifest=done/implemented，Trellis=completed，归档位于.trellis/tasks/archive/2026-10/10-21-tr-402-protected-token-codec。
+- 其他44个manifest任务状态保持，原有dirty受保护；manifest/父任务/journal均按当前任务增量选择性暂存。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `24ed6a717ca86cf5ed086f2eda58030e4af66810` | (see git log) |
+
+### Testing
+
+- [OK] 复用已人工接受的Codec24项、translation/legacy/direct32项及两轮独立复核；业务/测试候选SHA-256未变，不重复测试或线上门禁。
+- [OK] 本轮git diff --check、归档前后task validate（implement4/check4）、文档/JSONL路径、精确暂存及既有audit-verify均通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- TR-402已收尾，不push、不启动后续任务；P1缺认证、translation-core样本缺失和未接生产/实译等已接受限制继续保留。
+
+
+## Session 31: TR-403 人工验收、提交与归档
+
+**Date**: 2026-10-21
+**Task**: TR-403 人工验收、提交与归档
+**Branch**: `md2word/TR-403`
+
+### Summary
+
+用户人工验收当前实现、测试证据和残余风险；仅TR-403完成done/implemented、限定提交及归档，不push、不启动后续任务。
+
+### Main Changes
+
+- 核对AC1–AC12与实际实现/测试；Spec合同已同步，收尾未改业务代码。
+- Trellis completed并归档10-21-tr-403-translation-integrity-validator；仅TR-403 manifest和父child登记，既存其他任务/共享文件补丁保留。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f46a3bcf148e6abc16a0011b6e7079d7f723130b` | (see git log) |
+
+### Testing
+
+- [OK] 收尾89项定向通过；活动与归档context各8 entries通过；git diff与cached diff检查通过；已关闭独立复核audit-verify通过。
+- [OK] 复用已接受128项、修正后50项及单测、release202/OpenAPI证据；不重复重门禁或调用真实模型。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留已接受P1缺认证、translation-core未注册、真实环境/Word未验及完整实施审计配置漂移缺口；不把人工接受写成已测通过，不启动后续任务。
+
+
+## Session 32: TR-406 人工验收、两笔业务提交与归档
+
+**Date**: 2026-10-22
+**Task**: TR-406 人工验收、两笔业务提交与归档
+**Branch**: `codex/tr-406-partial-batch-failure-semantics`
+
+### Summary
+
+TR-406 revision 2实现和依赖基线整合已获人工验收，两笔业务提交已确认；本次仅manifest done、TR-406归档及会话bookkeeping，保留其他未提交改动，不push、不启动后续任务。
+
+### Main Changes
+
+- 已验收CON-102/103/104纯依赖树经独立验证后提交，再提交TR-406终态/完整根计划/attempt与lease/同代预算/AC12与AC13收口、API和UI增量；最终71产品路径与验收候选逐字节一致。
+- 本次仅TR-406标记done/implemented并移至archive/2026-10/10-22-tr-406-partial-batch-failure-semantics，task状态completed；父任务和其他任务不更新。
+- 业务源码保持验收版本。归档与会话使用--no-commit生成内容，再以隔离索引提交本次增量，原staged删除及既存archive/journal/prompt/backlog/manifest改动不混入。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0946326b0f457ef4b4f60895f17feb915d657c14` | (see git log) |
+| `6d89c7e012a5086114a739a9dfd1b067556237ce` | (see git log) |
+
+### Testing
+
+- [OK] 复用已接受的最终126项核心兼容、前端152项/build/smoke、API与状态下载门、OpenAPI/release、公开及direct样本；纯依赖树132项后端、150项前端/build/OpenAPI/release和独立check/风险复核通过。
+- [OK] 本轮仅bookkeeping：归档context implement/check各15项通过；71产品hash不变，归档范围及原有dirty/staged patch核对。2项原HEAD callback失败与2处验收候选EOF空行保持原记录。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- TR-406本次收尾结束，不push、不自动启动后续任务。真实MySQL/InnoDB、部署文件锁、真实Provider/S3与Word人工门继续按原记录保留，等待独立授权。
+
+
+## Session 33: RND-502 人工验收、提交与归档
+
+**Date**: 2026-10-23
+**Task**: RND-502 人工验收、提交与归档
+**Branch**: `md2word/RND-502`
+
+### Summary
+
+RND-502 v2实现、独立复审修复和验证证据已人工接受，列明未验证边界已接受；仅本任务工作提交及Trellis归档，不push，保留无关改动。
+
+### Main Changes
+
+- 统一inline/block/table公式入口、OMML与semantic输出、可见literal降级及逐式最终字节绑定；翻译公式保护及三恢复入口/选中receipt摘要合同已完成。
+- 本轮独立复审1P1/2P2经主会话确认、checker修复、独立复验均闭合；architect角色不适配事实与实际critical_reviewer记录完整保留。
+- 工作提交136802c；归档提交1bc9d71；manifest仅RND-502到done，任务completed并迁移至.trellis/tasks/archive/2026-10/10-23-rnd-502-formula-omml-fallback，context自引用迁移且当前指针清理。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `136802cb273c85e94ff65d41aca5aa15c8c70459` | (see git log) |
+
+### Testing
+
+- [OK] 已接受冻结候选311定向、202 release/OpenAPI current、component1/1、direct矩阵5/5及RS2G04报告审计证据复用。
+- [OK] 收口仅删formula.py一个多余EOF LF，逐字节/AST无语义变化核实，36公式测试重新通过；最终diff及归档task validate implement/check各8通过。
+- [OK] 独立index精确提交；每笔提交后原302项暂存diff保持，其他44任务manifest与无关dirty保持。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 真实Word视觉、线上Golden、真实InnoDB/S3/部署文件系统仍未验证；上线/回退继续遵守兼容执行器和排空在途约束。不push、不自动开始后续任务。
+
+
+## Session 34: RND-503 人工验收、两次工作提交与归档
+
+**Date**: 2026-10-23
+**Task**: RND-503 人工验收、两次工作提交与归档
+**Branch**: `md2word/RND-503`
+
+### Summary
+
+用户人工验收并接受实现、全新critical复审修复、验证证据及列明残余风险/未验边界后，授权两次任务限定工作提交、manifest done及当前子任务归档。保留原302暂存删除及无关dirty，不push，不启动后续任务。
+
+### Main Changes
+
+- 已接受IR-204最小依赖与RND-503最终图片组/Caption实现分别提交，逐笔使用独立Git index，未带入其他任务或原暂存删除。
+- manifest仅RND-503改为done/implemented，子任务completed并归档至.trellis/tasks/archive/2026-10/10-23-rnd-503-image-group-caption-rendering；批准v2三件套字节保持。
+- 原CON-102未提交journal会话保留工作树；本会话仅提交自身新增记录及index增量，归档和journal分别为Trellis bookkeeping提交。
+- Golden缺认证/API、Microsoft Word、部署预览、真实MySQL/S3/MinIO及生产跨主机回退未验；人工接受边界不等于验证通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e1f5079b695047d95912a541fc00d40e505dfc60` | (see git log) |
+| `67bc26db2586c264ca038f6f24e2d37714982c71` | (see git log) |
+
+### Testing
+
+- [OK] 本次新增：第一笔依赖候选独立树执行8个定向模块，174 tests/OK；两笔提交范围及来源由独立trellis-check只读核对通过。
+- [OK] 复用已接受最终证据：核心311、release203、component1/1、direct5/5、实际B1七selectors/55subTests及17+2产物互读；另13项隔离characterization、六份LO八页实看。
+- [OK] 归档后task.py validate：implement/check各11条通过，无警告；逐笔cached diff --check及原302暂存binary patch相等核验通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本任务已获人工接受并完成；不启动后续任务，不push。

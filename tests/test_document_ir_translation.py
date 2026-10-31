@@ -5,6 +5,9 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
+from zipfile import ZipFile
+from bs4 import BeautifulSoup
 
 from app.services.document_ir.models import (
     DocumentIR,
@@ -22,7 +25,9 @@ from app.domains.translation.models import (
     TranslationTermEntry,
     TranslationTextItem,
 )
-from app.domains.translation.document_ir_translator import DocumentIRTranslationService
+from app.domains.translation.document_ir_translator import DocumentIRTranslationService, DocumentIRTranslationError
+from app.domains.translation.integrity import TranslationIntegrityError
+from app.domains.translation.protected_tokens import encode
 from app.domains.translation.term_version_service import TermVersionService
 
 
@@ -44,7 +49,14 @@ class FakeTranslationProvider:
         }
         return TranslationProviderResult(
             items=tuple(
-                TranslationTextItem(id=item.id, text=translations[item.id])
+                TranslationTextItem(
+                    id=item.id,
+                    text=(
+                        item.text.replace("Features", "特性") if item.id == "block_0001.text" else
+                        item.text.replace("Figure", "图").replace("Pin diagram", "引脚图") if item.id == "block_0006.text" else
+                        translations[item.id]
+                    ),
+                )
                 for item in request.items
             )
         )
@@ -61,6 +73,7 @@ class RecordingTranslationCallRecorder:
         result: TranslationProviderResult,
         *,
         duration_ms: int,
+        integrity=None,
     ) -> None:
         self.success_requests.append(request)
 
@@ -71,6 +84,7 @@ class RecordingTranslationCallRecorder:
         *,
         error: Exception,
         duration_ms: int,
+        integrity=None,
     ) -> None:
         self.failure_requests.append(request)
 
@@ -145,7 +159,7 @@ class DocumentIRTranslationTests(unittest.TestCase):
             language_pair="zh2en",
             prompt=prompt,
             batch_id="batch-1",
-        )
+        ).request
 
         self.assertEqual(request.source_language, "zh")
         self.assertEqual(request.target_language, "en")
@@ -296,14 +310,14 @@ class DocumentIRTranslationTests(unittest.TestCase):
         _targets, items, plans = service.build_translation_plan(
             document,
             max_pages_per_batch=20,
-            max_chars_per_batch=20,
+            max_chars_per_batch=60,
             batch_id_prefix="batch_chars",
         )
 
         self.assertEqual(len(items), 8)
         self.assertGreater(len(plans), 1)
         self.assertEqual(sum(plan.item_count for plan in plans), 8)
-        self.assertTrue(all(plan.char_count <= 20 or plan.item_count == 1 for plan in plans))
+        self.assertTrue(all(plan.char_count <= 60 for plan in plans))
 
     def test_document_ir_translation_supports_ru2zh_language_pair_and_terms(self) -> None:
         provider = EchoSingleItemTranslationProvider("反向直流电压")
@@ -445,6 +459,144 @@ class DocumentIRTranslationTests(unittest.TestCase):
         self.assertNotEqual(input_trace.context_snippet, paragraph_text)
         self.assertEqual(recorder.success_requests, [request])
         self.assertEqual(recorder.failure_requests, [])
+
+    def test_encoded_budget_splits_deterministically_and_keeps_source_char_count(self) -> None:
+        document = self._make_document_ir()
+        document.blocks = [
+            DocumentIRBlock(id=f"value_{index}", type="paragraph", order=index, text="High 5 V")
+            for index in range(3)
+        ]
+        provider = Mock()
+        provider.translate.side_effect = lambda request: TranslationProviderResult(tuple(
+            TranslationTextItem(item.id, item.text.replace("High", "高")) for item in request.items
+        ))
+        service = DocumentIRTranslationService(provider, max_chars_per_request=30)
+        _targets, items, plans = service.build_translation_plan(
+            document, max_pages_per_batch=20, max_chars_per_batch=30, batch_id_prefix="budget",
+        )
+        self.assertEqual([plan.item_count for plan in plans], [1, 1, 1])
+        self.assertEqual([plan.char_count for plan in plans], [len("High 5 V")] * 3)
+        translated = service.translate(document, term_version=None)
+        self.assertEqual(provider.translate.call_count, 3)
+        for call in provider.translate.call_args_list:
+            request = call.args[0]
+            self.assertLessEqual(sum(len(item.text) for item in request.items), 30)
+            self.assertIn("{{MD2W_PT_v1_0_1}}", request.items[0].text)
+        self.assertEqual([block.text for block in translated.blocks], ["高 5 V"] * 3)
+        self.assertEqual(sum(len(item.text) for item in items), 24)
+
+    def test_single_encoded_item_budget_failure_happens_before_provider_and_audit(self) -> None:
+        document = self._make_document_ir()
+        document.blocks = [DocumentIRBlock(id="value", type="paragraph", order=0, text="5 V")]
+        provider, recorder = Mock(), Mock()
+        service = DocumentIRTranslationService(provider, max_chars_per_request=10)
+        with self.assertRaises(DocumentIRTranslationError) as context:
+            service.translate(document, term_version=None, call_recorder=recorder)
+        self.assertEqual(context.exception.code, "translation_request_budget_exceeded")
+        self.assertEqual(context.exception.evidence.stage, "budget")
+        self.assertIsNone(context.exception.evidence.response_sha256)
+        provider.translate.assert_not_called()
+        recorder.record_success.assert_not_called()
+        recorder.record_failure.assert_not_called()
+        with self.assertRaises(TranslationIntegrityError):
+            service.build_provider_request(document, [TranslationTextItem("a", "5 V")], term_version=None, language_pair="en2zh", batch_id="existing")
+
+    def test_protected_spans_exclude_terms_without_changing_natural_term_offsets(self) -> None:
+        service = DocumentIRTranslationService(Mock())
+        source = "Typical OPA228 amplifier at 5 V"
+        terms = TermVersionSnapshot("terms", "en2zh", "v1", "sha256:terms", tuple(
+            TranslationTermEntry("en2zh", source_term, "译法", "v1")
+            for source_term in ("OPA228 amplifier", "OPA228", "amplifier", "5 V", "Typical")
+        ))
+        prepared = service.build_provider_request(
+            self._make_document_ir(), [TranslationTextItem("a", source)],
+            term_version=terms, language_pair="en2zh", batch_id="batch",
+        )
+        self.assertEqual([entry.source_term for entry in prepared.request.terms], ["amplifier", "Typical"])
+        amplifier = prepared.request.term_traces[0]
+        self.assertEqual((amplifier.match_start, amplifier.match_end), (source.index("amplifier"), source.index("amplifier") + len("amplifier")))
+        self.assertEqual(amplifier.context_snippet, source)
+        self.assertNotIn("OPA228", prepared.request.items[0].text)
+        self.assertEqual(prepared.encoded_batch, encode(prepared.source_items))
+
+    def test_bad_second_item_or_later_batch_never_applies_partial_replacements(self) -> None:
+        for max_items in (10, 1):
+            with self.subTest(max_items=max_items):
+                provider, recorder = Mock(), Mock()
+                document = self._make_document_ir()
+                document.blocks = [
+                    DocumentIRBlock(id="first", type="paragraph", order=0, text="Typical OPA228"),
+                    DocumentIRBlock(id="second", type="paragraph", order=1, text="High 25°C"),
+                ]
+                before = document.model_dump(mode="json")
+                def respond(request):
+                    return TranslationProviderResult(tuple(
+                        TranslationTextItem(item.id, item.text.replace("Typical", "典型值").replace("High", "高") + ("; 999 V" if item.id == "second.text" else ""))
+                        for item in request.items
+                    ))
+                provider.translate.side_effect = respond
+                service = DocumentIRTranslationService(provider, max_items_per_request=max_items)
+                with patch.object(service, "apply_replacements", wraps=service.apply_replacements) as apply:
+                    with self.assertRaises(DocumentIRTranslationError) as context:
+                        service.translate(document, term_version=None, call_recorder=recorder)
+                apply.assert_not_called()
+                self.assertEqual(context.exception.code, "translation_integrity_technical_mismatch")
+                self.assertEqual(document.model_dump(mode="json"), before)
+                self.assertEqual(recorder.record_failure.call_count, 1)
+                self.assertEqual(recorder.record_success.call_count, 0 if max_items == 10 else 1)
+                self.assertEqual(recorder.record_failure.call_args.kwargs["integrity"].status, "failed")
+
+    def test_audit_failure_is_visible_and_never_creates_a_second_audit(self) -> None:
+        provider, recorder = Mock(), Mock()
+        provider.translate.side_effect = lambda request: TranslationProviderResult(request.items)
+        recorder.record_success.side_effect = OSError("审计存储失败")
+        service = DocumentIRTranslationService(provider)
+        with patch.object(service, "apply_replacements", wraps=service.apply_replacements) as apply:
+            with self.assertRaisesRegex(OSError, "审计存储失败"):
+                service.translate(self._make_document_ir(), term_version=None, call_recorder=recorder)
+        apply.assert_not_called()
+        recorder.record_success.assert_called_once()
+        recorder.record_failure.assert_not_called()
+
+    def test_opa228_public_fixture_uses_formal_converter_fake_provider_and_validator(self) -> None:
+        from app.services.document_ir.mineru_converter import MinerUToDocumentIRService
+        fixture = Path(__file__).parent / "fixtures/component_pdf_samples/samples/texas-instruments/op-amp/ti-opamp-opa228-p1-smoke/mineru/component_content_list_v2.json"
+        provider = Mock()
+        def translate_request(request):
+            return TranslationProviderResult(tuple(TranslationTextItem(
+                item.id, item.text.replace("Typical", "典型值").replace("Precision", "精密").replace("Operational Amplifier", "运算放大器").replace("Parameter", "参数")
+            ) for item in request.items))
+        provider.translate.side_effect = translate_request
+        with tempfile.TemporaryDirectory(prefix="translation_integrity_opa228_") as temp_dir:
+            archive_path = Path(temp_dir) / "mineru.zip"
+            with ZipFile(archive_path, "w") as archive:
+                archive.write(fixture, "component_content_list_v2.json")
+            document = MinerUToDocumentIRService().convert_zip(
+                archive_path, job_id="opa228-integrity", source_file_id="public-fixture", document_language="en",
+            ).document
+            source = document.model_dump(mode="json")
+            service = DocumentIRTranslationService(provider)
+            with patch("socket.socket", side_effect=AssertionError("离线验收禁止网络")):
+                translated = service.translate(document, term_version=None)
+        self.assertEqual(document.model_dump(mode="json"), source)
+        self.assertEqual(translated.pages, document.pages)
+        self.assertEqual(translated.assets, document.assets)
+        self.assertEqual(translated.quality_flags, document.quality_flags)
+        for old, new in zip(document.blocks, translated.blocks):
+            unchanged = {key: value for key, value in old.model_dump(mode="json").items() if key not in {"text", "html", "list_items"}}
+            self.assertEqual({key: value for key, value in new.model_dump(mode="json").items() if key not in {"text", "html", "list_items"}}, unchanged)
+            if old.type == "formula":
+                self.assertEqual(new, old)
+            if old.html:
+                def skeleton(html):
+                    return [(tag.name, tag.attrs) for tag in BeautifulSoup(html, "html.parser").find_all(True)]
+                self.assertEqual(skeleton(new.html), skeleton(old.html))
+        all_text = "\n".join(item.text for item in service.extract_translation_items(translated)[1])
+        for literal in ("OPA228", "3 nV/sqrt(Hz)", "10 V/us"):
+            self.assertIn(literal, all_text)
+        self.assertIn("精密", all_text)
+        self.assertGreater(provider.translate.call_count, 0)
+        self.assertTrue(any("{{MD2W_PT_v1_" in item.text for call in provider.translate.call_args_list for item in call.args[0].items))
 
     def _make_document_ir(self) -> DocumentIR:
         return DocumentIR(

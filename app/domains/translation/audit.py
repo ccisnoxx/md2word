@@ -19,7 +19,8 @@ from app.domains.translation.models import (
     TranslationTermMatchTraceRecord,
     TranslationTextItem,
 )
-from app.domains.translation.provider import TranslationProviderResponseError
+from app.domains.translation.provider import TranslationProviderCallError, TranslationProviderResponseError
+from app.domains.translation.integrity import TranslationIntegrityError, TranslationIntegrityEvidence
 from app.domains.files import FileUploadService
 
 
@@ -43,6 +44,7 @@ class TranslationCallAuditRecorder:
         self.term_version = term_version
         self.trace_id = trace_id
         self.save_full_text = save_full_text
+        # 保留既有构造接线；审计只能复用调用上下文，不再自行解析运行配置。
         self.config_resolver = config_resolver
         self.call_id: str | None = None
         self.call_log_file_id: str | None = None
@@ -56,6 +58,7 @@ class TranslationCallAuditRecorder:
         result: TranslationProviderResult,
         *,
         duration_ms: int,
+        integrity: TranslationIntegrityEvidence | None = None,
     ) -> None:
         """保存成功调用的 metadata-only 审计记录，并按任务开关保存全文归档。"""
 
@@ -67,8 +70,13 @@ class TranslationCallAuditRecorder:
             status="succeeded",
             duration_ms=duration_ms,
             error=None,
+            integrity=integrity,
+            publication_provenance=result.publication_provenance,
         )
-        self._write_debug_archive(call_id=call_id, request=request, result=result, error=None)
+        self._write_debug_archive(
+            call_id=call_id, request=request, result=result, error=None,
+            publication_provenance=result.publication_provenance,
+        )
 
     def record_failure(
         self,
@@ -77,16 +85,21 @@ class TranslationCallAuditRecorder:
         *,
         error: Exception,
         duration_ms: int,
+        integrity: TranslationIntegrityEvidence | None = None,
     ) -> None:
         """保存失败调用的 metadata-only 审计记录，必要时保留全文现场。"""
 
+        code = error.code if isinstance(error, TranslationIntegrityError) else (
+            "translation_provider_truncated" if isinstance(error, TranslationProviderResponseError) and error.suspected_truncation else
+            "translation_provider_invalid_response" if isinstance(error, TranslationProviderResponseError) else "translation_provider_failed"
+        )
         error_payload = {
             "type": error.__class__.__name__,
-            "message": self._redact_error_message(
-                str(error),
-                sensitive_text=request.system_prompt_markdown,
-            ),
+            "code": code,
+            "message": str(error) if isinstance(error, TranslationIntegrityError) else "翻译 Provider 调用或响应校验失败。",
         }
+        if integrity is None and isinstance(error, TranslationIntegrityError):
+            integrity = error.evidence
         if isinstance(error, TranslationProviderResponseError):
             error_payload.update(
                 {
@@ -98,6 +111,10 @@ class TranslationCallAuditRecorder:
                     "suspected_truncation": error.suspected_truncation,
                 }
             )
+        publication_provenance = (
+            result.publication_provenance if isinstance(result, TranslationProviderResult) else
+            error.publication_provenance if isinstance(error, TranslationProviderCallError) else None
+        )
         call_id = self._new_call_id()
         self._write_call_log(
             call_id=call_id,
@@ -106,8 +123,13 @@ class TranslationCallAuditRecorder:
             status="failed",
             duration_ms=duration_ms,
             error=error_payload,
+            integrity=integrity,
+            publication_provenance=publication_provenance,
         )
-        self._write_debug_archive(call_id=call_id, request=request, result=result, error=error_payload)
+        self._write_debug_archive(
+            call_id=call_id, request=request, result=result, error=error_payload,
+            publication_provenance=publication_provenance,
+        )
 
     def _new_call_id(self) -> str:
         call_id = f"aicall_{uuid4().hex[:12]}"
@@ -123,8 +145,10 @@ class TranslationCallAuditRecorder:
         status: str,
         duration_ms: int,
         error: dict | None,
+        integrity: TranslationIntegrityEvidence | None,
+        publication_provenance: dict | None,
     ) -> None:
-        provider = self._provider_summary()
+        provider = self._provider_summary(publication_provenance)
         payload = {
             "schema_version": "ai-call-log/v1",
             "call_id": call_id,
@@ -145,10 +169,11 @@ class TranslationCallAuditRecorder:
                 "item_count": len(request.items),
                 "char_count": sum(len(item.text) for item in request.items),
                 "sha256": self._hash_json(self._full_request_payload(request)),
-                "redacted_items": self._redacted_items_summary(request.items),
+                "redacted_items": self._redacted_items_summary(request.items, include_ids=True),
             },
             "response": self._response_summary(result),
             "error": error,
+            "integrity": integrity.to_dict() if integrity is not None else None,
             "duration_ms": duration_ms,
             "created_at": utc_now().isoformat(),
         }
@@ -183,10 +208,11 @@ class TranslationCallAuditRecorder:
         request: TranslationProviderRequest,
         result: TranslationProviderResult | None,
         error: dict | None,
+        publication_provenance: dict | None,
     ) -> None:
         if not self.save_full_text:
             return
-        provider = self._provider_summary()
+        provider = self._provider_summary(publication_provenance)
         payload = {
             "schema_version": "translation-debug-archive/v1",
             "call_id": call_id,
@@ -227,6 +253,8 @@ class TranslationCallAuditRecorder:
     def _response_summary(self, result: TranslationProviderResult | None) -> dict | None:
         if result is None:
             return None
+        if not self._has_string_items(result):
+            return {"invalid_shape": True}
         return {
             "item_count": len(result.items),
             "char_count": sum(len(item.text) for item in result.items),
@@ -272,7 +300,7 @@ class TranslationCallAuditRecorder:
         }
 
     def _full_response_payload(self, result: TranslationProviderResult | None) -> dict | None:
-        if result is None:
+        if result is None or not self._has_string_items(result):
             return None
         return {"items": [{"id": item.id, "text": item.text} for item in result.items]}
 
@@ -287,13 +315,15 @@ class TranslationCallAuditRecorder:
             "content_hash": request.prompt_content_hash,
         }
 
-    def _provider_summary(self) -> dict[str, str | None]:
-        if self.config_resolver is not None:
-            config = self.config_resolver()
-            return {"backend": config.backend, "model": config.model if config.backend == "openai_compatible" else None}
+    @staticmethod
+    def _provider_summary(publication_provenance: dict | None) -> dict[str, str | None]:
+        """历史结果缺实际调用事实时保持未知，不以当前默认值补造。"""
+
+        if publication_provenance is None:
+            return {"backend": None, "model": None}
         return {
-            "backend": self.settings.translation_provider_backend,
-            "model": self.settings.openai_model if self.settings.translation_provider_backend == "openai_compatible" else None,
+            "backend": publication_provenance["backend"],
+            "model": publication_provenance["model"],
         }
 
     def _term_trace_summary(self, traces: tuple[TranslationTermMatchTraceRecord, ...]) -> list[dict]:
@@ -322,17 +352,29 @@ class TranslationCallAuditRecorder:
             "sha256": self._hash_text(context_snippet),
         }
 
-    def _redacted_items_summary(self, items: tuple[TranslationTextItem, ...]) -> list[dict]:
-        return [
-            {
-                "id": item.id,
+    @staticmethod
+    def _has_string_items(result: object) -> bool:
+        return (
+            isinstance(result, TranslationProviderResult) and isinstance(result.items, tuple)
+            and all(isinstance(item, TranslationTextItem) and isinstance(item.id, str) and isinstance(item.text, str) for item in result.items)
+        )
+
+    def _redacted_items_summary(self, items: tuple[TranslationTextItem, ...], *, include_ids: bool = False) -> list[dict]:
+        summaries = []
+        for item in items:
+            summary = {
                 "char_count": len(item.text),
                 "line_count": item.text.count("\n") + 1,
                 "sha256": self._hash_text(item.text),
                 "has_non_ascii": any(ord(char) > 127 for char in item.text),
             }
-            for item in items
-        ]
+            # 只有本地生成的请求 ID 可见；恶意返回 ID 只能进入哈希。
+            if include_ids:
+                summary["id"] = item.id
+            else:
+                summary["id_sha256"] = self._hash_text(item.id)
+            summaries.append(summary)
+        return summaries
 
     def _hash_json(self, payload: dict | None) -> str | None:
         if payload is None:

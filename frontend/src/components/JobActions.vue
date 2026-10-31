@@ -1,4 +1,4 @@
-<!-- frontend/src/components/JobActions.vue: Shared lifecycle action controls for document jobs. -->
+<!-- 共享文档任务生命周期动作，仅消费后端可用性。 -->
 <template>
   <div class="job-actions">
     <el-button size="small" :icon="Refresh" @click="$emit('refresh')">刷新</el-button>
@@ -129,6 +129,9 @@
     <small v-if="firstDisabledReason" class="job-actions__reason">
       {{ firstDisabledReason }}
     </small>
+    <p v-if="canDownloadDocumentJob(job)" class="job-actions__download-notice" role="note">
+      {{ documentJobDownloadNotice(job.available_actions.download) }}
+    </p>
   </div>
 </template>
 
@@ -146,6 +149,7 @@ import {
   canRetryDocumentJob,
   canUnarchiveDocumentJob,
   documentJobActionDisabledReason,
+  documentJobDownloadNotice,
   shouldShowDocumentJobAction,
 } from "@/utils/format";
 
@@ -203,5 +207,14 @@ defineEmits<{
   flex-basis: 100%;
   color: var(--app-color-text-muted);
   line-height: 1.4;
+}
+
+.job-actions__download-notice {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--app-color-text);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 </style>

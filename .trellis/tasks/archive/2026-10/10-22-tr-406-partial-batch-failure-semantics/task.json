@@ -1,0 +1,143 @@
+{
+  "id": "tr-406-partial-batch-failure-semantics",
+  "name": "tr-406-partial-batch-failure-semantics",
+  "title": "TR-406：部分批次失败语义收口",
+  "description": "R4：TR-406实现与依赖基线已验收，两笔业务提交获确认；仅本任务标记done、归档并记录本次会话，不push、不启动后续任务。",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": "translation-batch-failure",
+  "package": null,
+  "priority": "P2",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-10-22",
+  "completedAt": "2026-10-22",
+  "branch": "codex/tr-406-partial-batch-failure-semantics",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "6d89c7e012a5086114a739a9dfd1b067556237ce",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-12-datasheet-docx-delivery-quality",
+  "relatedFiles": [
+    "app/domains/document_jobs/execution.py",
+    "app/domains/document_jobs/models.py",
+    "app/domains/document_jobs/service.py",
+    "app/domains/document_jobs/workflow.py",
+    "app/domains/document_jobs/repository.py",
+    "app/domains/document_jobs/schemas.py",
+    "app/domains/document_jobs/router.py",
+    "app/infrastructure/persistence/file/document_jobs.py",
+    "app/infrastructure/persistence/sqlite/document_jobs.py",
+    "app/infrastructure/persistence/mysql/document_jobs.py",
+    "frontend/src/pages/JobDetailPage.vue",
+    "frontend/src/utils/translationBatches.ts",
+    "docs/implementation/codex-task-manifest.yaml"
+  ],
+  "notes": "2026-10-22：用户明确仅调查规划；create --parent --no-start，不激活、不切分支、不改业务、不提交/push。直接依赖均已人工接受done；CON-102实现尚不在当前HEAD，实施前整合。保留既存dirty，仅更新本子任务、父任务children和manifest TR-406。 2026-10-22：用户确认fresh architect两项P2并授权仅修订规划；三件套revision2已补完整根计划安装/禁止覆盖及终态窗口enqueue/claim停止闸门，新增AC12/13和对应验收。最小context与审查记录同步，未新派复审，仍待人工审核；不改业务、不start、不提交/push，父任务既存删除保持。 2026-10-22：用户接受revision2并授权先整合CON-102再实施验证；保留全部既存dirty，完成停验收，不提交/push/归档/部署。独立复审已在planning-rereview.md确认规划闭合。 2026-10-22：追加授权CON-103/104已验收基线整合完成；AC1–13本地证据、126项核心兼容、前端152项/build/smoke、OpenAPI/release及样本验证完成。多轮独立复审缺口均已闭合，候选ready_for_acceptance；2项原HEAD既有数据库callback失败与线上/人工未验门明确保留。保持in_progress，等待人工验收，未stage/commit/push/归档/bookkeeping/部署。 2026-10-22：用户明确验收通过，随后同意commit plan并授权两笔业务提交；要求先重建验证纯依赖中间树，最终合成与验收候选一致，排除保留原dirty；不push、不归档、不记录会话。 2026-10-22：用户确认两笔业务提交，授权仅TR-406 manifest done/implemented、任务归档及本次会话记录，允许必要bookkeeping提交；所有其他dirty排除保留，不push、不启动后续任务。",
+  "meta": {
+    "task_id": "TR-406",
+    "phase": "R4",
+    "suggested_branch": "md2word/TR-406",
+    "depends_on": [
+      "TR-403",
+      "CON-102",
+      "CON-103",
+      "CON-104"
+    ],
+    "planning_branch": "md2word/TR-403",
+    "planning_baseline": "596a2de7ed29edb7fdb378d91c17bda09b7f1066",
+    "planning_revision": 2,
+    "planning_review": "accepted_revision2",
+    "implementation_authorized": true,
+    "dependency_check": "passed",
+    "dependency_baseline_integration": "integrated_and_locally_verified",
+    "resolution": "implemented",
+    "planning_validation": "planning-validation.md",
+    "planning_context_entries": {
+      "implement": 9,
+      "check": 9
+    },
+    "planning_validation_status": "passed",
+    "planning_resolution": "implementation_required",
+    "prd_convergence": "completed_revision2",
+    "planning_architect_review": {
+      "audit_id": "20261022T025037Z-tr-406-revision2-fresh-architect-rereview-65579610",
+      "reviewed_revision": 2,
+      "confirmed_findings": [
+        "P2_initial_root_plan_installation",
+        "P2_terminal_window_consumption_gate"
+      ],
+      "addressed_in_revision": 2,
+      "revision_status": "closed_in_plan_accepted",
+      "fresh_review_of_revision": true,
+      "decision_record": "research/review-decisions.md",
+      "rereview_record": "planning-rereview.md",
+      "previous_audit_id": "20261022T021032Z-tr-406-revision1-fresh-architect-review-3ca8901c"
+    },
+    "planning_validation_revision": 2,
+    "implementation_workspace_snapshot": "/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-fv84psqk",
+    "accepted_dependency_baselines": [
+      "CON-102",
+      "CON-103",
+      "CON-104",
+      "TR-403"
+    ],
+    "baseline_schema_bootstrap_authorized": true,
+    "production_connection_authorized": false,
+    "implementation_context_entries": {
+      "implement": 15,
+      "check": 15
+    },
+    "implementation_status": "accepted",
+    "implementation_review_status": "passed_for_local_candidate",
+    "independent_review_rounds": [
+      "implementation-review-round1.md",
+      "implementation-review-round2.md",
+      "implementation-review-round3.md"
+    ],
+    "implementation_validation": "quality-validation.md",
+    "implementation_summary": "implementation-summary.md",
+    "acceptance_evidence": "acceptance-evidence.md",
+    "implementation_final_review": "implementation-review-final.md",
+    "workspace_protection": "workspace-protection-final.json",
+    "production_validation_status": "pending_not_authorized",
+    "human_acceptance_status": "accepted",
+    "implementation_source_hashes": {
+      "app/domains/document_jobs/execution.py": "5119d349c638b6e2c590f0154187eeff33f4e71cf18270299c7cc342208c75d2",
+      "tests/test_translation_batch_failure_semantics.py": "dbc01050224d34e6b784d217333e214257378856bcbc1b79eb688f6d8483b26c"
+    },
+    "commit_plan": "commit-plan.md",
+    "commit_plan_status": "approved",
+    "commit_execution_authorized": true,
+    "commit_execution_scope": {
+      "business_commits": 2,
+      "push": false,
+      "archive": false,
+      "add_session": false,
+      "preserve_original_dirty": true,
+      "validate_dependency_intermediate_tree": true,
+      "match_accepted_candidate": true
+    },
+    "dependency_intermediate_tree": "7fb0acfa499e95cb87809157426b306490e3907b",
+    "dependency_intermediate_validation": "dependency-intermediate-validation.md",
+    "dependency_intermediate_validation_status": "passed",
+    "dependency_business_commit": "0946326b0f457ef4b4f60895f17feb915d657c14",
+    "tr406_business_commit": {
+      "hash": "6d89c7e012a5086114a739a9dfd1b067556237ce",
+      "parent": "0946326b0f457ef4b4f60895f17feb915d657c14",
+      "subject": "fix(translation): enforce terminal batch failure semantics (TR-406)"
+    },
+    "business_commit_status": "committed_without_push",
+    "finish_authorization": {
+      "manifest_done": true,
+      "archive_only_this_task": true,
+      "record_this_session": true,
+      "bookkeeping_commits": true,
+      "preserve_other_dirty": true,
+      "push": false,
+      "start_followup_tasks": false
+    }
+  }
+}

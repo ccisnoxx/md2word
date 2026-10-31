@@ -293,3 +293,24 @@ DocumentIR table block 继续保留 raw HTML，以便兼容现有 Renderer 和�
 - 时间字段采用 ISO 8601 UTC；
 - Artifact metadata 记录 schema version 和 SHA-256；
 - 翻译后的 IR 保存源 IR 哈希。
+
+## 13. IR-204 可选题注证据
+
+DocumentIR继续使用v2。主源块可选metadata.caption_reconciliation保存caption-reconciliation/v1版本回执：本块原始caption值/字段locator和逻辑组、最终绑定的来源片段与donor/target、规则和受控原因，区分unchanged/rebound/evidence_only/uncertain。没有新字段的历史v1/v2照常读取；不回填或重写历史Artifact，不升级v3。
+
+原始证据按源owner只保存一次，目标引用来源。独立paragraph的evidence-only不新增可见caption或翻译单元，保持源段落ID/order/text/layout。table_context派生paragraph不复制主块题注原文/回执。本任务保留现有编排：派生条件paragraph→主块表题→原生表体→脚注；验收要求条件和真表题均在表前、脚注在表后，不另改renderer布局。renderer evidence只聚合版本、status/reason计数和有界ID/locator，不包含原文，省略数量必须明示。
+
+不确定关系在document.quality_flags中去重追加caption_binding_uncertain，不直接加入blocking_quality_flags，不自动批准/发布或改变下载权。拟自动修复的内容必须守恒且片段唯一消费；确定性损坏以既有DocumentIntegrityError拒绝输出，并保留IR201验证报告/输入关联，不能静默改为uncertainty继续。
+
+处理发生在翻译单元ID提取前；translation保持来源metadata，不在已有generation内重新拆分。没有新数据库字段、迁移、OpenAPI schema、权限或前端状态机。原始caption可能含客户正文，只按既有Artifact授权边界访问。
+
+### 回执字段和摘要
+
+`reconcile_captions(raw_blocks)` 返回与保留源块索引对齐的结果。`caption_reconciliation` 的具体字段为：
+
+- `rule_version`=`caption-reconciliation/v1`；`status` 为 unchanged/rebound/evidence_only/uncertain。
+- `originals` 为 `{json_pointer,value,groups}` 数组，`value` 保留原始字符串或rich值，`groups`是原逻辑组pointer。原无题注目标为 `[]`。
+- `bindings` 和可选 `candidates` 包含 source_locator、donor_block_id、target_block_id、label/number、rule_id、reason/reasons、evidence_only。真正消费的题注片段另有 group_pointer、source_spans（JSON pointer与原串start/end半开区间）。这些是caption片段坐标，不是跨页block source_spans。
+- `reasons` 是去重的受控机器值；成功组有稳定group_id，完整members只存组锚点。
+
+纯结果中的donor_index/target_index仅用于转换内部，converter映射成最终稳定block ID后持久化。renderer摘要中status/reason与binding/candidate总数独立统计；examples与relation_examples各至多40条，分别明示omitted数量，禁止投影originals、标题或rich原文。历史IR缺少此证据表示没有该项证据，不投影为修复通过。

@@ -1,0 +1,111 @@
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-original-head-w9p3g77i/checkout/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-original-head-w9p3g77i/checkout/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+EEEEE[trace_id=trace_document_jobs_database_callback job_id=docjob_96ca0bfcf5b7 stage=rendering status=failed] DocumentIR→DOCX 内容完整性校验失败：ir_docx_integrity:inline_shape_count_mismatch, ir_docx_integrity:table_count_mismatch, ir_docx_integrity:heading_count_mismatch（expected_layout_block_count=6, layout_block_count=6, expected_inline_shape_count=1, inline_shape_count=0, expected_table_count=1, table_count=0, expected_heading_count=1, heading_count=0）
+F[trace_id=trace_document_jobs_mysql_callback job_id=docjob_5b4efae72d1b stage=rendering status=failed] DocumentIR→DOCX 内容完整性校验失败：ir_docx_integrity:inline_shape_count_mismatch, ir_docx_integrity:table_count_mismatch, ir_docx_integrity:heading_count_mismatch（expected_layout_block_count=6, layout_block_count=6, expected_inline_shape_count=1, inline_shape_count=0, expected_table_count=1, table_count=0, expected_heading_count=1, heading_count=0）
+F[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+F[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+FF
+======================================================================
+ERROR: test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-original-head-w9p3g77i/checkout/tests/test_fastapi_jobs_backend.py", line 9505, in test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed
+    job_id = create_response.json()["job_id"]
+             ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+KeyError: 'job_id'
+
+======================================================================
+ERROR: test_document_job_invalid_callback_checksum_leaves_no_callback_message (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_invalid_callback_checksum_leaves_no_callback_message)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-original-head-w9p3g77i/checkout/tests/test_fastapi_jobs_backend.py", line 9557, in test_document_job_invalid_callback_checksum_leaves_no_callback_message
+    job_id = create_response.json()["job_id"]
+             ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+KeyError: 'job_id'
+
+======================================================================
+ERROR: test_document_job_mineru_callback_dedupes_duplicate_delivery_before_worker (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_mineru_callback_dedupes_duplicate_delivery_before_worker)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-original-head-w9p3g77i/checkout/tests/test_fastapi_jobs_backend.py", line 9391, in test_document_job_mineru_callback_dedupes_duplicate_delivery_before_worker
+    job_id = create_response.json()["job_id"]
+             ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+KeyError: 'job_id'
+
+======================================================================
+ERROR: test_document_job_mineru_callback_queues_before_worker_completes_parse (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_mineru_callback_queues_before_worker_completes_parse)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-original-head-w9p3g77i/checkout/tests/test_fastapi_jobs_backend.py", line 9303, in test_document_job_mineru_callback_queues_before_worker_completes_parse
+    job_id = create_response.json()["job_id"]
+             ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+KeyError: 'job_id'
+
+======================================================================
+ERROR: test_document_job_worker_ignores_queued_callback_after_cancel (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_worker_ignores_queued_callback_after_cancel)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-original-head-w9p3g77i/checkout/tests/test_fastapi_jobs_backend.py", line 9450, in test_document_job_worker_ignores_queued_callback_after_cancel
+    job_id = create_response.json()["job_id"]
+             ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+KeyError: 'job_id'
+
+======================================================================
+FAIL: test_document_jobs_api_pdf_callback_flow_uses_database_repository (tests.test_database_job_repository.PersistenceAdapterTests.test_document_jobs_api_pdf_callback_flow_uses_database_repository)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-original-head-w9p3g77i/checkout/tests/test_database_job_repository.py", line 1869, in test_document_jobs_api_pdf_callback_flow_uses_database_repository
+    self.assertEqual(worker_result.status, "succeeded")
+AssertionError: 'failed' != 'succeeded'
+- failed
++ succeeded
+
+
+======================================================================
+FAIL: test_document_jobs_api_pdf_callback_flow_uses_mysql_repository (tests.test_database_job_repository.PersistenceAdapterTests.test_document_jobs_api_pdf_callback_flow_uses_mysql_repository)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-original-head-w9p3g77i/checkout/tests/test_database_job_repository.py", line 1941, in test_document_jobs_api_pdf_callback_flow_uses_mysql_repository
+    self.assertEqual(worker_result.status, "succeeded")
+AssertionError: 'failed' != 'succeeded'
+- failed
++ succeeded
+
+
+======================================================================
+FAIL: test_callback_rejects_non_parsing_job_status (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_callback_rejects_non_parsing_job_status)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-original-head-w9p3g77i/checkout/tests/test_fastapi_jobs_backend.py", line 15830, in test_callback_rejects_non_parsing_job_status
+    self.assertEqual(response.status_code, 400)
+AssertionError: 404 != 400
+
+======================================================================
+FAIL: test_document_job_config_summary_lists_options_for_operator_and_admin (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_config_summary_lists_options_for_operator_and_admin)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-original-head-w9p3g77i/checkout/tests/test_fastapi_jobs_backend.py", line 7358, in test_document_job_config_summary_lists_options_for_operator_and_admin
+    self.assertIn("default@1", [item["label"] for item in operator_payload["options"]["templates"]])
+AssertionError: 'default@1' not found in ['default@2']
+
+======================================================================
+FAIL: test_document_job_worker_saves_mineru_raw_ir_and_image_assets (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_worker_saves_mineru_raw_ir_and_image_assets)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-original-head-w9p3g77i/checkout/tests/test_fastapi_jobs_backend.py", line 9679, in test_document_job_worker_saves_mineru_raw_ir_and_image_assets
+    self.assertEqual(word_file.metadata["template_version_id"], "default@1")
+AssertionError: 'default@2' != 'default@1'
+- default@2
+?         ^
++ default@1
+?         ^
+
+
+----------------------------------------------------------------------
+Ran 10 tests in 1.310s
+
+FAILED (failures=5, errors=5)

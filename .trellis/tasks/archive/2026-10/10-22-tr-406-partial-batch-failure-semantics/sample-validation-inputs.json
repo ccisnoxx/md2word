@@ -1,0 +1,11 @@
+{
+  "component_report": "tests/tmp/component_pdf_regression/20261022T060045Z/report.json",
+  "component_report_sha256": "c76f2d64a001beef4d90812c307273b99945d74f4e0a93a6bc97fa9657642ee1",
+  "matrix_report": "tests/tmp/local_mineru_quality/20261022T060037Z/report.json",
+  "matrix_report_sha256": "4cf379e7ed28d212a7c2c0dd95de3f3fce335b14c8e74239de177ef299bf5050",
+  "scripts": {
+    "scripts/dev/run_component_pdf_regression.py": "8db40cb895bd4da5c724eea496e7a670852964c267132d9292c066cf2baf9c19",
+    "scripts/dev/run_local_mineru_quality_matrix.py": "a7e9381a78f15aad82a765875e498c0ad74852b2fa8c1b43de3d056619057d20",
+    "scripts/dev/formal_mineru_conversion.py": "70841a2d199a0e23eba361900bc6d9ecb65d9c37bec1a6c1ce1a8c3114fe4522"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "protected_original_dirty_files": 332,
+  "unexpected_original_dirty_changes": [],
+  "manifest_outside_tr406_unchanged": true,
+  "original_index_unchanged": true,
+  "original_deleted_paths_still_absent": true,
+  "original_deleted_paths": [
+    ".trellis/tasks/10-12-datasheet-docx-delivery-quality/check.jsonl",
+    ".trellis/tasks/10-12-datasheet-docx-delivery-quality/design.md",
+    ".trellis/tasks/10-12-datasheet-docx-delivery-quality/implement.jsonl",
+    ".trellis/tasks/10-12-datasheet-docx-delivery-quality/implement.md",
+    ".trellis/tasks/10-12-datasheet-docx-delivery-quality/prd.md",
+    ".trellis/tasks/10-12-datasheet-docx-delivery-quality/task.json"
+  ],
+  "head_unchanged": true,
+  "current_branch": "codex/tr-406-partial-batch-failure-semantics",
+  "tracked_browser_outputs_restored": {
+    "frontend/test-results/.last-run.json": true,
+    "frontend/test-results/core-flow-operations-redes-34b6f-blet-and-mobile-screenshots-chrome/trace.zip": true
+  }
+}

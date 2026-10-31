@@ -12,7 +12,7 @@ source_files:
   - app/domains/document_jobs/execution.py
 summary: Document Jobs API 提供 P0 PDF -> Word 任务创建、查询、事件、重试、clone、取消、归档、删除和下载入口。
 tags: [document-jobs, api, pdf, word]
-last_reviewed: 2026-10-12
+last_reviewed: 2026-10-22
 ---
 
 ## 概述
@@ -61,6 +61,8 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 
 前端应优先读取 `error.code` / `error.message` / `error.trace_id`，兼容旧调用方时可继续读取 `detail` 和顶层 `error_code`。
 
+已明确分类的下载拒绝可 additive 返回 `error.reason_code`（如 `job_deleted`、`job_not_completed`、`result_file_missing`、`result_file_mismatch`、`result_file_not_uploaded`、`file_expired`、`file_not_current`）。原 HTTP/通用错误字段保持不变；权限拒绝不附加细分码。
+
 ## 枚举
 
 ### `mode`
@@ -73,6 +75,36 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `zh2en_pdf_to_word` | 中译英；先翻译 DocumentIR 再生成 Word。 |
 | `zh2ru_pdf_to_word` | 中译俄；先翻译 DocumentIR 再生成 Word。 |
 
+### `stage` 与执行边界（CON-102 基线）
+
+已验收的 CON-102 路径 A 基线采用 first-valid-receipt 控制自动恢复；原始验证与独立复核见 [receipt 验证](../../.trellis/tasks/archive/2026-10/10-15-con-102-document-job-stages/receipt-validation.md) 和 [receipt 复审](../../.trellis/tasks/archive/2026-10/10-15-con-102-document-job-stages/receipt-review.md)。本次整合验证见 TR-406 的依赖与质量报告。生产写者启用仍要求真实 MySQL 并发及部署文件系统锁语义专项通过，本轮未部署。
+
+`status` 继续表示 `pending/queued/running/succeeded/failed/canceled`；`stage` 表示正在处理的工作，不能用于推断质量结论、复核或发布资格。
+
+```text
+direct：uploaded → parsing → parsed → ir_converting
+        → rendering → quality_checking → uploading → completed
+翻译： uploaded → parsing → parsed → ir_converting → translating
+        → translation_validating → rendering → quality_checking → uploading → completed
+```
+
+- `translating`：创建和执行翻译批次，保持现有重试、拆批与调用预算；单批次的状态不等于主任务阶段。
+- `translation_validating`：当前 generation 有效叶子批次全部成功（或没有可翻译单元）后，执行现有 ID 合并校验和回填。该阶段不代表已新增技术 Token、数字或术语检查算法。
+- `quality_checking`：执行现有 DOCX evidence 和确定性内容完整性门禁。检查通过后才登记用户主 DOCX；完整性失败仍使用 `render_failed`，不会生成可下载的伪成功主件。
+- 原文转换跳过两个翻译阶段，不加载 Provider、翻译 Prompt 或翻译术语。
+
+三个新阶段均属于 `status=running`，支持取消、超时定位和恢复。失败终态仍为 `status=failed, stage=failed`，由 `failed_stage` 保存真正失败的位置。事件 `stage` 与实际工作一致，携带 generation、trace 和安全摘要；`duration_ms` 是本次可测调用的耗时，未知全阶段耗时保持空值。
+
+旧阶段和历史记录保留。响应中的 `stage`/`failed_stage` 继续使用字符串，前端对未知阶段显示原值；事件和异常筛选只接受服务端支持的阶段。`available_actions` 仍是动作可用性的权威来源；响应增加只读的质量、复核、交付状态投影。当前没有批准发布或发布动作写入口。
+
+质量、复核和交付状态（CON-103）分别为 `pending/passed/warning/blocked`、`unreviewed/approved/needs_fix/blocked`、`internal_draft/ready_to_publish/published`，摘要默认 `{}`。旧 QA 原值保留但未绑定当前结果时只作历史记录，不自动成为批准证据。合法成功主件可内部下载，`approved` 不授予发布资格；retry 新代、clone 或结果换件使旧证据失效。
+
+恢复保留最终IR和资源快照，不重复已完成的解析或翻译。`quality_checking` 或尚未选定结果的 `uploading` 在现有replay触发时，可条件回到 `rendering` 重建丢失的字节并重新检查；恢复事件记录来源阶段，进度不下降。质量通过后，每次尝试先登记内部pending候选，再写独立对象路径；仓储原子选定第一份有效结果凭据，所有恢复者只登记其同一个文件并完成任务。已有凭据时不再重渲染、换件或重写对象。此机制不增加持续扫描器、租约或公开状态字段。
+
+候选不是用户主件。任务文件列表、按文件ID签发和技术Token消费均只允许合法完成任务的当前结果指针；pending、落选或取消后未绑定的候选不能下载。既有租户/公司/owner、Token签名/过期和文件有效期校验保持。自动发现legacy主件必须是唯一可核验的当前generation/最终IR文件；无generation、旧代、不同IR或矛盾多件不自动晋升。明确绑定的 `result_file_id` 按既有重试语义验证和复用，历史文件/审计保留。
+
+部署时先升级能读取并保留新阶段/内部结果凭据、具备局部原子写入和候选可见性的兼容版本；全部旧API写者和Worker退出后才启用新写者。回滚先停止消费/投递和相关写入，由支持凭据的新执行器收敛或保留在途，再回兼容版本；兼容读者保留HEAD旧执行器时，所有DocumentJob消费/内联执行均维持暂停，不仅暂停新阶段/凭据任务；该候选不作为活跃Worker回退版本。仅扩stage的旧兼容补丁不足以安全回退，不能删除字段、文件或审计伪装兼容。
+
 ### 失败诊断字段
 
 失败任务会在详情中返回：
@@ -81,7 +113,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 - `error_code`
 - `error_message`
 
-前端和联调脚本应优先用这三个字段定位上传、解析、IR、渲染或对象存储问题。
+前端和联调脚本应优先用这三个字段定位上传、解析、IR、翻译、翻译合并校验、渲染、质量检查或对象存储问题。
 
 ### `translation_qa_status`
 
@@ -92,7 +124,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `needs_fix` | 需要修正或跟进。 |
 | `blocked` | 阻塞或无法判断。 |
 
-该状态只用于四种翻译任务 QA。列表筛选传 `translation_qa_status` 时，后端只返回翻译模式且状态匹配的任务，避免把 direct 任务的默认值误当成翻译 QA 待办。
+该字段是 `review_status` 的兼容投影。历史未绑定当前结果的 QA 原值不自动成为有效批准，新模型为 `unreviewed` 时响应清空旧 issue/note/reviewer/time；列表筛选和 summary 使用当前复核状态，direct 不推导 approved。
 
 ## API 参考
 
@@ -175,31 +207,37 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `page_size` | `20` | 当前限制 `1-100`。 |
 | `status` | 无 | 按任务状态过滤。 |
 | `status_group` | 无 | 状态组过滤；OpenAPI 枚举当前仅允许 `active`，等价于 `pending` / `queued` / `running`。不能与 `status` 同时使用。 |
-| `translation_qa_status` | 无 | 按翻译 QA 状态过滤；OpenAPI 枚举允许 `unreviewed` / `approved` / `needs_fix` / `blocked` / `all`，传 `all` 时返回全部翻译模式 QA 任务。 |
-| `q` | 无 | 按任务 ID、源文件 ID、源文件名、错误码或错误信息搜索。 |
+| `translation_qa_status` | 无 | 按当前文件、绑定、质量和单次观察时刻计算的有效复核状态过滤；OpenAPI 枚举允许 `unreviewed` / `approved` / `needs_fix` / `blocked` / `all`，传 `all` 时返回全部翻译模式 QA 任务。 |
+| `q` | 无 | 对任务 ID、源文件 ID、任务快照中的源文件名、错误码和错误信息逐字段进行 Unicode casefold 字面子串搜索；去除首尾空白，`%`、`_`、反斜线不作为通配符。 |
 | `sort` | `created_at_desc` | `created_at_desc` / `created_at_asc` / `updated_at_desc` / `updated_at_asc`。 |
 | `include_archived` | `false` | 是否包含已归档任务；已删除任务始终不进入列表。 |
-| `created_from` | 无 | 按创建时间下界过滤，ISO datetime。 |
-| `created_to` | 无 | 按创建时间上界过滤，ISO datetime。 |
+| `created_from` | 无 | 按创建时间下界过滤，ISO datetime，包含边界。 |
+| `created_to` | 无 | 按创建时间上界过滤，ISO datetime，包含边界。 |
 
 - 响应：`items`、分页信息、`summary`、`filtered_summary` 和 `translation_qa_summary`。
     - `summary`：当前用户可见任务在归档过滤后的全局状态计数，保留旧语义。
     - `filtered_summary`：应用 `status`/`status_group`、`translation_qa_status`、搜索、日期等筛选后的状态计数，不受分页影响。
-    - `translation_qa_summary`：应用非 QA 状态筛选、搜索、日期和归档过滤后的 QA 状态计数，键为 `unreviewed`、`approved`、`needs_fix`、`blocked`。
+    - `translation_qa_summary`：应用非 QA 状态筛选、搜索、日期和归档过滤后的有效复核状态计数，不受所选 QA 选项影响；只统计翻译模式，键为 `unreviewed`、`approved`、`needs_fix`、`blocked`。
     - 前端应兼容旧响应或局部 mock 未返回新增 summary 字段的情况，缺省按空对象处理。
+
+- 可见性同时限定租户和公司；Admin 可查看该范围全部任务，其他角色只查看本人创建的任务。全部计数与列表使用相同的权限边界。
+- 时间相同时按任务 ID 排序，方向与主排序一致；`total` 和汇总均不受分页影响。QA 汇总只统计翻译模式，固定四键补零，状态汇总仅返回实际出现的状态键。
+- SQLite/MySQL 使用同一读快照完成筛选、汇总与分页。数据库查询投影尚未回填或版本不兼容时返回 `503 service_unavailable`，不会以缺失任务的成功结果代替；GET 不执行回填。启用步骤见后端运维手册。
 
 ### `GET /api/v1/document-jobs/{job_id}`
 
 - 用途：读取任务详情。
 - 响应：`DocumentJobResponse`，包括状态、阶段、进度、中间产物 file id、失败诊断字段、retry count、`source_job_id`、删除元数据 `deleted_at` / `deleted_by` / `delete_reason`、request snapshot 和 `available_actions`。
 - 已删除任务仍可通过详情读取 metadata、事件和审计证据，但所有任务动作都会被禁用；默认列表不会返回已删除任务。
-- `available_actions` 是服务端对当前用户和任务状态的操作可用性判断，键包括 `download`、`retry`、`cancel`、`archive`、`unarchive`、`clone`、`delete`。每个 action 返回：
+- `available_actions` 是服务端对当前用户和任务状态的操作可用性判断，键包括原有七项以及 additive 的 `publish`。每个 action 返回：
 
 | 字段 | 说明 |
 |---|---|
 | `enabled` | 当前用户能否执行该动作。 |
 | `disabled_reason` | 禁用原因；`enabled=true` 时为 `null`。 |
 | `retryable` | 仅用于 `retry` 动作，表示失败是否属于可重试失败；其他动作固定为 `false`。 |
+
+CON-104 为 `download`/`publish` 增加只读 `disabled_reason_code`；下载成功时主 DOCX 返回 `classification=internal_only` 及适用 warning，普通 Artifact 不套用主件分类。`publish.eligible` 只表达核心资格，`enabled` 仍为真实执行许可；当前没有发布 endpoint，publish 始终 disabled，并保留有序 `disabled_reasons`。
 
 ### `GET /api/v1/document-jobs/{job_id}/events`
 
@@ -242,10 +280,23 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 ### `GET /api/v1/document-jobs/{job_id}/translation-batches`
 
 - 用途：读取单个 document job 的 translation provider batch 只读诊断摘要，用于任务详情和运维排障。
-- 响应：`DocumentJobTranslationBatchListResponse`，包含 `job_id`、当前 `generation` 和 batch `items`。
+- 响应：`DocumentJobTranslationBatchListResponse`，包含 `job_id`、同一授权快照中的当前 `generation`、batch `items` 和 nullable `execution`。direct 模式的 `execution=null`，不加载翻译资源。
 - 常用 batch 字段包括 `batch_id`、`status`、`page_start` / `page_end`、`item_count`、`char_count`、`attempt_count` / `max_attempts`、`split_level`、`parent_batch_id`、`root_batch_id`、`finish_reason`、`error_code`、`error_message`、`retryable`、`truncation_retry`、`result_file_id`、`ai_call_log_file_ids` 和 `updated_at`。
+- 每行另含 `is_effective_leaf` 和 `failure_disposition`（`none/retrying/terminal/stopped/superseded`）。split 父项为 superseded，不计为有效失败叶子；本代停止后的非终态兄弟显示 stopped，不改写为用户取消。`result_file_id` 仅表示内部中间证据，不授予下载权限。
 - 该接口只返回摘要和文件 ID，不返回完整 prompt、provider response、source text、translated text、debug archive 内容、对象存储定位或签名 URL。
 - 该接口不提供批次级 retry、cancel、requeue 或 fan-in 写操作；任务级操作仍以 `available_actions` 和现有 document job action endpoint 为准。
+
+`execution` 字段：
+
+| 字段 | 合同 |
+|---|---|
+| `outcome` | `not_started/running/retrying/validating/failed/completed/canceled`；任务终态优先，第二 attempt 在途或待自动恢复的可重试叶子为 retrying。 |
+| `leaf_count` / `succeeded_leaf_count` | 有效叶子总数与成功数，不把 split 父项算作失败或成功覆盖。 |
+| `active_leaf_count` / `retryable_failed_leaf_count` / `terminal_failed_leaf_count` | 当前代批次的活动、可重试失败及终态失败计数。 |
+| `failure_batch_id` / `reason_code` / `reason_message` | nullable 的失败批次身份、稳定机器原因和固定安全中文说明；不含外部异常正文。 |
+| `partial_artifacts_debug_only` | 标记部分结果仅供受控内部诊断，不能视为主 DOCX、目标 IR 或发布来源。 |
+
+该扩展为 additive；旧客户端可忽略新字段。面对旧 API 缺少 execution 的情况，页面显示“详细结论不可用”，不自行推断终态或发布资格。页面仅接受与当前 job.retry_count 一致的响应 generation，并阻止旧 job/旧请求响应覆盖新视图。
 
 ### `GET /api/v1/document-jobs/{job_id}/translation-qa`
 
@@ -288,6 +339,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 - 成功动作写入 `document_job.retry` audit event。
 - 权限：Operator 只能提交原因并沿用原配置；Admin 可选择使用最新默认术语资产或指定 published 术语资产。Retry 当前不重新绑定模板或翻译配置。
 - 边界：Retry 只用于失败任务原地重试，不创建新任务，不等同于 clone。
+- 翻译失败的用户 Retry 原子增加 retry_count/generation，从已验证的权威不可变 source IR 重建全部新代批次，默认沿用原配置快照；不会重新包装或复用旧代成功译文。同代自动恢复才只重试失败叶子。
 - direct 只能重选符号与排版规则，显式选择翻译术语被拒绝；沿用历史快照时不重新加载惰性的翻译字段。
 
 ### `POST /api/v1/document-jobs/{job_id}/clone`
@@ -411,10 +463,10 @@ direct clone 不绑定翻译资源：新显式选择被拒绝；`keep_source_sna
 
 ### `GET /api/v1/document-jobs/{job_id}/download-url`
 
-- 用途：为成功任务生成临时下载链接。
-- 响应包含 `download_url`、`method=GET`、`expires_at` 和文件安全摘要。
+- 用途：为任务允许的文件生成临时下载链接；默认签发成功完成任务的当前主 DOCX。
+- 响应包含 `download_url`、`method=GET`、`expires_at`、文件安全摘要，以及 additive 的 `classification`、`warning_code`、`warning_message`。
 - 默认结果文件和显式 `file_id` 下载都会校验文件状态、归属和 `expires_at`；过期文件返回 `409 conflict`。
-- 成功动作写入 `document_job.download_authorize` audit event。
+- blocked/unreviewed/needs_fix 的合法成功主件仍可内部下载；分类与 warning 以当次签发响应为准。签发事件与审计只记录 generation、file_id、classification、warning_code，不记录 token、正文或对象定位。
 
 ### `GET /api/v1/document-jobs/{job_id}/download`
 

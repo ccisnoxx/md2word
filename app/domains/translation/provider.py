@@ -15,9 +15,18 @@ from app.domains.translation.models import (
     TranslationTextItem,
 )
 from app.domains.translation.modes import translation_prompt_path
+from app.domains.translation.integrity import INTEGRITY_INSTRUCTION
 
 
-class TranslationProviderResponseError(RuntimeError):
+class TranslationProviderCallError(RuntimeError):
+    """实际调用失败的安全上下文，不携带配置密钥或外部异常正文。"""
+
+    def __init__(self, message: str, *, publication_provenance: dict | None = None) -> None:
+        super().__init__(message)
+        self.publication_provenance = publication_provenance
+
+
+class TranslationProviderResponseError(TranslationProviderCallError):
     """Provider 响应无法解析或校验，仅携带非敏感诊断元数据。"""
 
     def __init__(
@@ -29,8 +38,9 @@ class TranslationProviderResponseError(RuntimeError):
         response_id: str | None = None,
         content: str = "",
         suspected_truncation: bool = False,
+        publication_provenance: dict | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(message, publication_provenance=publication_provenance)
         self.finish_reason = finish_reason
         self.usage = usage or {}
         self.response_id = response_id
@@ -82,34 +92,56 @@ class OpenAICompatibleTranslationProvider:
             base_url=config.base_url or None,
             timeout=config.timeout_seconds,
         )
-        response = client.chat.completions.create(
-            model=config.model,
-            messages=[
-                {"role": "system", "content": self._system_prompt(request)},
-                {"role": "user", "content": self._user_prompt(request)},
-            ],
-            stream=False,
-            max_tokens=config.max_output_tokens,
-            extra_body={"thinking": {"type": "disabled"}},
-        )
-        content = self._extract_content(response)
-        finish_reason = self._extract_finish_reason(response)
-        usage = self._extract_usage(response)
-        response_id = self._extract_response_id(response)
-        payload = self._parse_json_response(
-            content,
-            finish_reason=finish_reason,
-            usage=usage,
-            response_id=response_id,
-        )
+        messages = [
+            {"role": "system", "content": self._system_prompt(request)},
+            {"role": "user", "content": self._user_prompt(request)},
+        ]
+        # 只从构造本次请求的配置取白名单；调用结束后不能再次解析当前配置。
+        publication_provenance = {
+            "schema_version": "publication_provenance/v1",
+            "backend": config.backend,
+            "model": config.model,
+            "parameters": {
+                "timeout_seconds": config.timeout_seconds,
+                "max_output_tokens": config.max_output_tokens,
+                "stream": False,
+                "thinking": {"type": "disabled"},
+            },
+        }
+        try:
+            response = client.chat.completions.create(
+                model=config.model,
+                messages=messages,
+                stream=False,
+                max_tokens=config.max_output_tokens,
+                extra_body={"thinking": {"type": "disabled"}},
+            )
+            content = self._extract_content(response)
+            finish_reason = self._extract_finish_reason(response)
+            usage = self._extract_usage(response)
+            response_id = self._extract_response_id(response)
+            payload = self._parse_json_response(
+                content,
+                finish_reason=finish_reason,
+                usage=usage,
+                response_id=response_id,
+            )
+        except TranslationProviderResponseError as exc:
+            exc.publication_provenance = publication_provenance
+            raise
+        except Exception:
+            raise TranslationProviderCallError(
+                "翻译 Provider 调用失败。", publication_provenance=publication_provenance,
+            ) from None
         content_sha256 = f"sha256:{hashlib.sha256(content.encode('utf-8')).hexdigest()}" if content else None
         return TranslationProviderResult(
-            items=self._parse_items(payload),
+            items=payload,
             finish_reason=finish_reason,
             usage=usage,
             response_id=response_id,
             content_length=len(content),
             content_sha256=content_sha256,
+            publication_provenance=publication_provenance,
         )
 
     def _effective_config(self) -> EffectiveAiProviderConfig:
@@ -152,7 +184,8 @@ class OpenAICompatibleTranslationProvider:
         return (
             f"{prompt}\n\n"
             f"Language pair: {request.language_pair}; source={request.source_language}; target={request.target_language}. "
-            "Return only JSON with an items array. Preserve every item id exactly."
+            "Return only JSON with an items array. Preserve every item id exactly.\n\n"
+            f"{INTEGRITY_INSTRUCTION}"
         )
 
     def _user_prompt(self, request: TranslationProviderRequest) -> str:
@@ -174,7 +207,10 @@ class OpenAICompatibleTranslationProvider:
         if not choices:
             return ""
         message = getattr(choices[0], "message", None)
-        return str(getattr(message, "content", "") or "").strip()
+        content = getattr(message, "content", "")
+        if not isinstance(content, str):
+            raise TranslationProviderResponseError("翻译 provider 返回内容必须是字符串。")
+        return content
 
     def _extract_finish_reason(self, response: Any) -> str | None:
         choices = getattr(response, "choices", None) or []
@@ -207,46 +243,40 @@ class OpenAICompatibleTranslationProvider:
             if isinstance(value, int) and not isinstance(value, bool)
         }
 
+    @classmethod
     def _parse_json_response(
-        self,
+        cls,
         content: str,
         *,
         finish_reason: str | None,
         usage: dict[str, int],
         response_id: str | None,
-    ) -> dict[str, Any]:
-        stripped = content.strip()
-        if stripped.startswith("```"):
-            lines = stripped.splitlines()
-            if lines:
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            stripped = "\n".join(lines).strip()
-        start = stripped.find("{")
-        end = stripped.rfind("}")
-        if start < 0 or end < start:
-            raise TranslationProviderResponseError(
-                "翻译 provider 返回内容不是合法 JSON。",
-                finish_reason=finish_reason,
-                usage=usage,
-                response_id=response_id,
-                content=content,
-                suspected_truncation=self._looks_truncated(stripped, finish_reason=finish_reason),
-            )
-        try:
-            return json.loads(stripped[start : end + 1])
-        except json.JSONDecodeError as exc:
-            raise TranslationProviderResponseError(
-                f"翻译 provider 返回 JSON 解析失败: {exc.msg}",
-                finish_reason=finish_reason,
-                usage=usage,
-                response_id=response_id,
-                content=content,
-                suspected_truncation=self._looks_truncated(stripped, finish_reason=finish_reason),
-            ) from exc
+    ) -> tuple[TranslationTextItem, ...]:
+        """只接受约定 JSON；不裁剪包装、不修复重复键或 item 字段。"""
 
-    def _looks_truncated(self, content: str, *, finish_reason: str | None) -> bool:
+        def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            result: dict[str, Any] = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("翻译 JSON 包含重复键。")
+                result[key] = value
+            return result
+
+        def reject_constant(_value: str) -> None:
+            raise ValueError("翻译 JSON 包含非标准常量。")
+
+        try:
+            payload = json.loads(content, object_pairs_hook=unique_object, parse_constant=reject_constant)
+            return cls._parse_items(payload)
+        except (ValueError, TypeError, TranslationProviderResponseError):
+            raise TranslationProviderResponseError(
+                "翻译 provider 返回内容不符合约定的 JSON 结构。",
+                finish_reason=finish_reason, usage=usage, response_id=response_id, content=content,
+                suspected_truncation=cls._looks_truncated(content, finish_reason=finish_reason),
+            ) from None
+
+    @staticmethod
+    def _looks_truncated(content: str, *, finish_reason: str | None) -> bool:
         if finish_reason == "length":
             return True
         stripped = content.strip()
@@ -254,18 +284,17 @@ class OpenAICompatibleTranslationProvider:
             return True
         return stripped.count("{") > stripped.count("}") or stripped.count("[") > stripped.count("]")
 
-    def _parse_items(self, payload: dict[str, Any]) -> tuple[TranslationTextItem, ...]:
-        raw_items = payload.get("items")
-        if not isinstance(raw_items, list):
-            raise RuntimeError("翻译 provider 返回 JSON 缺少 items 数组。")
+    @staticmethod
+    def _parse_items(payload: object) -> tuple[TranslationTextItem, ...]:
+        if not isinstance(payload, dict) or set(payload) != {"items"} or not isinstance(payload["items"], list):
+            raise TranslationProviderResponseError("翻译 provider 返回 JSON 必须只包含 items 数组。")
         items: list[TranslationTextItem] = []
-        for raw_item in raw_items:
-            if not isinstance(raw_item, dict):
-                raise RuntimeError("翻译 provider 返回 items 包含非法条目。")
-            item_id = str(raw_item.get("id") or "").strip()
-            text = str(raw_item.get("text") or "").strip()
-            if not item_id or not text:
-                raise RuntimeError("翻译 provider 返回 items 缺少 id 或 text。")
+        for raw_item in payload["items"]:
+            if not isinstance(raw_item, dict) or set(raw_item) != {"id", "text"}:
+                raise TranslationProviderResponseError("翻译 provider 返回 item 字段无效。")
+            item_id, text = raw_item["id"], raw_item["text"]
+            if not isinstance(item_id, str) or not item_id.strip() or not isinstance(text, str) or not text.strip():
+                raise TranslationProviderResponseError("翻译 provider 返回 item 的 id/text 必须是非空字符串。")
             items.append(TranslationTextItem(id=item_id, text=text))
         return tuple(items)
 

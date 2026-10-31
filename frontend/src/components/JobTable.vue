@@ -28,6 +28,9 @@
               <span class="mono error-code" :title="failureCode(row)">{{ failureCode(row) }}</span>
               <span :title="failureSummary(row)">{{ failureSummary(row) }}</span>
             </div>
+            <p v-if="canDownloadDocumentJob(row)" class="download-availability-notice">
+              {{ documentJobDownloadNotice(row.available_actions.download) }}
+            </p>
           </div>
         </template>
       </el-table-column>
@@ -213,6 +216,7 @@ import {
   canRetryDocumentJob,
   canUnarchiveDocumentJob,
   documentJobActionDisabledReason,
+  documentJobDownloadNotice,
   documentJobModeSupportsTranslationQa,
   formatDateTime,
   getJobSourceFilename,
@@ -427,12 +431,21 @@ function pendingActionLabel(row: DocumentJobResponse): string {
     unarchive: "取消归档中",
     clone: "创建中",
     delete: "删除中",
+    publish: "发布中",
   };
   return labels[action];
 }
 </script>
 
 <style scoped lang="scss">
+.download-availability-notice {
+  margin: 6px 0 0;
+  color: var(--app-color-text);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .job-table {
   width: 100%;
   overflow-x: auto;

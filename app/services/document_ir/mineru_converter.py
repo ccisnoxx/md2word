@@ -2,28 +2,23 @@ from __future__ import annotations
 
 # app/services/document_ir/mineru_converter.py: 将 MinerU 原始结果包转换为 DocumentIR v2。
 
-import mimetypes
-import re
 import tempfile
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app.conversion.docx_rules.mineru_content import (
-    append_footnote_fragment,
-    clean_markdown_document,
     clean_text,
+    classify_mineru_block,
+    mineru_raw_text_preserving_lines,
+    mineru_list_items,
     coerce_text_list,
     collect_text_from_fields,
-    extract_first_asset_path,
-    extract_first_html,
-    find_values_by_key,
+    select_mineru_text_source,
+    select_mineru_table_html,
     find_final_promotional_page,
-    join_text_fragments,
     merge_footnote_fragments,
-    split_multiline_list_items,
-    split_toc_like_lines,
 )
 from app.services.document_ir.layout_signals import (
     build_block_layout,
@@ -34,8 +29,16 @@ from app.services.document_ir.layout_signals import (
     parse_page_index,
     role_for_source_type,
 )
-from app.services.document_ir.integrity import build_source_integrity, ensure_integrity
-from app.services.document_ir.mineru_package import extract_zip, find_content_list, load_content_blocks
+from app.services.document_ir.integrity import DocumentIntegrityError, build_source_integrity, ensure_integrity
+from app.services.document_ir.caption_reconciler import reconcile_captions
+from app.services.document_ir.logical_table_group import TableSourceLedger, attach_logical_table_groups, capture_table_sources
+from app.services.document_ir.artifact_validator import (
+    MinerUArtifactValidator, MinerUArtifactValidationError, MinerUValidationReport, ValidatedImage, ValidatedTableReference,
+)
+from app.services.document_ir.mineru_package import (
+    DEFAULT_POLICY, MinerUPackageError, MinerUValidationPolicy, extract_zip, find_content_list,
+    package_sha256, read_json_payload,
+)
 from app.services.document_ir.models import (
     DocumentIR,
     DocumentIRAsset,
@@ -44,11 +47,9 @@ from app.services.document_ir.models import (
     DocumentIRMetadata,
 )
 from app.services.document_ir.table_annotations import split_table_annotation_texts
-
-
-NUMBERED_FIGURE_CAPTION_RE = re.compile(
-    r"^\s*(?P<label>图|Figure)\s*(?P<number>\d+)(?![A-Za-z0-9]|[.．]\d|[-–—][A-Za-z0-9])",
-    re.IGNORECASE,
+from app.services.document_ir.table_reference_assets import TableReferenceAsset, attach_table_references
+from app.services.document_ir.table_placeholder import (
+    PdfCropSource, PdfTableCropProvider, PlaceholderAsset, TablePlaceholderError, prepare_placeholders,
 )
 
 
@@ -67,10 +68,18 @@ class MinerUImageAsset:
 class MinerUToDocumentIRResult:
     document: DocumentIR
     image_assets: list[MinerUImageAsset]
+    validation_report: MinerUValidationReport | None = None
+    table_reference_assets: list[TableReferenceAsset] = field(default_factory=list)
+    table_placeholder_assets: list[PlaceholderAsset] = field(default_factory=list)
 
 
 class MinerUToDocumentIRService:
     """P0 MinerU -> DocumentIR v2 转换器，优先保留块顺序和资产引用。"""
+
+    def __init__(self, *, policy: MinerUValidationPolicy = DEFAULT_POLICY,
+                 pdf_crop_provider: PdfTableCropProvider | None = None) -> None:
+        self.policy = policy
+        self.pdf_crop_provider = pdf_crop_provider
 
     def convert_zip(
         self,
@@ -79,31 +88,55 @@ class MinerUToDocumentIRService:
         job_id: str,
         source_file_id: str,
         document_language: str,
+        placeholder_source_loader: Callable[[], PdfCropSource] | None = None,
     ) -> MinerUToDocumentIRResult:
         """读取 MinerU 结果 zip，生成 DocumentIR v2 和待登记图片资产。"""
 
+        report = MinerUValidationReport(package_sha256=package_sha256(zip_path), policy_version=self.policy.version)
+        validator = MinerUArtifactValidator(report, policy=self.policy)
         with tempfile.TemporaryDirectory(prefix="document_ir_mineru_") as temp_dir:
-            package_root = Path(temp_dir)
-            extract_zip(zip_path, package_root)
-            content_list_path = find_content_list(package_root)
-            raw_blocks = load_content_blocks(content_list_path)
-            return self._convert_blocks(
-                raw_blocks,
-                package_root=package_root,
-                job_id=job_id,
-                source_file_id=source_file_id,
-                document_language=document_language,
-            )
+            package_root = Path(temp_dir).resolve()
+            try:
+                extract_zip(zip_path, package_root, policy=self.policy)
+                content_list_path = find_content_list(package_root)
+                report.content_list_path = content_list_path.relative_to(package_root).as_posix()
+                report.content_list_sha256 = package_sha256(content_list_path)
+                validator.check_report_limits()
+                payload, _checksum = read_json_payload(content_list_path, policy=self.policy)
+                validated = validator.validate(payload, package_root=package_root, content_list_path=content_list_path)
+                table_sources = capture_table_sources(payload, validated.blocks, checksum=report.content_list_sha256)
+                return self._convert_blocks(
+                    validated.blocks,
+                    package_root=package_root,
+                    content_list_path=content_list_path,
+                    job_id=job_id,
+                    source_file_id=source_file_id,
+                    document_language=document_language,
+                    validator=validator,
+                    table_sources=table_sources,
+                    table_references=validated.table_references,
+                    placeholder_source_loader=placeholder_source_loader,
+                )
+            except MinerUPackageError as error:
+                validator.add_package_error(error)
+                raise MinerUArtifactValidationError(report) from error
 
     def _convert_blocks(
         self,
         raw_blocks: list[dict[str, Any]],
         *,
         package_root: Path,
+        content_list_path: Path,
         job_id: str,
         source_file_id: str,
         document_language: str,
+        validator: MinerUArtifactValidator,
+        table_sources: TableSourceLedger,
+        table_references: dict[str, ValidatedTableReference],
+        placeholder_source_loader: Callable[[], PdfCropSource] | None,
     ) -> MinerUToDocumentIRResult:
+        """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
+        validation_report = validator.report
         blocks: list[DocumentIRBlock] = []
         image_assets: list[MinerUImageAsset] = []
         ir_assets: list[DocumentIRAsset] = []
@@ -111,29 +144,49 @@ class MinerUToDocumentIRService:
         unsupported_types: set[str] = set()
         filtered_page_index = find_final_promotional_page(
             raw_blocks,
-            final_page_index=find_final_source_page_index(raw_blocks, package_root),
+            final_page_index=find_final_source_page_index(raw_blocks, package_root, policy=self.policy),
         )
+        before_filter_count = len(raw_blocks)
+        filtered_sources: list[dict[str, Any]] = []
         if filtered_page_index is not None:
+            filtered_sources = [
+                {**block["_mineru_source"], "rule_id": "final_promotional_page/v1", "reason": "final_promotional_page"}
+                for block in raw_blocks if parse_page_index(block) == filtered_page_index
+            ]
             raw_blocks = [block for block in raw_blocks if parse_page_index(block) != filtered_page_index]
             quality_flags.append(f"final_promotional_page_filtered:{filtered_page_index}")
-        raw_blocks = self._reassociate_numbered_image_captions(raw_blocks)
-        raw_blocks = merge_table_placeholder_continuations(raw_blocks)
-        source_type_counts = Counter(self._source_type(block) or "text" for block in raw_blocks)
+        before_merge = raw_blocks
+        merge_evidence: list[dict[str, Any]] = []
+        raw_blocks = merge_table_placeholder_continuations(raw_blocks, evidence=merge_evidence)
+        validator.record_normalization(before_merge, raw_blocks, filtered_page_index=filtered_page_index,
+                                       filtered_block_count=before_filter_count - len(before_merge),
+                                       merge_evidence=merge_evidence, filtered_sources=filtered_sources)
+        validator.complete_validation(raw_blocks, package_root=package_root, content_list_path=content_list_path)
+        try:
+            reconciled = reconcile_captions(raw_blocks)
+        except DocumentIntegrityError as error:
+            raise DocumentIntegrityError(error.boundary, {
+                **error.evidence, "mineru_validation": validation_report.model_dump(mode="json"),
+            }) from error
+        if any(result.evidence and result.evidence["status"] == "uncertain" for result in reconciled):
+            quality_flags.append("caption_binding_uncertain")
+        source_type_counts = Counter(block["_mineru_source"]["source_type"] for block in raw_blocks)
         pages = build_pages(
             raw_blocks,
             package_root,
             quality_flags,
             excluded_page_indices={filtered_page_index} if filtered_page_index is not None else None,
+            policy=self.policy,
         )
         page_width_by_index = {page.index: page.width for page in pages}
 
         for index, raw_block in enumerate(raw_blocks):
             block_id = f"block_{index + 1:04d}"
             source_type = str(raw_block.get("type") or raw_block.get("block_type") or "text").strip().lower()
-            block_type = self._map_block_type(raw_block, source_type)
+            block_type = classify_mineru_block(raw_block, source_type)
             block_role = role_for_source_type(source_type)
             if block_type == "paragraph" and block_role == "body" and source_type not in {"", "text", "paragraph", "para"}:
-                unsupported_types.add(source_type)
+                unsupported_types.add(raw_block["_mineru_source"]["source_type"])
             page_index = parse_page_index(raw_block)
             page_width = page_width_by_index.get(page_index)
             layout = build_block_layout(
@@ -144,9 +197,18 @@ class MinerUToDocumentIRService:
                 block_id=block_id,
                 page_width=page_width,
             )
-            metadata = self._metadata_from_raw(raw_block, source_type)
+            metadata = self._metadata_from_raw(raw_block)
             metadata.update(build_block_layout_metadata(layout, page_width=page_width))
-            captions = self._captions(raw_block, source_type)
+            caption_result = reconciled[index]
+            captions = caption_result.captions
+            if caption_result.evidence is not None:
+                caption_evidence = caption_result.evidence
+                for receipt in [*caption_evidence["bindings"], *caption_evidence.get("candidates", [])]:
+                    receipt["donor_block_id"] = f"block_{receipt.pop('donor_index') + 1:04d}"
+                    receipt["target_block_id"] = f"block_{receipt.pop('target_index') + 1:04d}"
+                if "members" in caption_evidence:
+                    caption_evidence["members"] = [f"block_{member + 1:04d}" for member in caption_evidence["members"]]
+                metadata["caption_reconciliation"] = caption_evidence
             table_contexts: list[str] = []
             if block_type == "table" and captions:
                 captions, table_contexts = split_table_annotation_texts(captions)
@@ -159,26 +221,19 @@ class MinerUToDocumentIRService:
                 quality_flags.append(f"layout_footnote_binding:{block_id}")
             asset_ref = None
             if block_type == "image":
-                image_path = self._resolve_image_path(raw_block, package_root)
-                if image_path is None:
-                    quality_flags.append(f"missing_image_asset:{block_id}")
-                else:
-                    asset_id = f"asset_{block_id}"
-                    asset_ref = asset_id
-                    mime_type = mimetypes.guess_type(image_path.name)[0] or "application/octet-stream"
-                    source_path = image_path.relative_to(package_root.resolve()).as_posix()
-                    image_assets.append(
-                        MinerUImageAsset(
-                            asset_id=asset_id,
-                            block_id=block_id,
-                            source_path=source_path,
-                            mime_type=mime_type,
-                            content=image_path.read_bytes(),
-                        )
-                    )
-                    ir_assets.append(DocumentIRAsset(id=asset_id, kind="image", source_path=source_path))
+                image = raw_block.get("_mineru_validated_asset")
+                if not isinstance(image, ValidatedImage):
+                    raise ValueError("MinerU 图片缺少已验证资产。")
+                asset_id = f"asset_{block_id}"
+                asset_ref = asset_id
+                image_assets.append(MinerUImageAsset(
+                    asset_id=asset_id, block_id=block_id, source_path=image.source_path,
+                    mime_type=image.mime_type, content=image.content,
+                ))
+                ir_assets.append(DocumentIRAsset(id=asset_id, kind="image", source_path=image.source_path))
             for context_index, context_text in enumerate(table_contexts):
                 context_metadata = dict(metadata)
+                context_metadata.pop("caption_reconciliation", None)
                 context_metadata.update(
                     {
                         "source_type": "table_caption_context",
@@ -205,9 +260,9 @@ class MinerUToDocumentIRService:
                     page_index=page_index,
                     text=self._text_for_block(raw_block, block_type, captions=captions),
                     level=self._heading_level(raw_block) if block_type == "heading" else None,
-                    html=self._table_html(raw_block) if block_type == "table" else None,
+                    html=select_mineru_table_html(raw_block) if block_type == "table" else None,
                     latex=self._formula_text(raw_block) if block_type == "formula" else None,
-                    list_items=self._list_items(raw_block) if block_type == "list" else None,
+                    list_items=(mineru_list_items(raw_block) or None) if block_type == "list" else None,
                     asset_ref=asset_ref,
                     layout=layout,
                     captions=captions,
@@ -229,103 +284,40 @@ class MinerUToDocumentIRService:
                 document_language=document_language,
                 source_block_count=len(raw_blocks),
                 source_type_counts=dict(sorted(source_type_counts.items())),
+                mineru_validation=validation_report,
             ),
             pages=pages,
             blocks=blocks,
             assets=ir_assets,
             quality_flags=quality_flags,
         )
-        ensure_integrity("MinerU→DocumentIR", build_source_integrity(document))
-        return MinerUToDocumentIRResult(document=document, image_assets=image_assets)
+        # 在来源账本/ref owner 上准备事实，再一次验证最终模型与源清单；不输出半合法 IR。
+        attach_logical_table_groups(document, table_sources)
+        reference_assets = attach_table_references(document, table_references)
+        try:
+            placeholder_assets = prepare_placeholders(document, table_references,
+                source_loader=placeholder_source_loader, crop_provider=self.pdf_crop_provider)
+        except TablePlaceholderError as error:
+            error.mineru_validation_report = validation_report
+            raise
+        document = DocumentIR.model_validate_json(document.model_dump_json())
+        evidence = build_source_integrity(document)
+        evidence["mineru_validation"] = validation_report.model_dump(mode="json")
+        ensure_integrity("MinerU→DocumentIR", evidence)
+        return MinerUToDocumentIRResult(document=document, image_assets=image_assets,
+            validation_report=validation_report, table_reference_assets=reference_assets,
+            table_placeholder_assets=placeholder_assets)
 
-    def _map_block_type(self, raw_block: dict[str, Any], source_type: str) -> DocumentIRBlockType:
-        if source_type in {"header", "footer", "page_header", "page_footer", "page_number"}:
-            return "paragraph"
-        if source_type in {"title", "heading"} or raw_block.get("text_level") is not None:
-            return "heading"
-        if source_type in {"table"} or raw_block.get("table_body") or raw_block.get("table_html"):
-            return "table"
-        if source_type in {"chart", "image", "figure"} or raw_block.get("img_path") or raw_block.get("image_path"):
-            return "image"
-        if source_type in {"equation", "formula", "interline_equation", "inline_equation", "equation_interline"}:
-            return "formula"
-        if source_type in {"list", "index"} or isinstance(raw_block.get("items"), list):
-            return "list"
-        if split_multiline_list_items(self._raw_text_preserving_lines(raw_block)):
-            return "list"
-        if split_toc_like_lines(self._raw_text_preserving_lines(raw_block)):
-            return "list"
-        return "paragraph"
-
-    def _reassociate_numbered_image_captions(
-        self,
-        raw_blocks: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """在严格可判定时修复同页连续图片组的 MinerU 图注错配。"""
-
-        normalized: list[dict[str, Any]] = []
-        index = 0
-        while index < len(raw_blocks):
-            first = raw_blocks[index]
-            page_index = parse_page_index(first)
-            if page_index is None or not self._is_image_source_block(first):
-                normalized.append(first)
-                index += 1
-                continue
-
-            end = index + 1
-            while (
-                end < len(raw_blocks)
-                and parse_page_index(raw_blocks[end]) == page_index
-                and self._is_image_source_block(raw_blocks[end])
-            ):
-                end += 1
-            normalized.extend(self._reassociate_image_group(raw_blocks[index:end]))
-            index = end
-        return normalized
-
-    def _reassociate_image_group(self, group: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        captions_by_block = [self._captions(block, self._source_type(block)) for block in group]
-        if not any(len(captions) != 1 for captions in captions_by_block):
-            return group
-
-        parsed_captions: list[tuple[str, int, str]] = []
-        for caption in (caption for captions in captions_by_block for caption in captions):
-            match = NUMBERED_FIGURE_CAPTION_RE.match(caption)
-            if match is None:
-                return group
-            parsed_captions.append((match.group("label").lower(), int(match.group("number")), caption))
-
-        if len(parsed_captions) != len(group):
-            return group
-        labels = {label for label, _number, _caption in parsed_captions}
-        numbers = [number for _label, number, _caption in parsed_captions]
-        if len(labels) != 1 or len(set(numbers)) != len(numbers):
-            return group
-        ordered = sorted(parsed_captions, key=lambda item: item[1])
-        if [number for _label, number, _caption in ordered] != list(range(ordered[0][1], ordered[0][1] + len(group))):
-            return group
-
-        reassociated: list[dict[str, Any]] = []
-        for block, (_label, _number, caption) in zip(group, ordered, strict=True):
-            copied = dict(block)
-            source_type = self._source_type(copied)
-            copied.pop("caption", None)
-            copied[f"{source_type}_caption"] = [caption]
-            reassociated.append(copied)
-        return reassociated
-
-    def _is_image_source_block(self, raw_block: dict[str, Any]) -> bool:
-        return self._source_type(raw_block) in {"chart", "image", "figure"}
-
-    def _source_type(self, raw_block: dict[str, Any]) -> str:
-        return str(raw_block.get("type") or raw_block.get("block_type") or "").strip().lower()
-
-    def _metadata_from_raw(self, raw_block: dict[str, Any], source_type: str) -> dict[str, Any]:
-        metadata: dict[str, Any] = {"source_type": source_type}
+    def _metadata_from_raw(self, raw_block: dict[str, Any]) -> dict[str, Any]:
+        metadata: dict[str, Any] = {"source_type": raw_block["_mineru_source"]["source_type"]}
         for key in ("bbox", "page_idx", "page_index", "text_level"):
             if key in raw_block:
                 metadata[key] = raw_block[key]
+        if "_mineru_source" in raw_block:
+            metadata["mineru_source"] = raw_block["_mineru_source"]
+        image = raw_block.get("_mineru_validated_asset")
+        if isinstance(image, ValidatedImage):
+            metadata["mineru_asset_resolution"] = image.resolution
         return metadata
 
     def _heading_level(self, raw_block: dict[str, Any]) -> int:
@@ -344,23 +336,32 @@ class MinerUToDocumentIRService:
         captions: list[str] | None = None,
     ) -> str | None:
         if block_type == "table":
-            return captions[0] if captions else self._first_text_from_keys(raw_block, ("text",))
+            text = self._first_text_from_keys(raw_block, ("text",))
+            if not select_mineru_table_html(raw_block):
+                # 只消费明确正文叶字段/typed runs，不把 table_type 等 schema 标签当上下文。
+                excluded = set([*(captions or []), *self._footnotes(raw_block, "table")])
+                contexts = []
+                containers = [raw_block]
+                if isinstance(raw_block.get("content"), dict):
+                    containers.append(raw_block["content"])
+                for container in containers:
+                    for field in ("text", "description", "alt", "title_content", "paragraph_content"):
+                        contexts.extend(coerce_text_list(container.get(field)))
+                selected = select_mineru_text_source(raw_block)
+                if selected is not None and selected[2] in {"string", "runs"}:
+                    contexts.append(self._raw_text(raw_block) or "")
+                contexts = [item for item in self._unique_texts(contexts) if item not in excluded]
+                if contexts:
+                    return "\n".join(contexts)
+            return captions[0] if captions else text
         if block_type == "image":
-            captions = self._captions(raw_block, str(raw_block.get("type") or raw_block.get("block_type") or "").strip().lower())
-            return captions[0] if captions else self._first_text_from_keys(raw_block, ("text", "caption"))
+            return captions[0] if captions else self._first_text_from_keys(raw_block, ("text",))
         if block_type == "formula":
             return self._formula_text(raw_block)
         if block_type == "list":
-            items = self._list_items(raw_block)
+            items = (mineru_list_items(raw_block) or None)
             return "\n".join(items) if items else self._raw_text(raw_block)
         return self._raw_text(raw_block) or self._first_text_from_keys(raw_block, ("caption",))
-
-    def _table_html(self, raw_block: dict[str, Any]) -> str | None:
-        for key in ("table_body", "table_html", "html", "content"):
-            html = extract_first_html(raw_block.get(key))
-            if html:
-                return html
-        return extract_first_html(raw_block)
 
     def _formula_text(self, raw_block: dict[str, Any]) -> str | None:
         content = raw_block.get("content")
@@ -371,73 +372,6 @@ class MinerUToDocumentIRService:
             return math_content.strip() or None
         return self._first_text_from_keys(raw_block, ("latex", "math_content", "equation_content", "text", "content"))
 
-    def _list_items(self, raw_block: dict[str, Any]) -> list[str] | None:
-        raw_items = raw_block.get("items", raw_block.get("list_items"))
-        if isinstance(raw_items, list):
-            items = []
-            for item in raw_items:
-                if isinstance(item, dict):
-                    items.extend(coerce_text_list(item))
-                else:
-                    text = clean_text(str(item))
-                    if text:
-                        items.append(text)
-            return items or None
-
-        content = raw_block.get("content")
-        if isinstance(content, dict) and isinstance(content.get("list_items"), list):
-            items = [
-                join_text_fragments(item.get("item_content", []))
-                for item in content["list_items"]
-                if isinstance(item, dict) and isinstance(item.get("item_content"), list)
-            ]
-            return [item for item in items if item] or None
-
-        raw_text = self._raw_text_preserving_lines(raw_block)
-        multiline_items = split_multiline_list_items(raw_text)
-        if multiline_items:
-            return multiline_items
-
-        toc_items = split_toc_like_lines(raw_text)
-        if toc_items:
-            return toc_items
-
-        items = coerce_text_list(raw_block.get("content"))
-        return items or None
-
-    def _captions(self, raw_block: dict[str, Any], source_type: str) -> list[str]:
-        keys = ["caption"]
-        if source_type == "table":
-            keys.insert(0, "table_caption")
-        elif source_type in {"chart", "image", "figure"}:
-            keys.insert(0, f"{source_type}_caption")
-        captions = [
-            caption
-            for key in keys
-            for value in find_values_by_key(raw_block, key)
-            for caption in self._caption_texts(value)
-        ]
-        return self._unique_texts(captions)
-
-    def _caption_texts(self, value: Any) -> list[str]:
-        """按 MinerU 数组层级保留题注逻辑分组。"""
-
-        if isinstance(value, list):
-            if value and all(self._is_caption_inline_node(item) for item in value):
-                caption = ""
-                for fragment in coerce_text_list(value):
-                    caption = append_footnote_fragment(caption, fragment)
-                return [caption] if caption else []
-            return [caption for item in value for caption in self._caption_texts(item)]
-        return coerce_text_list(value)
-
-    def _is_caption_inline_node(self, value: Any) -> bool:
-        return (
-            isinstance(value, dict)
-            and isinstance(value.get("type"), str)
-            and isinstance(value.get("content"), str)
-        )
-
     def _footnotes(self, raw_block: dict[str, Any], source_type: str) -> list[str]:
         keys = ["footnote"]
         if source_type == "table":
@@ -446,55 +380,9 @@ class MinerUToDocumentIRService:
             keys.insert(0, f"{source_type}_footnote")
         return self._unique_texts(merge_footnote_fragments(collect_text_from_fields(raw_block, tuple(keys))))
 
-    def _resolve_image_path(self, raw_block: dict[str, Any], package_root: Path) -> Path | None:
-        raw_path = extract_first_asset_path(raw_block)
-        if not raw_path:
-            return None
-        normalized = raw_path.strip().lstrip("./")
-        direct = (package_root / normalized).resolve()
-        root = package_root.resolve()
-        if direct.exists() and direct.is_file() and (direct == root or root in direct.parents):
-            return direct
-        matches = sorted(package_root.rglob(Path(normalized).name))
-        for match in matches:
-            resolved_match = match.resolve()
-            if resolved_match.is_file() and (resolved_match == root or root in resolved_match.parents):
-                return resolved_match
-        return None
-
     def _raw_text(self, raw_block: dict[str, Any]) -> str | None:
-        text = clean_text(self._raw_text_preserving_lines(raw_block))
+        text = clean_text(mineru_raw_text_preserving_lines(raw_block))
         return text or None
-
-    def _raw_text_preserving_lines(self, raw_block: dict[str, Any]) -> str:
-        for key in ("text", "content"):
-            raw_value = raw_block.get(key)
-            if isinstance(raw_value, str):
-                return clean_markdown_document(raw_value)
-            nodes = self._rich_text_nodes(raw_value)
-            if nodes is not None:
-                return join_text_fragments(nodes, clean=False)
-            texts = coerce_text_list(raw_value)
-            if texts:
-                return "\n".join(texts)
-        return ""
-
-    def _rich_text_nodes(self, raw_value: Any) -> list[dict[str, Any]] | None:
-        if isinstance(raw_value, list) and all(isinstance(item, dict) for item in raw_value):
-            return raw_value
-        if not isinstance(raw_value, dict):
-            return None
-        for field_name in (
-            "title_content",
-            "paragraph_content",
-            "page_header_content",
-            "page_footer_content",
-            "page_number_content",
-        ):
-            nodes = raw_value.get(field_name)
-            if isinstance(nodes, list) and all(isinstance(item, dict) for item in nodes):
-                return nodes
-        return None
 
     def _first_text_from_keys(self, raw_block: dict[str, Any], keys: tuple[str, ...]) -> str | None:
         for key in keys:
