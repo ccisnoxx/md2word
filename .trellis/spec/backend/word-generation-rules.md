@@ -62,14 +62,15 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 ### INPUT-001 content_list_v2 优先且仅无 v2 时回退
 
 - 状态：`enforced-tested`
-- 输入信号：MinerU 包内同时存在 `*_content_list_v2.json` 与 legacy `*_content_list.json`，或只存在其中一个。
+- 输入信号：MinerU 包内一个或多个目录中的 `content_list_v2.json` / `*_content_list_v2.json` 及对应 legacy 候选；文件命名识别方式保持原合同。
 - 正式 owner：`app/services/document_ir/mineru_package.py::find_content_list`、`::load_content_blocks`。
-- 预期输出：候选按 v2 优先、路径深度和名称稳定选择；只有没有 v2 时才读取 legacy content list；支持顶层 list、`content_list` 字段和嵌套 page list。
+- 预期输出：所有候选的父目录必须唯一；在该结果根内优先 v2，仅无 v2 时选择 legacy；被选版本必须恰有一份。唯一 v2 允许忽略同根重复 legacy。支持顶层 list、`content_list` 字段和嵌套 page list。
+- 失败合同：`find_content_list(package_root: Path) -> Path` 抛出 `MinerUPackageError`；缺失保留 `mineru_content_list_missing / missing_content_list`，多根为 `mineru_content_list_ambiguous / multiple_result_roots`，被选版本多份为同 code、`multiple_content_lists`。正式 converter 沿现有有界报告传播，不把绝对路径放入 code/reason。
 - 冲突/例外：此规则不读取 `full.md`；legacy JSON 只是输入兼容，不等于切换旧 runtime。
-- 禁止：因单个 v2 字段处理失败而偷偷改用 legacy JSON；按绝对文件名或 PDF 型号硬编码选择。
-- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_prefers_v2_content_and_keeps_legacy_only_fallback`、`.test_convert_zip_accepts_nested_v2_pages_and_rich_content_fields`。
+- 禁止：多根或被选版本多份时按路径深度/名称静默择首；因 v2 JSON 或字段非法而偷偷改用 legacy；按绝对文件名或 PDF 型号硬编码选择。
+- 自动验证：`tests.test_mineru_result_root_uniqueness` 直接覆盖单根版本选择、多根/所选版本重复、缺失与正式 converter 的坏 v2 不回退及脱敏报告；既有输入形态入口为 `tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_prefers_v2_content_and_keeps_legacy_only_fallback`、`.test_convert_zip_accepts_nested_v2_pages_and_rich_content_fields`。
 - 样本证据：已提交 `ti-opamp-opa228-p1-smoke` 使用 `component_content_list_v2.json`；没有已提交的 v2/legacy 双份真包。
-- 来源/取代：归档任务 `08-18-fix-mineru-first-page-layout`；取代 legacy-first 选择导致 CM4112 读取错误产物的历史行为。
+- 来源/取代：归档任务 `08-18-fix-mineru-first-page-layout`；取代 legacy-first 选择导致 CM4112 读取错误产物的历史行为；任务 `10-31-mineru-root-heading-minimal` 仅适配 `c9b1e6a9` 的唯一性策略，取代多根择首行为。
 
 ### INPUT-002 MinerU 包边界与显式失败
 
