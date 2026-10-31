@@ -145,15 +145,16 @@ class DocumentJobPreviewService:
             policy=policy, page_quality_policy_sha256=page_hash, page_quality_context_sha256=actual_context, request_key=request_key, request_fingerprint=fingerprint, requested_by=requested_by,
             reason_sha256=sha256(reason.encode()), independent=independent, resume=resume)
         while True:
-            # 使用最新记录建立观测；job锁内仍须比较revision/current，禁止复用陈旧成功。
+            # 历史key交由锁内核验指纹和完成证据；当前key或新key才提前观测最新current。
             with _preview_storage_io():
                 latest = self.job_repository.get_document_job(job.id) or job
             observation = None
-            if latest.word_preview_state is not None:
-                selected = latest.word_preview_state.current_run
+            state = latest.word_preview_state
+            if state is not None and (request_key == state.current_request_key or request_key not in state.runs_by_request_key):
+                selected = state.current_run
                 if selected.manifest_file_id is not None and selected.status in {"succeeded", "failed", "unavailable"}:
                     observation = observe_current_preview(latest, self.file_repository, self.file_service,
-                        check_page_quality=page_hash is not None and request_key not in latest.word_preview_state.runs_by_request_key)
+                        check_page_quality=page_hash is not None and request_key not in state.runs_by_request_key)
             with _preview_storage_io():
                 claim = self.job_repository.claim_document_job_preview(job.id, request=request, observation=observation)
             if claim.disposition == "stale":
