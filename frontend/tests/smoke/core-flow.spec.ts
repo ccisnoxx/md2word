@@ -2269,6 +2269,12 @@ test("operations redesign renders verified desktop, tablet, and mobile screensho
 });
 
 test("operator can log in and inspect the document job workbench", async ({ page }) => {
+  const invalidPropWarnings: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "warning" && message.text().includes("Invalid prop:")) {
+      invalidPropWarnings.push(message.text());
+    }
+  });
   await mockApi(page);
 
   await page.goto("/login");
@@ -2296,6 +2302,15 @@ test("operator can log in and inspect the document job workbench", async ({ page
   await expect(page.locator(".job-actions").getByRole("button", { name: "删除" })).toHaveCount(0);
   await page.getByRole("button", { name: "下载" }).click();
   await expect(page.getByText("下载链接已生成")).toBeVisible();
+  await page.route("**/api/v1/document-jobs/docjob_smoke_001/files", (route) => route.fulfill({
+    json: { job_id: documentJob.id, files: [] },
+  }));
+  await page.getByRole("tab", { name: "诊断", exact: true }).click();
+  await page.getByRole("button", { name: "刷新质量证据", exact: true }).click();
+  const qualityAlert = page.locator(".quality-evidence-alert");
+  await expect(qualityAlert).toContainText("缺少结果文件质量证据");
+  await expect(qualityAlert).toHaveClass(/el-alert--error/);
+  expect(invalidPropWarnings).toEqual([]);
 });
 
 test("operator sees list action conflicts after the refresh completes", async ({ page }) => {
