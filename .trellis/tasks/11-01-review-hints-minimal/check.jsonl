@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "后端owner与改动前规范"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "保留API安全错误和来源冲突语义"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "最小直接回归与历史夹具边界"}
+{"file": ".trellis/spec/backend/document-job-mode-contract.md", "reason": "动作仅由后端授权、direct隔离与历史请求合同"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "现有Vue工作台入口与权限合同"}
+{"file": ".trellis/spec/frontend/ui-quality-guidelines.md", "reason": "共享令牌、文本状态及可达性"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "IR到公开DTO到页面的数据流与唯一owner"}

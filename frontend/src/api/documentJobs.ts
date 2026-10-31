@@ -1,5 +1,5 @@
-// File: frontend/src/api/documentJobs.ts
-// Purpose: Provide document_jobs API wrappers used by workbench pages.
+// 文件：frontend/src/api/documentJobs.ts
+// 用途：提供工作台使用的 document_jobs API 调用。
 import { apiRequest } from "@/api/client";
 import type {
   DocumentJobBulkJobIdsRequest,
@@ -30,6 +30,9 @@ import type {
   DocumentJobTranslationQaResponse,
   DocumentJobTranslationQaUpdateRequest,
   DocumentJobTranslationQaUpdateResponse,
+  DocumentReviewBlockItemResponse,
+  DocumentReviewBlockFlagResponse,
+  DocumentReviewBlocksResponse,
   TranslationQaStatus,
 } from "@/api/types";
 
@@ -44,6 +47,15 @@ export type DocumentJobListParams = {
   include_archived?: boolean;
   created_from?: string;
   created_to?: string;
+};
+
+export type DocumentReviewBlocksParams = {
+  limit?: number;
+  cursor?: string;
+  source_page_index?: number;
+  block_type?: DocumentReviewBlockItemResponse["block_type"];
+  problem?: "all" | "flagged";
+  severity?: "all" | DocumentReviewBlockFlagResponse["severity"];
 };
 
 export const documentJobsApi = {
@@ -88,6 +100,14 @@ export const documentJobsApi = {
     return apiRequest<DocumentJobFileListResponse>({
       url: `/api/v1/document-jobs/${jobId}/files`,
       method: "GET",
+    });
+  },
+
+  listReviewBlocks(jobId: string, params: DocumentReviewBlocksParams = {}): Promise<DocumentReviewBlocksResponse> {
+    return apiRequest<DocumentReviewBlocksResponse>({
+      url: `/api/v1/document-jobs/${jobId}/review/blocks`,
+      method: "GET",
+      params,
     });
   },
 

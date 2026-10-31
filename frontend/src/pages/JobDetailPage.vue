@@ -120,6 +120,42 @@
         </ul>
       </el-card>
 
+      <el-card class="page-section review-hints-card card-flat" shadow="never" aria-live="polite">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">复核位置提示</h2>
+            <p class="section-subtitle">{{ reviewHintSummary }}</p>
+            <p class="section-subtitle">页码指源 PDF，不能作为 Word 实际页码；此处只读提示，不代表正式复核或发布结论。</p>
+          </div>
+          <el-button :icon="Refresh" :loading="reviewBlocksLoading" @click="loadReviewBlocks()">刷新提示</el-button>
+        </div>
+        <ApiErrorAlert :error="reviewBlocksError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.review_blocks')" />
+        <el-alert
+          :type="reviewHintsHaveWarnings || reviewBlocksConflict ? 'warning' : 'info'"
+          :closable="false"
+          show-icon
+          :title="reviewHintNotice"
+        />
+        <ul v-if="reviewHintItems.length" class="review-hint-list" aria-label="源 PDF 复核提示位置">
+          <li v-for="item in reviewHintItems" :key="item.block_id" class="review-hint-item">
+            <strong>{{ documentReviewSourcePagesText(item.source_spans) }}</strong>
+            <span class="mono review-hint-block-id">块 ID：{{ item.block_id }}</span>
+            <ul class="review-hint-flags">
+              <li v-for="(flag, index) in item.flags" :key="`${flag.code}-${index}`">
+                <el-tag size="small" :type="flag.severity === 'blocker' ? 'danger' : flag.severity === 'warning' ? 'warning' : 'info'" effect="plain">
+                  {{ flag.severity === "blocker" ? "阻断提示" : flag.severity === "warning" ? "警告提示" : "信息提示" }}
+                </el-tag>
+                <span>{{ documentReviewFlagSuggestion(flag) }}</span>
+                <small class="mono">{{ flag.code }}</small>
+              </li>
+            </ul>
+          </li>
+        </ul>
+        <el-button v-if="reviewHintsAvailable && reviewBlocks?.next_cursor" :loading="reviewBlocksLoading" @click="loadReviewBlocks(true)">
+          加载更多提示位置
+        </el-button>
+      </el-card>
+
       <el-tabs v-model="activeTab" class="detail-tabs">
         <el-tab-pane label="概览" name="overview">
           <el-card class="page-section card-flat" shadow="never">
@@ -172,7 +208,7 @@
             <el-alert
               v-if="downloadHint"
               class="state-alert"
-              type="success"
+              :type="isDocumentJobActionEnabled(job, 'download') ? 'info' : 'warning'"
               :closable="false"
               show-icon
               :title="downloadHint"
@@ -806,6 +842,8 @@ import type {
   DocumentJobStage,
   DocumentJobTranslationBatchExecutionResponse,
   DocumentJobTranslationBatchSummaryResponse,
+  DocumentQualitySourceResponse,
+  DocumentReviewBlocksResponse,
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
@@ -825,6 +863,8 @@ import {
   documentJobActionDisabledReasons,
   documentJobDownloadNotice,
   documentJobQualityFlagText,
+  documentReviewFlagSuggestion,
+  documentReviewSourcePagesText,
   documentJobModeRequiresTranslationResources,
   documentJobModeSupportsTranslationQa,
   documentJobStages,
@@ -868,6 +908,10 @@ const callbackSummary = ref<DocumentJobCallbackMessageSummaryResponse | null>(nu
 const translationBatches = ref<DocumentJobTranslationBatchSummaryResponse[]>([]);
 const translationBatchGeneration = ref<number | null>(null);
 const translationBatchExecution = ref<DocumentJobTranslationBatchExecutionResponse | null | undefined>(undefined);
+const reviewBlocks = ref<DocumentReviewBlocksResponse | null>(null);
+const reviewBlocksLoading = ref(false);
+const reviewBlocksError = ref<ApiClientError | null>(null);
+const reviewBlocksConflict = ref(false);
 const loading = ref(false);
 const eventsLoading = ref(false);
 const filesLoading = ref(false);
@@ -899,7 +943,7 @@ let pollTimer: number | undefined;
 let pollRefreshCount = 0;
 let disposed = false;
 let routeEpoch = 0;
-const requestRounds = { all: 0, job: 0, events: 0, files: 0, callbackSummary: 0, translationBatches: 0 };
+const requestRounds = { all: 0, job: 0, events: 0, files: 0, callbackSummary: 0, translationBatches: 0, reviewBlocks: 0 };
 
 type RetryStrategy = "keep_original" | "use_latest_term_assets" | "select_term_assets";
 type CloneConfigStrategy = NonNullable<DocumentJobCloneRequest["config_strategy"]>;
@@ -1180,7 +1224,51 @@ const downloadHint = computed(() => {
   if (job.value?.status !== "succeeded") {
     return "";
   }
-  return "结果已生成。点击下载会重新获取临时链接，链接失效后再次点击下载即可。";
+  return isDocumentJobActionEnabled(job.value, "download")
+    ? "后端当前允许获取下载链接；下载分类与警告以当次签发结果为准。"
+    : `当前不可下载：${documentJobActionDisabledReason(job.value, "download")}`;
+});
+const reviewHintsAvailable = computed(() => reviewBlocks.value?.availability === "available" && !reviewBlocksError.value && !reviewBlocksConflict.value);
+const reviewHintItems = computed(() => reviewHintsAvailable.value ? reviewBlocks.value!.items : []);
+const reviewHintCounts = computed(() => ({
+  blocker: reviewHintItems.value.filter((item) => item.flags.some((flag) => flag.severity === "blocker")).length,
+  warning: reviewHintItems.value.filter((item) => item.flags.some((flag) => flag.severity === "warning")).length,
+  info: reviewHintItems.value.filter((item) => item.flags.some((flag) => flag.severity === "info")).length,
+}));
+const reviewHintsHaveWarnings = computed(() => reviewHintCounts.value.blocker > 0 || reviewHintCounts.value.warning > 0);
+const reviewHintSummary = computed(() => {
+  if (!reviewHintsAvailable.value) {
+    return "提示位置数量尚未确认";
+  }
+  const counts = reviewHintCounts.value;
+  return `已加载 ${reviewHintItems.value.length} / 共有 ${reviewBlocks.value!.total} 个提示位置；已加载位置中：阻断 ${counts.blocker}、警告 ${counts.warning}、信息 ${counts.info}（同一位置可有多类提示）`;
+});
+const reviewHintNotice = computed(() => {
+  if (reviewBlocksLoading.value) {
+    return "正在读取提示位置，尚未加载的内容不能据此判断。";
+  }
+  if (reviewBlocksConflict.value) {
+    return "提示来源或内容快照未能确认，已清除旧清单，请刷新提示后再复核。";
+  }
+  if (reviewBlocksError.value) {
+    return "提示读取失败，当前无法确认提示位置；请刷新重试。";
+  }
+  if (!reviewBlocks.value) {
+    return "尚未读取复核位置提示，不能据此判断内容是否存在风险。";
+  }
+  if (reviewBlocks.value.availability === "not_ready") {
+    return "复核内容尚未就绪，不能据此判断内容是否存在风险。";
+  }
+  if (reviewBlocks.value.availability === "unavailable") {
+    return "复核内容当前不可用，不能据此判断内容是否存在风险。";
+  }
+  if (reviewHintsHaveWarnings.value) {
+    return "已加载位置包含警告或阻断提示，请对照源 PDF 逐项复核。";
+  }
+  if (reviewHintItems.value.length) {
+    return "已加载位置仅含信息提示，可供人工核对；这不代表正式复核通过。";
+  }
+  return "当前来源未返回带提示的位置；这不代表已完成人工复核。";
 });
 const callbackSummaryItems = computed(() => [
   { label: "待处理 pending", value: String(callbackStatusCount("pending")) },
@@ -1197,7 +1285,7 @@ const dispositionAlertType = computed<"success" | "warning" | "error" | "info">(
     return "error";
   }
   if (job.value?.status === "succeeded") {
-    return "success";
+    return reviewHintsHaveWarnings.value ? "warning" : reviewHintsAvailable.value ? "success" : "info";
   }
   if (job.value?.status === "canceled" || isJobStale.value) {
     return "warning";
@@ -1222,7 +1310,10 @@ const dispositionTitle = computed(() => {
     return "任务长时间未更新";
   }
   if (job.value.status === "succeeded") {
-    return "任务已完成，可获取下载链接";
+    if (reviewHintsHaveWarnings.value) {
+      return "任务已完成，存在需复核的警告提示";
+    }
+    return reviewHintsAvailable.value ? "任务已完成" : "任务已完成，复核提示尚未确认";
   }
   if (job.value.status === "canceled") {
     return "任务已取消，文件和事件记录仍保留";
@@ -1240,7 +1331,7 @@ const dispositionDescription = computed(() => {
     return "该任务仍处于活跃状态，但更新时间已超过 10 分钟。请先刷新事件流和回调摘要，必要时联系技术运营。";
   }
   if (job.value.status === "succeeded") {
-    return "任务结果已登记。下载按钮会生成临时链接；链接失效后可以再次获取。";
+    return `任务结果已登记。${reviewHintNotice.value} ${downloadHint.value}`;
   }
   if (job.value.status === "canceled") {
     return "取消不会删除源文件、结果文件或事件记录；如需复跑，请按后端返回的重新发起可用性处理。";
@@ -1567,6 +1658,85 @@ async function loadCallbackSummary(targetJobId = jobId.value): Promise<void> {
   }
 }
 
+function reviewContentBinding(target: DocumentJobResponse | null): string | null {
+  return target ? JSON.stringify({
+    id: target.id, generation: target.retry_count, source_ir_file_id: target.source_document_ir_file_id,
+    final_ir_file_id: target.document_ir_file_id, result_file_id: target.result_file_id, source_pdf_file_id: target.source_file_id,
+  }) : null;
+}
+
+function reviewSourceKey(source: DocumentQualitySourceResponse): string {
+  return JSON.stringify([source.generation, source.ir_file_id, source.result_file_id,
+    source.result_sha256, source.file_review_source_revision, source.receipt_sha256]);
+}
+
+function resetReviewBlocks(): void {
+  requestRounds.reviewBlocks += 1;
+  reviewBlocks.value = null;
+  reviewBlocksLoading.value = false;
+  reviewBlocksError.value = null;
+  reviewBlocksConflict.value = false;
+}
+
+async function loadReviewBlocks(append = false, targetJobId = jobId.value): Promise<void> {
+  const target = job.value;
+  if (disposed || targetJobId !== jobId.value || !target || target.id !== targetJobId) {
+    return;
+  }
+  const previous = append ? reviewBlocks.value : null;
+  if (append && (reviewBlocksLoading.value || !reviewHintsAvailable.value || !previous?.next_cursor)) {
+    return;
+  }
+  const binding = reviewContentBinding(target);
+  // direct 的基准 IR 即源内容；只有翻译快照单独公开 source/final 两个指针。
+  const basisId = target.document_ir_file_id || target.source_document_ir_file_id;
+  const isTranslation = usesTranslationResources(target);
+  const requestRound = ++requestRounds.reviewBlocks;
+  const isCurrent = () => isCurrentRequest("reviewBlocks", requestRound, targetJobId)
+    && binding === reviewContentBinding(job.value);
+  reviewBlocksLoading.value = true;
+  reviewBlocksError.value = null;
+  reviewBlocksConflict.value = false;
+  if (!append) {
+    reviewBlocks.value = null;
+  }
+  try {
+    const response = await documentJobsApi.listReviewBlocks(targetJobId, {
+      limit: 50,
+      problem: "flagged",
+      ...(previous?.next_cursor ? { cursor: previous.next_cursor } : {}),
+    });
+    if (!isCurrent()) {
+      return;
+    }
+    // 同任务也会换代或更换产物；分页只能沿同一公开来源和内容快照继续。
+    if (target.source_document_ir_file_id === undefined || response.job_id !== targetJobId || response.source.generation !== target.retry_count
+      || response.source.ir_file_id !== target.document_ir_file_id || response.source.result_file_id !== target.result_file_id
+      || response.content_snapshot.source_pdf_file_id !== target.source_file_id
+      || response.content_snapshot.source_ir_file_id !== (isTranslation ? target.source_document_ir_file_id : basisId)
+      || response.content_snapshot.final_ir_file_id !== (isTranslation ? target.document_ir_file_id : null)
+      || response.content_snapshot.basis !== (!basisId ? "none" : target.document_ir_file_id ? "final" : "source")
+      || (previous && (reviewSourceKey(response.source) !== reviewSourceKey(previous.source)
+        || response.content_snapshot.snapshot_id !== previous.content_snapshot.snapshot_id))) {
+      reviewBlocks.value = null;
+      reviewBlocksConflict.value = true;
+      return;
+    }
+    reviewBlocks.value = previous && response.availability === "available"
+      ? { ...response, items: [...previous.items, ...response.items] }
+      : response;
+  } catch (caught) {
+    if (isCurrent()) {
+      reviewBlocks.value = null;
+      reviewBlocksError.value = normalizeApiError(caught);
+    }
+  } finally {
+    if (isCurrent()) {
+      reviewBlocksLoading.value = false;
+    }
+  }
+}
+
 async function loadTranslationBatches(targetJobId = jobId.value): Promise<void> {
   if (disposed || targetJobId !== jobId.value) {
     return;
@@ -1632,6 +1802,12 @@ async function loadAll(options: LoadAllOptions = {}): Promise<void> {
       return;
     }
     if (options.secondary === "smart" && !shouldRefreshSecondaryDuringPoll()) {
+      if (!reviewBlocks.value && !reviewBlocksLoading.value && !reviewBlocksError.value && !reviewBlocksConflict.value) {
+        await loadReviewBlocks(false, targetJobId);
+        if (!isCurrentRequest("all", requestRound, targetJobId)) {
+          return;
+        }
+      }
       if (activeTab.value === "files") {
         await loadFiles(targetJobId);
       } else if (activeTab.value === "overview") {
@@ -1639,7 +1815,7 @@ async function loadAll(options: LoadAllOptions = {}): Promise<void> {
       }
       return;
     }
-    const secondaryLoads = [loadFiles(targetJobId), loadCallbackSummary(targetJobId)];
+    const secondaryLoads = [loadFiles(targetJobId), loadCallbackSummary(targetJobId), loadReviewBlocks(false, targetJobId)];
     if (supportsJobTranslationQa(job.value)) {
       secondaryLoads.push(loadTranslationBatches(targetJobId));
     } else {
@@ -1660,6 +1836,7 @@ async function loadAll(options: LoadAllOptions = {}): Promise<void> {
     filesError.value = null;
     callbackSummaryError.value = null;
     translationBatchesError.value = null;
+    resetReviewBlocks();
   }
 }
 
@@ -1708,7 +1885,7 @@ function syncPolling(): void {
     return;
   }
   pollTimer = window.setInterval(() => {
-    if (loading.value || eventsLoading.value || filesLoading.value || callbackSummaryLoading.value || translationBatchesLoading.value) {
+    if (loading.value || eventsLoading.value || filesLoading.value || callbackSummaryLoading.value || translationBatchesLoading.value || reviewBlocksLoading.value) {
       return;
     }
     void loadAll({ secondary: "smart" });
@@ -2077,6 +2254,7 @@ function resetPageStateForRouteChange(): void {
   stopPolling();
   routeEpoch += 1;
   invalidateRequests();
+  resetReviewBlocks();
   loading.value = false;
   eventsLoading.value = false;
   filesLoading.value = false;
@@ -2175,6 +2353,7 @@ function translationBatchTableRowClassName({ row }: { row: DocumentJobTranslatio
 }
 
 watch(() => job.value?.status, syncPolling);
+watch(() => reviewContentBinding(job.value), resetReviewBlocks, { flush: "sync" });
 
 watch(jobId, async (nextJobId, previousJobId) => {
   if (!nextJobId || nextJobId === previousJobId) {
@@ -2307,6 +2486,34 @@ onBeforeUnmount(() => {
 .publication-reasons:focus-visible {
   outline: 2px solid var(--app-color-primary);
   outline-offset: 4px;
+}
+
+.review-hint-list,
+.review-hint-flags {
+  display: grid;
+  gap: var(--app-space-3);
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+
+.review-hint-item {
+  padding-block: var(--app-space-3);
+  border-bottom: 1px solid var(--app-color-border-soft);
+}
+
+.review-hint-block-id {
+  display: block;
+  margin-block: var(--app-space-2);
+  color: var(--app-color-text-muted);
+}
+
+.review-hint-flags li > span,
+.review-hint-flags small {
+  margin-left: var(--app-space-2);
+}
+
+.review-hint-flags small {
+  color: var(--app-color-text-muted);
 }
 
 .download-link-notice span {

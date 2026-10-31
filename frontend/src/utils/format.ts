@@ -11,6 +11,8 @@ import type {
   DocumentJobResponse,
   DocumentJobStage,
   DocumentJobStatus,
+  DocumentReviewBlockFlagResponse,
+  DocumentReviewSourceSpanResponse,
   TranslationMode,
   TranslationQaStatus,
 } from "@/api/types";
@@ -472,6 +474,34 @@ export function documentJobQualityFlagText(flag: string): string {
     docx_wide_table_without_landscape: "宽表未横版",
   };
   return labels[code] ? `${labels[code]} · ${flag}` : flag;
+}
+
+export function documentReviewSourcePagesText(spans: DocumentReviewSourceSpanResponse[]): string {
+  const pages = Array.from(new Set(spans.flatMap((span) =>
+    span.source_page_index === null ? [] : [span.source_page_index + 1],
+  ))).sort((left, right) => left - right);
+  if (!pages.length) {
+    return "源 PDF 页码未知";
+  }
+  const unknown = spans.some((span) => span.source_page_index === null) ? "；部分源页未知" : "";
+  return `源 PDF 第 ${pages.join("、")} 页${unknown}`;
+}
+
+export function documentReviewFlagSuggestion(flag: DocumentReviewBlockFlagResponse): string {
+  const suggestions: Record<string, string> = {
+    caption_binding_uncertain: "题注归属尚不确定，请对照源 PDF 检查题注与图片、表格的对应关系。",
+    caption_reassociated: "题注已按现有规则重新整理，可对照源 PDF 确认对应关系。",
+    image_group_uncertain: "图片分组尚不确定，请对照源 PDF 检查图片、子图与题注是否完整对应。",
+    formula_text_fallback: "公式使用文本回退，请对照源 PDF 检查上下标、符号和内容是否完整。",
+    docx_unstyled_heading_candidates: "存在疑似未应用标题样式的内容，请检查 Word 标题层级与样式。",
+    layout_caption_binding: "请对照源 PDF 检查题注与所属图片、表格的排版关系。",
+    table_continuation_uncertain: "跨页表格的延续关系尚不确定，请检查各页表头与行列对应关系。",
+    table_noneditable_placeholder: "表格使用不可编辑占位，请对照源 PDF 检查完整性与可编辑要求。",
+  };
+  const code = flag.code.split(":")[0];
+  return Object.prototype.hasOwnProperty.call(suggestions, code)
+    ? suggestions[code]
+    : "该提示尚无专用建议，请对照源 PDF 检查此块在 Word 中的内容与排版。";
 }
 
 function selectDocumentJobFile(
