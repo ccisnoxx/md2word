@@ -123,12 +123,31 @@ def _analyze_docx_package(package: zipfile.ZipFile, *, formula_report: dict[str,
     semantic_body_paragraph_texts = [_paragraph_text(paragraph) for paragraph in semantic_body_paragraphs]
     joined_text = "\n".join(text for text in paragraph_texts if text)
     residue_text = joined_text
+    literal_underscores: set[int] = set()
     if formula_report is not None:
         validate_formula_report(formula_report)
         ranges = _formula_ranges(root, formula_report)
         excluded = {id(node) for entry, nodes in ranges if entry["mode"] == "text_fallback" for node in nodes for node in node.iter()}
-        residue_text = "\n".join("".join(node.text or "" for node in paragraph.iter() if node.tag in {_w_attr("t"), f"{{{DOCX_XML_NS['m']}}}t"} and id(node) not in excluded) for paragraph in paragraphs)
-    latex_matches = _unique_latex_residue(residue_text)
+        math_text_tag = f"{{{DOCX_XML_NS['m']}}}t"
+        certified_math_text = {id(node) for entry, nodes in ranges if entry["mode"] == "omml"
+                               for element in nodes for node in element.iter() if node.tag == math_text_tag}
+        parts: list[str] = []
+        offset = 0
+        for index, paragraph in enumerate(paragraphs):
+            if index:
+                parts.append("\n")
+                offset += 1
+            for node in paragraph.iter():
+                if node.tag not in {_w_attr("t"), math_text_tag} or id(node) in excluded:
+                    continue
+                value = node.text or ""
+                # 位置必须属于排除降级区域后的同一字符串，不能按文字值豁免普通正文。
+                if id(node) in certified_math_text:
+                    literal_underscores.update(offset + match.start() for match in re.finditer("_", value))
+                parts.append(value)
+                offset += len(value)
+        residue_text = "".join(parts)
+    latex_matches = _unique_latex_residue(residue_text, literal_underscores=literal_underscores)
     text_chars = len(joined_text)
     table_count = len(tables)
     table_shapes = [_table_shape(table) for table in tables]
@@ -283,10 +302,15 @@ def _looks_like_plain_toc_entry(text: str) -> bool:
     return parse_toc_entry_text(text) is not None
 
 
-def _unique_latex_residue(text: str) -> list[str]:
+def _unique_latex_residue(text: str, *, literal_underscores: set[int] | None = None) -> list[str]:
     seen: set[str] = set()
     values: list[str] = []
     for match in LATEX_RESIDUE_RE.finditer(text):
+        # 匹配可能跨过数学与正文边界，不能豁免其中仍残留的反斜杠命令。
+        if (literal_underscores and match.start() in literal_underscores
+                and match.group(0).startswith("_") and "\\" not in match.group(0)
+                and (match.start() == 0 or text[match.start() - 1] != "\\")):
+            continue
         value = match.group(0).strip()
         if not value or value in seen:
             continue

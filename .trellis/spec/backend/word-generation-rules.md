@@ -458,11 +458,12 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：显式 formula block、semantic formula、inline 分隔符及保守裸数学、HTML `<eq>` / sub/sup；不以任意反斜杠判断数学。
 - 正式 owner：`app/conversion/docx_rules/formula.py` 的共享扫描和有限 parser；`WordTextRendererMixin` 按原顺序写 run/OMML，表格及题注复用同一入口。
 - 预期输出：支持分式/根式/上下标/符号/样式/overline/boxed/left-right 子集；合法简单 tag 保留主体 OMML 与可见编号。裸脚本参数不吞运算符，显式 group 与命令产生的原子作为完整脚本基底保留（OMML box），text wrapper 保留空格，style wrapper 后接脚本不能重建成默认直立体，`\vee` 不得写成 V。闭合的纯数字数学分隔符和 MinerU numeric semantic formula 必须登记，未闭合金额继续作为普通正文。数学内容不经过普通术语替换，HTML 标签不进入公式字面内容。
+- 有限字面量与函数：既有数学边界内，`\,` 生成 U+2009 薄空格，`\_` 生成 U+005F 字面下划线而非下标；`\ln/\log/\exp/\sin/\cos/\tan` 输出有限函数名并复用现有 p 样式。不将它们加入普通文本命令表或裸数学扫描；默认样式、显式 b/i、text 空格和脚本原子保持。
 - 冲突/例外：不是完整 TeX 引擎；matrix/cases/align、自定义宏等安全降级，不新增 TeX/AI/图片服务。不能只用零残留证明数学语义正确。
 - 禁止：全局删反斜杠/dollar/空格；将含分式整段自然语言转为数学；公式编号静默丢失；建立第二套解析器。
-- 自动验证：`tests.test_formula_rendering`、现有 renderer 公式矩阵、`tests.test_formula_translation_boundary` 合成 MinerU→IR→fake translation→原生表格 DOCX。
+- 自动验证：`tests.test_formula_literal_support` 的精确字符/六函数、正式三入口、样式与边界直接回归；既有入口为 `tests.test_formula_rendering`、现有 renderer 公式矩阵、`tests.test_formula_translation_boundary` 合成 MinerU→IR→fake translation→原生表格 DOCX。
 - 样本证据：committed 精确结构单测与合成链路；external 样本/Word 签字按任务记录分层，不冒用历史验收。
-- 来源/取代：RND-502 v2；取代 parser 位于 text_renderer 和 tag 静默丢弃的旧行为。
+- 来源/取代：RND-502 v2；取代 parser 位于 text_renderer 和 tag 静默丢弃的旧行为；任务 `10-31-formula-literal-minimal` 仅在共享 parser 补齐两个转义和六个函数，不迁入旧 parser 或字体上下文。
 
 ### MATH-003 解析失败保持原式且降级可审计
 
@@ -470,11 +471,12 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：非空数学中的未知命令、畸形语法、不支持结构或不能证明安全的归一化。
 - 正式 owner：共享 `FormulaRenderResult` 与 renderer 单次 context；`docx_quality.py` / `evidence.py` 校验最终字节。
 - 预期输出：原位置 literal run 写 `【公式降级，需复核】` 加逐字原式，mode=`text_fallback`、warning=`formula_text_fallback`；reason 仅 `unsupported_command/invalid_syntax/unsupported_structure/unsafe_normalization`。原式不再按 HTML 解析或术语替换。合法 semantic sub/sup 内 b/i 和换行保留原生样式；未闭合/错配 HTML 为 invalid_syntax，嵌套脚本或 semantic 脚本包裹显式/裸 TeX 数学的未支持组合为 unsupported_structure，整式降级，不能丢掉外层脚本。
+- 字面下划线例外：先验证公式报告并通过 `_formula_ranges` 核对锚点、覆盖、mode 和输出 hash，再只按 mode=omml 的 m:t 在原残留字符串中的位置豁免纯字面下划线匹配。原正则、实际文字和诊断文字保持；普通 w:t 同值文字不获豁免。匹配本身含反斜杠或紧邻前置反斜杠时仍检查，例如 `$Noise\_$\unknown` 输出后的原始 `_\unknown` 残留不得隐藏。其他命令、dollar/caret、无报告旧路径、未登记对象及损坏绑定保持原检查，不能全局跳过 m:t。
 - 冲突/例外：空源仍按输入完整性失败；缺内容、锚点或输出绑定损坏仍失败关闭。仅在报告、可见提示、原式与预期输出一致的受控区域允许原始 TeX；其他残留保持 `docx_latex_residue:*`。旧无报告 analyzer 仍保留原残留字段，不伪造通过。
 - 禁止：失败删公式/空段落；用 broad catch 把 XML/文件/程序错误变成降级；将 warning 塞进 fatal flags；为清残留放宽全局扫描。
-- 自动验证：`tests.test_formula_rendering` 的失败原因、精确保真和篡改测试；`tests.test_document_job_result_persistence` 的三入口恢复与质量投影。
+- 自动验证：`tests.test_formula_literal_support` 的认证范围/同值正文/跨范围命令、失败降级、篡改与旧产物直接回归；既有入口为 `tests.test_formula_rendering` 的失败原因、精确保真和篡改测试；`tests.test_document_job_result_persistence` 的三入口恢复与质量投影。
 - 样本证据：合成失败公式与当前本地报告；真 Word 视觉签字另行记录。
-- 来源/取代：RND-502 v2；将原普通文本回退升级为有提示、逐式证据与预期输出绑定的受控文本降级。
+- 来源/取代：RND-502 v2；将原普通文本回退升级为有提示、逐式证据与预期输出绑定的受控文本降级；任务 `10-31-formula-literal-minimal` 保留报告版本和历史降级验证，只对认证 OMML 的合法字面量窄处理。
 
 ## 6. 样式、页眉页脚与质量门禁
 

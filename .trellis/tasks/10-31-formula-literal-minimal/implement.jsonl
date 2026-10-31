@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/word-generation-rules.md", "reason": "MATH-001/002/003、v2输入、有限公式子集及报告/历史验证合同"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "稳定解析失败与未知错误可见，不引入宽泛吞错"}
+{"file": ".trellis/tasks/10-31-formula-literal-minimal/design.md", "reason": "已批准三文件适配、认证范围与最小回归边界"}

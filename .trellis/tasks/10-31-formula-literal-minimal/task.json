@@ -1,0 +1,39 @@
+{
+  "id": "formula-literal-minimal",
+  "name": "formula-literal-minimal",
+  "title": "最小适配公式字面转义与正体函数",
+  "description": "仅补两个转义、六个函数命令及认证OMML字面下划线质量处理，只运行新增直接回归",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "scope": "formula-literal-support",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": null,
+  "branch": "codex/formula-literal-minimal-20261031",
+  "base_branch": "main",
+  "worktree_path": "/Users/sc/.codex/worktrees/formula-literal-minimal-20261031-g0l1d94p/md2word",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "app/conversion/docx_rules/formula.py",
+    "app/services/renderer/docx_quality.py",
+    "tests/test_formula_literal_support.py",
+    ".trellis/spec/backend/word-generation-rules.md"
+  ],
+  "notes": "三文件实现、独立回归、必要Spec和任务记录按用户本轮授权保存为一个本地提交。最终19/19通过的源码/回归字节保持一致，本轮不再测试或配置CI。不推送、合并、删分支或自动归档，不生成额外bookkeeping提交；其他六个工作区及历史11测试+2文档维护不纳入。",
+  "meta": {
+    "baseline_main": "b3657cb711cbae0aa23ce74767eb9f2024b5eb21",
+    "source_snapshot": "c9b1e6a9642d23d932bcd98c107e8bc66fb3c361",
+    "verification_scope": "复用已执行的tests.test_formula_literal_support最终19/19；本提交轮不再测试",
+    "authorization": "用户已授权本批一个本地提交，包含对应源码、直接回归及必要Spec和任务记录",
+    "verification_result": "仅新增模块运行2次，最终19/19通过；第二次因实际P2修复与新增反例",
+    "implementation_result": "已完成，本批按一个本地提交保存",
+    "local_commit": "本条记录所在唯一提交；精确SHA见Git历史与外部commit-result.json"
+  }
+}
