@@ -244,6 +244,18 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 原始证据只由主源块保存，table_context 派生块不复制；renderer 摘要不包含原文。拟自动修复必须守恒且唯一消费，损坏按 QUALITY-004 失败关闭，普通 uncertainty 不升级 fatal。最终可见caption列表也纳入守恒门禁；重复条件保留出现次数，重复编号表题保持原annotation并uncertain，防止下游既有去重静默丢次。范围/共享标签续号不按首号绑定。
 - 自动验证：`tests.test_caption_reconciler`、converter 的 nested/sequence/accepted redacted/table/paragraph/damage/legacy 联合测试、IR contract roundtrip 与 translation metadata 保真。真实Word/WPS和字段更新结果仍未验证；FIELD-002 的跳号限制不由本任务修复。
 
+### 只读复核位置提示（现有题注事实）
+
+- 范围：任务详情只读展示 main 已有题注歧义与已整理事实；不引入新的题注裁决、表图重叠检测或 annotation 翻译。
+- owner：`app/domains/document_jobs/review_content.py::_block` 复用已选 IR 的主源块 `caption_reconciliation`；`uncertain` 投影为 `caption_binding_uncertain/warning`，`rebound` 为 `caption_reassociated/info`。派生 `source_block_id` 不重复报告，普通及未知状态不制造新提示；既有 table/块 flags 保留。
+- 公开通道：复用 `GET /api/v1/document-jobs/{job_id}/review/blocks` 的既有 `source/content_snapshot/items/flags/source_spans/total/next_cursor`，不新增路由或 schema 字段。提示只含受控码/级别，中文建议由前端固定映射，不复制 originals、原始 metadata、自由 reasons、source_locator 或 HTML。
+- 前端 owner：`documentJobsApi.listReviewBlocks`、`utils/format.ts` 的纯展示函数及 `JobDetailPage.vue`。源 PDF 页码使用 `source_page_index + 1`，未知明确未知，多 span 去重；不能将预览页或重新排版的 Word 页当作源页。
+- 列表与数量：使用有界分页并显式加载下一页；`total` 为所有提示块数量，不能当作歧义数量。未读全时明确已加载/总位置数；仅信息提示不升级歧义警告，缺证据或读取错误不能显示为已无风险。
+- 来源与生命周期：沿用原授权及 v2 来源选择，坏 v2 不回退；新响应须绑定当前 job/代数/IR/结果，分页保留同一 snapshot/source。任务切换、换代、结果变化、卸载或较新请求已开始时，旧响应及其 finally 不得覆写；来源冲突显示刷新入口，不拼接不同快照。
+- 状态与动作：展示提示不写 `quality_flags/blocking_quality_flags`，不修改质量/正式审核/交付/发布状态。下载和发布继续消费服务器 `available_actions`；提示不阻断允许的下载，文案也不能承诺被服务器禁止的下载可用。不得从没有提示推导质量通过或发布资格。
+- 历史兼容：不改 renderer metadata、evidence 比较键、`render_result`、receipt、冻结产物或历史请求幂等；不读取旧 `review_issues` 补造列表。
+- 直接回归：`tests.test_document_job_review_hints` 和 `frontend/src/pages/documentJobReviewHints.test.ts`；执行状态以本任务 `implement.md` 和外置日志为准。此行为验证不代表浏览器视觉、真实数据库、部署或 Word 外观验收。
+
 ## 4. 分栏、文本、表格与图片
 
 ### COL-001 局部双栏检测

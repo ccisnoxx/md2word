@@ -1,0 +1,60 @@
+{
+  "id": "review-hints-minimal",
+  "name": "review-hints-minimal",
+  "title": "只读复核位置提示最小适配",
+  "description": "复用main题注事实和review/blocks，新增只读源页复核提示；五源码、两独立直接回归及必要Spec/任务记录。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "approved_review": "上一轮最终只读审查与执行建议，用户后续明确授权完整执行",
+    "base_sha": "44fd4ad82f62347f28553c09da5a84e1ac8a1c58",
+    "scope": "5源码+2新增直接回归+1Spec+6任务记录",
+    "planning_ready": true,
+    "implementation_authorized": true,
+    "tests_authorized": "实施轮仅新增两模块已完成；本提交轮不运行任何应用检查，复用9/9和39/39成功结果",
+    "status_notes": "源码、回归与依赖保持成功输入；本轮仅14路径一笔本地提交，其他工作区及历史维护独立保留",
+    "implementation_result": "完成；本批随本记录所在唯一本地提交保存，不归档",
+    "verification": {
+      "backend": {
+        "module": "tests.test_document_job_review_hints",
+        "passed": 9,
+        "attempts": 1,
+        "exit_code": 0
+      },
+      "frontend": {
+        "module": "frontend/src/pages/documentJobReviewHints.test.ts",
+        "passed": 39,
+        "attempts": 1,
+        "exit_code": 0
+      }
+    },
+    "comments_docstrings": "新增/触及的注释文档和开发者文本使用中文，机器字段除外",
+    "excluded_checks": "旧测试、lint/typecheck/build、smoke、CI、真实DB/部署/Word外观均未执行",
+    "static_review_unresolved": 0,
+    "context_loading": "两个实现代理及复核代理均确认在指定worktree回退加载正确task/spec",
+    "preservation_passed": true,
+    "final_dirty_path_count": 14,
+    "commit_authorized": true,
+    "push_authorized": false,
+    "merge_authorized": false,
+    "branch_deletion_authorized": false,
+    "local_commit_reference": "精确SHA见Git历史及工作区外evidence/local-commit-20261101/commit-result.json"
+  }
+}

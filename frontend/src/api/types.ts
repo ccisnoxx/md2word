@@ -1511,6 +1511,8 @@ export type DocumentJobResponse = {
   term_version_id: string | null;
   result_file_id: string | null;
   mineru_raw_result_file_id: string | null;
+  // 旧详情可缺省；缺字段时不能确认复核内容来源。
+  source_document_ir_file_id?: string | null;
   document_ir_file_id: string | null;
   image_asset_file_ids: string[];
   debug_full_text_enabled: boolean;
@@ -1546,6 +1548,90 @@ export type DocumentJobResponse = {
 export type DocumentJobQualityStatus = "pending" | "passed" | "warning" | "blocked";
 export type DocumentJobReviewStatus = "unreviewed" | "approved" | "needs_fix" | "blocked";
 export type DocumentJobDeliveryStatus = "internal_draft" | "ready_to_publish" | "published";
+
+export type DocumentQualitySourceResponse = {
+  generation: number;
+  ir_file_id: string | null;
+  result_file_id: string | null;
+  result_sha256: string | null;
+  file_review_source_revision: number | null;
+  receipt_sha256: string | null;
+};
+
+export type DocumentReviewComponentResponse = {
+  availability: "available" | "unavailable" | "not_ready" | "disabled" | "not_applicable";
+  reason_code: string | null;
+};
+
+export type DocumentReviewContentSnapshotResponse = {
+  snapshot_id: string;
+  source_pdf_file_id: string;
+  source_ir_file_id: string | null;
+  final_ir_file_id: string | null;
+  preview_run_id: string | null;
+  preview_revision: number | null;
+  preview_attempt: number | null;
+  basis: "source" | "final" | "none";
+  source_content: DocumentReviewComponentResponse;
+  target_content: DocumentReviewComponentResponse;
+  translation: DocumentReviewComponentResponse;
+  preview: DocumentReviewComponentResponse;
+  mapping: DocumentReviewComponentResponse;
+  tables: DocumentReviewComponentResponse;
+};
+
+export type DocumentReviewSourceSpanResponse = {
+  source_page_index: number | null;
+  bbox: [number, number, number, number] | null;
+  page_width: number | null;
+  page_height: number | null;
+  coordinate_unit: "mineru";
+  coordinate_verified: boolean;
+  reason_code: "coordinate_space_unverified" | null;
+  fragment_id: string | null;
+};
+
+export type DocumentReviewLocationResponse = {
+  kind: "single_page" | "estimated_start" | "unavailable";
+  preview_page_index: number | null;
+  confidence: "high" | "low" | "none";
+  reason_code: string | null;
+  bookmark_label: string | null;
+  disposition: "rendered" | "coalesced" | "suppressed" | "superseded" | "not_emitted" | null;
+  representative_block_id: string | null;
+  fallback_page_index: number | null;
+  fallback_block_id: string | null;
+  provenance_status: "verified_ir205" | "legacy_layout" | "unavailable";
+};
+
+export type DocumentReviewBlockFlagResponse = {
+  code: string;
+  severity: "blocker" | "warning" | "info";
+  table_id: string | null;
+};
+
+export type DocumentReviewBlockItemResponse = {
+  block_id: string;
+  order: number;
+  block_type: "heading" | "paragraph" | "table" | "image" | "list" | "formula";
+  source_type: string | null;
+  excerpt: string;
+  source_spans: DocumentReviewSourceSpanResponse[];
+  location: DocumentReviewLocationResponse;
+  flags: DocumentReviewBlockFlagResponse[];
+  table_ids: string[];
+};
+
+export type DocumentReviewBlocksResponse = {
+  job_id: string;
+  source: DocumentQualitySourceResponse;
+  content_snapshot: DocumentReviewContentSnapshotResponse;
+  availability: "available" | "not_ready" | "unavailable";
+  reason_code: string | null;
+  total: number;
+  items: DocumentReviewBlockItemResponse[];
+  next_cursor: string | null;
+};
 
 export type DocumentJobCreateResponse = {
   job_id: string;

@@ -534,6 +534,14 @@ def _block(read, block):
     tables = read.tables_by_block.get(block.id, ())
     flags = [Flag(code=flag.code, severity=flag.severity, table_id=table.table_id) for table in tables for flag in table.flags]
     flags.extend(Flag(code=code, severity="warning") for code in controlled_quality_flags(block.metadata.get("quality_flags")))
+    reconciliation = block.metadata.get("caption_reconciliation")
+    # 题注裁决只在主源块展示，不复制私有原文证据，也不写回正式质量状态。
+    if not block.metadata.get("source_block_id") and isinstance(reconciliation, dict):
+        if reconciliation.get("status") == "uncertain":
+            flags.append(Flag(code="caption_binding_uncertain", severity="warning"))
+        elif reconciliation.get("status") == "rebound":
+            flags.append(Flag(code="caption_reassociated", severity="info"))
+    flags = list({(flag.code, flag.severity, flag.table_id): flag for flag in flags}.values())
     # source_type 仅公开解析器已有受控类型，不透传任意 metadata 文本。
     source_type = block.metadata.get("source_type")
     safe_types = {"text", "title", "paragraph", "table", "image", "equation", "formula", "list", "header", "footer", "page_header", "page_footer", "page_number"}
