@@ -363,6 +363,18 @@ def infer_heading_level(text: str) -> int:
     return 2
 
 
+def infer_source_heading_level(text: str, *, source_level: int) -> int:
+    """仅为已识别的源标题按编号定级；无编号时保留已解析的源层级。"""
+
+    cleaned = normalize_heading_probe_text(text)
+    match = NUMBERED_HEADING_RE.match(cleaned)
+    if match:
+        return min(match.group("num").count(".") + 1, 6)
+    if CHAPTER_HEADING_RE.match(cleaned) or re.match(r"^(?:附录|appendix\b)", cleaned, re.IGNORECASE):
+        return 1
+    return source_level
+
+
 def parse_toc_entry_text(text: str) -> tuple[str, str] | None:
     cleaned = " ".join((text or "").replace("\n", " ").split()).strip()
     if not cleaned:

@@ -28,12 +28,14 @@
     "tests/test_document_ir_numbered_heading_levels.py",
     ".trellis/spec/backend/word-generation-rules.md"
   ],
-  "notes": "第一批提交快照：结果根唯一性源码、独立直接回归及INPUT-001已纳入，实施轮14/14通过。第二批源码、TEXT-001及完成记录由后一提交纳入。用户仅授权两笔本地提交，本轮不再测试，不推送/合并/删分支/配置CI，不自动归档。",
+  "notes": "两批最小实现、直接回归、必要Spec和任务记录按用户新授权分别保存为两笔本地提交。第一批14/14及第二批10/10的成功结果直接复用，本提交轮不再测试。任务保留in_progress、不自动归档；不推送/合并/删分支/配置CI，不产生额外bookkeeping提交。其他工作区及历史11测试+2文档维护不纳入提交。",
   "meta": {
     "baseline_main": "a942bbdaada9d91f30b21354f851c600b1039c13",
     "source_snapshot": "c9b1e6a9642d23d932bcd98c107e8bc66fb3c361",
-    "verification_scope": "复用已执行的新增直接回归；提交轮不再运行测试",
-    "implementation_result": "本快照完成第一批；第二批由后继提交纳入",
+    "verification_scope": "复用实施轮14/14及10/10成功结果；本提交轮不运行测试",
+    "implementation_result": "两批源码、直接回归、必要Spec与任务记录分两笔本地提交保存",
+    "batch1_commit": "dd32568c21b87f364c9bcbbcb087b15963a339b9",
+    "batch2_commit": "本条记录所在的第二批提交；精确SHA见Git历史",
     "local_commit_scope": "仅两批对应源码、直接回归、必要Spec及任务记录"
   }
 }
