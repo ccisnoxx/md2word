@@ -366,7 +366,7 @@
             <template v-if="qualityEvidence">
               <el-alert
                 class="quality-evidence-alert"
-                :type="qualityEvidence.tagType"
+                :type="qualityEvidence.tagType === 'danger' ? 'error' : qualityEvidence.tagType"
                 :closable="false"
                 show-icon
                 :title="qualityEvidence.title"
