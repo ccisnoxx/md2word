@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "相关后端owner与Spec入口"}
+{"file": ".trellis/spec/backend/template-layout-configuration.md", "reason": "seed不可变、默认指针与payload归属"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "按本次合同和用户授权选择最小验证"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "现有模板ValueError显式传播、不吞错"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "create-only端口；不改DDL或adapter"}

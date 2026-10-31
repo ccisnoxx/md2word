@@ -11,6 +11,9 @@
 
 ### 2. Signatures
 
+- `TemplateReadService.bootstrap_manifest_versions() -> None`：启动登记缺失 seed，并核对已有内置 seed 的 DOCX 身份。
+- `TemplateReadService.list_template_versions(template_id: str) -> list[TemplateVersionResponse]`：合并已登记历史版本与旧目录/manifest 视图。
+- `GET /api/v1/templates/{template_id}/versions`：沿用 admin-only 和现有响应字段。
 - `GET /api/v1/templates/{template_id}/layout-config?version={int}`：admin-only 读取默认或指定版本。
 - `POST /api/v1/templates/{template_id}/layout-config/versions`：admin-only 创建不可变 draft。
 - `POST /api/v1/templates/{template_id}/versions/{version}/set-default`：admin-only 把指定 published 版本设为默认，请求体必须提供非空 `set_default_reason`。
@@ -64,7 +67,18 @@
 - 新默认配置必须新建版本文件并提升 manifest `version`；不得原地修改历史路径、覆盖数据库 payload、放松 hash 校验或增加双路径 fallback。
 - `bootstrap_manifest_versions()` 只登记 manifest 中缺失的 published 版本；数据库已有默认指针时保持不变，空库才把 manifest 版本设为初始默认。
 - `Settings.layout_config_path`、legacy runtime helper 和本地正式转换工具的“当前内置配置”路径指向 v2；显式 Resource Version 读取始终以其持久化 payload 为 owner。
+- 同号冲突核对只适用于 `is_default_seed=true`、真实路径位于 `root_dir/resources/templates` 且不属于当前 `template_id/v{version}` 受管目录的内置 DOCX。自定义上传或替换默认模板的已有 draft 不纳入该核对，即使存储根位于 `resources/templates` 内。
+- 已有内置 seed 的 `payload.template_id/version`、`docx_path/docx_sha256` 必须与该 seed 身份一致，`snapshot_hash` 必须匹配持久化 payload 自身；同号 draft 或身份/完整性冲突抛出含 `template_id@version` 的 `ValueError`，不覆写该记录或移动其默认指针。
+- 不将新 manifest 的完整 payload hash 与旧记录直接比较；合法名称、描述等元数据变化不得覆写旧快照。身份有效的 disabled/superseded seed 保持关闭，不因初始化复活。
 - 生产迁移必须先分别读取并验证 `default@1` 与 `default@2`，再显式调用 set-default；若后续发布门禁失败，必须在新后端仍在线时先把默认指针恢复到 v1，读回成功后才能回滚旧代码。
+
+#### 3.4 历史版本列表与 payload 归属
+
+- 列表保留受管 `vN` 目录和当前 manifest 的 legacy 视图，并补回仅由持久化 payload 引用的可解析整数版本；同版去重、整数降序，沿用 draft/published/disabled/superseded、默认标识和验证/发布字段。
+- 目录、manifest 和补回阶段共用按可解析整数建立的 record 索引；`"01"` 等历史 key 不能因后续整数去重而丢失 payload。并存时优先规范 key `str(version)`，没有规范 key 时沿仓储返回顺序保留首条等价整数记录，不改写持久化 key。
+- 对已有 record 的目录、manifest 与补回条目，均复用 `_template_version_path(template, version, record.payload)`；不得以目录首个残留 DOCX 或新 seed 遮蔽登记路径。无 record 的目录条目保留原候选。
+- payload 指向的原文件丢失时，现有 asset builder 返回 `exists=false`；不借用其他版本充数。列表展示不替代生成时的授权和 YAML 严格校验，生产 `resolve_template_version()` 不用作列表过滤器。
+- 新增补回逻辑不保存资源版本或移动数据库默认指针；既有默认 template id 的 legacy 懒初始化保持原行为。持久化 hash 的 `sha256:` 前缀与列表 asset 的裸 hex 格式保持不变。
 
 ### 4. Validation & Error Matrix
 
@@ -85,6 +99,10 @@
 | 空 MySQL 资源库启动 v2 manifest | 创建并默认到 `default@2` |
 | 历史 payload 的资源 hash 不匹配 | 明确失败，不探测 v2 或其他路径 |
 | set-default 指向非 published 版本或理由为空 | 明确拒绝，不移动默认指针 |
+| 同号内置 seed 的 DOCX 身份或 payload 自洽性冲突 | 启动明确抛出 ValueError，不覆盖冲突记录/默认指针 |
+| 默认模板已替换成受管目录的已有 draft | 初始化保留 draft，不误判内置冲突或自动发布 |
+| 历史 record 不在受管目录或当前 manifest | 按原 payload 补入版本列表 |
+| 登记文件丢失但目录/manifest 有其他 DOCX | 该版本显示 exists=false，不换件 |
 
 ### 5. Good / Base / Bad Cases
 
@@ -92,6 +110,8 @@
 - Good：manifest 发布 bundled `default@2` 后，已有生产 `default@1` 仍按固定路径/hash 读取，运维验证通过后再显式 set-default。
 - Base：旧 YAML 只有 `font_name: 宋体`，无需迁移即可读取和生成，四个字体槽位继续使用宋体。
 - Base：历史 published 版本通过 set-default 回滚，只移动 DB 指针，不改历史内容。
+- Good：manifest 进入 seed v2 后，旧 v1 仍按数据库默认指针和原 payload 列出；目录残留 DOCX 不遮蔽登记文件。
+- Bad：为消除同号冲突更新 published payload/hash，或用完整新 manifest hash 拒绝合法元数据变化。
 - Bad：提交完整 YAML、只读字段、未知字段或不存在的 Word table style。
 - Bad：普通用户通过 create/clone/retry 注入 draft version。
 - Bad：在 renderer 中再次直接写 `rFonts`，或用 truthy fallback 吞掉显式空字符串。
@@ -108,6 +128,7 @@
 - bundled seed 测试：锁定 v1 固定 SHA-256 和旧字段兼容读取；严格校验 v2 显式三类字体；用 fake-MySQL adapter 覆盖“已有 v1 默认不迁移”和“空库默认 v2”。
 - set-default 测试：只有 published 版本可切换，理由写入审计；发布回滚演练先恢复默认指针，再切换旧代码。
 - 配置 API/schema 变化后运行前端 unit/build；smoke mock 至少验证三种字体标签可见。
+- `tests.test_template_seed_history`：真实读取/版本服务、临时自有资源和最小内存仓储端口，覆盖登记幂等与默认保留、内置冲突、元数据/关闭状态、上传 draft 排除、历史补全、登记路径优先/丢失和去重/legacy。该证据只保护服务层与文件快照合同，不推断真实 MySQL 并发或 Word 外观结论；具体运行范围遵守当前用户授权。
 
 ### 7. Wrong vs Correct
 
@@ -132,3 +153,15 @@ apply_run_fonts(
 ```
 
 缺失与显式空值语义分开，结构、归一化和槽位写入各有唯一 owner。
+
+#### 历史列表的错误与正确路径选择
+
+已有 record 时，直接取目录首个 DOCX 会让同版残留文件遮蔽已登记文件。
+
+```python
+# 错误：已有 record 仍只按目录排序取文件。
+template_path = next(iter(sorted(version_dir.glob("*.docx"))))
+
+# 正确：已有 record 的路径选择复用 payload owner，文件不存在也不换件。
+template_path = self._template_version_path(template, version, record.payload)
+```
