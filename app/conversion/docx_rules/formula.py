@@ -492,6 +492,10 @@ class _OmmlParser:
 
     def _parse_command(self) -> Any:
         self.position += 1
+        if self.position < len(self.source) and self.source[self.position] in {",", "_"}:
+            literal = "\u2009" if self.source[self.position] == "," else "_"
+            self.position += 1
+            return self._math_run(literal)
         start = self.position
         while self.position < len(self.source) and self.source[self.position].isalpha():
             self.position += 1
@@ -499,6 +503,8 @@ class _OmmlParser:
         if not command:
             raise FormulaParseError("invalid_syntax")
         self._skip_spaces()
+        if command in {"ln", "log", "exp", "sin", "cos", "tan"}:
+            return self._math_run(command)
         if command in {"frac", "dfrac", "tfrac"}:
             numerator = self._parse_required_group()
             self._skip_spaces()
