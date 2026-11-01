@@ -139,14 +139,14 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 ### IR-002 页面尺寸与 bbox 使用同一 MinerU 坐标系
 
 - 状态：`enforced-tested`
-- 输入信号：layout/middle JSON 的物理页宽高，以及该页 block bbox 最大范围。
-- 正式 owner：`app/services/document_ir/layout_signals.py::build_pages`、`::_bbox_extents_by_page`。
-- 预期输出：当物理尺寸有效时，以单一比例同时放大宽高，使页尺寸覆盖 bbox 并保持原物理纵横比；无物理尺寸时才使用 bbox extent；方向由归一后的宽高确定。
-- 冲突/例外：归一尺寸用于相对布局和方向，不直接覆盖模板配置的 Word 绝对纸张尺寸。
-- 禁止：宽高分别缩放造成比例失真；将 PDF point 与 MinerU bbox 像素直接比较；由某个宽表单独强制横向。
-- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_scales_physical_page_size_uniformly_to_cover_bbox`、`.test_convert_zip_uses_physical_final_page_from_layout_metadata`。
-- 样本证据：CM4112 为 external negative evidence：旧实现坐标错配曾把 A4 portrait 误判为 landscape；当前未提交回归 fixture。
-- 来源/取代：归档任务 `08-18-fix-mineru-first-page-layout`；取代宽高独立补齐和坐标系混用。
+- 输入信号：layout/middle JSON 的物理页宽高与 `_version_name`，以及该页 block bbox 范围。
+- 正式 owner：`app/services/document_ir/layout_signals.py::build_pages`（坐标空间识别与页几何）、`::pdf_point_bbox`（唯一 PDF 点换算）。
+- 预期输出：MinerU content list bbox 为按页宽、页高分别归一到 0–1000 的坐标（3.1.8/3.4.0/3.4.4 已用源 PDF 核实，见归档任务 `11-02-bbox-coordinate-audit`）。物理尺寸有效、版本 ≥ 3.1 且该页 bbox 全在 [0, 1000] 时，页面 `width/height` 为 1000×1000（bbox 所在空间），metadata 记 `bbox_coordinate_space=mineru_normalized_1000`，方向由物理页尺寸确定；IR 中 bbox 保持原值。其余情况沿用旧推导：以单一比例放大物理尺寸覆盖 bbox，无物理尺寸时用 bbox extent，方向由该宽高确定。版式计划的横竖版读取页方向事实（`LayoutPage.landscape`），不由宽 > 高推断。
+- 冲突/例外：页几何用于相对布局与方向，不覆盖模板配置的 Word 绝对纸张尺寸。需要 PDF 点的消费方（源 PDF 裁切、复核位置投影）只经 `pdf_point_bbox`；无法确认坐标空间时返回 None 并失败关闭。无标记的已持久化旧 IR，其占位绑定解码沿用原始值校验以保持可读。
+- 禁止：用 bbox 极值推断归一化页面的尺寸或方向；把原始 bbox 直接当 PDF 点使用或与 PDF point 直接比较；改写 IR/来源账本中的原始 bbox；由某个宽表单独强制横向。
+- 自动验证：`tests.test_bbox_coordinate_space`（归一化识别与回退、换算、横版 section、缺 HTML 表格按 PDF 点裁切、复核投影）；`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_scales_physical_page_size_uniformly_to_cover_bbox`、`.test_convert_zip_uses_physical_final_page_from_layout_metadata`（旧推导路径）。
+- 样本证据：本地 6 份 MinerU 样本均识别为 1000×1000 并保持方向；OPA228_P1 chart/table 经换算裁切与源对象一致（2026-11-02 目视）。CM4112 为 external negative evidence：旧实现曾把 A4 portrait 误判为 landscape，现由物理页尺寸定方向。
+- 来源/取代：归档任务 `08-18-fix-mineru-first-page-layout`；2026-11-02 任务 `11-02-bbox-normalized-coords` 以源 PDF 证据取代“bbox 与物理页同比例、只允许单一比例缩放”的前提。
 
 ### IR-003 v2 block 不得因缺少页索引而静默丢失
 
