@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 37
+- **Total Sessions**: 39
 - **Last Active**: 2026-11-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1230 | Active |
+| `journal-1.md` | ~1300 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 39 | 2026-11-02 | MinerU 归一化 bbox 坐标空间修复 | `87b19341`, `f51972c0` | `codex/bbox-normalized-coords-20261102` |
+| 38 | 2026-11-02 | 核实 MinerU bbox 坐标空间 | `3e8fad46` | `codex/bbox-coordinate-audit-20261102` |
 | 37 | 2026-11-02 | P0c Word 不兼容图片的最小规范化 | `b53e32e5`, `ce384f70` | `codex/p0c-image-normalization-20261101` |
 | 36 | 2026-11-01 | P0b 运行时依赖声明与 Poppler 部署 | `5d61e38c`, `39ff1fe8` | `codex/p0b-runtime-deps-20261101` |
 | 35 | 2026-11-01 | P0a 转换失败页码与原因诊断展示 | `16ec7101`, `493e2dce` | `codex/p0a-conversion-diagnostics-20261101` |

@@ -38,6 +38,7 @@ from app.domains.translation.document_ir_translator import DocumentIRTranslation
 from app.domains.translation.integrity import items_sha256
 from app.domains.translation.models import TranslationTextItem
 from app.domains.translation.modes import is_translation_document_job_mode, spec_for_document_job_mode
+from app.services.document_ir.layout_signals import pdf_point_bbox
 from app.services.document_ir.models import DocumentIR
 from app.services.preview.models import PreviewPolicy
 from app.services.preview.page_mapping import PageMapping
@@ -501,19 +502,18 @@ def _spans(read, block, entry):
     result = []
     for page_index, bbox, fragment_id in spans:
         page = read.pages_by_index.get(page_index)
-        width, height = (page.width, page.height) if page else (None, None)
         raw_size = page.metadata.get("pdf_page_size") if page else None
-        verified = (page is not None and bool(page.metadata.get("page_size_source"))
-            and isinstance(raw_size, list) and len(raw_size) == 2 and raw_size == [width, height]
-            and all(type(value) in {int, float} and math.isfinite(value) and value > 0 for value in raw_size)
-            and all(type(value) in {int, float} and math.isfinite(value) and value > 0 for value in (width, height)))
         valid_bbox = (isinstance(bbox, (list, tuple)) and len(bbox) == 4 and all(
             type(value) in {int, float} and math.isfinite(value) for value in bbox)
             and 0 <= bbox[0] < bbox[2] and 0 <= bbox[1] < bbox[3])
-        verified = bool(verified and valid_bbox and bbox[2] <= width and bbox[3] <= height)
+        # 只有能换算为 PDF 点（归一化页或旧的点坐标页）且落在 PDF 页内时才视为已核实；返回值统一为 PDF 点。
+        points = pdf_point_bbox(bbox, page) if valid_bbox else None
+        verified = bool(points is not None and isinstance(raw_size, list) and len(raw_size) == 2
+            and all(type(value) in {int, float} and math.isfinite(value) and value > 0 for value in raw_size)
+            and points[2] <= raw_size[0] and points[3] <= raw_size[1])
         result.append(Span(source_page_index=page_index if type(page_index) is int and page_index >= 0 else None,
-            bbox=tuple(float(value) for value in bbox) if valid_bbox else None,
-            page_width=width if verified else None, page_height=height if verified else None,
+            bbox=points if verified else tuple(float(value) for value in bbox) if valid_bbox else None,
+            page_width=raw_size[0] if verified else None, page_height=raw_size[1] if verified else None,
             coordinate_verified=verified, reason_code=None if verified else "coordinate_space_unverified", fragment_id=fragment_id))
     return result
 
