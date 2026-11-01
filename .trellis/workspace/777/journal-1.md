@@ -1410,3 +1410,40 @@ content list bbox 为 0–1000 归一化坐标（3.1.8/3.4.0/3.4.4 一致），�
 
 - 分支 codex/failure-context-20261102 基于 main 7b7c089b，待用户决定推送
 - 可另开任务收紧普通异常 error_message 原文记录
+
+
+## Session 43: 收紧 Worker 失败消息并重新生成 OpenAPI 快照
+
+**Date**: 2026-11-02
+**Task**: 收紧 Worker 失败消息并重新生成 OpenAPI 快照
+**Branch**: `codex/safe-error-message-20261102`
+
+### Summary
+
+Worker 失败消息只保留固定码构造的消息，其余输出异常类型名；翻译流程直接写入原文处改走同一函数。OpenAPI 快照按现有生成器整体重新生成并通过检查。
+
+### Main Changes
+
+- _worker_failure_message 增 SAFE_MESSAGE_ERRORS 白名单与翻译错误机器码文案；翻译流程 5 处替换
+- docs/api/openapi.json 整体重新生成（含 P0a/P0-6 新字段与历史积压）
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `61dfe4c8` | (see git log) |
+| `057c3512` | (see git log) |
+| `08795d4a` | (see git log) |
+
+### Testing
+
+- [OK] 新增 3 例；相关 81 例失败集合与失败原因行与基线一致；OpenAPI --check 无差异、test_openapi_export 8 例通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 分支 codex/safe-error-message-20261102 叠加于 PR #22 分支，#22 合并后推送
+- 第三批部分成功按 D1–D6 推进 C1+C2；5.4 暂缓
