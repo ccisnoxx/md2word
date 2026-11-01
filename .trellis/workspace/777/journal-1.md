@@ -1190,3 +1190,41 @@ RND-502 v2实现、独立复审修复和验证证据已人工接受，列明未�
 - 线上镜像经 pub2 发布包增量构建，已具备 Pillow 12.2.0 与 Poppler；转换失败非缺依赖所致
 - 继续 P0c：最小图片规范化（WebP 与无 JFIF/Exif 头 JPEG）
 - 全部修复任务完成后再推送与建 PR
+
+
+## Session 37: P0c Word 不兼容图片的最小规范化
+
+**Date**: 2026-11-02
+**Task**: P0c Word 不兼容图片的最小规范化
+**Branch**: `codex/p0c-image-normalization-20261101`
+
+### Summary
+
+安全解码通过而 python-docx 拒绝的图片（WebP、CMYK JPEG、无 APP0 JPEG）无损转 PNG 后继续转换；Word 可识别图片保持原字节；规格 IMAGE-001 经用户批准增加例外。
+
+### Main Changes
+
+- artifact_validator 新增 _word_compatible_png 与 _word_supported，规范化结果按路径缓存；正文图记 image_asset_normalized warning，表格参考图静默规范化
+- 登记文件 MIME/扩展名随实际格式，metadata 记源格式与源 sha256；报告白名单新增代码与原因
+- 修订 word-generation-rules IMAGE-001/INPUT-002；P0a 诊断测试改用截断 PNG
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b53e32e5` | (see git log) |
+| `ce384f70` | (see git log) |
+
+### Testing
+
+- [OK] 验证器新增 4 例、改动 3 例通过；端到端 2 例通过且在基线上按原缺陷失败
+- [OK] 验证器 15 错误、相关集合 1 失败 12 错误均与基线 a6d2207c 一致，未处理；未做 Word/LibreOffice 目视核对
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- P0a/P0b/P0c 修复系列已全部本地完成，待用户决定推送与建 PR
+- 后续 P1：原 PDF 回退裁切、页面降级与部分成功
