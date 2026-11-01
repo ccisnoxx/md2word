@@ -97,10 +97,11 @@ class ProjectFailureDiagnosticTests(TestCase):
         })
 
 
-def _webp_bytes():
+def _unreadable_image_bytes():
+    """截断的 PNG：Pillow 安全解码失败；WebP 等可解码格式现会被规范化，不能再用来制造失败。"""
     buffer = io.BytesIO()
-    Image.new("RGB", (8, 8), "white").save(buffer, format="WEBP")
-    return buffer.getvalue()
+    Image.new("RGB", (8, 8), "white").save(buffer, format="PNG")
+    return buffer.getvalue()[:40]
 
 
 def _zip(blocks=None, images=()):
@@ -109,7 +110,7 @@ def _zip(blocks=None, images=()):
         if blocks is not None:
             archive.writestr("content_list_v2.json", json.dumps(blocks))
         for path in images:
-            archive.writestr(path, _webp_bytes())
+            archive.writestr(path, _unreadable_image_bytes())
     return buffer.getvalue()
 
 
@@ -133,7 +134,7 @@ class FailureDiagnosticApiTests(TestCase):
                 diagnostics = client.get(f"/api/v1/document-job-incidents/{job_id}/diagnostics", headers=headers).json()
         return detail, listed, diagnostics
 
-    def test_unsupported_images_report_pages_and_classify_as_conversion(self):
+    def test_unreadable_images_report_pages_and_classify_as_conversion(self):
         blocks = [
             {"type": "title", "text": "1 Features", "text_level": 1, "page_idx": 0},
             {"type": "text", "text": "Body", "page_idx": 1},

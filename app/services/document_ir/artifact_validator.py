@@ -136,6 +136,8 @@ class ValidatedImage:
     mime_type: str
     content: bytes
     resolution: str
+    # 规范化时为（源格式, 源字节 sha256 十六进制）；此时 content/mime_type 为规范化后的 PNG。
+    normalized_from: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,9 +154,49 @@ class _ImageInspection:
 
     content: bytes = b""
     mime_type: str | None = None
+    image_format: str | None = None
     error_code: str | None = None
     error_reason: str | None = None
     word_supported: bool | None = None
+    normalized_from: tuple[str, str] | None = None
+
+
+_WORD_IMAGE_ERRORS = (InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError, OSError,
+                      ValueError, SyntaxError, ZeroDivisionError, OverflowError)
+
+
+def _word_supported(content: bytes) -> bool:
+    try:
+        image = WordImage.from_blob(content)
+        native_dimensions = image.scaled_dimensions()
+        if min(native_dimensions) <= 0:
+            raise ValueError("Word 图片尺寸无效。")
+        image.scaled_dimensions(width=native_dimensions[0])
+        return True
+    except _WORD_IMAGE_ERRORS:
+        return False
+
+
+def _word_compatible_png(content: bytes, *, max_bytes: int) -> bytes | None:
+    """只接收已通过安全解码的字节；保持像素尺寸与 DPI，不写时间戳等可变块，同一输入输出确定。"""
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(content)) as image:
+                image.seek(0)
+                has_alpha = image.mode in {"RGBA", "LA", "PA"} or "transparency" in image.info
+                target = "RGBA" if has_alpha else "L" if image.mode in {"1", "L"} else "RGB"
+                dpi = image.info.get("dpi")
+                options = ({"dpi": tuple(dpi)} if isinstance(dpi, tuple) and len(dpi) == 2
+                           and all(isinstance(value, (int, float)) and math.isfinite(value) and value > 0 for value in dpi)
+                           else {})
+                buffer = io.BytesIO()
+                image.convert(target).save(buffer, format="PNG", **options)
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError, Image.DecompressionBombError,
+            Image.DecompressionBombWarning):
+        return None
+    output = buffer.getvalue()
+    return output if output and len(output) <= max_bytes else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -856,6 +898,7 @@ class MinerUArtifactValidator:
                             raise ValueError("图片格式不可识别。")
                         inspection.content = content
                         inspection.mime_type = mime
+                        inspection.image_format = image_format
             except MinerUPackageError as error:
                 inspection.error_code = error.code
                 inspection.error_reason = error.facts["reason"]
@@ -869,23 +912,26 @@ class MinerUArtifactValidator:
                            stops_conversion=required or inspection.error_code is not None, field="image_source",
                            facts={"reason": inspection.error_reason})
             return None, "unsafe" if inspection.error_code else "invalid"
-        if required:
-            if inspection.word_supported is None:
-                try:
-                    image = WordImage.from_blob(inspection.content)
-                    native_dimensions = image.scaled_dimensions()
-                    if min(native_dimensions) <= 0:
-                        raise ValueError("Word 图片尺寸无效。")
-                    image.scaled_dimensions(width=native_dimensions[0])
-                    inspection.word_supported = True
-                except (InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError, OSError,
-                        ValueError, SyntaxError, ZeroDivisionError, OverflowError):
-                    inspection.word_supported = False
+        if inspection.word_supported is None:
+            inspection.word_supported = _word_supported(inspection.content)
             if not inspection.word_supported:
-                self.add_issue(code, locator, field="image_source", facts={"reason": "unreadable_or_unsupported_image"})
-                return None, "invalid"
+                # IMAGE-001 例外：已安全解码但 python-docx 拒绝原字节时，按像素无损转 PNG；其余图片保持原字节。
+                normalized = _word_compatible_png(inspection.content, max_bytes=self.policy.max_file_bytes)
+                if normalized is not None and _word_supported(normalized):
+                    inspection.normalized_from = (inspection.image_format, hashlib.sha256(inspection.content).hexdigest())
+                    inspection.content = normalized
+                    inspection.mime_type = "image/png"
+                    inspection.word_supported = True
+        if required and inspection.normalized_from is not None:
+            # 只对写入正文的必需图片记 warning；参考图仅供 QA 或已由占位阻断项覆盖，记录会成为噪音。
+            self.add_issue("image_asset_normalized", locator, severity="warning", stops_conversion=False,
+                           field="image_source", facts={"reason": "word_incompatible_raster"})
+        elif required and not inspection.word_supported:
+            self.add_issue(code, locator, field="image_source", facts={"reason": "unreadable_or_unsupported_image"})
+            return None, "invalid"
+        # 参考图原本不做 Word 检查；无法规范化时仍按原字节返回，保持 reference_status 语义不变。
         return ValidatedImage(selected.relative_to(root.resolve()).as_posix(), inspection.mime_type,
-                              inspection.content, selected_resolution), "valid"
+                              inspection.content, selected_resolution, inspection.normalized_from), "valid"
 
     def _validate_table(self, block: dict[str, Any], locator: MinerUSourceLocator, reference_status: str, reference_image: ValidatedImage | None) -> None:
         html = select_mineru_table_html(block)

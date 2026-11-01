@@ -884,7 +884,7 @@ class DocumentJobExecutionService:
                 job_id=job.id,
                 created_by=job.created_by,
                 file_type="image_asset",
-                filename=f"{image_asset.asset_id}_{Path(image_asset.source_path).name}",
+                filename=f"{image_asset.asset_id}_{image_asset.stored_name}",
                 mime_type=image_asset.mime_type,
                 content=image_asset.content,
                 metadata={
@@ -894,6 +894,8 @@ class DocumentJobExecutionService:
                     "asset_id": image_asset.asset_id,
                     "block_id": image_asset.block_id,
                     "retry_count": job.retry_count,
+                    **({"normalized_from_format": image_asset.normalized_from[0],
+                        "normalized_from_sha256": image_asset.normalized_from[1]} if image_asset.normalized_from else {}),
                 },
             )
             image_file_ids.append(image_file.id)
@@ -2959,8 +2961,7 @@ class DocumentJobExecutionService:
         with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
             for image_asset in image_assets:
-                source_name = Path(image_asset.source_path).name or f"{image_asset.asset_id}.bin"
-                archive.writestr(f"images/{image_asset.asset_id}_{source_name}", image_asset.content)
+                archive.writestr(f"images/{image_asset.asset_id}_{image_asset.stored_name}", image_asset.content)
         return self.file_service.register_generated_content(
             tenant_id=job.tenant_id,
             company_id=job.company_id,

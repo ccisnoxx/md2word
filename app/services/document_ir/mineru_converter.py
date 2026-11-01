@@ -48,7 +48,7 @@ from app.services.document_ir.models import (
     DocumentIRMetadata,
 )
 from app.services.document_ir.table_annotations import split_table_annotation_texts
-from app.services.document_ir.table_reference_assets import TableReferenceAsset, attach_table_references
+from app.services.document_ir.table_reference_assets import RASTER_EXTENSIONS, TableReferenceAsset, attach_table_references
 from app.services.document_ir.table_placeholder import (
     PdfCropSource, PdfTableCropProvider, PlaceholderAsset, TablePlaceholderError, prepare_placeholders,
 )
@@ -63,6 +63,15 @@ class MinerUImageAsset:
     source_path: str
     mime_type: str
     content: bytes
+    normalized_from: tuple[str, str] | None = None
+
+    @property
+    def stored_name(self) -> str:
+        """规范化后扩展名随实际格式，避免 PNG 内容仍以 .webp 等源扩展名存放。"""
+        name = Path(self.source_path).name or f"{self.asset_id}.bin"
+        if self.normalized_from is None:
+            return name
+        return f"{Path(name).stem}.{RASTER_EXTENSIONS[self.mime_type]}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,7 +238,7 @@ class MinerUToDocumentIRService:
                 asset_ref = asset_id
                 image_assets.append(MinerUImageAsset(
                     asset_id=asset_id, block_id=block_id, source_path=image.source_path,
-                    mime_type=image.mime_type, content=image.content,
+                    mime_type=image.mime_type, content=image.content, normalized_from=image.normalized_from,
                 ))
                 ir_assets.append(DocumentIRAsset(id=asset_id, kind="image", source_path=image.source_path))
             for context_index, context_text in enumerate(table_contexts):
@@ -323,6 +332,8 @@ class MinerUToDocumentIRService:
         image = raw_block.get("_mineru_validated_asset")
         if isinstance(image, ValidatedImage):
             metadata["mineru_asset_resolution"] = image.resolution
+            if image.normalized_from is not None:
+                metadata["mineru_asset_normalized_from"] = image.normalized_from[0]
         return metadata
 
     def _heading_level(self, raw_block: dict[str, Any]) -> int:
