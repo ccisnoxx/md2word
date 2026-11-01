@@ -1112,3 +1112,42 @@ RND-502 v2实现、独立复审修复和验证证据已人工接受，列明未�
 ### Next Steps
 
 - 本任务已获人工接受并完成；不启动后续任务，不push。
+
+
+## Session 35: P0a 转换失败页码与原因诊断展示
+
+**Date**: 2026-11-01
+**Task**: P0a 转换失败页码与原因诊断展示
+**Branch**: `codex/p0a-conversion-diagnostics-20261101`
+
+### Summary
+
+详情页与异常中心展示当前代 MinerU 验证失败的首个失败页、受影响页与原因；异常分类改为明确错误码优先。
+
+### Main Changes
+
+- 新增 project_failure_diagnostic 读侧投影，仅详情与异常中心诊断接口填充 failure_diagnostic
+- 异常中心：document_ir_failed 等归 conversion_failed，missing_* 消息不再误判为产物缺失
+- 前端 failureDiagnosticLines 共享展示；error-handling 规格补充投影合同
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `16ec7101` | (see git log) |
+| `493e2dce` | (see git log) |
+
+### Testing
+
+- [OK] 新增后端 8 例（含真实 eager Worker 页级/文档级失败）、前端 4 例通过；vue-tsc 构建通过
+- [OK] 既有后端 14 失败/21 错误与前端 14 失败均与基线 90ebb407 一致，未处理
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- OpenAPI 快照基线已过期，需单独任务整体再生成
+- 继续 P0b：声明 Pillow 依赖、核实生产 Poppler；P0c：最小图片规范化
+- 全部修复任务完成后再推送与建 PR
