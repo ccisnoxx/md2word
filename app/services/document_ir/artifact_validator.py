@@ -408,12 +408,46 @@ class MinerUArtifactValidator:
         for block in effective_blocks:
             locator = MinerUSourceLocator.model_validate(block["_mineru_source"])
             if classify_mineru_block(block, locator.source_type or "") == "image":
-                asset, _status = self._validate_asset(block, locator, package_root, content_list_path.parent, required=True)
+                asset, status = self._validate_asset(block, locator, package_root, content_list_path.parent,
+                                                     required=True, defer_fatal=True)
                 block["_mineru_validated_asset"] = asset
+                if status in {"missing", "invalid"}:
+                    # P0-4：可回退错误先以非中止 blocker 记录，页面几何建立后由 converter 尝试源 PDF 裁切。
+                    block["_mineru_image_fallback"] = locator.json_pointer
         self.check_report_limits()
         if not self.report.can_convert:
+            # 已有其他中止错误时不再尝试回退；待回退图片恢复为中止错误，报告与回退功能引入前一致。
+            for block in effective_blocks:
+                if block.get("_mineru_image_fallback") is not None:
+                    self.resolve_image_fallback(block["_mineru_image_fallback"], recovered=False)
             raise MinerUArtifactValidationError(self.report)
         self.report.sort_details()
+
+    def resolve_image_fallback(self, json_pointer: str, *, recovered: bool) -> None:
+        """回退成功：原错误降为同码 warning 并追加 image_asset_pdf_fallback；失败：恢复为中止错误。"""
+        issue = next((item for item in self.report.blockers if item.json_pointer == json_pointer
+                      and item.code in {"missing_image_asset", "invalid_image_asset"} and not item.stops_conversion), None)
+        if issue is None:
+            raise ValueError("待回退图片缺少对应的验证问题。")
+        if recovered:
+            self.report.blockers.remove(issue)
+            self.report.issue_counts["blocker"][issue.code] -= 1
+            if not self.report.issue_counts["blocker"][issue.code]:
+                del self.report.issue_counts["blocker"][issue.code]
+            self.report.blocker_count -= 1
+            issue.severity = "warning"
+            self.report.warnings.append(issue)
+            self.report.issue_counts["warning"][issue.code] = self.report.issue_counts["warning"].get(issue.code, 0) + 1
+            self.report.warning_count += 1
+            locator = MinerUSourceLocator.model_validate(issue.model_dump(include=set(MinerUSourceLocator.model_fields)))
+            self.add_issue("image_asset_pdf_fallback", locator, severity="warning", stops_conversion=False,
+                           field="image_source", facts={"reason": issue.facts.get("reason")})
+        else:
+            issue.stops_conversion = True
+            self.report.fatal_count += 1
+            self.report.can_convert = False
+            self.report.first_fatal = self.report.first_fatal or issue
+        self.check_report_limits()
 
     def add_package_error(self, error: MinerUPackageError, *, field: str | None = None) -> None:
         self.add_issue(error.code, field=field, facts=error.facts)
@@ -837,7 +871,9 @@ class MinerUArtifactValidator:
             except MinerUPackageError as error:
                 self.add_issue(error.code, locator, field=pointer, facts=error.facts)
 
-    def _validate_asset(self, block: dict[str, Any], locator: MinerUSourceLocator, root: Path, content_dir: Path, *, required: bool) -> tuple[ValidatedImage | None, str]:
+    def _validate_asset(self, block: dict[str, Any], locator: MinerUSourceLocator, root: Path, content_dir: Path, *,
+                        required: bool, defer_fatal: bool = False) -> tuple[ValidatedImage | None, str]:
+        """defer_fatal 仅推迟可回退错误（缺失、不可解码、非白名单、Word 不接受）；路径安全与超限仍立即中止。"""
         paths = self._asset_paths(block, locator)
         selected = None
         selected_resolution = "missing"
@@ -869,7 +905,7 @@ class MinerUArtifactValidator:
         if selected is None:
             status = "invalid" if invalid else "missing"
             self.add_issue(code if invalid else missing_code, locator, severity="blocker" if required else "warning",
-                           stops_conversion=required, field="image_source", facts={"reason": status})
+                           stops_conversion=required and not defer_fatal, field="image_source", facts={"reason": status})
             return None, status
         inspection = self._image_cache.get(selected)
         if inspection is None:
@@ -909,7 +945,7 @@ class MinerUArtifactValidator:
         if inspection.error_reason is not None:
             self.add_issue(inspection.error_code or code, locator,
                            severity="blocker" if required or inspection.error_code else "warning",
-                           stops_conversion=required or inspection.error_code is not None, field="image_source",
+                           stops_conversion=(required and not defer_fatal) or inspection.error_code is not None, field="image_source",
                            facts={"reason": inspection.error_reason})
             return None, "unsafe" if inspection.error_code else "invalid"
         if inspection.word_supported is None:
@@ -927,7 +963,8 @@ class MinerUArtifactValidator:
             self.add_issue("image_asset_normalized", locator, severity="warning", stops_conversion=False,
                            field="image_source", facts={"reason": "word_incompatible_raster"})
         elif required and not inspection.word_supported:
-            self.add_issue(code, locator, field="image_source", facts={"reason": "unreadable_or_unsupported_image"})
+            self.add_issue(code, locator, stops_conversion=not defer_fatal, field="image_source",
+                           facts={"reason": "unreadable_or_unsupported_image"})
             return None, "invalid"
         # 参考图原本不做 Word 检查；无法规范化时仍按原字节返回，保持 reference_status 语义不变。
         return ValidatedImage(selected.relative_to(root.resolve()).as_posix(), inspection.mime_type,

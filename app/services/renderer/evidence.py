@@ -901,7 +901,7 @@ REPORT_CODES = frozenset({
     "legacy_page_index_coerced", "mineru_page_order_nonmonotonic", "mineru_bbox_missing", "mineru_bbox_invalid",
     "report_limit_exceeded", "mineru_margin_payload_empty", "missing_image_asset", "invalid_image_asset",
     "missing_table_reference", "invalid_table_reference", "empty_table_html", "invalid_table_html", "suspicious_table_html",
-    "image_asset_normalized",
+    "image_asset_normalized", "image_asset_pdf_fallback",
 })
 REPORT_REASONS = frozenset({
     "absolute_or_traversal", "actual_expanded_bytes", "ambiguous_asset_reference", "conflicting_index",

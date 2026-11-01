@@ -896,6 +896,8 @@ class DocumentJobExecutionService:
                     "retry_count": job.retry_count,
                     **({"normalized_from_format": image_asset.normalized_from[0],
                         "normalized_from_sha256": image_asset.normalized_from[1]} if image_asset.normalized_from else {}),
+                    **({"origin": "pdf_region_crop", "pdf_fallback": image_asset.pdf_fallback}
+                       if image_asset.pdf_fallback else {}),
                 },
             )
             image_file_ids.append(image_file.id)
