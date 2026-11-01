@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "API 错误与诊断脱敏边界"}
+{"file": ".trellis/spec/backend/document-job-mode-contract.md", "reason": "阶段与失败定位合同、历史 ir_converting 翻译诊断"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端质量检查命令"}

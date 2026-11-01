@@ -79,6 +79,14 @@ Resource snapshot failures use `JobResourceSnapshotError`, mapped through its ow
 
 Do not duplicate workflow state checks in routers when the rule already belongs in `workflow.py` or the owning service. Existing `JobStageService` applies transitions from `app/domains/jobs/workflow.py` instead of hand-building status patches in each stage branch.
 
+## DocumentJob 转换失败定位投影
+
+- 唯一读侧 owner 为 `app/domains/document_jobs/failure_diagnostic.py::project_failure_diagnostic`；只读取当前代（`payload.retry_count == job.retry_count`）最新 `stage_failed` 事件中已脱敏的 `mineru_validation`，要求 `can_convert=false` 且有 `first_fatal.code`，否则为 `null`。缺代数的历史事件不猜。
+- 页码对外 1 起始；`first_fatal` 无 `page_index` 时 `scope=document`、`page_number=null`，不得伪造第 1 页。`details_truncated=true` 时受影响页列表可能不完整，UI 必须提示。
+- 仅 `GET /document-jobs/{id}` 与异常中心诊断接口填充；列表等共用 `DocumentJobResponse` 的接口恒为 `null`，不做逐行事件查询。前端只消费该投影，不解析事件 payload。
+- `error_code`/`failed_stage` 合同不变。异常中心分类中失败任务的明确错误码优先于关键词：`mineru_failed`/`document_ir_failed`/`render_failed` → `conversion_failed`，`translation_failed`/`translation_fan_in_mismatch` → `translation_failed`（历史 `ir_converting + translation_failed` 仍为翻译失败）。
+- 测试：`tests/test_document_job_failure_diagnostic.py`（含真实 eager Worker 页级与文档级失败）。
+
 ## Scenario: DocumentIR Translation Provider Failures
 
 ### 1. Scope / Trigger
