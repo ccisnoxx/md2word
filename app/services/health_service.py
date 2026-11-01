@@ -58,6 +58,7 @@ READINESS_REQUIRED_CHECKS = (
 READINESS_NON_BLOCKING_CHECKS = (
     "mineru_api_token_configured",
     "pdf_submission_available",
+    "pdf_crop_tools_available",
     "translation_available",
     "stage_spool_replayable_messages",
     "stage_spool_failed_messages",
@@ -209,6 +210,8 @@ class HealthService:
             "mineru_callback_url_configured": mineru_callback_url_configured,
             "mineru_uid_configured": mineru_uid_configured,
             "pdf_submission_available": pdf_submission_available,
+            # 与 PopplerPdfTableCropProvider 相同的 PATH 解析；只观测，不改变裁切行为。
+            "pdf_crop_tools_available": all(shutil.which(tool) for tool in ("pdfinfo", "pdftoppm")),
             "public_deployment_mode": self.settings.public_deployment_mode,
             "p0_document_jobs_required": p0_document_jobs["required"],
             "p0_document_jobs_ready": p0_document_jobs["ready"],
@@ -273,6 +276,9 @@ class HealthService:
         elif not checks["pdf_submission_available"]:
             warnings.append("mineru_api_token_missing")
             checks["pdf_submission_unavailable_reason"] = "MINERU_API_TOKEN 未配置"
+        if not checks["pdf_crop_tools_available"]:
+            # 只影响缺表格 HTML 且无参考图的占位裁切，不阻断就绪。
+            warnings.append("pdf_crop_tools_missing")
         if not checks["translation_available"] and not checks["translation_required_for_default_mode"]:
             warnings.append("translation_unavailable")
         if ai_provider_config_error is not None and not checks["translation_required_for_default_mode"]:

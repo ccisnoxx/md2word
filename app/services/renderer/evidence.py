@@ -901,6 +901,7 @@ REPORT_CODES = frozenset({
     "legacy_page_index_coerced", "mineru_page_order_nonmonotonic", "mineru_bbox_missing", "mineru_bbox_invalid",
     "report_limit_exceeded", "mineru_margin_payload_empty", "missing_image_asset", "invalid_image_asset",
     "missing_table_reference", "invalid_table_reference", "empty_table_html", "invalid_table_html", "suspicious_table_html",
+    "image_asset_normalized", "image_asset_pdf_fallback",
 })
 REPORT_REASONS = frozenset({
     "absolute_or_traversal", "actual_expanded_bytes", "ambiguous_asset_reference", "conflicting_index",
@@ -915,7 +916,7 @@ REPORT_REASONS = frozenset({
     "outside_selected_rich_payload", "report_bytes", "single_file_bytes", "special_zip_entry", "symlink", "total_bytes",
     "type_too_long", "unaccounted_normalization", "unreadable_archive", "unreadable_json", "unreadable_or_unsupported_image",
     "unsupported_tag", "unsupported_top_level", "wrong_length_or_type", "final_promotional_page",
-    "explicit_table_placeholder", "strict_empty_table_placeholder",
+    "explicit_table_placeholder", "strict_empty_table_placeholder", "word_incompatible_raster",
 })
 REPORT_DETAIL_VALUES = {
     "code": REPORT_CODES,

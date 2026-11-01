@@ -143,7 +143,7 @@ def _layout_positions(layout: LayoutPlan) -> dict[int, tuple[int, tuple[Any, ...
     result = {}
     position = 0
     for page in layout.pages:
-        landscape = bool(page.width and page.height and page.width > page.height)
+        landscape = page.landscape
         for region in page.regions:
             streams = (split_two_col_blocks(region.blocks) if region.kind == "two_col" else (region.blocks,))
             for side, stream in enumerate(streams):

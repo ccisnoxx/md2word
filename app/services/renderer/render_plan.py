@@ -304,7 +304,7 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
     current = None
     previous_landscape = False
     for page_index, page in enumerate(layout_plan.pages):
-        landscape = page.width is not None and page.height is not None and page.width > page.height
+        landscape = page.landscape
         if current is None or not legacy and landscape != previous_landscape:
             current = section(page, start="initial" if current is None else "new_page", landscape=landscape)
         elif page.index not in sections[-1].source_page_indices:

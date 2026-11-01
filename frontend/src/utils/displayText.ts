@@ -114,6 +114,7 @@ export function readinessCodeText(code: string): string {
     mineru_callback_url_missing: "MinerU callback URL 未配置",
     mineru_uid_missing: "MinerU UID 未配置",
     p0_document_jobs_not_ready: "P0 文档任务执行链路未就绪",
+    pdf_crop_tools_missing: "PDF 表格裁切工具（Poppler）缺失",
     stage_spool_dir_missing: "阶段消息目录缺失",
     stage_spool_failed_messages_present: "存在失败的阶段消息",
     stage_spool_replayable_messages_present: "存在可继续处理的阶段消息",

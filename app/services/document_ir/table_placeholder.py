@@ -169,8 +169,12 @@ def prepare_placeholders(document, references, *, source_loader: Callable[[], Pd
             raw_size = page.metadata.get("pdf_page_size") if page is not None else None
             if page is not None and page.metadata.get("page_size_source") and isinstance(raw_size, list) and len(raw_size) == 2:
                 frame = tuple(raw_size)
-            validate_geometry(span.page_index, span.bbox, frame)
-            result = crop_provider.crop(PdfCropRequest(source, span.page_index, span.bbox, frame))
+            # 来源 bbox 是 MinerU 原始坐标（通常为 0–1000 归一化），裁切只接受换算后的 PDF 点；无法确认坐标空间时失败关闭。
+            # 绑定仍记录原始 span.bbox，解码时与来源片段逐值核对。
+            from app.services.document_ir.layout_signals import pdf_point_bbox
+            crop_box = pdf_point_bbox(span.bbox, page)
+            validate_geometry(span.page_index, crop_box, frame)
+            result = crop_provider.crop(PdfCropRequest(source, span.page_index, crop_box, frame))
             if result.frame != frame or result.provider != "poppler-pdftoppm/v1":
                 raise TablePlaceholderError("table_placeholder_geometry_invalid")
             content = result.content
@@ -243,7 +247,11 @@ def decode_placeholders(document, *, require_bound: bool = False) -> list[TableP
             if (page is None or not page.metadata.get("page_size_source")
                     or page.metadata.get("pdf_page_size") != list(binding.frame or ())):
                 fail()
-            validate_geometry(binding.page_index, binding.bbox, binding.frame)
+            # 归一化页按换算后的 PDF 点核对；无坐标空间标记的历史 IR 沿用原始值校验，保持已持久化绑定可读。
+            from app.services.document_ir.layout_signals import NORMALIZED_BBOX_SPACE, pdf_point_bbox
+            crop_box = (pdf_point_bbox(binding.bbox, page)
+                        if page.metadata.get("bbox_coordinate_space") == NORMALIZED_BBOX_SPACE else binding.bbox)
+            validate_geometry(binding.page_index, crop_box, binding.frame)
             expected_asset = "table-placeholder:" + canonical_hash([VERSION, fragment.fragment_id, binding.source_pdf_sha256,
                 binding.bbox, binding.frame, binding.asset_sha256])[7:]
             if (item.asset is not None or binding.asset_ref != expected_asset or binding.source_pdf_sha256 is None

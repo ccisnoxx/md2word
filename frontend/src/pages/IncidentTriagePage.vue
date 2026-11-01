@@ -445,6 +445,7 @@ import WorkbenchTableSettings from "@/components/WorkbenchTableSettings.vue";
 import { normalizeIncidentBatchResult } from "@/utils/batchResults";
 import { documentJobStages, formatDateTime, getJobSourceFilename, jobStageText, jobStatusText } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
+import { failureDiagnosticLines } from "@/utils/failureDiagnostic";
 import type { ShortcutHint } from "@/utils/keyboardShortcuts";
 import {
   buildIncidentDiagnosticGuidance,
@@ -707,6 +708,7 @@ const incidentKeyEvidenceItems = computed<EvidenceKeyValueItem[]>(() => {
   if (!diagnostic.value) {
     return [];
   }
+  const failureLocation = failureDiagnosticLines(diagnostic.value.failure_diagnostic);
   return [
     { label: "任务 ID", value: diagnostic.value.item.job.id, mono: true },
     { label: "文件", value: getJobSourceFilename(diagnostic.value.item.job) },
@@ -714,6 +716,7 @@ const incidentKeyEvidenceItems = computed<EvidenceKeyValueItem[]>(() => {
       label: "错误",
       value: `${diagnostic.value.item.job.error_code || "-"} · ${diagnostic.value.item.job.error_message || "-"}`,
     },
+    ...(failureLocation.length ? [{ label: "失败定位", value: failureLocation.join("；") }] : []),
     {
       label: "时间",
       value: `创建 ${formatDateTime(diagnostic.value.item.job.created_at)} · 更新 ${formatDateTime(diagnostic.value.item.job.updated_at)}`,

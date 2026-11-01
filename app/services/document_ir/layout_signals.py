@@ -3,6 +3,7 @@ from __future__ import annotations
 # app/services/document_ir/layout_signals.py: 从 MinerU 原始块和 layout/middle JSON 中提取 DocumentIR v2 布局事实。
 
 import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,12 @@ from app.services.document_ir.models import (
     DocumentIRPage,
 )
 
+
+# MinerU ≥ 3.1 的 content list bbox 为按页宽、页高分别归一到 0–1000 的坐标（3.1.8/3.4.0/3.4.4 已用源 PDF 核实），
+# layout/middle JSON 的 page_size 为 PDF 点。页面 width/height 保持 bbox 所在空间，PDF 点只经 pdf_point_bbox 换算。
+NORMALIZED_BBOX_SPACE = "mineru_normalized_1000"
+NORMALIZED_BBOX_EXTENT = 1000.0
+NORMALIZED_BBOX_MIN_VERSION = (3, 1)
 
 ROLE_BY_SOURCE_TYPE: dict[str, DocumentIRBlockRole] = {
     "header": "page_header",
@@ -41,7 +48,7 @@ def build_pages(
 ) -> list[DocumentIRPage]:
     """构造 v2 页记录；优先读取 layout/middle 页尺寸，再对齐 content bbox 坐标空间。"""
 
-    page_sizes, source_name = _load_page_sizes(package_root, policy=policy)
+    page_sizes, source_name, version = _load_page_sizes(package_root, policy=policy)
     if source_name is None:
         quality_flags.append("middle_json_missing")
 
@@ -52,11 +59,17 @@ def build_pages(
     page_indices.difference_update(excluded_page_indices or set())
 
     bbox_extents = _bbox_extents_by_page(raw_blocks)
+    normalized_version = version is not None and version >= NORMALIZED_BBOX_MIN_VERSION
+    out_of_range_pages = _pages_with_bbox_outside_normalized_range(raw_blocks)
     pages: list[DocumentIRPage] = []
     for page_index in sorted(page_indices):
         raw_size = page_sizes.get(page_index)
         max_width, max_height = bbox_extents.get(page_index, (None, None))
-        if raw_size is not None and raw_size[0] > 0 and raw_size[1] > 0:
+        normalized = raw_size is not None and normalized_version and page_index not in out_of_range_pages
+        if normalized:
+            width = height = NORMALIZED_BBOX_EXTENT
+        elif raw_size is not None and raw_size[0] > 0 and raw_size[1] > 0:
+            # 无法确认坐标空间时沿用旧的极值推导；此类页面仅在推导尺寸恰等于 PDF 页尺寸时由 pdf_point_bbox 视为点坐标。
             scale = max(
                 1.0,
                 max_width / raw_size[0] if max_width is not None else 1.0,
@@ -73,10 +86,34 @@ def build_pages(
             metadata["page_size_source"] = source_name
         if max_width is not None and max_height is not None:
             metadata["bbox_extent"] = [max_width, max_height]
-        if width is not None and height is not None:
+        if normalized:
+            metadata["bbox_coordinate_space"] = NORMALIZED_BBOX_SPACE
+            # 归一化页面宽高相等，方向只能取自 PDF 页尺寸。
+            metadata["orientation"] = "landscape" if raw_size[0] > raw_size[1] else "portrait"
+        elif width is not None and height is not None:
             metadata["orientation"] = "landscape" if width > height else "portrait"
         pages.append(DocumentIRPage(index=page_index, width=width, height=height, metadata=metadata))
     return pages
+
+
+def pdf_point_bbox(bbox: Any, page: DocumentIRPage | None) -> tuple[float, float, float, float] | None:
+    """把 IR 中的原始 bbox 换算为 PDF 点；坐标空间无法确认时返回 None，调用方须失败关闭。"""
+
+    parsed = parse_valid_bbox(list(bbox)) if isinstance(bbox, (list, tuple)) else None
+    if parsed is None or page is None:
+        return None
+    raw_size = _parse_page_size(page.metadata.get("pdf_page_size"))
+    if raw_size is None or not page.metadata.get("page_size_source"):
+        return None
+    if page.metadata.get("bbox_coordinate_space") == NORMALIZED_BBOX_SPACE:
+        width, height = raw_size
+        x0, y0, x1, y1 = parsed
+        return (x0 / NORMALIZED_BBOX_EXTENT * width, y0 / NORMALIZED_BBOX_EXTENT * height,
+                x1 / NORMALIZED_BBOX_EXTENT * width, y1 / NORMALIZED_BBOX_EXTENT * height)
+    # 旧页面：只有推导页尺寸恰等于 PDF 页尺寸时，原始 bbox 才可视为 PDF 点（沿用既有“已核实”语义）。
+    if [page.width, page.height] == [raw_size[0], raw_size[1]]:
+        return parsed
+    return None
 
 
 def find_final_source_page_index(
@@ -207,7 +244,10 @@ def parse_bbox(raw_bbox: Any) -> tuple[float, float, float, float] | None:
     return parse_valid_bbox(raw_bbox)
 
 
-def _load_page_sizes(package_root: Path, *, policy: MinerUValidationPolicy = DEFAULT_POLICY) -> tuple[dict[int, tuple[float, float]], str | None]:
+def _load_page_sizes(
+    package_root: Path, *, policy: MinerUValidationPolicy = DEFAULT_POLICY,
+) -> tuple[dict[int, tuple[float, float]], str | None, tuple[int, int] | None]:
+    """返回页尺寸、来源文件名与布局文件声明的 MinerU 版本（主、次）。"""
     for path in _layout_info_candidates(package_root):
         payload, _checksum = read_json_payload(path, policy=policy)
         pdf_info = payload.get("pdf_info", []) if isinstance(payload, dict) else []
@@ -220,8 +260,24 @@ def _load_page_sizes(package_root: Path, *, policy: MinerUValidationPolicy = DEF
             if page_size is not None:
                 page_sizes[page_index] = page_size
         if page_sizes:
-            return page_sizes, path.name
-    return {}, None
+            return page_sizes, path.name, _parse_version(payload.get("_version_name"))
+    return {}, None, None
+
+
+def _parse_version(raw_value: Any) -> tuple[int, int] | None:
+    match = re.fullmatch(r"(\d+)\.(\d+)(?:\.\d+)?.*", raw_value) if isinstance(raw_value, str) else None
+    return (int(match.group(1)), int(match.group(2))) if match else None
+
+
+def _pages_with_bbox_outside_normalized_range(raw_blocks: list[dict[str, Any]]) -> set[int]:
+    """任一 bbox 超出 [0, 1000] 的页不能按归一化坐标解释。"""
+    pages: set[int] = set()
+    for block in raw_blocks:
+        page_index = parse_page_index(block)
+        bbox = parse_bbox(block.get("bbox"))
+        if page_index is not None and bbox is not None and not all(0 <= value <= NORMALIZED_BBOX_EXTENT for value in bbox):
+            pages.add(page_index)
+    return pages
 
 
 def _load_pdf_info(package_root: Path, *, policy: MinerUValidationPolicy = DEFAULT_POLICY) -> tuple[list[Any], str | None]:

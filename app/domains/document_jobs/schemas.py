@@ -106,6 +106,23 @@ class DocumentJobAvailableActionResponse(BaseModel):
     )
 
 
+class DocumentJobFailureDiagnosticResponse(BaseModel):
+    """当前代 MinerU 验证失败的定位投影；页码为 1 起始，文档级问题不伪造页码。"""
+
+    source: Literal["mineru_validation"] = "mineru_validation"
+    stage: str
+    scope: Literal["page", "document"]
+    page_number: int | None = None
+    source_type: str | None = None
+    json_pointer: str | None = None
+    reason_code: str
+    reason: str | None = None
+    affected_page_numbers: list[int] = Field(default_factory=list)
+    fatal_count: int = 0
+    warning_count: int = 0
+    details_truncated: bool = Field(default=False, description="为 true 时受影响页列表可能不完整。")
+
+
 class DocumentJobResponse(BaseModel):
     id: str
     tenant_id: str
@@ -132,6 +149,9 @@ class DocumentJobResponse(BaseModel):
     failed_stage: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+    failure_diagnostic: DocumentJobFailureDiagnosticResponse | None = Field(
+        default=None, json_schema_extra={"readOnly": True}, description="仅任务详情接口填充；列表等其他接口恒为 null。"
+    )
     retry_count: int
     timeout_at: datetime | None = None
     started_at: datetime | None = None
@@ -772,6 +792,7 @@ class DocumentJobIncidentFileSummaryResponse(BaseModel):
 
 class DocumentJobIncidentDiagnosticResponse(BaseModel):
     item: DocumentJobIncidentQueueItemResponse
+    failure_diagnostic: DocumentJobFailureDiagnosticResponse | None = None
     evidence_links: list[DocumentJobIncidentEvidenceLinkResponse] = Field(default_factory=list)
     recent_events: list[DocumentJobIncidentEventSummaryResponse] = Field(default_factory=list)
     files: list[DocumentJobIncidentFileSummaryResponse] = Field(default_factory=list)

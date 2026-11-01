@@ -29,6 +29,7 @@ from app.api.dependencies import (
 from app.domains.audit.models import ActorContext
 from app.domains.document_jobs.config_summary import build_document_job_config_summary
 from app.domains.document_jobs.delivery_state import translation_qa_projection
+from app.domains.document_jobs.failure_diagnostic import project_failure_diagnostic
 from app.domains.document_jobs.quality_review_http import QualityReviewApiRoute, QUALITY_REVIEW_RESPONSES
 from app.domains.document_jobs.review import ReviewExpectedSource
 from app.domains.document_jobs.models import (
@@ -349,7 +350,13 @@ def get_document_job(
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentJobResponse:
-    return _build_document_job_response(runtime, user, runtime.document_job_service.get_job(job_id, user=user))
+    service = runtime.document_job_service
+    job = service.get_job(job_id, user=user)
+    response = _build_document_job_response(runtime, user, job)
+    if job.status == "failed":
+        # 仅详情读取事件；列表不做逐行事件查询。
+        response.failure_diagnostic = project_failure_diagnostic(job, service.list_events(job_id, user=user))
+    return response
 
 
 @router.get("/{job_id}/events", response_model=DocumentJobEventListResponse)
