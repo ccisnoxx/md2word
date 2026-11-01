@@ -1298,3 +1298,40 @@ content list bbox 为 0–1000 归一化坐标（3.1.8/3.4.0/3.4.4 一致），�
 - 后续可做 P0-4 图片原 PDF 回退裁切与整页降级（坐标前提已具备）
 
 
+
+
+## Session 40: P0-4 正文图片从源 PDF 回退裁切
+
+**Date**: 2026-11-02
+**Task**: P0-4 正文图片从源 PDF 回退裁切
+**Branch**: `codex/image-pdf-fallback-20261102`
+
+### Summary
+
+正文图片缺失、不可解码、非白名单或规范化后仍不被 Word 接受时，在已确认归一化坐标页上按 bbox 从源 PDF 裁切回退；安全与超限不回退；回退失败保持原错误。
+
+### Main Changes
+
+- 验证器 defer_fatal 推迟可回退错误、resolve_image_fallback 统一结算；其他中止错误时待回退图片恢复为中止
+- converter 页面几何后逐块裁切并统一结算，源 PDF 加载与表格占位共用；仅接受 mineru_normalized_1000 页
+- 登记 origin=pdf_region_crop 与 pdf_fallback metadata；报告白名单与 IMAGE-001/INPUT-002 规格更新
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ae1755b0` | (see git log) |
+| `614f17fa` | (see git log) |
+
+### Testing
+
+- [OK] 新增 7 例通过；对比集 146 例失败集合与基线 a61f4550 一致；OPA228_P1 删除图表图片后真实 Poppler 回退目视正确
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 分支 codex/image-pdf-fallback-20261102 基于 main a61f4550，待用户决定推送
+- 双栏分支推送前需处理会话日志编号冲突
