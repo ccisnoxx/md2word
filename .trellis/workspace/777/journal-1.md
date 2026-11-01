@@ -1112,3 +1112,36 @@ RND-502 v2实现、独立复审修复和验证证据已人工接受，列明未�
 ### Next Steps
 
 - 本任务已获人工接受并完成；不启动后续任务，不push。
+
+
+## Session 35: 核实 MinerU bbox 坐标空间
+
+**Date**: 2026-11-02
+**Task**: 核实 MinerU bbox 坐标空间
+**Branch**: `codex/bbox-coordinate-audit-20261102`
+
+### Summary
+
+content list bbox 为 0–1000 归一化坐标（3.1.8/3.4.0/3.4.4 一致），代码未换算：表格占位裁切会静默裁错、复核位置不可用、版式比例偏差约 10%。
+
+### Main Changes
+
+- 新增调研报告 research/bbox-coordinate-space.md（layout 对照、PDF 文字对照、生产核实、裁切实证、使用点清单、修复方案）
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3e8fad46` | (see git log) |
+
+### Testing
+
+- [OK] layout 对照 56 块残差 ≤0.8pt；PDF 文字覆盖 0.92–1.00 vs 0.40–0.49；裁切实证目视确认
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 实施坐标换算修复：单一 owner、坐标空间标记、裁切与复核按换算后坐标
