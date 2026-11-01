@@ -8,6 +8,10 @@ describe("readiness display text", () => {
     expect(readinessCodeText("document_jobs_worker_backend_eager_in_production")).toContain("eager");
   });
 
+  it("labels the non-blocking PDF crop tools warning", () => {
+    expect(readinessCodeText("pdf_crop_tools_missing")).toBe("PDF 表格裁切工具（Poppler）缺失");
+  });
+
   it("labels translation readiness codes with language-pair suffixes", () => {
     expect(readinessCodeText("translation_profile_default_missing:ru2zh")).toBe("默认翻译配置未发布（俄译中）");
     expect(readinessCodeText("translation_term_set_default_missing:ru2zh")).toBe("默认翻译术语集未发布（俄译中）");
