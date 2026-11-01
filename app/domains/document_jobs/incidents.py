@@ -11,6 +11,7 @@ from fastapi import status
 
 from app.core.errors import ApiError
 from app.domains.document_jobs.delivery_state import translation_qa_projection
+from app.domains.document_jobs.failure_diagnostic import project_failure_diagnostic
 from app.domains.document_jobs.models import DocumentJobRecord, DocumentJobStage, DocumentJobStatus
 from app.domains.document_jobs.schemas import (
     DocumentJobAvailableActionResponse,
@@ -44,6 +45,9 @@ WORKER_OR_DISPATCH_TOKENS = ("worker", "enqueue", "dispatch", "celery", "queue")
 ARTIFACT_MISSING_TOKENS = ("artifact", "missing", "file_missing", "not_found", "object")
 TRANSLATION_FAILURE_TOKENS = ("translation", "translator", "provider", "ai_", "term")
 CONVERSION_FAILURE_TOKENS = ("mineru", "parse", "render", "convert", "conversion", "upload")
+# 明确错误码优先于关键词：验证消息里的 missing_image_asset 等不能被当成产物缺失。
+CONVERSION_ERROR_CODES = frozenset({"mineru_failed", "document_ir_failed", "render_failed"})
+TRANSLATION_ERROR_CODES = frozenset({"translation_failed", "translation_fan_in_mismatch"})
 
 
 class DocumentJobIncidentService:
@@ -120,12 +124,13 @@ class DocumentJobIncidentService:
             self.document_job_service.list_events(job_id, user=user),
             key=lambda event: event.created_at,
             reverse=True,
-        )[:8]
+        )
         files = self.document_job_service.list_files(job_id, user=user)
         return DocumentJobIncidentDiagnosticResponse(
             item=item,
+            failure_diagnostic=project_failure_diagnostic(job, events),
             evidence_links=self._build_evidence_links(job),
-            recent_events=[self._build_event_summary(event) for event in events],
+            recent_events=[self._build_event_summary(event) for event in events[:8]],
             files=[self._build_file_summary(file) for file in files],
         )
 
@@ -286,6 +291,10 @@ class DocumentJobIncidentService:
     def _classify_failure(self, job: DocumentJobRecord, *, stalled: bool) -> DocumentJobIncidentFailureType:
         if stalled or job.error_code == "document_job_timeout":
             return "timeout_or_stalled"
+        if job.status == "failed" and job.error_code in TRANSLATION_ERROR_CODES:
+            return "translation_failed"
+        if job.status == "failed" and job.error_code in CONVERSION_ERROR_CODES:
+            return "conversion_failed"
         haystack = self._failure_haystack(job)
         if any(token in haystack for token in WORKER_OR_DISPATCH_TOKENS):
             return "worker_or_dispatch_failed"
@@ -294,12 +303,12 @@ class DocumentJobIncidentService:
         if job.review_status == "blocked":
             return "qa_unavailable"
         if is_translation_document_job_mode(job.mode) and (
-            job.failed_stage in {"ir_converting", "translating", "translation_validating"}
+            job.failed_stage in {"translating", "translation_validating"}
             or any(token in haystack for token in TRANSLATION_FAILURE_TOKENS)
         ):
             return "translation_failed"
         if job.status == "failed" and (
-            job.failed_stage in {"parsing", "rendering", "quality_checking", "uploading"}
+            job.failed_stage in {"parsing", "ir_converting", "rendering", "quality_checking", "uploading"}
             or any(token in haystack for token in CONVERSION_FAILURE_TOKENS)
         ):
             return "conversion_failed"

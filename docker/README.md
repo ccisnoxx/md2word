@@ -7,6 +7,8 @@
 
 两套环境都读取仓库根目录 `.env`。真实密钥和账号文件不要提交。
 
+两套镜像都通过 apt 安装 `poppler-utils`（`pdfinfo`/`pdftoppm`，用于表格占位裁切），Python 依赖只来自 `requirements.txt`。
+
 ## 开发环境
 
 ```bash

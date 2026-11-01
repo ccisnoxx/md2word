@@ -41,6 +41,12 @@ Questions to answer:
 - 每个 published bundled seed 都必须有固定 SHA-256 回归；当前 `default@2` 的 `datasheet_template_v2.yaml` 固定为 `132d0bb76e71c807912031199e894dfc0e3d50bd7534180f8ceaba7a5fa20b4d`。发布门禁不得只锁定 v1 而遗漏当前默认版本。
 - hash 不匹配必须继续失败关闭；不得更新生产数据库 hash、放松读取校验或增加备用路径来掩盖 seed 被改写。
 
+### 运行时依赖声明
+
+- 镜像只执行 `pip install -r requirements.txt`；`app/` 中任何第三方导入（含函数内延迟导入）必须在其中直接声明，不能依赖本地 venv 里被其他包间接带入的版本。`tests/test_runtime_dependency_declarations.py` 是该合同的守卫，传递依赖或有意可选依赖只能进入其白名单并写明父依赖或降级行为。
+- 系统工具（当前为 Poppler `pdfinfo`/`pdftoppm`）由 `docker/prod`、`docker/dev` Dockerfile 安装，并在 readiness 中暴露可用性（`pdf_crop_tools_available`，缺失为非阻断 warning `pdf_crop_tools_missing`）。
+- 线上 hostdzire 镜像经仓库外固定发布包增量构建，不能作为仓库依赖完整的证据；验证仓库可复现性须用仓库 Dockerfile 构建。
+
 ---
 
 ## Testing Requirements

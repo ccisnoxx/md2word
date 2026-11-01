@@ -25,7 +25,9 @@ from app.services.document_ir.mineru_package import (
 )
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.renderer import DocumentIRWordRenderer
-from app.services.renderer.evidence import build_renderer_evidence, build_renderer_metadata, ensure_renderer_integrity
+from app.services.renderer.evidence import (
+    build_renderer_event_summary, build_renderer_evidence, build_renderer_metadata, ensure_renderer_integrity,
+)
 from docx import Document
 from docx.image.image import Image as WordImage
 
@@ -393,9 +395,9 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
         buffer = io.BytesIO()
         with Image.new("RGB", (2, 2)) as image:
             image.save(buffer, format="WEBP")
-        with self.assertRaises(MinerUArtifactValidationError) as caught:
-            self.convert([[{"type": "image", "img_path": "images/a.webp"}]], {"images/a.webp": buffer.getvalue()})
-        self.assertEqual(caught.exception.report.first_fatal.code, "invalid_image_asset")
+        # Word 不识别的 WebP 不再失败，而是无损转 PNG（IMAGE-001 例外）。
+        result = self.convert([[{"type": "image", "img_path": "images/a.webp"}]], {"images/a.webp": buffer.getvalue()})
+        self.assertEqual(result.image_assets[0].mime_type, "image/png")
         with patch.object(Image, "MAX_IMAGE_PIXELS", 3), self.assertRaises(MinerUArtifactValidationError):
             self.convert([[{"type": "image", "img_path": "images/a.png"}]], {"images/a.png": png_bytes()})
         with self.assertRaises(MinerUArtifactValidationError) as caught:
@@ -416,12 +418,17 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
                 table = self.convert([[{"type": "table", "html": "<table><tr><td>12 V</td></tr></table>", "img_path": "images/a.png"}]],
                                      {"images/a.png": image_bytes})
                 self.assertEqual(table.validation_report.table_checks[0].reference_status, "valid")
+                result = self.convert([[{"type": "image", "img_path": "images/a.png"}]], {"images/a.png": image_bytes})
+                normalized = result.validation_report.issue_counts["warning"].get("image_asset_normalized", 0)
                 if image_format == "WEBP":
-                    with self.assertRaises(MinerUArtifactValidationError):
-                        self.convert([[{"type": "image", "img_path": "images/a.png"}]], {"images/a.png": image_bytes})
+                    self.assertEqual(result.image_assets[0].mime_type, "image/png")
+                    self.assertEqual(result.image_assets[0].normalized_from[0], "WEBP")
+                    self.assertEqual(normalized, 1)
                 else:
-                    result = self.convert([[{"type": "image", "img_path": "images/a.png"}]], {"images/a.png": image_bytes})
+                    # Word 可识别的格式保持原字节，不产生规范化 warning。
                     self.assertEqual(result.image_assets[0].content, image_bytes)
+                    self.assertIsNone(result.image_assets[0].normalized_from)
+                    self.assertEqual(normalized, 0)
 
     def test_eps_never_invokes_ghostscript_for_image_or_table_reference(self):
         buffer = io.BytesIO()
@@ -563,7 +570,7 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
         self.assertEqual([block.metadata["mineru_source"]["json_pointer"] for block in result.document.blocks],
                          [f"/0/{index}" for index in range(10)])
 
-    def test_cached_reference_raster_does_not_skip_required_word_header(self):
+    def test_cached_reference_raster_normalizes_once_for_all_references(self):
         buffer = io.BytesIO()
         with Image.new("RGB", (2, 2), "white") as image:
             image.save(buffer, format="WEBP")
@@ -572,14 +579,87 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
                   {"type": "image", "img_path": "./images/a.webp"},
                   {"type": "table", "html": "<table><tr><td>±15 V</td></tr></table>", "img_path": "images/a.webp"}]
         with patch.object(Image, "open", wraps=Image.open) as opened, patch.object(WordImage, "from_blob", wraps=WordImage.from_blob) as word_header:
-            with self.assertRaises(MinerUArtifactValidationError) as caught:
-                self.convert([blocks], {"images/a.webp": buffer.getvalue()})
-        report = caught.exception.report
-        self.assertEqual(opened.call_count, 2)
-        self.assertEqual(word_header.call_count, 1)
+            result = self.convert([blocks], {"images/a.webp": buffer.getvalue()})
+        report = result.validation_report
+        # 同一文件：安全探测两次 + 规范化一次；Word 检查原字节与新字节各一次。
+        self.assertEqual(opened.call_count, 3)
+        self.assertEqual(word_header.call_count, 2)
         self.assertEqual([check.reference_status for check in report.table_checks], ["valid", "valid"])
-        self.assertEqual(report.issue_counts["blocker"]["invalid_image_asset"], 2)
-        self.assertEqual([issue.json_pointer for issue in report.blockers], ["/0/1", "/0/2"])
+        self.assertEqual(report.blocker_count, 0)
+        self.assertEqual(report.issue_counts["warning"]["image_asset_normalized"], 2)
+        self.assertEqual([issue.json_pointer for issue in report.warnings if issue.code == "image_asset_normalized"],
+                         ["/0/1", "/0/2"])
+        self.assertTrue(all(asset.content is result.image_assets[0].content for asset in result.image_assets))
+
+    def test_word_rejected_rasters_are_normalized_to_png_losslessly(self):
+        def encoded(mode, image_format, **options):
+            buffer = io.BytesIO()
+            with Image.new(mode, (6, 4), "red" if mode in {"RGB", "RGBA"} else 0) as image:
+                if mode == "RGBA":
+                    image.putpixel((0, 0), (0, 0, 255, 0))
+                image.save(buffer, format=image_format, **options)
+            return buffer.getvalue()
+
+        jfif = encoded("RGB", "JPEG")
+        no_app0 = jfif[:2] + jfif[4 + int.from_bytes(jfif[4:6], "big"):]
+        cases = {"cmyk_jpeg": (encoded("CMYK", "JPEG"), "JPEG", "RGB"),
+                 "jpeg_without_app0": (no_app0, "JPEG", "RGB"),
+                 "webp_with_alpha": (encoded("RGBA", "WEBP", lossless=True), "WEBP", "RGBA")}
+        for name, (data, source_format, mode) in cases.items():
+            with self.subTest(name):
+                first = self.convert([[{"type": "image", "img_path": "images/a.bin", "page_idx": 0}]], {"images/a.bin": data})
+                second = self.convert([[{"type": "image", "img_path": "images/a.bin", "page_idx": 0}]], {"images/a.bin": data})
+                asset = first.image_assets[0]
+                self.assertEqual((asset.mime_type, asset.normalized_from),
+                                 ("image/png", (source_format, hashlib.sha256(data).hexdigest())))
+                self.assertEqual(asset.content, second.image_assets[0].content)
+                self.assertEqual(asset.stored_name, "a.png")
+                WordImage.from_blob(asset.content)
+                with Image.open(io.BytesIO(asset.content)) as png:
+                    self.assertEqual((png.format, png.mode, png.size), ("PNG", mode, (6, 4)))
+                    if name == "webp_with_alpha":
+                        self.assertEqual(png.getpixel((0, 0))[3], 0)
+                warning = next(issue for issue in first.validation_report.warnings if issue.code == "image_asset_normalized")
+                self.assertEqual((warning.page_index, warning.facts), (0, {"reason": "word_incompatible_raster"}))
+                self.assertEqual(first.document.blocks[0].metadata["mineru_asset_normalized_from"], source_format)
+                summary = build_renderer_event_summary({"mineru_validation": first.validation_report.model_dump(mode="json")})
+                self.assertEqual(summary["mineru_validation"]["issue_counts"]["warning"]["image_asset_normalized"], 1)
+
+    def test_normalization_keeps_dpi_and_skips_word_accepted_cmyk_jpeg(self):
+        from app.services.document_ir.artifact_validator import _word_compatible_png
+        buffer = io.BytesIO()
+        with Image.new("RGB", (6, 4), "red") as image:
+            image.save(buffer, format="PNG", dpi=(300, 300))
+        with Image.open(io.BytesIO(_word_compatible_png(buffer.getvalue(), max_bytes=10**6))) as png:
+            self.assertEqual(tuple(round(value) for value in png.info["dpi"]), (300, 300))
+        self.assertIsNone(_word_compatible_png(buffer.getvalue(), max_bytes=10))
+        # 指定 DPI 时 Pillow 为 CMYK JPEG 写入 JFIF 头，Word 可识别，必须保持原字节。
+        cmyk = io.BytesIO()
+        with Image.new("CMYK", (6, 4), 0) as image:
+            image.save(cmyk, format="JPEG", dpi=(300, 300))
+        result = self.convert([[{"type": "image", "img_path": "images/a.jpg"}]], {"images/a.jpg": cmyk.getvalue()})
+        self.assertEqual((result.image_assets[0].content, result.image_assets[0].normalized_from), (cmyk.getvalue(), None))
+
+    def test_unnormalizable_word_rejected_raster_keeps_original_failure(self):
+        buffer = io.BytesIO()
+        with Image.new("RGB", (2, 2)) as image:
+            image.save(buffer, format="WEBP")
+        with patch("app.services.document_ir.artifact_validator._word_compatible_png", return_value=None), \
+                self.assertRaises(MinerUArtifactValidationError) as caught:
+            self.convert([[{"type": "image", "img_path": "images/a.webp"}]], {"images/a.webp": buffer.getvalue()})
+        self.assertEqual((caught.exception.report.first_fatal.code, caught.exception.report.first_fatal.facts),
+                         ("invalid_image_asset", {"reason": "unreadable_or_unsupported_image"}))
+
+    def test_table_reference_raster_is_normalized_without_quality_warning(self):
+        buffer = io.BytesIO()
+        with Image.new("RGB", (2, 2), "white") as image:
+            image.save(buffer, format="WEBP")
+        result = self.convert([[{"type": "table", "html": "<table><tr><td>12 V</td></tr></table>", "img_path": "images/a.webp"}]],
+                              {"images/a.webp": buffer.getvalue()})
+        self.assertEqual(result.validation_report.table_checks[0].reference_status, "valid")
+        self.assertEqual([(asset.mime_type, asset.content[:8]) for asset in result.table_reference_assets],
+                         [("image/png", b"\x89PNG\r\n\x1a\n")])
+        self.assertNotIn("image_asset_normalized", result.validation_report.issue_counts["warning"])
 
     def test_whitespace_source_type_keeps_v2_image_payload_and_caption(self):
         result = self.convert([[{"type": " image ", "content": {"image_source": {"path": "images/a.png"},

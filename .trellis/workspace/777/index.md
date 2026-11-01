@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 36
+- **Total Sessions**: 39
 - **Last Active**: 2026-11-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1184 | Active |
+| `journal-1.md` | ~1300 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,8 +29,11 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
-| 36 | 2026-11-02 | MinerU 归一化 bbox 坐标空间修复 | `87b19341`, `f51972c0` | `codex/bbox-normalized-coords-20261102` |
-| 35 | 2026-11-02 | 核实 MinerU bbox 坐标空间 | `3e8fad46` | `codex/bbox-coordinate-audit-20261102` |
+| 39 | 2026-11-02 | MinerU 归一化 bbox 坐标空间修复 | `87b19341`, `f51972c0` | `codex/bbox-normalized-coords-20261102` |
+| 38 | 2026-11-02 | 核实 MinerU bbox 坐标空间 | `3e8fad46` | `codex/bbox-coordinate-audit-20261102` |
+| 37 | 2026-11-02 | P0c Word 不兼容图片的最小规范化 | `b53e32e5`, `ce384f70` | `codex/p0c-image-normalization-20261101` |
+| 36 | 2026-11-01 | P0b 运行时依赖声明与 Poppler 部署 | `5d61e38c`, `39ff1fe8` | `codex/p0b-runtime-deps-20261101` |
+| 35 | 2026-11-01 | P0a 转换失败页码与原因诊断展示 | `16ec7101`, `493e2dce` | `codex/p0a-conversion-diagnostics-20261101` |
 | 34 | 2026-10-23 | RND-503 人工验收、两次工作提交与归档 | `e1f5079b695047d95912a541fc00d40e505dfc60`, `67bc26db2586c264ca038f6f24e2d37714982c71` | `md2word/RND-503` |
 | 33 | 2026-10-23 | RND-502 人工验收、提交与归档 | `136802cb273c85e94ff65d41aca5aa15c8c70459` | `md2word/RND-502` |
 | 32 | 2026-10-22 | TR-406 人工验收、两笔业务提交与归档 | `0946326b0f457ef4b4f60895f17feb915d657c14`, `6d89c7e012a5086114a739a9dfd1b067556237ce` | `codex/tr-406-partial-batch-failure-semantics` |

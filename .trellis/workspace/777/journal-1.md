@@ -1114,7 +1114,121 @@ RND-502 v2实现、独立复审修复和验证证据已人工接受，列明未�
 - 本任务已获人工接受并完成；不启动后续任务，不push。
 
 
-## Session 35: 核实 MinerU bbox 坐标空间
+## Session 35: P0a 转换失败页码与原因诊断展示
+
+**Date**: 2026-11-01
+**Task**: P0a 转换失败页码与原因诊断展示
+**Branch**: `codex/p0a-conversion-diagnostics-20261101`
+
+### Summary
+
+详情页与异常中心展示当前代 MinerU 验证失败的首个失败页、受影响页与原因；异常分类改为明确错误码优先。
+
+### Main Changes
+
+- 新增 project_failure_diagnostic 读侧投影，仅详情与异常中心诊断接口填充 failure_diagnostic
+- 异常中心：document_ir_failed 等归 conversion_failed，missing_* 消息不再误判为产物缺失
+- 前端 failureDiagnosticLines 共享展示；error-handling 规格补充投影合同
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `16ec7101` | (see git log) |
+| `493e2dce` | (see git log) |
+
+### Testing
+
+- [OK] 新增后端 8 例（含真实 eager Worker 页级/文档级失败）、前端 4 例通过；vue-tsc 构建通过
+- [OK] 既有后端 14 失败/21 错误与前端 14 失败均与基线 90ebb407 一致，未处理
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- OpenAPI 快照基线已过期，需单独任务整体再生成
+- 继续 P0b：声明 Pillow 依赖、核实生产 Poppler；P0c：最小图片规范化
+- 全部修复任务完成后再推送与建 PR
+
+
+## Session 36: P0b 运行时依赖声明与 Poppler 部署
+
+**Date**: 2026-11-01
+**Task**: P0b 运行时依赖声明与 Poppler 部署
+**Branch**: `codex/p0b-runtime-deps-20261101`
+
+### Summary
+
+仓库补齐 Pillow 声明与镜像内 Poppler，readiness 暴露裁切工具可用性，新增依赖声明守卫；经授权核实生产并在 hostdzire 隔离构建验证。
+
+### Main Changes
+
+- requirements.txt 声明 pillow>=12.2,<13；prod/dev Dockerfile 安装 poppler-utils
+- readiness 新增非阻断检查 pdf_crop_tools_available 与警告 pdf_crop_tools_missing，前端补文案
+- 新增 tests/test_runtime_dependency_declarations.py 守卫第三方导入声明；规格与 runbook 更新
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5d61e38c` | (see git log) |
+| `39ff1fe8` | (see git log) |
+
+### Testing
+
+- [OK] 守卫先行：未声明时仅报 PIL；新增 6 例通过；既有 health/readiness 25 例中 2 例失败与基线一致
+- [OK] hostdzire 隔离构建（仓库 Dockerfile）：import app.main、Pillow 12.3.0 WebP、pdftoppm 25.03.0、真实裁切、pip check 通过；生产容器未变，测试镜像与目录已清理
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 线上镜像经 pub2 发布包增量构建，已具备 Pillow 12.2.0 与 Poppler；转换失败非缺依赖所致
+- 继续 P0c：最小图片规范化（WebP 与无 JFIF/Exif 头 JPEG）
+- 全部修复任务完成后再推送与建 PR
+
+
+## Session 37: P0c Word 不兼容图片的最小规范化
+
+**Date**: 2026-11-02
+**Task**: P0c Word 不兼容图片的最小规范化
+**Branch**: `codex/p0c-image-normalization-20261101`
+
+### Summary
+
+安全解码通过而 python-docx 拒绝的图片（WebP、CMYK JPEG、无 APP0 JPEG）无损转 PNG 后继续转换；Word 可识别图片保持原字节；规格 IMAGE-001 经用户批准增加例外。
+
+### Main Changes
+
+- artifact_validator 新增 _word_compatible_png 与 _word_supported，规范化结果按路径缓存；正文图记 image_asset_normalized warning，表格参考图静默规范化
+- 登记文件 MIME/扩展名随实际格式，metadata 记源格式与源 sha256；报告白名单新增代码与原因
+- 修订 word-generation-rules IMAGE-001/INPUT-002；P0a 诊断测试改用截断 PNG
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b53e32e5` | (see git log) |
+| `ce384f70` | (see git log) |
+
+### Testing
+
+- [OK] 验证器新增 4 例、改动 3 例通过；端到端 2 例通过且在基线上按原缺陷失败
+- [OK] 验证器 15 错误、相关集合 1 失败 12 错误均与基线 a6d2207c 一致，未处理；未做 Word/LibreOffice 目视核对
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- P0a/P0b/P0c 修复系列已全部本地完成，待用户决定推送与建 PR
+- 后续 P1：原 PDF 回退裁切、页面降级与部分成功
+## Session 38: 核实 MinerU bbox 坐标空间
 
 **Date**: 2026-11-02
 **Task**: 核实 MinerU bbox 坐标空间
@@ -1147,7 +1261,7 @@ content list bbox 为 0–1000 归一化坐标（3.1.8/3.4.0/3.4.4 一致），�
 - 实施坐标换算修复：单一 owner、坐标空间标记、裁切与复核按换算后坐标
 
 
-## Session 36: MinerU 归一化 bbox 坐标空间修复
+## Session 39: MinerU 归一化 bbox 坐标空间修复
 
 **Date**: 2026-11-02
 **Task**: MinerU 归一化 bbox 坐标空间修复
@@ -1182,3 +1296,5 @@ content list bbox 为 0–1000 归一化坐标（3.1.8/3.4.0/3.4.4 一致），�
 
 - 分支 codex/bbox-normalized-coords-20261102 含调研与修复，基于 main，待用户决定推送
 - 后续可做 P0-4 图片原 PDF 回退裁切与整页降级（坐标前提已具备）
+
+
