@@ -274,11 +274,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：layout plan 的 `two_col` region 及其 left/right blocks。
-- 正式 owner：`app/services/renderer/word_renderer.py::_render_layout_region`、`::_set_section_columns`、`::_split_two_col_blocks`。
+- 正式 owner：阅读顺序唯一实现 `app/services/renderer/layout_plan.py::split_two_col_blocks`（RenderPlan 与逻辑表格位置账共用，不得另建副本）；分栏写入 `word_renderer.py::_set_section_columns`。
 - 预期输出：通过 continuous section 的 `w:cols` 进入两栏，按左栏自上而下、column break、右栏自上而下渲染，再用 continuous section 恢复单栏；不使用布局表格承载普通双栏正文。
-- 冲突/例外：COL-003 的严格图片组使用无边框布局表格；continuous section 的实际栏平衡需要 Word/WPS 视觉验收。
+- 冲突/例外：COL-003 的严格图片组使用无边框布局表格；continuous section 的实际栏平衡需要 Word/WPS 视觉验收。栏距不由 RenderPlan 指定：`w:space` 随模板 sectPr 继承，缺省按 720 twips；渲染器可用宽度与图片证据都读取实际值。LibreOffice 26.2.4.2 实测（2026-11-02）缺省与显式 720 排版一致、1440 按实际生效；Microsoft Word 未验证。
 - 禁止：按全局 y 顺序交错左右栏；渲染完双栏后不恢复单栏；用 1×2 表格包装普通正文。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_uses_native_columns_for_v2_region`、`.test_render_to_bytes_prefers_column_hint_when_ordering_native_columns`、`.test_render_to_bytes_keeps_continuous_restore_when_wide_content_follows_columns`。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_uses_native_columns_for_v2_region`、`.test_render_to_bytes_prefers_column_hint_when_ordering_native_columns`、`.test_render_to_bytes_keeps_continuous_restore_when_wide_content_follows_columns`、`.test_render_plan_uses_the_shared_two_column_split`、`.test_native_column_order_matches_shared_split_for_hints_and_bbox_centers`、`.test_two_column_width_assumes_720_twips_when_template_omits_space`。
 - 样本证据：SC2167 为 external historical WPS/LibreOffice evidence；没有 committed 当前视觉回归。
 - 来源/取代：commit `5d4a02d7` 与 `32edca58`；取代布局表格模拟普通栏。
 
