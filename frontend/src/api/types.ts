@@ -1489,6 +1489,22 @@ export type DocumentJobResourceSnapshot = {
   artifact_ids?: Record<string, string>;
 };
 
+/** 当前代 MinerU 验证失败定位；页码 1 起始，文档级问题 page_number 为 null。 */
+export type DocumentJobFailureDiagnostic = {
+  source: "mineru_validation";
+  stage: string;
+  scope: "page" | "document";
+  page_number: number | null;
+  source_type: string | null;
+  json_pointer: string | null;
+  reason_code: string;
+  reason: string | null;
+  affected_page_numbers: number[];
+  fatal_count: number;
+  warning_count: number;
+  details_truncated: boolean;
+};
+
 export type DocumentJobResponse = {
   id: string;
   tenant_id: string;
@@ -1521,6 +1537,8 @@ export type DocumentJobResponse = {
   failed_stage: DocumentJobStage | null;
   error_code: string | null;
   error_message: string | null;
+  /** 仅任务详情接口填充；列表等接口为 null。 */
+  failure_diagnostic?: DocumentJobFailureDiagnostic | null;
   retry_count: number;
   timeout_at: string | null;
   started_at: string | null;
@@ -1752,6 +1770,7 @@ export type DocumentJobIncidentFileSummaryResponse = {
 
 export type DocumentJobIncidentDiagnosticResponse = {
   item: DocumentJobIncidentQueueItemResponse;
+  failure_diagnostic?: DocumentJobFailureDiagnostic | null;
   evidence_links: DocumentJobIncidentEvidenceLinkResponse[];
   recent_events: DocumentJobIncidentEventSummaryResponse[];
   files: DocumentJobIncidentFileSummaryResponse[];
