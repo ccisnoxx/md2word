@@ -1151,3 +1151,42 @@ RND-502 v2实现、独立复审修复和验证证据已人工接受，列明未�
 - OpenAPI 快照基线已过期，需单独任务整体再生成
 - 继续 P0b：声明 Pillow 依赖、核实生产 Poppler；P0c：最小图片规范化
 - 全部修复任务完成后再推送与建 PR
+
+
+## Session 36: P0b 运行时依赖声明与 Poppler 部署
+
+**Date**: 2026-11-01
+**Task**: P0b 运行时依赖声明与 Poppler 部署
+**Branch**: `codex/p0b-runtime-deps-20261101`
+
+### Summary
+
+仓库补齐 Pillow 声明与镜像内 Poppler，readiness 暴露裁切工具可用性，新增依赖声明守卫；经授权核实生产并在 hostdzire 隔离构建验证。
+
+### Main Changes
+
+- requirements.txt 声明 pillow>=12.2,<13；prod/dev Dockerfile 安装 poppler-utils
+- readiness 新增非阻断检查 pdf_crop_tools_available 与警告 pdf_crop_tools_missing，前端补文案
+- 新增 tests/test_runtime_dependency_declarations.py 守卫第三方导入声明；规格与 runbook 更新
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5d61e38c` | (see git log) |
+| `39ff1fe8` | (see git log) |
+
+### Testing
+
+- [OK] 守卫先行：未声明时仅报 PIL；新增 6 例通过；既有 health/readiness 25 例中 2 例失败与基线一致
+- [OK] hostdzire 隔离构建（仓库 Dockerfile）：import app.main、Pillow 12.3.0 WebP、pdftoppm 25.03.0、真实裁切、pip check 通过；生产容器未变，测试镜像与目录已清理
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 线上镜像经 pub2 发布包增量构建，已具备 Pillow 12.2.0 与 Poppler；转换失败非缺依赖所致
+- 继续 P0c：最小图片规范化（WebP 与无 JFIF/Exif 头 JPEG）
+- 全部修复任务完成后再推送与建 PR
