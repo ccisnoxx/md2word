@@ -8,7 +8,7 @@ import hashlib
 import json
 import math
 
-from app.services.document_ir.models import DocumentIR, DocumentIRBlock
+from app.services.document_ir.models import DocumentIR, DocumentIRBlock, DocumentIRPage
 
 
 IMAGE_GROUP_VERSION = "image-group/v1"
@@ -187,6 +187,8 @@ class LayoutPage:
     footer_blocks: list[DocumentIRBlock] = field(default_factory=list)
     page_number_blocks: list[DocumentIRBlock] = field(default_factory=list)
     regions: list[LayoutRegion] = field(default_factory=list)
+    # 归一化坐标页面宽高相等，方向取 IR 页 metadata（源自 PDF 页尺寸），不能用宽 > 高推断。
+    landscape: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +210,7 @@ def build_layout_plan(document_ir: DocumentIR) -> LayoutPlan:
     from app.services.document_ir.table_placeholder import decode_placeholders
     unknown_owners = {item.owner_block_id for item in decode_placeholders(document_ir) if item.page_index is None}
     page_sizes = {page.index: (page.width, page.height) for page in document_ir.pages}
+    landscape_pages = {page.index for page in document_ir.pages if _page_is_landscape(page)}
     page_indices = set(page_sizes)
     page_indices.update(_block_page_index(block) for block in document_ir.blocks)
     pages: list[LayoutPage] = []
@@ -227,6 +230,7 @@ def build_layout_plan(document_ir: DocumentIR) -> LayoutPlan:
                 footer_blocks=footer_blocks,
                 page_number_blocks=page_number_blocks,
                 regions=_build_regions(body_blocks, width),
+                landscape=page_index in landscape_pages,
             )
         )
     _place_unlocated_placeholders(pages, [block for block in document_ir.blocks
@@ -443,6 +447,13 @@ def _block_page_index(block: DocumentIRBlock) -> int | None:
     if block.layout is not None and block.layout.page_index is not None:
         return block.layout.page_index
     return block.page_index
+
+
+def _page_is_landscape(page: DocumentIRPage) -> bool:
+    orientation = page.metadata.get("orientation")
+    if orientation in {"landscape", "portrait"}:
+        return orientation == "landscape"
+    return bool(page.width and page.height and page.width > page.height)
 
 
 def _block_role(block: DocumentIRBlock) -> str:
