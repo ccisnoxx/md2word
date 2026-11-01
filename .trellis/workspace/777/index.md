@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 41
+- **Total Sessions**: 42
 - **Last Active**: 2026-11-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1375 | Active |
+| `journal-1.md` | ~1412 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 42 | 2026-11-02 | P0-6 渲染失败的页与块定位 | `c6162d9f`, `52e93d8d` | `codex/failure-context-20261102` |
 | 41 | 2026-11-02 | 双栏分流单一实现与栏距核实（方案 5.1/5.2） | `12f05bfe`, `d1cfe224` | `codex/layout-columns-20261102` |
 | 40 | 2026-11-02 | P0-4 正文图片从源 PDF 回退裁切 | `ae1755b0`, `614f17fa` | `codex/image-pdf-fallback-20261102` |
 | 39 | 2026-11-02 | MinerU 归一化 bbox 坐标空间修复 | `87b19341`, `f51972c0` | `codex/bbox-normalized-coords-20261102` |
