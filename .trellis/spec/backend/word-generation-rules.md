@@ -77,10 +77,10 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 状态：`enforced-tested`（已接受依赖输入合同的本地集成验证，不代表线上/Word验收）。
 - 输入信号：ZIP 条目、目录路径、选中 content list 原始 JSON、页面/bbox、资产及 HTML。
 - 正式 owner：`app/services/document_ir/mineru_package.py` 拥有包路径/限额/精确资产寻址；`artifact_validator.py` 拥有原始结构/资产/HTML和 `mineru-artifact-validation/v1` 报告；converter 只消费已验证视图；本地 adapter 进入同一服务。
-- 预期输出：全包展开前拒绝绝对/穿越/Windows路径、symlink/特殊条目、覆盖/祖先冲突及超限，按实际字节有界展开；选中JSON非法不得回退其它结果。必需图片真实解码且可被Word消费；显式非法/非有限bbox在映射前失败。资产不按basename猜测，合法HTML保持原生表格。源包只读，失败带有界结构报告，不返回伪成功。
+- 预期输出：全包展开前拒绝绝对/穿越/Windows路径、symlink/特殊条目、覆盖/祖先冲突及超限，按实际字节有界展开；选中JSON非法不得回退其它结果。必需图片真实解码且可被Word消费；安全解码通过而 python-docx 拒绝原字节的图片（含表格参考图）按 IMAGE-001 例外无损转 PNG 后再次校验，转换失败或超限仍按原 `invalid_image_asset` 失败；显式非法/非有限bbox在映射前失败。资产不按basename猜测，合法HTML保持原生表格。源包只读，失败带有界结构报告，不返回伪成功。
 - 冲突/例外：目录输入由正式 adapter 物化成 ZIP 后进入同一服务；旧 runtime 的路径穿越 characterization test 不能证明这里已覆盖。
 - 禁止：猜测邻近文件、静默返回空文档、以宽泛异常吞掉输入错误。
-- 自动验证：`tests.test_mineru_artifact_validator` 的ZIP预检/碰撞/CRC/限额、路径歧义/穿越、Unicode/坏JSON、非有限bbox、坏图/不支持格式、raw/effective inventory与报告边界；converter/IR contract和正式adapter入口负例保持。
+- 自动验证：`tests.test_mineru_artifact_validator` 的ZIP预检/碰撞/CRC/限额、路径歧义/穿越、Unicode/坏JSON、非有限bbox、坏图/不支持格式、Word拒绝格式的规范化（WebP/CMYK JPEG/无APP0 JPEG、确定性、透明度、DPI、缓存次数、失败回退）、raw/effective inventory与报告边界；`tests.test_image_normalization_pipeline` 覆盖正文图与表格占位参考图的端到端成功；converter/IR contract和正式adapter入口负例保持。
 - 样本证据：RND-503依赖集成174项通过；component/direct/真实客户端以本轮validation分层记录，不借历史结果声称新样本通过。
 - 来源/取代：已接受IR-201/IR-204最终17cde1f的有边界集成，见RND-503 dependency-integration记录；不由本条推导未接入的其它Worker事件/仓储能力。
 
@@ -395,12 +395,12 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 状态：`implemented-gap`（RND-503结构/内容与历史fallback测试已补，真实Word/部署预览仍独立待验）。
 - 输入信号：IR image asset_id、MinerU 包内资产路径、bbox/page width、当前栏宽和 captions。
 - 正式 owner：包路径 `mineru_package.resolve_asset_path`、输入资产 `artifact_validator`；图片计划 `layout_plan`；显示/fallback `image_renderer._render_image_span/_write_image`；冻结输入/实际包认证 `image_evidence`。
-- 预期输出：资产位于包根内，原字节不转码/重采样，按有效区域等比缩放且inline，禁止自动压缩。每图全部注释与原来源保持；新组用COL-003布局表；缺/坏图显示受控诊断及全部已有注释，确定性缺图仍拒绝登记成功件。
+- 预期输出：资产位于包根内；python-docx 可识别的资产保持原字节不转码/重采样，按有效区域等比缩放且inline，禁止自动压缩。例外（P0c，2026-11-01 用户批准）：仅当资产已通过安全解码而 python-docx 拒绝原字节（实测为 WebP、CMYK/Adobe JPEG、无 APP0/APP1 的 JPEG）时，`artifact_validator._word_compatible_png` 按解码像素无损转 PNG（保持尺寸与 DPI、多帧取首帧、输出确定），登记文件 MIME/扩展名随之为 PNG 并在 metadata 记源格式与源 sha256；正文必需图片同时记 `image_asset_normalized` warning，表格参考图不记。仍禁止重采样、缩放、有损压缩。每图全部注释与原来源保持；新组用COL-003布局表；缺/坏图显示受控诊断及全部已有注释，确定性缺图仍拒绝登记成功件。
 - 冲突/例外：不承诺放大小图到某个历史最小宽度；清晰度取决于源像素和客户端。正式MinerU输入对必需坏图/非法bbox已失败关闭；历史IR仍有可见fallback。非有限历史bbox只禁并排，图片报告采用JSON安全确定投影；不扩大为修改IR模型/序列化合同。
 - 禁止：静默丢图；无条件拉伸到全栏；用截图替换可编辑正文；按某个样本设置固定厘米宽度。
 - 自动验证：`tests.test_image_group_rendering` 的横竖非方图/完整注释/资源失败/资产交换/比例/快照与恢复负例，既有bbox宽度测试和converter正常路径测试保留；源越界/歧义/坏图见INPUT-002。
 - 样本证据：中性非方PNG、正式可靠图5/6及24/25 ZIP、已接受去标识不确定caption-pair；SC2167仍是外部历史清晰度证据，不能代签当前Word。
-- 来源/取代：已批准RND-503 v2取代旧制表位writer，保留5d4a02d7的源字节/可见失败原则。
+- 来源/取代：已批准RND-503 v2取代旧制表位writer，保留5d4a02d7的源字节/可见失败原则；源字节原则仅被上述 P0c Word 拒绝格式例外收窄（任务 `11-01-p0c-image-normalization`）。
 
 ### IMAGE-002 编号图片及表题只做严格重关联
 

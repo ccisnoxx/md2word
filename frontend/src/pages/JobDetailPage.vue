@@ -502,6 +502,7 @@
             </div>
             <el-alert class="failure-summary" type="error" :closable="false" show-icon :title="failureSummary">
               <p>{{ failureHelpText }}</p>
+              <p v-for="line in failureDiagnosticLines(job.failure_diagnostic)" :key="line">{{ line }}</p>
               <p v-if="latestErrorEvent">
                 最近错误事件：{{ latestErrorEvent.message }}
                 <span v-if="latestErrorEvent.trace_id" class="mono">trace_id={{ latestErrorEvent.trace_id }}</span>
@@ -881,6 +882,7 @@ import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { copyDownloadLink, openDownloadLink, type DownloadLinkNotice } from "@/utils/download";
 import { configOptionKey, configVersionId, findConfigOption } from "@/utils/configOptions";
 import { documentJobRequestSnapshotForDisplay } from "@/utils/documentJobConfig";
+import { failureDiagnosticLines } from "@/utils/failureDiagnostic";
 import {
   summarizeTranslationBatches,
   translationBatchAiCallLogSummaryText,
