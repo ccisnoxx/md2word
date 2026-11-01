@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # app/services/document_ir/mineru_converter.py: 将 MinerU 原始结果包转换为 DocumentIR v2。
 
+import functools
 import tempfile
 from collections import Counter
 from dataclasses import dataclass, field
@@ -27,7 +28,9 @@ from app.services.document_ir.layout_signals import (
     build_pages,
     find_final_source_page_index,
     merge_table_placeholder_continuations,
+    NORMALIZED_BBOX_SPACE,
     parse_page_index,
+    pdf_point_bbox,
     role_for_source_type,
 )
 from app.services.document_ir.integrity import DocumentIntegrityError, build_source_integrity, ensure_integrity
@@ -46,12 +49,16 @@ from app.services.document_ir.models import (
     DocumentIRBlock,
     DocumentIRBlockType,
     DocumentIRMetadata,
+    DocumentIRPage,
 )
 from app.services.document_ir.table_annotations import split_table_annotation_texts
 from app.services.document_ir.table_reference_assets import RASTER_EXTENSIONS, TableReferenceAsset, attach_table_references
 from app.services.document_ir.table_placeholder import (
-    PdfCropSource, PdfTableCropProvider, PlaceholderAsset, TablePlaceholderError, prepare_placeholders,
+    PdfCropRequest, PdfCropSource, PdfTableCropProvider, PlaceholderAsset, TablePlaceholderError, checksum,
+    prepare_placeholders, validate_geometry, validate_image,
 )
+
+PDF_FALLBACK_SOURCE_PATH = "derived/pdf-region-crop.png"
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +71,8 @@ class MinerUImageAsset:
     mime_type: str
     content: bytes
     normalized_from: tuple[str, str] | None = None
+    # P0-4：MinerU 图片不可用时由源 PDF 裁切；记录页码、原始 bbox、PDF 点框、frame 与源 PDF sha256。
+    pdf_fallback: dict[str, Any] | None = None
 
     @property
     def stored_name(self) -> str:
@@ -189,6 +198,10 @@ class MinerUToDocumentIRService:
             policy=self.policy,
         )
         page_width_by_index = {page.index: page.width for page in pages}
+        # 图片回退与表格占位共用同一次源 PDF 加载。
+        source_loader = functools.cache(placeholder_source_loader) if placeholder_source_loader is not None else None
+        fallback_crops = self._crop_image_fallbacks(raw_blocks, pages, validator, source_loader,
+                                                    source_file_id=source_file_id)
 
         for index, raw_block in enumerate(raw_blocks):
             block_id = f"block_{index + 1:04d}"
@@ -231,16 +244,25 @@ class MinerUToDocumentIRService:
                 quality_flags.append(f"layout_footnote_binding:{block_id}")
             asset_ref = None
             if block_type == "image":
-                image = raw_block.get("_mineru_validated_asset")
-                if not isinstance(image, ValidatedImage):
-                    raise ValueError("MinerU 图片缺少已验证资产。")
                 asset_id = f"asset_{block_id}"
                 asset_ref = asset_id
-                image_assets.append(MinerUImageAsset(
-                    asset_id=asset_id, block_id=block_id, source_path=image.source_path,
-                    mime_type=image.mime_type, content=image.content, normalized_from=image.normalized_from,
-                ))
-                ir_assets.append(DocumentIRAsset(id=asset_id, kind="image", source_path=image.source_path))
+                fallback_pointer = raw_block.get("_mineru_image_fallback")
+                if fallback_pointer is not None:
+                    content, fallback = fallback_crops[fallback_pointer]
+                    image_assets.append(MinerUImageAsset(
+                        asset_id=asset_id, block_id=block_id, source_path=PDF_FALLBACK_SOURCE_PATH,
+                        mime_type="image/png", content=content, pdf_fallback=fallback,
+                    ))
+                    ir_assets.append(DocumentIRAsset(id=asset_id, kind="image", source_path=PDF_FALLBACK_SOURCE_PATH))
+                else:
+                    image = raw_block.get("_mineru_validated_asset")
+                    if not isinstance(image, ValidatedImage):
+                        raise ValueError("MinerU 图片缺少已验证资产。")
+                    image_assets.append(MinerUImageAsset(
+                        asset_id=asset_id, block_id=block_id, source_path=image.source_path,
+                        mime_type=image.mime_type, content=image.content, normalized_from=image.normalized_from,
+                    ))
+                    ir_assets.append(DocumentIRAsset(id=asset_id, kind="image", source_path=image.source_path))
             for context_index, context_text in enumerate(table_contexts):
                 context_metadata = dict(metadata)
                 context_metadata.pop("caption_reconciliation", None)
@@ -310,7 +332,7 @@ class MinerUToDocumentIRService:
         reference_assets = attach_table_references(document, table_references)
         try:
             placeholder_assets = prepare_placeholders(document, table_references,
-                source_loader=placeholder_source_loader, crop_provider=self.pdf_crop_provider)
+                source_loader=source_loader, crop_provider=self.pdf_crop_provider)
         except TablePlaceholderError as error:
             error.mineru_validation_report = validation_report
             raise
@@ -322,6 +344,56 @@ class MinerUToDocumentIRService:
             validation_report=validation_report, table_reference_assets=reference_assets,
             table_placeholder_assets=placeholder_assets)
 
+    def _crop_image_fallbacks(self, raw_blocks: list[dict[str, Any]], pages: list[DocumentIRPage],
+                              validator: MinerUArtifactValidator, source_loader: Callable[[], PdfCropSource] | None,
+                              *, source_file_id: str) -> dict[str, tuple[bytes, dict[str, Any]]]:
+        """逐块尝试源 PDF 裁切后统一结算：全部成功才继续；任一失败则所有失败块恢复为原中止错误后抛出。"""
+        pages_by_index = {page.index: page for page in pages}
+        crops: dict[str, tuple[bytes, dict[str, Any]]] = {}
+        failed: list[str] = []
+        for raw_block in raw_blocks:
+            pointer = raw_block.get("_mineru_image_fallback")
+            if pointer is None:
+                continue
+            try:
+                crops[pointer] = self._crop_from_source_pdf(
+                    raw_block, pages_by_index.get(parse_page_index(raw_block)), source_loader, source_file_id=source_file_id)
+            except TablePlaceholderError:
+                failed.append(pointer)
+        for pointer in crops:
+            validator.resolve_image_fallback(pointer, recovered=True)
+        for pointer in failed:
+            validator.resolve_image_fallback(pointer, recovered=False)
+        if failed:
+            raise MinerUArtifactValidationError(validator.report)
+        return crops
+
+    def _crop_from_source_pdf(self, raw_block: dict[str, Any], page: DocumentIRPage | None,
+                              source_loader: Callable[[], PdfCropSource] | None,
+                              *, source_file_id: str) -> tuple[bytes, dict[str, Any]]:
+        """复用表格占位的来源校验与 Poppler 裁切；坐标只经 pdf_point_bbox 换算，无法确认时失败关闭。"""
+        if source_loader is None or self.pdf_crop_provider is None or page is None:
+            raise TablePlaceholderError("table_placeholder_source_unavailable")
+        # 新回退只接受已确认的归一化坐标页；旧推导页即便尺寸巧合等于 PDF 页，也可能把归一化值误当 PDF 点。
+        if page.metadata.get("bbox_coordinate_space") != NORMALIZED_BBOX_SPACE:
+            raise TablePlaceholderError("table_placeholder_geometry_invalid")
+        source = source_loader()
+        if source.file_id != source_file_id or checksum(source.content) != source.checksum_sha256:
+            raise TablePlaceholderError("table_placeholder_integrity_failed")
+        raw_size = page.metadata.get("pdf_page_size")
+        frame = (tuple(raw_size) if page.metadata.get("page_size_source") and isinstance(raw_size, list)
+                 and len(raw_size) == 2 else None)
+        crop_box = pdf_point_bbox(raw_block.get("bbox"), page)
+        validate_geometry(page.index, crop_box, frame)
+        result = self.pdf_crop_provider.crop(PdfCropRequest(source, page.index, crop_box, frame))
+        if result.frame != frame:
+            raise TablePlaceholderError("table_placeholder_geometry_invalid")
+        validate_image(result.content)
+        return result.content, {
+            "page_index": page.index, "bbox": list(raw_block["bbox"]), "pdf_box": [round(value, 3) for value in crop_box],
+            "frame": list(frame), "source_pdf_sha256": source.checksum_sha256, "provider": result.provider,
+        }
+
     def _metadata_from_raw(self, raw_block: dict[str, Any]) -> dict[str, Any]:
         metadata: dict[str, Any] = {"source_type": raw_block["_mineru_source"]["source_type"]}
         for key in ("bbox", "page_idx", "page_index", "text_level"):
@@ -330,6 +402,8 @@ class MinerUToDocumentIRService:
         if "_mineru_source" in raw_block:
             metadata["mineru_source"] = raw_block["_mineru_source"]
         image = raw_block.get("_mineru_validated_asset")
+        if raw_block.get("_mineru_image_fallback") is not None:
+            metadata["mineru_asset_origin"] = "pdf_region_crop"
         if isinstance(image, ValidatedImage):
             metadata["mineru_asset_resolution"] = image.resolution
             if image.normalized_from is not None:
