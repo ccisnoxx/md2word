@@ -8,8 +8,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from app.services.document_ir.models import DocumentIR, DocumentIRBlock
-from app.services.renderer.layout_plan import LayoutPlan, LayoutRegion, build_image_plan, image_annotations
+from app.services.document_ir.models import DocumentIR
+from app.services.renderer.layout_plan import LayoutPlan, LayoutRegion, build_image_plan, image_annotations, split_two_col_blocks
 from app.services.renderer.semantic_text import (
     infer_heading_level, is_list_item_text, is_toc_title_text, looks_like_heading_text, parse_toc_entry_text,
 )
@@ -251,24 +251,6 @@ def select_text_policy(text: str, *, list_item: bool = False, allow_heading_infe
         level = max(1, min(infer_heading_level(text) or 1, 3))
         return TextPolicy(mode="heading", style_group=f"heading{level}", heading_level=level)
     return TextPolicy(mode="paragraph", style_group="normal")
-
-
-def split_two_col_blocks(blocks: list[DocumentIRBlock]) -> tuple[list[DocumentIRBlock], list[DocumentIRBlock]]:
-    left, right = [], []
-    for block in blocks:
-        hint = block.layout.column_hint if block.layout is not None else None
-        if hint in {"left", "wide"}:
-            left.append(block)
-        elif hint == "right":
-            right.append(block)
-        else:
-            bbox = block.layout.bbox if block.layout is not None else None
-            if bbox is None:
-                left.append(block)
-                continue
-            width = max((item.layout.bbox[2] for item in blocks if item.layout and item.layout.bbox), default=bbox[2])
-            (left if (bbox[0] + bbox[2]) / 2 < width / 2 else right).append(block)
-    return left, right
 
 
 def semantic_page_break_block_id(page) -> str | None:

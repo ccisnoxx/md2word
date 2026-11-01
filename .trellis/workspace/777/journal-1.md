@@ -1335,3 +1335,41 @@ content list bbox 为 0–1000 归一化坐标（3.1.8/3.4.0/3.4.4 一致），�
 
 - 分支 codex/image-pdf-fallback-20261102 基于 main a61f4550，待用户决定推送
 - 双栏分支推送前需处理会话日志编号冲突
+## Session 41: 双栏分流单一实现与栏距核实（方案 5.1/5.2）
+
+**Date**: 2026-11-02
+**Task**: 双栏分流单一实现与栏距核实（方案 5.1/5.2）
+**Branch**: `codex/layout-columns-20261102`
+
+### Summary
+
+删除 render_plan 中的双栏分流副本，RenderPlan 与逻辑表格位置账共用 layout_plan.split_two_col_blocks；栏距经 LibreOffice 实测缺省即 720，按 D1 不改代码，只在 COL-002 记录合同并补测试。
+
+### Main Changes
+
+- render_plan.py 删除 split_two_col_blocks 副本与无用导入，改为从 layout_plan 导入
+- 新增身份断言、阅读顺序一致性、缺省栏距 720 宽度三个测试
+- 规格 COL-002 更正 owner，记录栏距随模板继承与 LibreOffice 26.2.4.2 实测结论
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `12f05bfe` | (see git log) |
+| `d1cfe224` | (see git log) |
+
+### Testing
+
+- [OK] 改前身份断言失败、其余两例通过；改后 3 例通过
+- [OK] 渲染相关 111 例中 1 失败 13 错误与基线 90ebb407 一致；COL-002 三个原生分栏测试通过；Word/WPS 未目视
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 分支 codex/layout-columns-20261102 基于 main、独立于 PR #18，待用户决定推送
+- 下一步：用真实样本核实 bbox 坐标空间，作为 P0-4 回退裁切与整页降级的前提
+
+

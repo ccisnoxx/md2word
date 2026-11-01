@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 40
+- **Total Sessions**: 41
 - **Last Active**: 2026-11-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1337 | Active |
+| `journal-1.md` | ~1375 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 41 | 2026-11-02 | 双栏分流单一实现与栏距核实（方案 5.1/5.2） | `12f05bfe`, `d1cfe224` | `codex/layout-columns-20261102` |
 | 40 | 2026-11-02 | P0-4 正文图片从源 PDF 回退裁切 | `ae1755b0`, `614f17fa` | `codex/image-pdf-fallback-20261102` |
 | 39 | 2026-11-02 | MinerU 归一化 bbox 坐标空间修复 | `87b19341`, `f51972c0` | `codex/bbox-normalized-coords-20261102` |
 | 38 | 2026-11-02 | 核实 MinerU bbox 坐标空间 | `3e8fad46` | `codex/bbox-coordinate-audit-20261102` |

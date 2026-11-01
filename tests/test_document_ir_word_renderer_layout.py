@@ -258,6 +258,54 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual(rendered.sections[-1].start_type, WD_SECTION_START.CONTINUOUS)
         self.assertNotIn('<w:br w:type="page"', self._document_xml(content))
 
+    def test_render_plan_uses_the_shared_two_column_split(self) -> None:
+        # COL-002：布局对账与实际输出必须共用同一分流实现，不能各维护一份。
+        from app.services.renderer import layout_plan, render_plan
+
+        self.assertIs(render_plan.split_two_col_blocks, layout_plan.split_two_col_blocks)
+
+    def test_native_column_order_matches_shared_split_for_hints_and_bbox_centers(self) -> None:
+        from app.services.renderer.layout_plan import split_two_col_blocks
+
+        def block(block_id, order, text, bbox, hint=None):
+            return DocumentIRBlock(id=block_id, type="paragraph", order=order, text=text,
+                                   layout=DocumentIRBlockLayout(page_index=0, bbox=bbox, role="body", column_hint=hint))
+
+        blocks = [block("b_left_hint", 0, "Left by hint", (220, 60, 380, 100), "left"),
+                  block("b_center_left", 1, "Left by center", (10, 120, 150, 160)),
+                  block("b_right_hint", 2, "Right by hint", (0, 70, 150, 110), "right"),
+                  block("b_center_right", 3, "Right by center", (230, 130, 390, 170))]
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_split", source_file_id="file_split", document_language="en"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)], blocks=blocks,
+        )
+        content = DocumentIRWordRenderer().render_to_bytes(document, template_path=None, config_path=None,
+                                                            image_loader=lambda _asset: None)
+        left, right = split_two_col_blocks(blocks)
+        visible = [paragraph.text for paragraph in Document(io.BytesIO(content)).paragraphs if paragraph.text]
+        self.assertEqual(visible, [item.text for item in [*left, *right]])
+        self.assertEqual([item.id for item in left], ["b_left_hint", "b_center_left"])
+
+    def test_two_column_width_assumes_720_twips_when_template_omits_space(self) -> None:
+        # 实测 LibreOffice 26.2 对缺省 w:space 按 720 排版；渲染器计算可用宽度须与之一致。
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+        from docx.shared import Twips
+
+        document = Document()
+        section = document.sections[-1]
+        columns = section._sectPr.find(qn("w:cols"))
+        if columns is None:
+            columns = OxmlElement("w:cols")
+            section._sectPr.append(columns)
+        for attribute in list(columns.attrib):
+            del columns.attrib[attribute]
+        columns.set(qn("w:num"), "2")
+        width, count = DocumentIRWordRenderer()._content_width_and_columns(document)
+        usable = section.page_width - section.left_margin - section.right_margin
+        self.assertEqual((width, count), (int((usable - Twips(720)) / 2), 2))
+
     def test_render_to_bytes_keeps_paired_image_caption_fields_in_row_order(self) -> None:
         document = DocumentIR(
             schema_version="document-ir/v2",
