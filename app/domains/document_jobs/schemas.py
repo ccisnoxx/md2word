@@ -107,9 +107,9 @@ class DocumentJobAvailableActionResponse(BaseModel):
 
 
 class DocumentJobFailureDiagnosticResponse(BaseModel):
-    """当前代 MinerU 验证失败的定位投影；页码为 1 起始，文档级问题不伪造页码。"""
+    """当前代失败定位投影（MinerU 验证或渲染操作）；页码为 1 起始，文档级问题不伪造页码。"""
 
-    source: Literal["mineru_validation"] = "mineru_validation"
+    source: Literal["mineru_validation", "render_operation"] = "mineru_validation"
     stage: str
     scope: Literal["page", "document"]
     page_number: int | None = None
@@ -121,6 +121,8 @@ class DocumentJobFailureDiagnosticResponse(BaseModel):
     fatal_count: int = 0
     warning_count: int = 0
     details_truncated: bool = Field(default=False, description="为 true 时受影响页列表可能不完整。")
+    block_ids: list[str] = Field(default_factory=list, description="渲染来源时为失败操作涉及的 IR 块 ID。")
+    operation_kind: str | None = Field(default=None, description="渲染来源时为失败的 RenderPlan 操作类型。")
 
 
 class DocumentJobResponse(BaseModel):

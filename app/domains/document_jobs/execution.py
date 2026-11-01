@@ -77,6 +77,7 @@ from app.services.renderer.evidence import (
     validate_persisted_renderer_content,
 )
 from app.services.renderer import image_evidence
+from app.services.renderer.word_renderer import FAILURE_CONTEXT_ATTRIBUTE
 from app.services.renderer.block_anchors import validate_block_anchor_evidence
 from app.services.renderer.layout_plan import build_layout_plan
 from app.domains.translation.audit import (
@@ -3519,7 +3520,7 @@ class DocumentJobExecutionService:
                 **{key: value for key, value in payload.items() if key in outer_keys},
                 **build_renderer_event_summary(payload),
             }
-        if payload.get("mineru_validation") is not None:
+        if payload.get("mineru_validation") is not None or payload.get("failure_context") is not None:
             payload = {**payload, "retry_count": job.retry_count}
         event = DocumentJobEventRecord(
             id=f"event_{uuid4().hex[:12]}",
@@ -3899,6 +3900,14 @@ class DocumentJobExecutionService:
         validation_input = getattr(error, "mineru_validation_input", None)
         if validation_input is not None:
             evidence["mineru_validation_input"] = validation_input
+        context = getattr(error, FAILURE_CONTEXT_ATTRIBUTE, None)
+        if isinstance(context, dict):
+            # 原因码优先取固定错误码，其次完整性阻断码，否则为异常类型名；均由白名单再次过滤。
+            flags = error.evidence.get("blocking_quality_flags") if isinstance(error, DocumentIntegrityError) else None
+            code = getattr(error, "code", None)
+            reason = (code if isinstance(code, str) else flags[0] if isinstance(flags, list) and flags
+                      and isinstance(flags[0], str) else type(error).__name__)
+            evidence["failure_context"] = {**context, "reason_code": reason}
         return build_renderer_event_summary(evidence)
 
     def _fail_stage_attempt(

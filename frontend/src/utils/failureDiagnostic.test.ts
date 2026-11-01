@@ -51,6 +51,30 @@ describe("failureDiagnosticLines", () => {
       .toBe("验证明细已截断，受影响页列表可能不完整");
   });
 
+  it("渲染来源显示块与操作类型", () => {
+    expect(failureDiagnosticLines(buildDiagnostic({
+      source: "render_operation",
+      stage: "rendering",
+      page_number: 2,
+      source_type: null,
+      json_pointer: null,
+      reason_code: "table_render_geometry",
+      reason: null,
+      affected_page_numbers: [2],
+      fatal_count: 1,
+      block_ids: ["block_0005"],
+      operation_kind: "logical_table",
+    }))).toEqual([
+      "首个失败位置：第 2 页（块 block_0005，操作 logical_table）",
+      "原因：table_render_geometry",
+      "受影响页：第 2 页，共 1 个阻断问题",
+    ]);
+    expect(failureDiagnosticLines(buildDiagnostic({
+      source: "render_operation", scope: "document", page_number: null, reason_code: "ValueError", reason: null,
+      affected_page_numbers: [], block_ids: [], operation_kind: "decoration",
+    }))[0]).toBe("首个失败位置：文档级问题，无法定位到单页（操作 decoration）");
+  });
+
   it("无诊断时不输出", () => {
     expect(failureDiagnosticLines(null)).toEqual([]);
     expect(failureDiagnosticLines(undefined)).toEqual([]);

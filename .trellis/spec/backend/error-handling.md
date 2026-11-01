@@ -86,6 +86,8 @@ Do not duplicate workflow state checks in routers when the rule already belongs 
 - 仅 `GET /document-jobs/{id}` 与异常中心诊断接口填充；列表等共用 `DocumentJobResponse` 的接口恒为 `null`，不做逐行事件查询。前端只消费该投影，不解析事件 payload。
 - `error_code`/`failed_stage` 合同不变。异常中心分类中失败任务的明确错误码优先于关键词：`mineru_failed`/`document_ir_failed`/`render_failed` → `conversion_failed`，`translation_failed`/`translation_fan_in_mismatch` → `translation_failed`（历史 `ir_converting + translation_failed` 仍为翻译失败）。
 - 测试：`tests/test_document_job_failure_diagnostic.py`（含真实 eager Worker 页级与文档级失败）。
+- 渲染来源（P0-6）：`word_renderer.render_to_result` 在执行 RenderPlan 操作或表格预处理时捕获异常，只用 `attach_failure_context` 把操作定位（序号、类型、分节、块 ID、源页索引、逻辑表格单元）挂到异常属性 `md2word_failure_context` 后原样抛出，不改变异常类型与失败分类。`execution._worker_failure_evidence` 以“固定错误码 → 完整性首个阻断码 → 异常类型名”取原因码写入 `failure_context`，`evidence._safe_failure_context` 逐字段白名单过滤（不收异常正文）；含 `failure_context` 的 payload 同样附 `retry_count`。投影来源为 `render_operation`，新增 `block_ids`、`operation_kind`；无源页的操作为 `scope=document`。测试：`tests/test_render_failure_context.py`。
+- 已知限制：普通异常的 `error_message` 仍记录异常消息原文（既有行为，未在 P0-6 改变）。
 
 ## Scenario: DocumentIR Translation Provider Failures
 

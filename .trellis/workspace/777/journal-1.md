@@ -1373,3 +1373,40 @@ content list bbox 为 0–1000 归一化坐标（3.1.8/3.4.0/3.4.4 一致），�
 - 下一步：用真实样本核实 bbox 坐标空间，作为 P0-4 回退裁切与整页降级的前提
 
 
+
+
+## Session 42: P0-6 渲染失败的页与块定位
+
+**Date**: 2026-11-02
+**Task**: P0-6 渲染失败的页与块定位
+**Branch**: `codex/failure-context-20261102`
+
+### Summary
+
+渲染操作循环与表格预处理失败时附带 RenderPlan 操作定位并原样抛出，执行层经白名单写入 failure_context，失败诊断新增 render_operation 来源显示页、块与操作类型。
+
+### Main Changes
+
+- word_renderer attach_failure_context；块类操作页索引取首块渲染决策
+- execution 写入 failure_context 与原因码；evidence 白名单 _safe_failure_context；payload 附 retry_count
+- failure_diagnostic 新增 render_operation 投影，DTO 增 block_ids/operation_kind；前端类型与文案
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c6162d9f` | (see git log) |
+| `52e93d8d` | (see git log) |
+
+### Testing
+
+- [OK] 新增 4 例通过；对比集 118 例 1 个既有错误与基线一致；fastapi 相关 3 例通过；前端 5 例与构建通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 分支 codex/failure-context-20261102 基于 main 7b7c089b，待用户决定推送
+- 可另开任务收紧普通异常 error_message 原文记录

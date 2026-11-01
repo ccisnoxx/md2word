@@ -769,6 +769,39 @@ def _type_counts(value):
     return result
 
 
+FAILURE_OPERATION_KINDS = frozenset({"section", "configure_page", "decoration", "block", "image_pair", "column_break",
+                                     "logical_table", "table_prepare"})
+FAILURE_REASON_CODES = frozenset({
+    "table_render_input", "table_render_geometry", "table_render_failed", "table_build_limit", "table_html_encoding",
+    "table_html_unsupported_structure", "table_placeholder_crop_failed", "table_placeholder_geometry_invalid",
+    "table_placeholder_integrity_failed", "table_placeholder_source_unavailable",
+    "ValueError", "KeyError", "TypeError", "IndexError", "AttributeError", "UnicodeError", "OSError",
+    "ZeroDivisionError", "OverflowError", "RuntimeError",
+})
+FAILURE_ID_RE = re.compile(r"[A-Za-z0-9:_-]{1,120}")
+
+
+def _safe_failure_context(value: Any) -> dict[str, Any] | None:
+    """渲染失败定位逐字段白名单；原因码只接受固定错误码、受控质量标记或异常类型名，不收异常正文。"""
+    if not isinstance(value, dict) or value.get("operation_kind") not in FAILURE_OPERATION_KINDS:
+        return None
+    reason = value.get("reason_code")
+    if not isinstance(reason, str) or not (reason in FAILURE_REASON_CODES or controlled_quality_flags([reason])):
+        return None
+    block_ids = value.get("block_ids")
+    if not isinstance(block_ids, list) or len(block_ids) > 20 or not all(
+            isinstance(item, str) and FAILURE_ID_RE.fullmatch(item) for item in block_ids):
+        return None
+    result: dict[str, Any] = {"operation_kind": value["operation_kind"], "reason_code": reason, "block_ids": list(block_ids)}
+    for key in ("operation_index", "source_page_index"):
+        item = value.get(key)
+        result[key] = item if type(item) is int and item >= 0 else None
+    for key in ("section_id", "unit_id"):
+        item = value.get(key)
+        result[key] = item if isinstance(item, str) and FAILURE_ID_RE.fullmatch(item) else None
+    return result
+
+
 def build_renderer_event_summary(evidence: dict[str, Any]) -> dict[str, Any]:
     """完整字段白名单；新增私有 metadata 默认不会进入事件/异常。"""
     summary = _safe_counts(evidence)
@@ -801,6 +834,10 @@ def build_renderer_event_summary(evidence: dict[str, Any]) -> dict[str, Any]:
             summary[key] = projected
     if "mineru_validation" in evidence:
         summary["mineru_validation"] = _safe_mineru_report(evidence["mineru_validation"])
+    if "failure_context" in evidence:
+        context = _safe_failure_context(evidence["failure_context"])
+        if context is not None:
+            summary["failure_context"] = context
     if "mineru_validation_input" in evidence:
         value = evidence["mineru_validation_input"]
         summary["mineru_validation_input"] = _safe_validation_input(value)
