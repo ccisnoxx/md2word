@@ -1145,3 +1145,40 @@ content list bbox 为 0–1000 归一化坐标（3.1.8/3.4.0/3.4.4 一致），�
 ### Next Steps
 
 - 实施坐标换算修复：单一 owner、坐标空间标记、裁切与复核按换算后坐标
+
+
+## Session 36: MinerU 归一化 bbox 坐标空间修复
+
+**Date**: 2026-11-02
+**Task**: MinerU 归一化 bbox 坐标空间修复
+**Branch**: `codex/bbox-normalized-coords-20261102`
+
+### Summary
+
+识别 0–1000 归一化坐标并修正页面几何为 bbox 空间，方向取 PDF 页尺寸；新增唯一 PDF 点换算，修复表格占位静默裁错与复核位置不可用；IR-002 规格按证据修订。
+
+### Main Changes
+
+- layout_signals：坐标空间识别（版本≥3.1、有 page_size、bbox 在 [0,1000]）与 pdf_point_bbox
+- LayoutPage.landscape 替代宽>高判断；表格占位裁切与复核位置投影经换算函数；旧 IR 占位解码保持原校验
+- 新增 tests/test_bbox_coordinate_space.py；修订规格 IR-002
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `87b19341` | (see git log) |
+| `f51972c0` | (see git log) |
+
+### Testing
+
+- [OK] 新增 7 例通过；相关 213 例失败集合与基线一致；6 份真实样本页几何正确、栏位差异归零；OPA228_P1 裁切目视正确
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 分支 codex/bbox-normalized-coords-20261102 含调研与修复，基于 main，待用户决定推送
+- 后续可做 P0-4 图片原 PDF 回退裁切与整页降级（坐标前提已具备）

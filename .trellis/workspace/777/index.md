@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 35
+- **Total Sessions**: 36
 - **Last Active**: 2026-11-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1147 | Active |
+| `journal-1.md` | ~1184 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 36 | 2026-11-02 | MinerU 归一化 bbox 坐标空间修复 | `87b19341`, `f51972c0` | `codex/bbox-normalized-coords-20261102` |
 | 35 | 2026-11-02 | 核实 MinerU bbox 坐标空间 | `3e8fad46` | `codex/bbox-coordinate-audit-20261102` |
 | 34 | 2026-10-23 | RND-503 人工验收、两次工作提交与归档 | `e1f5079b695047d95912a541fc00d40e505dfc60`, `67bc26db2586c264ca038f6f24e2d37714982c71` | `md2word/RND-503` |
 | 33 | 2026-10-23 | RND-502 人工验收、提交与归档 | `136802cb273c85e94ff65d41aca5aa15c8c70459` | `md2word/RND-502` |
