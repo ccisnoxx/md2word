@@ -7,9 +7,11 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
+from app.conversion.docx_rules.formula import scan_math_spans
+
 try:
     from .runtime_direct_loaders import load_input_adapter_module
-except ImportError:  # pragma: no cover - compatibility for direct execution
+except ImportError:  # pragma: no cover - 兼容直接执行
     from runtime_direct_loaders import load_input_adapter_module
 
 
@@ -379,7 +381,9 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
         self.assertEqual(list_block.type, "list")
         self.assertEqual(list_block.items, ["A", "B"])
 
-    def test_parse_v2_block_normalizes_inline_equation_fragments_inside_paragraph(self):
+    def test_parse_v2_block_preserves_inline_equation_sources_inside_paragraph(self):
+        load_formula = r"\mathsf { R } _ { \mathsf { L } } = 1 0 \mathsf { k } \Omega"
+        supply_formula = r"\mathsf { V } _ { \mathsf { S } } / 2"
         paragraph_block = self.module.parse_v2_block(
             {
                 "type": "paragraph",
@@ -387,9 +391,9 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
                 "content": {
                     "paragraph_content": [
                         {"type": "text", "content": "at "},
-                        {"type": "equation_inline", "content": "\\mathsf { R } _ { \\mathsf { L } } = 1 0 \\mathsf { k } \\Omega"},
+                        {"type": "equation_inline", "content": load_formula},
                         {"type": "text", "content": " connected to "},
-                        {"type": "equation_inline", "content": "\\mathsf { V } _ { \\mathsf { S } } / 2"},
+                        {"type": "equation_inline", "content": supply_formula},
                     ]
                 },
             },
@@ -399,7 +403,35 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
         )
 
         self.assertEqual(paragraph_block.type, "paragraph")
-        self.assertEqual(paragraph_block.text, "at R<sub>L</sub> = 10 kΩ connected to V<sub>S</sub> / 2")
+        self.assertEqual(paragraph_block.text, f"at ${load_formula}$ connected to ${supply_formula}$")
+        # 原式与正文边界供下游保护和 OMML 消费，输入阶段不能提前拍平成 HTML。
+        spans = scan_math_spans(paragraph_block.text)
+        self.assertEqual([span.source for span in spans], [f"${load_formula}$", f"${supply_formula}$"])
+        self.assertEqual(
+            [paragraph_block.text[:spans[0].start], paragraph_block.text[spans[0].end:spans[1].start], paragraph_block.text[spans[1].end:]],
+            ["at ", " connected to ", ""],
+        )
+
+    def test_parse_v2_block_preserves_html_scripts_and_semantic_formula_sources(self):
+        formula = r"\frac{V_{IN}}{R_L}"
+        paragraph_block = self.module.parse_v2_block(
+            {
+                "type": "paragraph",
+                "bbox": [0, 10, 20, 20],
+                "content": {
+                    "paragraph_content": [
+                        {"type": "text", "content": "R<sub>L</sub><sup>2</sup> before "},
+                        {"type": "equation_inline", "content": formula},
+                        {"type": "text", "content": " after V<sup>2</sup>"},
+                    ]
+                },
+            },
+            Path("."),
+            page_idx=0,
+            block_idx=1,
+        )
+
+        self.assertEqual(paragraph_block.text, f"R<sub>L</sub><sup>2</sup> before ${formula}$ after V<sup>2</sup>")
 
     def test_parse_v2_block_splits_toc_like_multiline_paragraph(self):
         toc_block = self.module.parse_v2_block(
@@ -550,6 +582,7 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
         self.assertEqual(resolved, image_path.resolve())
 
     def test_parse_visual_block_maps_visual_metadata(self):
+        caption_formula = r"V_{CC}"
         with tempfile.TemporaryDirectory() as temp_dir:
             package_root = Path(temp_dir)
             image_path = package_root / "asset.png"
@@ -562,7 +595,7 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
                     "img_path": "asset.png",
                     "table_caption": [
                         {"type": "text", "content": "Cap"},
-                        {"type": "equation_inline", "content": "V_{CC}"},
+                        {"type": "equation_inline", "content": caption_formula},
                     ],
                     "table_footnote": [{"type": "text", "content": "Note"}],
                     "html": "<table><tr><td>A</td></tr></table>",
@@ -575,7 +608,7 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
 
         self.assertEqual(block.type, "table")
         self.assertEqual(block.image_path, image_path.resolve())
-        self.assertEqual(block.captions, ["Cap", "V<sub>CC</sub>"])
+        self.assertEqual(block.captions, ["Cap", f"${caption_formula}$"])
         self.assertEqual(block.footnotes, ["Note"])
         self.assertEqual(block.html, "<table><tr><td>A</td></tr></table>")
         self.assertEqual(block.text, "desc")
@@ -583,17 +616,20 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
         self.assertEqual(block.block_idx, 2)
 
     def test_parse_visual_block_merges_numbered_footnote_fragments(self):
+        junction_temperature = r"T_{J(MAX)}"
+        thermal_resistance = r"R_{\theta JA}"
+        ambient_temperature = r"T_A"
         block = self.module.parse_visual_block(
             "table",
             (1.0, 2.0, 3.0, 4.0),
             {
                 "table_footnote": [
                     {"type": "text", "content": "(5) The maximum power dissipation is a function of"},
-                    {"type": "equation_inline", "content": "T_{J(MAX)}"},
+                    {"type": "equation_inline", "content": junction_temperature},
                     {"type": "text", "content": ","},
-                    {"type": "equation_inline", "content": "R_{\\theta JA}"},
+                    {"type": "equation_inline", "content": thermal_resistance},
                     {"type": "text", "content": "and"},
-                    {"type": "equation_inline", "content": "T_A"},
+                    {"type": "equation_inline", "content": ambient_temperature},
                     {"type": "text", "content": "."},
                     {"type": "text", "content": "(6) Independent note."},
                 ],
@@ -607,7 +643,7 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
             block.footnotes,
             [
                 "(5) The maximum power dissipation is a function of "
-                "T<sub>J(MAX)</sub>, R<sub>θJA</sub> and T<sub>A</sub>.",
+                f"${junction_temperature}$, ${thermal_resistance}$ and ${ambient_temperature}$.",
                 "(6) Independent note.",
             ],
         )

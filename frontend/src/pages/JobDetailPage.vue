@@ -1279,6 +1279,7 @@ const actionSummaries = computed(() => {
     unarchive: "取消归档",
     delete: "删除",
     publish: "发布",
+    new_generation: "发起新代",
   };
   return taskActionOrder
     .filter((action) => shouldShowDocumentJobAction(job.value as DocumentJobResponse, action))

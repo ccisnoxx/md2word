@@ -210,7 +210,9 @@ class WordTextRendererMixin:
         _native_marks: bool = False,
         _native_references: CaptionBookmarks | None = None,
     ) -> None:
-        result = render_formula(span)
+        # 历史内容认证仅在独立 scratch part 安装逐式重放；正式写入继续共享 parser。
+        replay = getattr(paragraph.part, "_md2word_formula_replay", None)
+        result = replay(span) if replay is not None else render_formula(span)
         for element in result.elements:
             if element.tag == qn("w:r"):
                 run = Run(element, paragraph)
@@ -228,6 +230,16 @@ class WordTextRendererMixin:
                     # 复用原数学样式 owner，在预期投影冻结前合并外层真实 marks。
                     _OmmlParser._apply_math_style([run], "bi" if combined_bold and combined_italic
                         else "b" if combined_bold else "i")
+            if element.tag == qn("m:oMath") and style.font_size is not None:
+                # 数学 run 不继承相邻文字的直接字号；否则窄表格仍会用模板字号裁切公式。
+                for math_run in element.iter(qn("m:r")):
+                    properties = OxmlElement("w:rPr")
+                    for tag in ("w:sz", "w:szCs"):
+                        size = OxmlElement(tag)
+                        size.set(qn("w:val"), str(int(style.font_size * 2)))
+                        properties.append(size)
+                    # OMML run 的属性位于 m:rPr 之后、末尾的 m:t 之前。
+                    math_run.insert(len(math_run) - 1, properties)
         if _native_marks and _native_references and result.mode == "semantic_runs":
             # 同 part 的临时段落不进入最终 DOM；原文字 owner 先完成脚本与 REF 的实际输出。
             prepared = Paragraph(OxmlElement("w:p"), paragraph._parent)

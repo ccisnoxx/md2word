@@ -25,6 +25,7 @@ from app.services.document_ir.layout_signals import (
     build_block_layout_metadata,
     build_pages,
     find_final_source_page_index,
+    find_merged_paragraphs,
     merge_table_placeholder_continuations,
     parse_page_index,
     role_for_source_type,
@@ -103,7 +104,8 @@ class MinerUToDocumentIRService:
                 report.content_list_sha256 = package_sha256(content_list_path)
                 validator.check_report_limits()
                 payload, _checksum = read_json_payload(content_list_path, policy=self.policy)
-                validated = validator.validate(payload, package_root=package_root, content_list_path=content_list_path)
+                validated = validator.validate(payload, package_root=package_root, content_list_path=content_list_path,
+                                               merged_paragraphs=find_merged_paragraphs(content_list_path, policy=self.policy))
                 table_sources = capture_table_sources(payload, validated.blocks, checksum=report.content_list_sha256)
                 return self._convert_blocks(
                     validated.blocks,
@@ -258,7 +260,10 @@ class MinerUToDocumentIRService:
                     type=block_type,
                     order=index,
                     page_index=page_index,
-                    text=self._text_for_block(raw_block, block_type, captions=captions),
+                    text=self._text_for_block(
+                        raw_block, block_type, captions=captions,
+                        preserve_line_breaks=block_type == "paragraph" and block_role == "body",
+                    ),
                     level=self._heading_level(raw_block) if block_type == "heading" else None,
                     html=select_mineru_table_html(raw_block) if block_type == "table" else None,
                     latex=self._formula_text(raw_block) if block_type == "formula" else None,
@@ -334,6 +339,7 @@ class MinerUToDocumentIRService:
         block_type: str,
         *,
         captions: list[str] | None = None,
+        preserve_line_breaks: bool = False,
     ) -> str | None:
         if block_type == "table":
             text = self._first_text_from_keys(raw_block, ("text",))
@@ -361,7 +367,7 @@ class MinerUToDocumentIRService:
         if block_type == "list":
             items = (mineru_list_items(raw_block) or None)
             return "\n".join(items) if items else self._raw_text(raw_block)
-        return self._raw_text(raw_block) or self._first_text_from_keys(raw_block, ("caption",))
+        return self._raw_text(raw_block, preserve_line_breaks=preserve_line_breaks) or self._first_text_from_keys(raw_block, ("caption",))
 
     def _formula_text(self, raw_block: dict[str, Any]) -> str | None:
         content = raw_block.get("content")
@@ -380,8 +386,11 @@ class MinerUToDocumentIRService:
             keys.insert(0, f"{source_type}_footnote")
         return self._unique_texts(merge_footnote_fragments(collect_text_from_fields(raw_block, tuple(keys))))
 
-    def _raw_text(self, raw_block: dict[str, Any]) -> str | None:
-        text = clean_text(mineru_raw_text_preserving_lines(raw_block))
+    def _raw_text(self, raw_block: dict[str, Any], *, preserve_line_breaks: bool = False) -> str | None:
+        text = clean_text(
+            mineru_raw_text_preserving_lines(raw_block, preserve_line_breaks=preserve_line_breaks),
+            preserve_line_breaks=preserve_line_breaks,
+        )
         return text or None
 
     def _first_text_from_keys(self, raw_block: dict[str, Any], keys: tuple[str, ...]) -> str | None:

@@ -137,7 +137,7 @@ def check_release(
 
 
 def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
-    """检查 document_jobs 核心 OpenAPI 字段和前端手写类型保持最小一致。"""
+    """检查核心字段与九种任务动作，并保留旧响应缺少新增动作的兼容合同。"""
 
     missing: list[str] = []
     try:
@@ -309,8 +309,10 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
 
     for needle in (
         'export type DocumentJobStatusGroup = "active"',
-        'available_actions: Record<Exclude<DocumentJobActionId, "publish">, DocumentJobAvailableAction> & {',
+        'export type DocumentJobActionId = "download" | "retry" | "cancel" | "archive" | "unarchive" | "clone" | "delete" | "publish" | "new_generation";',
+        'available_actions: Record<Exclude<DocumentJobActionId, "publish" | "new_generation">, DocumentJobAvailableAction> & {',
         "publish?: DocumentJobAvailableAction;",
+        "new_generation?: DocumentJobAvailableAction;",
         "filtered_summary?: Record<string, number>",
         "translation_qa_summary?: Partial<Record<TranslationQaStatus, number>>",
         "ai_debug_archive_expires_at: string | null",

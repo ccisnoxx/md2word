@@ -7,6 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# 受控 PDF 裁图需要 poppler-utils 提供的 pdfinfo 和 pdftoppm。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt /app/requirements.txt
 RUN python -m pip install --upgrade pip \
     && python -m pip install -r /app/requirements.txt

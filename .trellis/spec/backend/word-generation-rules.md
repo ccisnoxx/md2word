@@ -40,8 +40,9 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 状态：`enforced-tested`
 - 输入信号：本地 MinerU 目录/ZIP，或线上任务已下载的 MinerU 结果 ZIP。
 - 正式 owner：`scripts/dev/formal_mineru_conversion.py::run_conversion`、`::convert_formal_mineru_package`；`app/domains/document_jobs/execution.py::DocumentJobExecutionService._convert_and_save_document_ir`、`._render_and_save_word`。
-- 预期输出：先由 `MinerUToDocumentIRService.convert_zip()` 生成并持久化 DocumentIR，再由 `DocumentIRWordRenderer.render_to_result()` 一次生成 DOCX 和公式报告，再构建 renderer evidence（旧 `render_to_bytes()` 保持 bytes 兼容）；所有正式修复都落在该链路的唯一 owner。
+- 预期输出：先由 `MinerUToDocumentIRService.convert_zip()` 生成并持久化 DocumentIR，再由 `DocumentIRWordRenderer.render_to_result()` 一次生成 DOCX 和完整 `WordRenderResult`；线上 Worker 与本地 adapter 均须将该结果通过 `render_result=` 传给 `build_renderer_evidence`，保留内容合同版本、公式来源覆盖和执行 trace，不得仅抽取公式/图片报告误入历史聚合路径（旧 `render_to_bytes()` 保持 bytes 兼容）；所有正式修复都落在该链路的唯一 owner。
 - 冲突/例外：调试脚本可以包装正式 adapter，但不得切换到旧 runtime；`document-ir/v1` 的 renderer 顺序回退仍属于正式 renderer 内部兼容路径。
+- 资产消费：本地 adapter 与 Worker 均须消费 converter 返回的普通图片、表格参考图和派生占位图三类资产；不能仅接 `image_assets` 而让已认证的表格来源在 writer 阶段丢失。统计字段 `image_assets` 仍保持普通图片计数语义。
 - 禁止：直接用 `full.md` 生成正式 Word；在 CLI、任务 worker 或样本 runner 中复制转换/渲染规则；以旧 runtime 的输出替代正式结果。
 - 自动验证：`tests.test_conversion_sandbox_dev_tools.LocalMinerUConversionCliTests.test_main_calls_formal_conversion_adapter`、`.test_formal_adapter_converts_minimal_mineru_package_to_openable_docx`；`tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_worker_saves_mineru_raw_ir_and_image_assets`。
 - 样本证据：已提交 `ti-opamp-opa228-p1-smoke` 最小 MinerU 包可离线运行；只证明正式链路可运行和 DOCX 可打开，不证明复杂版式。
@@ -100,10 +101,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 状态：`enforced-tested`
 - 输入信号：v2 `content` 节点、inline equation、显式 `list_items`、以列表标记起始的多行文本、目录点线和碎片化脚注。
 - 正式 owner：`app/conversion/docx_rules/mineru_content.py::join_text_fragments`、`::split_multiline_list_items`、`::split_toc_like_lines`、`::merge_footnote_fragments`；`app/services/document_ir/mineru_converter.py::_list_items`、`::_rich_text_nodes`。
-- 预期输出：保留 inline equation 数学边界；多行列表拆成独立 item，未标记续行仍保留在同一 item；目录样式文本仅在足够高比例点线项时拆分；脚注按明确连续信号合并。
+- 预期输出：保留 inline equation 数学边界；多行列表拆成独立 item，未标记续行仍保留在同一 item；目录样式文本仅在足够高比例点线项时拆分；脚注按明确连续信号合并。`paragraph` 且 `role=body` 的正文按权威 text/runs 保留显式换行和连续空行，仍保持 paragraph 类型；数学源串内部的空白与 CRLF 原样保留，普通文本行尾 CRLF 归一为 LF。
+- 正文行结构 owner：`mineru_converter._text_for_block` 只对上述正文调用 `_raw_text(..., preserve_line_breaks=True)`；共享 `mineru_content.clean_text`、`clean_markdown_document`、`mineru_raw_text_preserving_lines` 的保留参数默认关闭，标题、页眉页脚、题注与表注不因此改变清洗语义。Word writer 的 `_apply_document_settings` 在正文存在显式换行时，为新件设置 `w:compat/w:doNotExpandShiftReturn=true`，使两端对齐段落的手动换行行不被拉满词距；保留其他兼容节点和原模板字节，不修改 normal alignment。该行为依据 [OOXML 官方定义](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.donotexpandshiftreturn?view=openxml-3.0.1)，仍需以真客户端验证显示。
 - 冲突/例外：普通多行正文不拆列表；单行负温度或减号文本不得当作列表。
 - 禁止：对所有换行统一空格化；只保留列表第一行；在普通正文全局执行无差别或破坏性的 TeX 清理。
-- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_structures_v2_multiline_lists_and_preserves_math_sources`、`.test_convert_zip_accepts_nested_v2_pages_and_rich_content_fields`。
+- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_structures_v2_multiline_lists_and_preserves_math_sources`、`.test_convert_zip_accepts_nested_v2_pages_and_rich_content_fields`；`tests.test_parameter_paragraph_line_breaks` 覆盖字符串/runs 的 17 个实际 DOCX 换行、组间空行、4 个原生公式、普通正文与负温度不误分列表、权威空 runs 缺正文仍失败、兼容节点唯一性/顺序及模板字节保持。历史件恢复继续使用冻结计划与实际字节，不重算新 settings 策略。
 - 样本证据：OPA228 最小 fixture 有列表，但 runner 尚未断言 manifest 的列表验收焦点。
 - 来源/取代：归档任务 `08-18-fix-mineru-first-page-layout`；取代把列表换行全部压平的行为。
 
@@ -120,6 +122,18 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_merges_real_mineru_empty_table_continuations`、`.test_convert_zip_keeps_contentful_or_orphan_empty_tables_fail_closed`；nested 正例必须保留真实 MinerU v2 层级和结构元数据，负例必须证明明确正文及孤立空表不会被静默删除。
 - 样本证据：线上任务 `docjob_cfcdfa737312` 的失败包为 external evidence，不提交用户原始 ZIP；2026-08-20 使用当前修复对该 ZIP 做只读临时回归，归一化后 420 个 source blocks、19 个 table、38 个图片资产且 blocker 为空，临时文件已删除；自动测试只保留脱敏最小结构。
 - 来源/取代：任务 `08-20-fix-mineru-table-placeholder-regression`；补足只覆盖顶层简化字段、未覆盖 nested v2 结构元数据的历史测试缺口。
+
+### INPUT-006 有完整合并证据的空正文保留为警告
+
+- 状态：`enforced-tested`（本地验证，不代表线上任务已重试或部署验收）。
+- 输入信号：MinerU 跨栏或跨页合并后，content list 的正文为空；同文档布局的原节点有 `lines_deleted=true`、`lines=[]`，`preproc_blocks` 仍保有原文。
+- 正式 owner：`layout_signals.py::find_merged_paragraphs(content_list_path, *, policy)` 只读取选中 content list 同目录、同文档且唯一的 layout/middle；`artifact_validator.py::MinerUArtifactValidator.validate(..., merged_paragraphs=...)` 核对实际消费正文；converter 只负责接线。
+- 预期输出：按物理页、`index`、bbox 绑定合并前后节点，按 MinerU v3 的逐坐标截断规则把 PDF point 映射到 0..1000；原始 spans 的类型、文字、bbox 必须完整出现在同页或上一页的相邻接收正文中。接收段落经共享正文选择器投影后，除空白外必须与选中 content list 的完整接收正文一致，顺序及重复次数不可减少。源、目标身份在布局和 content list 中均须唯一。
+- 报告合同：保留空源节点、原始 locator 和 raw/effective/IR 清单计数，不重新插入已合并正文；仅记录 `mineru_merged_paragraph_empty` warning、固定 `reason=merged_paragraph_residue`，validator 为 `mineru-artifact-validator/v4`。原文只在内存对账，不进入事件或安全报告。
+- 错误矩阵：无布局、跨文档或多份布局无法唯一绑定、仅自带合并标记、原文/公式未完整保留、身份重复、坐标投影非有限，均不给豁免，继续以 `mineru_block_payload_invalid` / `missing_readable_payload` 失败；坏 runs、隐藏正文及其它输入错误仍由原校验阻断。页眉/页脚/页码既有空边缘规则不变。
+- 正反例：`paragraph_content=[]` 且原文已完整转移、身份唯一时允许带警告转换；同样空节点只有 `lines_deleted=true`，或接收正文少了一次重复片段时必须失败。禁止仅按空字符串或删除标记放行，也禁止在 v2 失败后改读 legacy。
+- 自动验证：`tests.test_mineru_artifact_validator` 的 `test_cross_column_merge_residue_preserves_text_once_and_source_inventory`、`test_cross_page_merge_residue_preserves_text_once_and_source_inventory` 验证可见文字只出现一次、行内公式与清单保留、DOCX 完整性及安全事件；`test_merge_residue_requires_bound_original_and_retained_selected_text`、`test_content_list_merge_flags_alone_cannot_exempt_missing_body`、`test_merge_residue_rejects_lost_repeated_text_and_reused_source_identity`、`test_merge_proof_is_bound_to_selected_document_and_unique_layout` 保护失败边界。
+- 样本证据：2026-10-30 线上失败包的脱敏最小结构覆盖同页跨栏与跨页两种合并；原包的只读本地重放得到 142 个原始块、142 个有效块、2 个合并警告及 0 个 blocker，正式 renderer 生成 DOCX 且完整性阻断标记为空；不代表线上重试或 Word 人工验收，用户原始 ZIP 不进入仓库。上游依据为 [MinerU 3.4.4 段落合并实现](https://github.com/opendatalab/MinerU/blob/mineru-3.4.4-released/mineru/backend/pipeline/para_split.py) 与 [v2 坐标及正文投影](https://github.com/opendatalab/MinerU/blob/mineru-3.4.4-released/mineru/backend/vlm/vlm_middle_json_mkcontent.py)，仅参考行为，未复制上游代码。
 
 ## 3. DocumentIR、页面与正文流
 
@@ -211,11 +225,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`implemented-gap`
 - 输入信号：非首 LayoutPage 的第一个可见 body block 是 heading、带 caption 的 table，或 `table_context` paragraph。
-- 正式 owner：`app/services/renderer/word_renderer.py::_semantic_page_break_block_id`、`::_render_block`；`app/services/renderer/table_renderer.py::_render_table_captions`。
+- 正式 owner：`app/services/renderer/render_plan.py::semantic_page_break_block_id` 冻结起页目标；`app/services/renderer/word_renderer.py::_render_block` 与 `app/services/renderer/table_renderer.py::_render_table_captions` 执行真实内容段落上的分页。
 - 预期输出：把 `pageBreakBefore` 放在标题段落、表格组首个 caption 或 context 真实内容段落上；普通段落和无 caption table 不强制起页。
-- 冲突/例外：优先于 FLOW-001，但只对精确页顶内容组生效；不得创建独立 break-only paragraph。当前目标按 layout plan 的首 block 选择，而 two-col region 随后按左栏再右栏重排；若目标来自右栏，分页可能落在已渲染的左栏内容之后，现有测试未覆盖该组合。
+- 冲突/例外：优先于 FLOW-001，但只对精确页顶内容组生效；不得创建独立 break-only paragraph。COL-002 的完整文字流合并后，按实际调度首块重新判定起页，不能沿用几何首个右栏标题而把分页插进左右栏之间。其他页面保留原分区规则，未由本次纯文本页修复宣称覆盖所有混合区域组合。
 - 禁止：按标题文字（如“工作原理”）或型号硬编码；所有 heading 无条件分页；在表格本体前额外插入空页。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_anchors_semantic_page_breaks_to_real_content`。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_anchors_semantic_page_breaks_to_real_content`；`tests.test_two_column_reading_order` 的非首页左栏首块为标题/正文、几何首块为右栏标题的实际 XML 分页目标反例。
 - 样本证据：CM4112“工作原理”和表格组是 external negative/acceptance evidence；未提交当前回归 fixture，且最新整本文档仍有页数增长风险。
 - 来源/取代：归档任务 `08-18-fix-mineru-first-page-layout`；补充 FLOW-001 而非恢复逐页硬分页。
 
@@ -261,12 +275,15 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：layout plan 的 `two_col` region 及其 left/right blocks。
-- 正式 owner：`app/services/renderer/word_renderer.py::_render_layout_region`、`::_set_section_columns`、`::_split_two_col_blocks`。
-- 预期输出：通过 continuous section 的 `w:cols` 进入两栏，按左栏自上而下、column break、右栏自上而下渲染，再用 continuous section 恢复单栏；不使用布局表格承载普通双栏正文。
+- 正式 owner：`app/services/renderer/render_plan.py::_complete_two_column_text_region`、`::split_two_col_blocks` 冻结调度顺序；`app/services/renderer/layout_plan.py::complete_two_column_tails` 补全已证明连续的局部正文栏尾；`app/services/renderer/word_renderer.py::_set_section_columns` 执行原生栏设置。
+- 预期输出：通过 continuous section 的 `w:cols` 进入两栏，按左栏自上而下、column break、右栏自上而下渲染，再用 continuous section 恢复单栏；不使用布局表格承载普通双栏正文。新建多栏节时，若继承的栏间距缺失或为零，使用 `720` twips（0.5 英寸）；已有正间距原样保留，不修改发布模板字节。
+- 完整文字流：页面已有双栏几何证据，正文仅含 heading/paragraph/formula、全部有明确左右栏提示，且原来源顺序恰为完整左栏后接完整右栏时，以一次原生双栏调度保留该来源读序；高度差和纵向空隙不得把右栏续句提前到左栏段首之前。空合并残留仍保留在库存与目标证据中。只合并本次调度，不更改原 LayoutPlan 区域或聚合统计，确保历史冻结 trace 与内容表物理顺序仍可恢复。
+- 混排栏尾：未使用完整文字流合并时，仅把紧接既有双栏区的 one_col 前缀 paragraph 补回该栏流。必须与前区内直接来源前驱均为 paragraph，order 和 source_index 各连续，左右栏提示相同，bbox 有效，纵向间距和左起始边缘偏差均不超过两块较小高度的 1/4。遇到首个不满足块立即停止，混合尾区的剩余标题、图片和表格保留原分区。原 LayoutPlan 及聚合统计不变，只调整新件调度；图片 overlay 使用同一补全调度，不回读旧区域覆盖补全结果。
+- 适用边界：缺宽度或无双栏几何证据、真实 wide 块、表格、图片、其他正文类型、缺少左右栏提示，以及来源栏位多次交替的页面，不做整页文字流合并；局部栏尾补全只按上述证据生效，真实单栏间隙、不确定图片组和其他区域继续保持既有合同。
 - 冲突/例外：COL-003 的严格图片组使用无边框布局表格；continuous section 的实际栏平衡需要 Word/WPS 视觉验收。
 - 禁止：按全局 y 顺序交错左右栏；渲染完双栏后不恢复单栏；用 1×2 表格包装普通正文。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_uses_native_columns_for_v2_region`、`.test_render_to_bytes_prefers_column_hint_when_ordering_native_columns`、`.test_render_to_bytes_keeps_continuous_restore_when_wide_content_follows_columns`。
-- 样本证据：SC2167 为 external historical WPS/LibreOffice evidence；没有 committed 当前视觉回归。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_uses_native_columns_for_v2_region`、`.test_render_to_bytes_prefers_column_hint_when_ordering_native_columns`、`.test_render_to_bytes_keeps_continuous_restore_when_wide_content_follows_columns`、`.test_native_columns_restore_spacing_from_single_column_template`；`tests.test_two_column_reading_order` 覆盖错开高度、跨栏/跨页空残留、适用边界、实际目标与冻结旧件恢复，另覆盖含窄表/图片的混排、混合尾区拆分、三个条目实际处于原生双栏右侧、十类不适用反例，以及严格/不确定图片报告和旧冻结 trace 不变。
+- 样本证据：SC2167 为 external historical WPS/LibreOffice evidence；2026-10-30 实际数据手册以原任务 IR、发布模板和图片重放，线上关联任务 `docjob_95abeae54edb` 的实际新产物也经 WPS 全部 7 页逐页核对，覆盖栏间距、两页完整文字栏流与公式显示；第 6 页 Soft-start 的续句在同页右栏正确衔接。用户原始文件和预览仍为外部验收证据，不进入 committed fixture，也不代表其他客户端已验收。
 - 来源/取代：commit `5d4a02d7` 与 `32edca58`；取代布局表格模拟普通栏。
 
 ### COL-003 严格图片行与无边框布局表格
@@ -332,11 +349,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：IR table block 的 HTML table、rowspan/colspan、表格规模和模板表格配置。
-- 正式 owner：`app/services/renderer/table_renderer.py::_render_table`、`::_render_standard_html_table`、`::_render_expanded_table`；解析依赖 `app/conversion/runtime/table_html_parser.py::parse_html_table`。
-- 预期输出：可解析 HTML 生成原生可编辑 Word table；标准路径保留 gridSpan/vMerge；超过规模阈值时展开为规则行列，而非图片化。
-- 冲突/例外：parser 是正式 renderer 的实际依赖，但 legacy table writer/characterization tests 不是正式证据；无效 HTML 受 TABLE-004 缺口约束。
+- 正式 owner：`app/services/renderer/logical_table_plan.py::build_content_table_plan` 固定逻辑表与内容 owner；`app/services/renderer/table_renderer.py::_render_native_unit` 消费同一计划写入。HTML 解析复用现有共享 parser，不能以旧 writer 的策略代替冻结计划。
+- 预期输出：受支持 HTML 生成原生可编辑 Word table，以 gridSpan/vMerge 保留合并结构，合并单元格内容由 owner 写入一次；规模超过旧展开阈值不会自动改为复制内容的规则网格。
+- 冲突/例外：`_render_table`、`_render_standard_html_table`、`_render_expanded_table` 保留旧写法的兼容与历史验证，不是当前正式计划的 owner；旧展开产物继续按原 occurrence 投影认证。无效 HTML 和缺少占位来源继续按各自输入合同失败关闭，不能为测试继续执行而放宽。
 - 禁止：把表格截图作为默认输出；为某一列数复制新 renderer；以旧 runtime writer 的测试声称正式输出已覆盖。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_styles_later_th_cells_as_table_headers`。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_styles_later_th_cells_as_table_headers`；`tests.test_formula_rendering` 的 native 大表与 `tests.test_formula_rendering_compatibility` 的独立旧展开回归分别保护合并 owner 和历史重复 occurrence。
 - 样本证据：OPA228 P6/P7 manifest 包含表格焦点但当前 Golden 未实际转换；CM4112 表格为 external negative evidence。
 - 来源/取代：commit `32edca58` 正式 renderer 收敛；保留共享 parser，取代旧 writer 权威性。
 
@@ -364,17 +381,18 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 样本证据：OPA228 P6/P7 与 CM4112 均缺当前排版后的自动/人工闭环。
 - 来源/取代：commit `32edca58` 与两个 08-18 归档任务；明确不继承 legacy 页高估算器的已实现声明。
 
-### TABLE-004 无效表格输入不得重复题注或静默伪装
+### TABLE-004 无效表格输入与有来源的非编辑占位
 
-- 状态：`planned`
-- 输入信号：table HTML 缺失/不可解析，同时 `block.text` 与 `block.captions` 含相同题注文本。
-- 正式 owner：当前缺口位于 `app/services/renderer/table_renderer.py::_render_table`；尚无满足合同的正式 owner。
-- 预期输出：后续实现应只保留一份可见题注，并显式报告表格体缺失/解析失败；不得把题注再次当表体正文。
-- 冲突/例外：如果 `block.text` 是与 captions 不同的真实 fallback 内容，应保持可见，不能简单全部删除。
-- 禁止：先渲染 captions，再无条件渲染相同 `block.text`；静默生成看似成功但没有表体的 DOCX。
-- 自动验证：无；现有正式表格测试只覆盖有效 HTML。
-- 样本证据：无；需要最小无效 table HTML 正式回归。
-- 来源/取代：当前正式代码审计发现。
+- 状态：`enforced-tested`（输入拒绝、占位来源与质量阻塞；不代表非编辑表格可交付）。
+- 输入信号：不可支持的 HTML，或可信表格来源账本中的 missing/empty HTML 片段。
+- 正式 owner：`logical_table_plan.build_content_table_plan` 的原生输入规划；`document_ir.table_placeholder.prepare_placeholders` 的来源绑定；`infrastructure.pdf_crop.PopplerPdfTableCropProvider` 的受控裁图；`table_placeholder_evidence` 与 `base_quality` 的占位认证及质量分级。
+- 预期输出：不可支持的 HTML 在输入/规划边界明确拒绝；missing/empty 片段须有可验证参考图，或原 PDF loader 与裁图 provider。后者核对文件身份/checksum、页码、有限 bbox、明确 frame 和实际 PDF 页面边界。没有图片/PDF 来源时保持 `table_placeholder_source_unavailable`，不得用题注或空表冒充表体。
+- 运行依赖：API/Worker 共用镜像及开发镜像均安装 `poppler-utils`，提供 `pdfinfo` 和 `pdftoppm`；只有 Python provider 接线而缺 CLI 不构成可用裁图。不得在请求中临时安装或改用未认证服务。
+- 冲突/例外：有来源的非编辑占位可以生成完整候选 Word；`table_evidence` 中必须保留 `table_noneditable_placeholder`、producer=`table_placeholder`、severity=`blocker`，由正式质量分级阻止交付。完好占位不是确定性内容丢失，不能混入 renderer 的 `blocking_quality_flags`；也不能因 renderer 完整就声明质量通过。
+- 禁止：放宽 HTML/图片/来源校验使旧夹具通过；为空路径/目录路径猜图；静默丢正文；将占位图片算作可编辑原生数据表；以整体 DOCX hash 失败代替缺图/缺表专用验证。
+- 自动验证：`tests.test_document_ir_word_renderer_layout` 分别验证有效基线的缺图/缺表对账及无效 HTML 拒绝；`tests.test_document_ir_mineru_converter_layout` 覆盖来源缺失、记录型 provider 的续表与方向、真实正文缺失；`tests.test_conversion_sandbox_dev_tools` 覆盖真实参考图与已准备裁图资产消费、坏/缺图拒绝及占位 blocker 保留。
+- 样本证据：2026-10-30 旧线上镜像实测两个 CLI 均缺失，真实 PDF 裁图报 `table_placeholder_crop_failed`；补齐依赖的隔离镜像实际裁得 400×200 PNG，完成 MinerU→IR→候选 Word，保留来源 checksum、完整 trace 和非编辑质量阻塞。同日 23:26 已部署 `md2word-table-crop:12188b04b7b4`，实际线上 Worker 再次完成真实裁图、候选 Word 与质量阻塞校验。该探针使用合成 PDF，不代替其他文档或 Word/WPS 视觉验收。
+- 来源/取代：实际原生表格/占位实现与本轮布局回归；取代将无效 HTML 与有来源占位合并描述为 `_render_table` 未来缺口的旧说明。
 
 ### IMAGE-001 图片资产绑定、显示宽度和可见失败
 
@@ -456,6 +474,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：显式 formula block、semantic formula、inline 分隔符及保守裸数学、HTML `<eq>` / sub/sup；不以任意反斜杠判断数学。
 - 正式 owner：`app/conversion/docx_rules/formula.py` 的共享扫描和有限 parser；`WordTextRendererMixin` 按原顺序写 run/OMML，表格及题注复用同一入口。
 - 预期输出：支持分式/根式/上下标/符号/样式/overline/boxed/left-right 子集；合法简单 tag 保留主体 OMML 与可见编号。裸脚本参数不吞运算符，显式 group 与命令产生的原子作为完整脚本基底保留（OMML box），text wrapper 保留空格，style wrapper 后接脚本不能重建成默认直立体，`\vee` 不得写成 V。闭合的纯数字数学分隔符和 MinerU numeric semantic formula 必须登记，未闭合金额继续作为普通正文。数学内容不经过普通术语替换，HTML 标签不进入公式字面内容。
+- 已观察语法：数学边界内的 `\_`、`\%` 保留字面下划线和百分号，`\eta` 写入希腊字母 η；不因此扩大保守裸数学扫描器的命令集或改变历史 occurrence 身份。
 - 冲突/例外：不是完整 TeX 引擎；matrix/cases/align、自定义宏等安全降级，不新增 TeX/AI/图片服务。不能只用零残留证明数学语义正确。
 - 禁止：全局删反斜杠/dollar/空格；将含分式整段自然语言转为数学；公式编号静默丢失；建立第二套解析器。
 - 自动验证：`tests.test_formula_rendering`、现有 renderer 公式矩阵、`tests.test_formula_translation_boundary` 合成 MinerU→IR→fake translation→原生表格 DOCX。
@@ -468,9 +487,10 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：非空数学中的未知命令、畸形语法、不支持结构或不能证明安全的归一化。
 - 正式 owner：共享 `FormulaRenderResult` 与 renderer 单次 context；`docx_quality.py` / `evidence.py` 校验最终字节。
 - 预期输出：原位置 literal run 写 `【公式降级，需复核】` 加逐字原式，mode=`text_fallback`、warning=`formula_text_fallback`；reason 仅 `unsupported_command/invalid_syntax/unsupported_structure/unsafe_normalization`。原式不再按 HTML 解析或术语替换。合法 semantic sub/sup 内 b/i 和换行保留原生样式；未闭合/错配 HTML 为 invalid_syntax，嵌套脚本或 semantic 脚本包裹显式/裸 TeX 数学的未支持组合为 unsupported_structure，整式降级，不能丢掉外层脚本。
-- 冲突/例外：空源仍按输入完整性失败；缺内容、锚点或输出绑定损坏仍失败关闭。仅在报告、可见提示、原式与预期输出一致的受控区域允许原始 TeX；其他残留保持 `docx_latex_residue:*`。旧无报告 analyzer 仍保留原残留字段，不伪造通过。
+- 冲突/例外：空源仍按输入完整性失败；缺内容、锚点或输出绑定损坏仍失败关闭。仅在报告、可见提示、原式与预期输出一致的受控区域允许原始 TeX。已经认证 mode、锚点和输出 hash 的 OMML `m:t` 不作为正文 TeX 残留。正式聚合证据在核对完整公式来源清单与物理报告后，按共享数学边界从源 IR 收集字面标识符，`4V_VDD`、`file_name` 等整词下划线不视为 TeX；独立 `_RMS`、花括号脚本、上标、命令与美元数学残留仍产生 `docx_latex_residue:*`。旧无报告 analyzer 保留原扫描行为，不按词汇白名单放行。
+- 历史重放：parser 扩展后，旧表格 cell、表题与表注仍按已认证报告中对应 occurrence 的降级模式重放固定提示和逐字源；先验证全源覆盖与物理输出，再逐叶核对来源、边界、锚点次序和完整消费次数。只在独立 scratch part 安装重放入口，结束或异常时清理；正式写入和并发渲染不受影响。不能用当前 parser 的新能力否定旧的合法降级产物，也不能照抄实际输出作为预期值。
 - 禁止：失败删公式/空段落；用 broad catch 把 XML/文件/程序错误变成降级；将 warning 塞进 fatal flags；为清残留放宽全局扫描。
-- 自动验证：`tests.test_formula_rendering` 的失败原因、精确保真和篡改测试；`tests.test_document_job_result_persistence` 的三入口恢复与质量投影。
+- 自动验证：`tests.test_formula_rendering` 的失败原因、精确保真和篡改测试；`tests.test_formula_rendering_compatibility` 的旧降级、来源错配、重复公式次序、篡改、正文残留与已认证 OMML 反例；`tests.test_document_job_result_persistence` 的三入口恢复与质量投影。
 - 样本证据：合成失败公式与当前本地报告；真 Word 视觉签字另行记录。
 - 来源/取代：RND-502 v2；将原普通文本回退升级为有提示、逐式证据与预期输出绑定的受控文本降级。
 
@@ -506,6 +526,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：eastAsia/legacy font、ascii、hAnsi 和 complex script 字体配置，包含显式空值。
 - 正式 owner：`app/conversion/docx_rules/run_fonts.py::apply_run_fonts`；`app/services/renderer/text_renderer.py::_apply_run_style`；`app/services/renderer/word_renderer.py::_resolve_decoration_font`。
 - 预期输出：分别写入 eastAsia、ascii、hAnsi、cs 槽；缺少新槽时回退 legacy font，显式空值保持继承，不被默认值覆盖。
+- 数学字号：OMML run 按正文、表题或紧凑表格的有效 `font_size` 写入 `w:sz` / `w:szCs`，位于 `m:rPr` 之后、`m:t` 之前；显式空值继续继承。数学字体和数学语义样式保持原规则，不以写入字号为由修改源表达式或缩小到配置下限之外。规范依据见 [OOXML 数学 run](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.math.run?view=openxml-3.0.1)。
 - 冲突/例外：字段 schema/version 属于模板配置合同；本文只约束最终 run 输出。
 - 禁止：只写 eastAsia 造成西文/公式字体漂移；用 truthy 判断覆盖显式空值；在表格/页眉维护独立字体逻辑。
 - 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_seed_config_declares_western_and_complex_fonts_for_all_text_groups`、`.test_render_to_bytes_writes_configured_body_header_and_footer_font_slots`、`.test_decoration_font_resolution_preserves_explicit_empty_and_fallback_order`。
@@ -530,10 +551,12 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：生成的 DOCX bytes/file 以及 DocumentIR/layout plan。
 - 正式 owner：`app/services/renderer/docx_quality.py::analyze_docx_quality_bytes`、`::build_docx_quality_flags`；`app/services/renderer/evidence.py::build_renderer_evidence`。
 - 预期输出：记录可编辑段落/表格、heading、numbering、TOC clue、keepNext、表头/cantSplit、宽表、横向节、图片和 LaTeX residue 等 OOXML 指标，并对无可编辑内容、图片化、手写列表、静态目录、未样式化标题、公式残留等风险生成 flag。
+- 来源感知诊断：只有图片报告完整认证后，其 annotation 物理锚点才可从正文标题候选中排除；图片说明不按 `Figure` 或括号文本猜测，不改变显式 IR heading 与实际 heading 的计数核对。未认证说明和真实无样式正文标题仍走既有诊断；严格图片分组的不确定提示保留。
+- 质量版本与恢复：非空正式质量结果记录 `analysis_version=docx-quality/v2`；无版本历史字典按原算法完整重算并逐值比较，未知或空版本拒绝。空分析结果保持 `{}` 与 `docx_quality_unavailable`，版本标记不得把不可用结果包装成成功。新质量版本落盘后，回退必须保留兼容 reader；文件、prepared receipt、当前及历史复核绑定、发布快照均在版本检查范围内。
 - 冲突/例外：指标或 flag 只证明包内结构，不证明 Word 实际页数、溢出、栏平衡、表格不挤压或图片清晰；`wide_table_count`/`landscape_sections` 当前不会自动形成方向风险 flag。
 - 禁止：把 `quality_flags=[]` 当作视觉验收通过；把“可打开”当作质量通过；用 analyzer 指标替代真客户端排版。
-- 自动验证：`tests.test_golden_sample_manifest.GoldenSampleManifestTests.test_docx_quality_analysis_reads_ooxml_structure_without_python_docx`、`.test_docx_quality_flags_obvious_word_semantics_risks`、`.test_docx_quality_analysis_flags_image_only_docx`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_renderer_evidence_summarizes_layout_and_docx_quality`。
-- 样本证据：线上 worker 持久化 evidence；只有 `blocking_quality_flags` 触发失败关闭，既有非阻断 `quality_flags` 仍允许成功并进入人工复核。
+- 自动验证：`tests.test_golden_sample_manifest.GoldenSampleManifestTests.test_docx_quality_analysis_reads_ooxml_structure_without_python_docx`、`.test_docx_quality_flags_obvious_word_semantics_risks`、`.test_docx_quality_analysis_flags_image_only_docx`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_renderer_evidence_summarizes_layout_and_docx_quality`；`tests.test_formula_rendering_compatibility` 与 `tests.test_image_group_rendering` 覆盖字面标识符、真实残留、图注来源认证、真实标题、空分析、旧新质量重放与未知版本拒绝。
+- 样本证据：线上 worker 持久化 evidence；只有 `blocking_quality_flags` 触发失败关闭，既有非阻断 `quality_flags` 仍允许成功并进入人工复核。2026-10-30 线上新任务 `docjob_142032db0e33` 的实际产物经 WPS 全部 7 页逐页核对，字面标识符残留和图注标题误报均为 0，70 处原生公式无降级；严格图片分组的不确定提示仍保留。实际 DOCX SHA256 为 `05b105294b831df21810eb6e875a55a888fa2917709fcef95137f59117536f5b`；这是该外部样本的 WPS 验收，不替代其他样本或客户端的验收。
 - 来源/取代：commit `32edca58` 的 OOXML evidence 合同。
 
 ### QUALITY-002 样本证据必须分层
@@ -605,8 +628,8 @@ RND-502 补充：`formula_text_fallback` 是内容完整、可见、可审计的
 | INPUT-003 | shared content rule、converter | conservative/filter converter tests | 无 | SC2167 historical | 无 committed 宣传尾页包 |
 | IR-002、PAGE-001、PAGE-002 | layout signals、section setup | converter/renderer layout | OPA228 PDF 仅作为输入资产 | CM4112 external | 没有当前真实纵横向/页数视觉基线 |
 | IR-003、IR-004、QUALITY-004 | integrity、converter、renderer evidence、正式发布边界 | converter/IR contract/renderer/formal adapter/document job | 无 | CM4112 当前 external 对账 | 无 committed 含 chart 的 MinerU fixture；实际分页不属于阻断计数 |
-| TABLE-004 | 当前缺口 | 无 | 无 | 无 | 无效 HTML/空有效表格的失败策略待实现 |
-| FLOW-001、FLOW-002 | renderer page loop、semantic break | renderer layout | 无 | SC2167、CM4112 external | 无实际落页和空白页自动断言；双栏重排可能使语义分页目标晚于左栏内容 |
+| TABLE-004 | 原生表规划、placeholder 来源/crop、typed table evidence | 无效 HTML/缺源拒绝、续表/方向、三类资产消费 | 合成 MinerU 表格包与有效 PDF | 线上基底缺 CLI 实证；隔离镜像实际 Poppler 裁图 | 非编辑占位仍质量阻塞；合成探针不代替 Word/WPS 视觉验收 |
+| FLOW-001、FLOW-002 | renderer page loop、semantic break | renderer layout | 无 | SC2167、CM4112 external | 无跨客户端实际落页自动断言；完整文字栏流已覆盖实际分页目标，混合区域组合仍需视觉验收 |
 | FLOW-003、TABLE-001、TABLE-002、TABLE-003 | layout signals、table renderer | converter/renderer table tests | OPA228 P6/P7 PDF 未执行 | CM4112、SC2167 external | continuation height 无消费者；无表格挤压/跨页视觉门禁 |
 | COL-001、COL-002 | layout plan、renderer columns | renderer layout | OPA228 P1/P2 PDF 未执行 | CM4112 当前 LibreOffice/WPS、SC2167 external | 无自动 Word/WPS 栏平衡断言；WPS 分页仍与 LibreOffice 不同 |
 | COL-003、IMAGE-001、IMAGE-002、IR-005 | image plan/writer/evidence、converter/reconciler | 阈值/比例/OOXML变换/注释/三恢复入口/B1及源安全负例 | 可靠图5/6、24/25合成ZIP、中性非方图、已接受去标识不确定caption-pair | SC2167 historical；本轮LO26.2.4.2辅助预览 | Microsoft Word更新字段前后及部署预览待验；无真实专有ZK全册签字，不承诺源图清晰度 |
@@ -669,10 +692,10 @@ RND-502 补充：`formula_text_fallback` 是内容完整、可见、可审计的
 
 ### 2. 接口
 
-- `render_to_result(...) -> DocumentIRRenderResult(content, formula_report)`；旧 `render_to_bytes(...) -> bytes` 委托同一核心。
-- `build_renderer_evidence(ir, content, layout_plan=None, *, formula_report=None)`；未提供报告时保持旧 evidence 字段集合。
+- `render_to_result(...) -> WordRenderResult`：返回同次 DOCX、计划、块证据、`renderer_content_contract_version`、`formula_source_coverage` 和公式/图片报告；旧 `render_to_bytes(...) -> bytes` 委托同一核心。旧 `DocumentIRRenderResult` 形态不能代替新件的完整结果。
+- `build_renderer_evidence(ir, content, layout_plan=None, *, render_result=None, formula_report=None, ...)`：新渲染须传完整 `render_result`；历史恢复按原产物显式版本字段选择原合同，不能仅凭新件公式报告套用旧库存。
 - `validate_formula_report(report) -> dict`：校验版本化持久化报告并派生安全摘要，不执行文件 I/O。
-- `docx_rules.table_expansion.expanded_table_rows(HtmlTable)`：共用既有大表展开内容投影；`TableCellOccurrence` 保留原 `HtmlCell` 及源 row/column。阈值仍为 >400 行或 HTML >30000 字符；跨行重复、跨列尾格空白规则保持，renderer 与源公式库存共用该投影。
+- `docx_rules.table_expansion.expanded_table_rows(HtmlTable)`：旧大表展开路径共用的内容投影；`TableCellOccurrence` 保留原 `HtmlCell` 及源 row/column。旧阈值仍为 >400 行或 HTML >30000 字符，跨行重复、跨列尾格空白规则保持。当前原生表格由冻结的逻辑表计划确定实际内容 owner 和公式来源覆盖，不把旧展开次数或含 HTML 标签的偏移强加给新件。
 
 ### 3. 合同
 
@@ -682,7 +705,7 @@ metadata=`formula_report/formula_summary`；摘要含 schema、formula/OMML/sema
 
 单次 RenderContext.formula_location 从真实 block/field 调用点绑定来源，包含 list、cell、caption/note 和 image annotation；不能只按源 hash 或库存遍历次序猜位置。相同原式跨入口必须由实际 anchor 所在位置回查正确 source。
 
-超阈值表格每次实际显示均登记 occurrence；跨行重复保留同一源 cell 坐标并各有独立锚点，不把原式先压成纯文本，也不放宽重复计数对账。
+采用旧超阈值展开策略的产物，每次实际显示均登记 occurrence；跨行重复保留同一源 cell 坐标并各有独立锚点。当前原生表格的合并单元格内容由 owner 写入一次，`gridSpan`/`vMerge` 保留合并语义；其公式次数按实际 owner 对账。新旧策略分别验证，不把原式先压成纯文本，也不放宽各自的重复计数对账。
 
 完成时在既有 job 锁内仅由匹配 generation/最终 IR/结果 ID 的选中 receipt 合并 `quality_summary.formula`，保留其它摘要；pending/blocked 不提升，passed 遇 fallback 降 warning。不扩展状态机/DDL。三恢复入口均对新报告读取实际字节及文件原始 IR 重验，I/O 在 job 锁外；历史明确指针跨代复用不导入旧报告到新代摘要。无新字段旧件维持原合同，新字段损坏不能降级 legacy。已发布件和审计不回写。
 
@@ -705,7 +728,7 @@ metadata=`formula_report/formula_summary`；摘要含 schema、formula/OMML/sema
 
 ### 6. 必要测试
 
-`tests.test_formula_rendering`、`tests.test_document_ir_word_renderer_layout`、`tests.test_formula_translation_boundary`、`tests.test_document_job_result_persistence`、`tests.test_document_job_delivery_state`；分别断言精确结构、原生表格/正文顺序、最终输出篡改、三恢复入口、选中摘要及三 adapter 状态列往返。fake MySQL 不证明真实 InnoDB；OOXML 不代替 Word 视觉签字。
+`tests.test_formula_rendering`、`tests.test_document_ir_word_renderer_layout`、`tests.test_formula_translation_boundary`、`tests.test_document_job_result_persistence`、`tests.test_document_job_delivery_state`；分别断言精确结构、原生表格/正文顺序、最终输出篡改、三恢复入口、选中摘要及三 adapter 状态列往返。公式书签篡改须按报告中的 `entry.anchor` 定位，并直接验证公式校验器拒绝，不能选取第一个通用书签或仅依赖整件哈希失配。`tests.test_conversion_sandbox_dev_tools` 须以真实 MinerU 公式表格验证本地 adapter 的完整新件合同、trace 与失败不落盘；旧展开表格另保留独立历史回归。fake MySQL 不证明真实 InnoDB；OOXML 不代替 Word 视觉签字。
 
 ### 7. 错误与正确做法
 
@@ -722,7 +745,7 @@ metadata=`formula_report/formula_summary`；摘要含 schema、formula/OMML/sema
 ### 2. 接口与 owner
 
 - `layout_plan.build_image_plan(document_ir) -> tuple[ImageSpan, ...]`：纯附加决策，旧 `build_layout_plan()` 的结构/aggregate/历史解释保持。
-- `DocumentIRRenderResult(content, formula_report, image_layout_report=None)`：兼容旧 bytes 调用，同次报告由正式 Worker 和本地 adapter 传递。
+- `WordRenderResult` 同时携带公式与图片报告：正式 Worker 和本地 adapter 传递完整新件结果，旧 bytes 调用仍共用渲染核心。
 - `DocumentIRRenderOptions.template_version_id`：正式外层身份，恢复取自原文件 metadata，不能取当前 job 默认版本。
 - `build_renderer_evidence(..., image_layout_report=None, expected_template_version_id=None, expected_generation_policy=None)`：新件认证；恢复不强求当前生成构建策略，只按原文件策略解释。
 - `image_evidence.verify_image_report(...) -> dict`：源计划、冻结输入、实际包独立重验，返回有界安全摘要；不得反向依赖 word_renderer 或另建分组算法。

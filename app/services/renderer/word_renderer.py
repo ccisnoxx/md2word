@@ -137,7 +137,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         self._clear_body(document)
         self._apply_page_setup(document, template_config)
         self._apply_header_footer(document, template_config, logo_bytes=logo_content)
-        self._apply_document_settings(document)
+        self._apply_document_settings(document, document_ir)
 
         assets_by_id = {asset.id: asset for asset in document_ir.assets}
         render_context = self._build_render_context(document_ir, table_plan, plan.table_units)
@@ -199,13 +199,40 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             block_anchor_evidence=anchors, _anchor_ownership=anchor_ownership,
             block_anchor_counts=collector.block_anchor_counts)
 
-    def _apply_document_settings(self, document: Any) -> None:
+    def _apply_document_settings(self, document: Any, document_ir: DocumentIR) -> None:
+        """设置输出选项；显式多行正文的软换行不参与两端对齐拉伸。"""
+
         settings = document.settings.element
         for tag in ("w:doNotAutoCompressPictures", "w:updateFields"):
             element = settings.find(qn(tag))
             if element is None:
                 element = OxmlElement(tag)
                 settings.append(element)
+            element.set(qn("w:val"), "true")
+
+        if any(block.type == "paragraph" and (block.layout is None or block.layout.role == "body")
+               and "\n" in (block.text or "") for block in document_ir.blocks):
+            compat = settings.find(qn("w:compat"))
+            if compat is None:
+                compat = OxmlElement("w:compat")
+                settings.insert_element_before(compat,
+                    "w:docVars", "w:rsids", "m:mathPr", "w:uiCompat97To2003", "w:attachedSchema",
+                    "w:themeFontLang", "w:clrSchemeMapping", "w:doNotIncludeSubdocsInStats",
+                    "w:doNotAutoCompressPictures", "w:forceUpgrade", "w:captions", "w:readModeInkLockDown",
+                    "w:smartTagType", "sl:schemaLibrary", "w:shapeDefaults", "w:doNotEmbedSmartTags",
+                    "w:decimalSymbol", "w:listSeparator")
+            element = compat.find(qn("w:doNotExpandShiftReturn"))
+            if element is None:
+                element = OxmlElement("w:doNotExpandShiftReturn")
+                # CT_Compat 是有序序列，保留既有标志并在其规范位置插入。
+                preceding_tags = {qn(tag) for tag in (
+                    "w:useSingleBorderforContiguousCells", "w:wpJustification", "w:noTabHangInd", "w:noLeading",
+                    "w:spaceForUL", "w:noColumnBalance", "w:balanceSingleByteDoubleByteWidth",
+                    "w:noExtraLineSpacing", "w:doNotLeaveBackslashAlone", "w:ulTrailSpace",
+                )}
+                position = max((index + 1 for index, child in enumerate(compat)
+                                if child.tag in preceding_tags), default=0)
+                compat.insert(position, element)
             element.set(qn("w:val"), "true")
 
     def _content_width_and_columns(self, document: Any) -> tuple[int, int]:
@@ -505,3 +532,6 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             columns = OxmlElement("w:cols")
             section._sectPr.append(columns)
         columns.set(qn("w:num"), str(count))
+        if count > 1 and columns.get(qn("w:space")) in (None, "0"):
+            # 单栏模板的零栏间距不能继承到新创建的双栏节。
+            columns.set(qn("w:space"), "720")

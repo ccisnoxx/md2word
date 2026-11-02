@@ -3,6 +3,7 @@ from __future__ import annotations
 # app/services/document_ir/layout_signals.py: 从 MinerU 原始块和 layout/middle JSON 中提取 DocumentIR v2 布局事实。
 
 import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -11,8 +12,9 @@ from app.conversion.docx_rules.mineru_content import (
     extract_first_asset_path,
     extract_first_html,
     is_empty_table_placeholder,
+    mineru_raw_text_preserving_lines,
 )
-from app.services.document_ir.artifact_validator import parse_valid_bbox
+from app.services.document_ir.artifact_validator import MergedParagraphEvidence, MinerUBlockKey, parse_valid_bbox
 from app.services.document_ir.mineru_package import DEFAULT_POLICY, MinerUValidationPolicy, read_json_payload
 from app.services.document_ir.models import (
     DocumentIRBlockLayout,
@@ -231,6 +233,103 @@ def _load_pdf_info(package_root: Path, *, policy: MinerUValidationPolicy = DEFAU
         if isinstance(pdf_info, list) and pdf_info:
             return pdf_info, path.name
     return [], None
+
+
+def find_merged_paragraphs(
+    content_list_path: Path, *, policy: MinerUValidationPolicy = DEFAULT_POLICY,
+) -> dict[MinerUBlockKey, MergedParagraphEvidence]:
+    """把合并前后同一节点的原文对账绑定到 content list 的归一化坐标。"""
+
+    # 只有同目录、同文档且唯一的布局可出具合并证据，不能借用包内另一文档的布局。
+    content_names = {
+        match.group(1) or "" for path in content_list_path.parent.glob("*.json")
+        if (match := re.fullmatch(r"(?:(.+)_)?content_list(?:_v2)?\.json", path.name))
+    }
+    selected = re.fullmatch(r"(?:(.+)_)?content_list(?:_v2)?\.json", content_list_path.name)
+    if selected is None:
+        return {}
+    name = selected.group(1) or ""
+    layout_names = {f"{name}_middle.json", f"{name}_layout.json"} if name else set()
+    if content_names == {name}:
+        layout_names.update({"middle.json", "layout.json"})
+    candidates = [path for path in content_list_path.parent.glob("*.json") if path.name in layout_names]
+    if len(candidates) != 1:
+        return {}
+    payload, _ = read_json_payload(candidates[0], policy=policy)
+    pdf_info = payload.get("pdf_info") if isinstance(payload, dict) else None
+    if not isinstance(pdf_info, list):
+        return {}
+    proofs: dict[MinerUBlockKey, MergedParagraphEvidence] = {}
+    occurrences: dict[MinerUBlockKey, int] = {}
+    previous = None
+    for fallback_index, page in enumerate(pdf_info):
+        if not isinstance(page, dict):
+            previous = None
+            continue
+        page_index = page.get("page_idx", fallback_index)
+        size = _parse_page_size(page.get("page_size"))
+        blocks, originals = page.get("para_blocks"), page.get("preproc_blocks")
+        if type(page_index) is not int or page_index < 0 or size is None or not isinstance(blocks, list) or not isinstance(originals, list):
+            previous = None
+            continue
+        original_by_identity: dict[tuple, list[dict[str, Any]]] = {}
+        for original in originals:
+            if isinstance(original, dict) and (bbox := parse_valid_bbox(original.get("bbox"))) is not None:
+                index = original.get("index")
+                if type(index) is int:
+                    original_by_identity.setdefault((index, bbox), []).append(original)
+        for block in blocks:
+            if not isinstance(block, dict) or block.get("type") != "text" or (bbox := parse_valid_bbox(block.get("bbox"))) is None:
+                previous = None
+                continue
+            # MinerU v3 的 content list 使用逐坐标截断的 0..1000 空间，不能直接比较 PDF point。
+            projected = tuple(value * 1000 / size[i % 2] for i, value in enumerate(bbox))
+            if not all(math.isfinite(value) for value in projected):
+                previous = None
+                continue
+            key = (page_index, tuple(int(value) for value in projected))
+            occurrences[key] = occurrences.get(key, 0) + 1
+            spans = _paragraph_span_keys(block)
+            if spans:
+                previous = (key, spans)
+                continue
+            index = block.get("index")
+            candidates = original_by_identity.get((index, bbox), []) if type(index) is int else []
+            if (block.get("lines_deleted") is not True or block.get("lines") != [] or previous is None
+                    or previous[0][0] not in {page_index, page_index - 1} or len(candidates) != 1
+                    or candidates[0].get("type") != "text"):
+                continue
+            original_spans = _paragraph_span_keys(candidates[0])
+            target_key, target_spans = previous
+            if original_spans and any(
+                target_spans[start:start + len(original_spans)] == original_spans
+                for start in range(1, len(target_spans) - len(original_spans) + 1)
+            ):
+                runs = [{"type": "equation_inline" if span[0] == "inline_equation" else "text", "content": span[1]}
+                        for span in target_spans]
+                target_text = mineru_raw_text_preserving_lines({"content": {"paragraph_content": runs}})
+                proofs[key] = MergedParagraphEvidence(target_key, "".join(target_text.split()))
+    return {key: proof for key, proof in proofs.items() if occurrences[key] == occurrences[proof.target] == 1}
+
+
+def _paragraph_span_keys(block: dict[str, Any]) -> tuple[tuple, ...]:
+    """正文和几何位置共同证明原文已转移；结构不明时不授予空正文豁免。"""
+
+    lines = block.get("lines")
+    if not isinstance(lines, list):
+        return ()
+    spans = []
+    for line in lines:
+        if not isinstance(line, dict) or not isinstance(line.get("spans"), list):
+            return ()
+        for span in line["spans"]:
+            if (not isinstance(span, dict) or span.get("type") not in ("text", "inline_equation")
+                    or not isinstance(span.get("content"), str) or (bbox := parse_valid_bbox(span.get("bbox"))) is None):
+                return ()
+            text = " ".join(span["content"].split())
+            if text:
+                spans.append((span["type"], text, bbox))
+    return tuple(spans)
 
 
 def _layout_info_candidates(package_root: Path) -> list[Path]:

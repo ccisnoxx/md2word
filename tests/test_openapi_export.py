@@ -8,9 +8,12 @@ from pathlib import Path
 from threading import Thread
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from scripts.ops.export_openapi import check_openapi_export, export_openapi
 from scripts.ops.check_release import (
+    REPO_ROOT,
+    check_frontend_contracts,
     check_golden_sample_preflight,
     check_release,
     check_runtime_readiness,
@@ -36,8 +39,15 @@ class OpenAPIExportTests(TestCase):
         self.assertNotIn("/api/v1/jobs", payload["paths"])
         self.assertNotIn("/api/v1/jobs/pdf", payload["paths"])
         self.assertIn("/api/v1/document-jobs", payload["paths"])
+        self.assertIn("/api/v1/document-jobs/{job_id}/new-generation", payload["paths"])
+        self.assertIn("/api/v1/document-jobs/{job_id}/review", payload["paths"])
         self.assertIn("/api/v1/mineru-config", payload["paths"])
         self.assertIn("DocumentJobResponse", payload["components"]["schemas"])
+        action_schema = payload["components"]["schemas"]["DocumentJobResponse"]["properties"]["available_actions"]
+        self.assertEqual(
+            set(action_schema["propertyNames"]["enum"]),
+            {"download", "retry", "cancel", "archive", "unarchive", "clone", "delete", "publish", "new_generation"},
+        )
         mineru_response_properties = payload["components"]["schemas"]["MinerUConfigResponse"]["properties"]
         self.assertEqual(
             set(mineru_response_properties),
@@ -48,13 +58,20 @@ class OpenAPIExportTests(TestCase):
         with TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "openapi.json"
             export_openapi(output_path)
-            output_path.write_text("{}\n", encoding="utf-8")
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            del payload["paths"]["/api/v1/document-jobs/{job_id}/new-generation"]
+            output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-            report = check_openapi_export(output_path)
+            check_report = check_openapi_export(output_path)
+            report = check_release(output_path, unittest_targets=())
+            openapi_item = next(item for item in report.items if item.name == "openapi")
 
+        self.assertFalse(check_report.ok)
+        self.assertTrue(check_report.changed)
+        self.assertIn("generated-openapi", check_report.diff)
         self.assertFalse(report.ok)
-        self.assertTrue(report.changed)
-        self.assertIn("generated-openapi", report.diff)
+        self.assertFalse(openapi_item.ok)
+        self.assertIn("changed: True", openapi_item.details)
 
     def test_check_release_aggregates_openapi_and_optional_unittest_targets(self):
         with TemporaryDirectory() as temp_dir:
@@ -70,6 +87,46 @@ class OpenAPIExportTests(TestCase):
         self.assertIn("[openapi] ok: True", formatted)
         self.assertIn("[frontend-contract] ok: True", formatted)
         self.assertIn("[frontend-smoke-mock] ok: True", formatted)
+
+    def test_frontend_contract_check_rejects_action_union_and_optional_field_drift(self):
+        frontend_api_root = REPO_ROOT / "frontend/src/api"
+        frontend_types = (frontend_api_root / "types.ts").read_text(encoding="utf-8")
+        mutations = [
+            ("union_missing_new_generation", ' | "new_generation";', ";", "export type DocumentJobActionId"),
+            (
+                "new_generation_in_required_record",
+                'Exclude<DocumentJobActionId, "publish" | "new_generation">',
+                'Exclude<DocumentJobActionId, "publish">',
+                "available_actions:",
+            ),
+        ]
+        for action in ("publish", "new_generation"):
+            optional_field = f"    {action}?: DocumentJobAvailableAction;"
+            mutations.extend([
+                (f"{action}_field_missing", optional_field, "", f"{action}?:"),
+                (f"{action}_field_required", optional_field, f"    {action}: DocumentJobAvailableAction;", f"{action}?:"),
+            ])
+
+        with TemporaryDirectory() as temp_dir:
+            temporary_root = Path(temp_dir)
+            temporary_api_root = temporary_root / "frontend/src/api"
+            temporary_api_root.mkdir(parents=True)
+            for name in ("acceptance.ts", "aiProviderConfig.ts"):
+                (temporary_api_root / name).write_text((frontend_api_root / name).read_text(encoding="utf-8"), encoding="utf-8")
+            types_path = temporary_api_root / "types.ts"
+            types_path.write_text(frontend_types, encoding="utf-8")
+            with patch("scripts.ops.check_release.REPO_ROOT", temporary_root):
+                self.assertTrue(check_frontend_contracts(REPO_ROOT / "docs/api/openapi.json").ok)
+                for name, original, replacement, expected_detail in mutations:
+                    with self.subTest(name=name):
+                        mutated_types = frontend_types.replace(original, replacement, 1)
+                        self.assertNotEqual(frontend_types, mutated_types)
+                        types_path.write_text(mutated_types, encoding="utf-8")
+
+                        item = check_frontend_contracts(REPO_ROOT / "docs/api/openapi.json")
+
+                        self.assertFalse(item.ok)
+                        self.assertIn(expected_detail, item.details)
 
     def test_check_runtime_readiness_requires_deployment_and_p0_gates(self):
         responses = {

@@ -25,8 +25,8 @@ from app.domains.templates.layout_config_schema import TemplateConfigPackage
 from app.services.document_ir.models import DocumentIR, DocumentIRMetadata, DocumentIRPage, DocumentIRBlock, DocumentIRBlockLayout, DocumentIRAsset
 from app.services.document_ir.mineru_converter import MinerUToDocumentIRService
 from app.services.renderer import image_evidence
-from app.services.renderer.docx_quality import analyze_docx_quality_bytes
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.docx_quality import analyze_docx_quality_bytes, build_docx_quality_flags
+from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity, validate_persisted_renderer_content
 from app.services.renderer.layout_plan import build_image_plan, image_row_metrics, _aligned, IMAGE_GROUP_THRESHOLDS
 from app.services.renderer.word_renderer import DocumentIRWordRenderer, DocumentIRRenderOptions
 
@@ -208,6 +208,43 @@ class ImageGroupPlanTests(unittest.TestCase):
 
 
 class ImageGroupWriterTests(unittest.TestCase):
+    def test_authenticated_single_image_annotations_are_not_unstyled_headings(self):
+        ir = image_ir(annotations=False)
+        ir.pages[0].width, ir.pages[0].height = 885, 1000
+        captions = ["Gain vs. Frequency Figure 2. Gain", "(QFN32)"]
+        for block, box, caption in zip(ir.blocks, ((78, 654, 560, 790), (620, 645, 885, 819)), captions, strict=True):
+            block.layout.bbox = box
+            block.captions = [caption]
+        ir.blocks.append(DocumentIRBlock(id="unstyled", type="paragraph", order=2, page_index=0,
+            text="6.5 Thermal Information", layout=DocumentIRBlockLayout(page_index=0, bbox=(78, 850, 560, 880))))
+        result = render(ir)
+        current = build_renderer_evidence(ir, result.content, render_result=result)
+        ensure_renderer_integrity(current)
+        self.assertEqual(current["docx_quality"]["heading_like_unstyled_paragraphs"], 1)
+        self.assertIn("docx_unstyled_heading_candidates:1", current["quality_flags"])
+        self.assertEqual(analyze_docx_quality_bytes(result.content)["heading_like_unstyled_paragraphs"], 3)
+        # 未达到0.80阈值的两图仍逐图输出，源题注完整保留且不隐藏分组提示。
+        self.assertIn("image_group_uncertain", current["quality_flags"])
+        self.assertEqual(current["image_layout_summary"]["uncertain_span_count"], 2)
+        self.assertEqual(current["image_layout_summary"]["reason_counts"], {"row_alignment_insufficient": 2})
+        self.assertEqual(current["docx_quality"]["inline_shape_count"], 2)
+        doc = Document(io.BytesIO(result.content))
+        self.assertFalse(doc.tables)
+        text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+        for caption in captions:
+            self.assertEqual(text.count(caption), 1)
+
+        legacy = copy.deepcopy(current)
+        legacy["docx_quality"] = analyze_docx_quality_bytes(result.content, formula_report=result.formula_report)
+        legacy["quality_flags"] = [*build_docx_quality_flags(legacy["docx_quality"]), "image_group_uncertain"]
+        restored = validate_persisted_renderer_content(ir, result.content, legacy)
+        self.assertEqual(restored["docx_quality"], legacy["docx_quality"])
+        self.assertEqual(restored["quality_flags"], legacy["quality_flags"])
+        forged = copy.deepcopy(result.image_layout_report)
+        forged["spans"][0]["images"][0]["annotations"][0]["anchor"] = "md2w_blk_unstyled"
+        with self.assertRaises(ValueError):
+            build_renderer_evidence(ir, result.content, formula_report=result.formula_report, image_layout_report=forged)
+
     def test_uncertain_span_records_only_changed_member_geometry_in_native_flow(self):
         ir=image_ir()
         known, unknown=ir.blocks

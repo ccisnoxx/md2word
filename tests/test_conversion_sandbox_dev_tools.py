@@ -25,6 +25,152 @@ from scripts.dev import (
 
 
 class LocalMinerUConversionCliTests(TestCase):
+    def test_formal_adapter_consumes_reference_placeholder_and_rejects_missing_or_corrupt_source(self) -> None:
+        from app.services.document_ir.table_placeholder import TablePlaceholderError
+        from app.services.tables.evidence import read_table_evidence
+        from tests.test_document_ir_mineru_converter_layout import MINIMAL_PNG_BYTES
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "table-reference.zip"
+            payload = [{"type": "table", "html": "", "img_path": "images/table.png",
+                "bbox": [10, 20, 100, 120], "page_idx": 0}]
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr("sample_content_list_v2.json", json.dumps(payload))
+                archive.writestr("images/table.png", MINIMAL_PNG_BYTES)
+            kwargs = dict(input_path=str(package), output_path=str(root / "reference.docx"),
+                template_path=None, layout_config_path=None, subscript_config=None,
+                no_template=True, use_mineru_header_footer=False, document_language="zh", translation_mode="direct")
+            result = formal_mineru_conversion.run_conversion(**kwargs)
+            self.assertEqual(result.image_assets, 0)
+            self.assertEqual(result.renderer_metadata["render_trace_status"], "complete")
+            self.assertEqual(result.renderer_metadata["table_placeholder_count"], 1)
+            self.assertEqual(len(Document(result.output_docx_path).inline_shapes), 1)
+            table = read_table_evidence(result.renderer_metadata["table_evidence"])
+            self.assertEqual(table.status, "blocked")
+            self.assertEqual(table.tables[0].render_state, "placeholder")
+            self.assertEqual(table.tables[0].placeholders[0].source_kind, "mineru_reference")
+            self.assertEqual([(flag.code, flag.severity) for flag in table.tables[0].flags
+                if flag.producer == "table_placeholder"], [("table_noneditable_placeholder", "blocker")])
+
+            for label, content in (("missing", None), ("corrupt", b"invalid-png")):
+                with self.subTest(source=label):
+                    with zipfile.ZipFile(package, "w") as archive:
+                        archive.writestr("sample_content_list_v2.json", json.dumps(payload))
+                        if content is not None:
+                            archive.writestr("images/table.png", content)
+                    output = root / f"rejected-{label}.docx"
+                    kwargs["output_path"] = str(output)
+                    with self.assertRaises(TablePlaceholderError) as raised:
+                        formal_mineru_conversion.run_conversion(**kwargs)
+                    self.assertEqual(raised.exception.code, "table_placeholder_source_unavailable")
+                    self.assertFalse(output.exists())
+                    self.assertFalse(output.with_suffix(".document-ir.json").exists())
+
+    def test_formal_adapter_consumes_prepared_crop_placeholder_with_real_renderer(self) -> None:
+        from app.services.document_ir import MinerUToDocumentIRService
+        from app.services.tables.evidence import read_table_evidence
+        from tests.test_document_ir_mineru_converter_layout import _RecordingTableCropProvider
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "prepared-crop.zip"
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr("sample_content_list_v2.json", json.dumps([
+                    {"type": "table", "html": "", "img_path": "",
+                        "bbox": [10, 20, 100, 120], "page_idx": 0},
+                ]))
+                archive.writestr("layout.json", json.dumps({"pdf_info": [{"page_idx": 0, "page_size": [612, 792]}]}))
+            crop = _RecordingTableCropProvider(formal_mineru_conversion.LOCAL_SOURCE_FILE_ID, [(612, 792)])
+            converted = MinerUToDocumentIRService(pdf_crop_provider=crop).convert_zip(package,
+                job_id=formal_mineru_conversion.LOCAL_JOB_ID, source_file_id=crop.source.file_id,
+                document_language="zh", placeholder_source_loader=lambda: crop.source)
+            self.assertEqual(len(crop.requests), 1)
+            self.assertEqual(len(converted.table_placeholder_assets), 1)
+            self.assertEqual(converted.image_assets, [])
+            # 已由真实 converter 准备派生图；此处仅替换再次取结果，仍走真实 renderer 和证据认证。
+            with mock.patch.object(formal_mineru_conversion.MinerUToDocumentIRService,
+                "convert_zip", return_value=converted):
+                result = formal_mineru_conversion.run_conversion(input_path=str(package),
+                    output_path=str(root / "crop.docx"), template_path=None, layout_config_path=None,
+                    subscript_config=None, no_template=True, use_mineru_header_footer=False,
+                    document_language="zh", translation_mode="direct")
+            self.assertEqual(result.renderer_metadata["render_trace_status"], "complete")
+            self.assertEqual(result.renderer_metadata["table_placeholder_count"], 1)
+            self.assertEqual(len(Document(result.output_docx_path).inline_shapes), 1)
+            table = read_table_evidence(result.renderer_metadata["table_evidence"])
+            self.assertEqual(table.status, "blocked")
+            self.assertEqual(table.tables[0].placeholders[0].source_kind, "source_pdf_crop")
+            self.assertEqual([(flag.code, flag.severity) for flag in table.tables[0].flags
+                if flag.producer == "table_placeholder"], [("table_noneditable_placeholder", "blocker")])
+
+    def test_formal_adapter_keeps_v2_formula_table_contract_and_rejects_tampering(self) -> None:
+        from dataclasses import replace
+        import copy
+
+        from app.services.renderer.content_contract import build_formula_source_coverage
+        from app.services.renderer.layout_plan import build_layout_plan
+        from app.services.renderer.logical_table_plan import build_content_table_plan
+        from tests.test_formula_rendering import changed_docx, NS
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "formula-package"
+            package.mkdir()
+            (package / "sample_content_list_v2.json").write_text(json.dumps([
+                {"type": "text", "text": "Inline $x^2$", "bbox": [10, 20, 180, 60], "page_idx": 0},
+                {"type": "table", "table_caption": ["Table 1: $V_{OUT}$"],
+                    "table_body": "<table><tr><td>before $x^2$ after</td></tr></table>",
+                    "bbox": [10, 80, 500, 140], "page_idx": 0},
+                {"type": "equation", "latex": r"\frac{1}{2}",
+                    "bbox": [10, 160, 180, 200], "page_idx": 0},
+            ]), encoding="utf-8")
+            kwargs = dict(input_path=str(package), output_path=str(root / "formula.docx"),
+                template_path=None, layout_config_path=None, subscript_config=None,
+                no_template=True, use_mineru_header_footer=False, document_language="en", translation_mode="direct")
+            result = formal_mineru_conversion.run_conversion(**kwargs)
+            metadata = result.renderer_metadata
+            self.assertEqual(metadata["renderer_content_contract_version"], "renderer-content/v2")
+            self.assertEqual(metadata["render_trace_status"], "complete")
+            self.assertTrue(metadata["block_render_evidence"]["complete"])
+            self.assertEqual(metadata["blocking_quality_flags"], [])
+            self.assertEqual(metadata["formula_summary"]["omml_count"], 4)
+            self.assertEqual(metadata["formula_summary"]["fallback_count"], 0)
+            self.assertEqual(len(metadata["formula_source_coverage"]["entries"]), 4)
+            self.assertIn("html/0/0", {entry["source"]["field"] for entry in metadata["formula_report"]["entries"]})
+            self.assertEqual(len(Document(result.output_docx_path).tables), 1)
+
+            original = formal_mineru_conversion._render_document
+
+            def changed_result(document_ir, image_assets, request):
+                rendered = original(document_ir, image_assets, request)
+                report = copy.deepcopy(rendered.formula_report)
+                if change == "source":
+                    report["entries"][0]["source"]["block_id"] = "forged-source"
+                    return replace(rendered, formula_report=report)
+
+                def change_xml(xml):
+                    if change == "formula":
+                        xml.find(".//m:sSup/m:sup//m:t", NS).text = "3"
+                    else:
+                        next(node for node in xml.findall(".//w:tc//w:t", NS)
+                            if node.text == "before ").text = "changed "
+
+                content = changed_docx(rendered.content, change_xml)
+                tables = build_content_table_plan(document_ir, build_layout_plan(document_ir))
+                # 重建外层文件身份，让负例继续进入公式或正文来源校验。
+                coverage = build_formula_source_coverage(document_ir, content, tables, report)
+                return replace(rendered, content=content, formula_source_coverage=coverage)
+
+            for change in ("formula", "body", "source"):
+                kwargs["output_path"] = str(root / f"rejected-{change}.docx")
+                with self.subTest(change=change), mock.patch.object(
+                    formal_mineru_conversion, "_render_document", changed_result
+                ), self.assertRaises(DocumentIntegrityError):
+                    formal_mineru_conversion.run_conversion(**kwargs)
+                self.assertFalse(Path(kwargs["output_path"]).exists())
+                self.assertFalse(Path(kwargs["output_path"]).with_suffix(".document-ir.json").exists())
+
     def test_formal_adapter_saves_same_image_report_and_rejects_missing_inline(self) -> None:
         from tests.test_image_group_rendering import write_numbered_image_zip, change_docx, NS
         from app.services.renderer.word_renderer import DocumentIRWordRenderer
@@ -51,7 +197,7 @@ class LocalMinerUConversionCliTests(TestCase):
                     parent.remove(parent.find("./wp:inline", NS))
                 return replace(rendered, content=change_docx(rendered.content, remove))
             kwargs["output_path"] = str(root / "rejected.docx")
-            with mock.patch.object(DocumentIRWordRenderer, "render_to_result", remove_inline), self.assertRaises(ValueError):
+            with mock.patch.object(DocumentIRWordRenderer, "render_to_result", remove_inline), self.assertRaises(DocumentIntegrityError):
                 formal_mineru_conversion.run_conversion(**kwargs)
             self.assertFalse(Path(kwargs["output_path"]).exists())
 

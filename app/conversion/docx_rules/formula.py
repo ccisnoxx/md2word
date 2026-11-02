@@ -492,6 +492,10 @@ class _OmmlParser:
 
     def _parse_command(self) -> Any:
         self.position += 1
+        if self.position < len(self.source) and self.source[self.position] in {"_", "%"}:
+            symbol = self.source[self.position]
+            self.position += 1
+            return self._math_run(symbol)
         start = self.position
         while self.position < len(self.source) and self.source[self.position].isalpha():
             self.position += 1
@@ -591,7 +595,7 @@ class _OmmlParser:
             if not re.fullmatch(r"[A-Za-z0-9]+(?:[.\-][A-Za-z0-9]+)*", value):
                 raise FormulaParseError("unsupported_structure")
             return self._math_run(f" ({value})")
-        symbol = {"vee": "∨", "to": "→"}.get(command, GREEK_AND_TEXT_COMMANDS.get(command))
+        symbol = {"vee": "∨", "to": "→", "eta": "η"}.get(command, GREEK_AND_TEXT_COMMANDS.get(command))
         if symbol is None:
             raise FormulaParseError("unsupported_command")
         return self._math_run(symbol)

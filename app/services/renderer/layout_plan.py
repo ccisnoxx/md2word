@@ -347,6 +347,48 @@ def _is_single_side_text_tail(region: LayoutRegion, page_width: float) -> bool:
     return classes in ({"left"}, {"right"})
 
 
+def complete_two_column_tails(page: LayoutPage, source_blocks: list[DocumentIRBlock]) -> list[LayoutRegion]:
+    """新件调度补全紧邻正文栏尾；原区域及聚合证据保留，供历史件严格重验。"""
+    if page.width is None or page.width <= 0:
+        return list(page.regions)
+    predecessors = {block.id: previous for previous, block in zip(source_blocks, source_blocks[1:])}
+    regions: list[LayoutRegion] = []
+    for region in page.regions:
+        count = 0
+        if region.kind == "one_col" and regions and regions[-1].kind == "two_col":
+            members = {block.id for block in regions[-1].blocks}
+            for block in region.blocks:
+                previous = predecessors.get(block.id)
+                if previous is None or previous.id not in members or not _is_contiguous_column_paragraph(previous, block):
+                    break
+                members.add(block.id)
+                count += 1
+        if count:
+            regions[-1] = LayoutRegion("two_col", [*regions[-1].blocks, *region.blocks[:count]])
+        if count < len(region.blocks):
+            regions.append(LayoutRegion(region.kind, region.blocks[count:]))
+    return regions
+
+
+def _is_contiguous_column_paragraph(previous: DocumentIRBlock, block: DocumentIRBlock) -> bool:
+    """只有源索引连续、同栏且边缘紧贴的正文，才可越过局部 band 的短缺口。"""
+    if previous.type != "paragraph" or block.type != "paragraph":
+        return False
+    before, current = previous.layout, block.layout
+    if (before is None or current is None or before.column_hint not in {"left", "right"}
+            or current.column_hint != before.column_hint or before.source_index is None
+            or current.source_index != before.source_index + 1 or block.order != previous.order + 1):
+        return False
+    first, second = before.bbox, current.bbox
+    if first is None or second is None or not all(math.isfinite(value) for value in (*first, *second)):
+        return False
+    # 用局部正文高度约束空隙和起始边缘，不把真实段间留白或错位块猜成续项。
+    tolerance = min(first[3] - first[1], second[3] - second[1]) * 0.25
+    return (tolerance > 0 and first[2] > first[0] and second[2] > second[0]
+            and 0 <= second[1] - first[3] <= tolerance
+            and abs(second[0] - first[0]) <= tolerance)
+
+
 def _is_image_only_region(region: LayoutRegion) -> bool:
     return bool(region.blocks) and all(block.type == "image" for block in region.blocks)
 

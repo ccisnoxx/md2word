@@ -65,11 +65,21 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 - Do not hardcode secrets, tokens, private config, or real credentials. Use the existing project configuration mechanism or environment variables.
 - Validate and sanitize external input at system boundaries. Use parameterized queries or existing safe project APIs for database access.
 
+### GitHub 用途与分支整理
+
+- 本项目将 GitHub 作为代码仓库使用，不把 GitHub Actions、CI 或状态检查作为提交、推送、合并及分支整理的前提；不得将缺少这些机制自动列为阻塞。
+- 未经用户明确要求，不新增、启用或配置 GitHub Actions、CI、必需状态检查，也不因使用 GitHub 而建立额外验证流程。
+- 分支整理只核对提交包含关系、差异、依赖和冲突；不因此运行项目测试、构建或发布聚合检查，也不顺带维护历史测试。
+
 ### Validation
 
-- After code changes, run the smallest effective validation.
-- For Trellis tasks, validate according to `implement.md` and the relevant spec quality gates.
-- If heavier checks are skipped, state the reason, the substitute checks, and the remaining risk.
+- 实际改动代码时，只选择能够验证该改动及直接受影响合同的最小有效检查，不机械套用全仓回归或完整发布流程。
+- 成功结果在相关源码、依赖、配置和夹具等输入未变时直接复用；不得仅因切换 worktree、准备提交、创建 PR 或收尾而重复运行。
+- 验证失败时先区分本次产品缺陷与历史测试维护。与本次实际改动无关的旧夹具、过时断言和既有失败应分开记录、保留，不为让历史测试全部变绿而持续扩大修复或验证范围。
+- 直接保护本次行为的必要回归与历史测试维护应分别说明；后者只有在当前任务确实需要或用户明确另行授权时才处理。
+- 纯规则文档修改和只读分支整理默认核对文字与差异，不运行应用测试。用户明确禁止的检查不得换名、换工具或经聚合脚本间接触发。
+- Trellis、Skills、`implement.md` 和 Spec 校验清单都须在上述项目边界及当前用户授权内使用；通用流程或历史计划不能自动扩大为 CI、全仓测试或完整发布门禁。
+- 如未执行较重检查，简要说明实际验证范围与未验证边界，不把未执行项表述为通过。
 
 ### Git
 

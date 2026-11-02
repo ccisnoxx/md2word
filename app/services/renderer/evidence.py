@@ -14,6 +14,8 @@ from app.services.document_ir.integrity import DocumentIntegrityError, build_sou
 from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.caption_reconciler import RULE_VERSION as CAPTION_RULE_VERSION
 from app.services.renderer.docx_quality import (
+    DOCX_QUALITY_VERSION,
+    LITERAL_IDENTIFIER_RE,
     analyze_docx_quality_bytes,
     build_docx_quality_flags,
     validate_formula_report,
@@ -159,16 +161,24 @@ def build_renderer_aggregate_evidence(
                 for unit in _table_plan.units if unit.is_group_primary} if _v2_content else None,
             _placeholder_ownership=_placeholder_ownership)
         evidence["image_layout_report"] = image_layout_report
+    literal_identifiers: set[str] = set()
     if formula_report is not None:
         summary = validate_formula_report(formula_report)
-        expected_sources = formula_source_inventory(document_ir) if _formula_sources is None else _formula_sources
+        reconstructed_sources = formula_source_inventory(document_ir, _literal_identifiers=literal_identifiers)
+        expected_sources = reconstructed_sources if _formula_sources is None else _formula_sources
         recorded_sources = [entry["source"] for entry in formula_report["entries"]]
         if Counter(_binding_key(value) for value in expected_sources) != Counter(_binding_key(value) for value in recorded_sources):
             raise ValueError("公式报告与源 DocumentIR 不匹配")
         verify_docx_formula_report(word_content, formula_report)
         evidence["formula_report"] = formula_report
         evidence["formula_summary"] = summary
-    docx_quality = analyze_docx_quality_bytes(word_content, formula_report=formula_report)
+    annotation_anchors = frozenset(annotation["anchor"] for span in image_layout_report["spans"]
+        for image in span["images"] for annotation in image["annotations"]) if image_layout_report is not None else frozenset()
+    docx_quality = analyze_docx_quality_bytes(word_content, formula_report=formula_report,
+        _verified_literal_identifiers=frozenset(literal_identifiers),
+        _verified_image_annotation_anchors=annotation_anchors)
+    if docx_quality:
+        docx_quality["analysis_version"] = DOCX_QUALITY_VERSION
     evidence["docx_quality"] = docx_quality
     evidence["quality_flags"] = build_docx_quality_flags(docx_quality)
     if formula_report is not None and evidence["formula_summary"]["fallback_count"]:
@@ -228,13 +238,16 @@ def _binding_key(binding: dict[str, Any]) -> tuple[Any, ...]:
     return tuple(binding[key] for key in ("block_id", "field", "start", "end", "boundary", "source_sha256"))
 
 
-def formula_source_inventory(document_ir: DocumentIR) -> list[dict[str, Any]]:
-    """从权威 IR 重建每次公式出现的源绑定，不依赖渲染报告自证。"""
+def formula_source_inventory(document_ir: DocumentIR, *, _literal_identifiers: set[str] | None = None) -> list[dict[str, Any]]:
+    """从权威 IR 重建公式源绑定；字面标识符只采集共享数学边界之外的整词。"""
     sources: list[dict[str, Any]] = []
 
     def add(block_id: str, field: str, text: str, *, formula: bool = False) -> None:
         spans = (formula_block_span(text),) if formula else content_math_spans(text)
         sources.extend({"block_id": block_id, "field": field, "start": span.start, "end": span.end, "boundary": span.boundary, "source_sha256": sha256_text(span.source)} for span in spans)
+        if _literal_identifiers is not None:
+            _literal_identifiers.update(match.group(0) for match in LITERAL_IDENTIFIER_RE.finditer(text)
+                if not any(match.start() < span.end and span.start < match.end() for span in spans))
 
     for block in document_ir.blocks:
         if not is_visible_body_block(block):
@@ -677,6 +690,7 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
             expected_template_version_id=expected_template_version_id,
             render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"),
             block_anchor_evidence=metadata.get("block_anchor_evidence"))
+        _restore_legacy_docx_quality(actual, word_content, metadata)
         ensure_renderer_integrity(actual)
         optional = {"render_trace_status", "render_plan", "block_render_evidence", "block_anchor_evidence", "block_anchor_summary"}
         if any(key not in metadata or metadata[key] != value for key, value in actual.items() if key not in optional):
@@ -712,6 +726,7 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
             actual["table_placeholder_rendering"] = proof
         if "table_evidence" in metadata and not actual["blocking_quality_flags"]:
             actual["table_evidence"] = _build_table_evidence(document_ir, word_content, actual).model_dump(mode="json", warnings=False)
+    _restore_legacy_docx_quality(actual, word_content, metadata)
     ensure_renderer_integrity(actual)
     comparable = deepcopy(actual)
     if isinstance(metadata.get("docx_quality"), dict) and "table_observations" not in metadata["docx_quality"]:
@@ -720,6 +735,18 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
     if any(key not in metadata or metadata[key] != comparable[key] for key in keys):
         raise ValueError("主 DOCX 的既有质量证据与实际字节不一致。")
     return actual
+
+
+def _restore_legacy_docx_quality(actual: dict[str, Any], word_content: bytes, metadata: dict[str, Any]) -> None:
+    """旧件按原扫描逐值重算，不能因诊断升级拒绝恢复或直接信任存储值。"""
+    stored_quality = metadata.get("docx_quality")
+    if not isinstance(stored_quality, dict) or "analysis_version" in stored_quality:
+        return
+    current_flags = set(build_docx_quality_flags(actual["docx_quality"]))
+    legacy_quality = analyze_docx_quality_bytes(word_content, formula_report=metadata.get("formula_report"))
+    actual["docx_quality"] = legacy_quality
+    actual["quality_flags"] = [*build_docx_quality_flags(legacy_quality),
+        *(flag for flag in actual["quality_flags"] if flag not in current_flags)]
 
 
 CONTROLLED_SOURCE_TYPES = frozenset({"text", "paragraph", "para", "title", "heading", "header", "footer", "page_header", "page_footer", "page_number", "table", "table_placeholder", "image", "chart", "figure", "list", "index", "equation", "formula", "interline_equation", "inline_equation", "equation_interline", "unsupported", "invalid", "unknown"})
@@ -899,7 +926,7 @@ REPORT_CODES = frozenset({
     "mineru_json_invalid", "mineru_content_empty", "mineru_page_invalid", "mineru_page_missing", "mineru_page_empty",
     "mineru_page_gap", "mineru_block_invalid", "mineru_block_payload_invalid", "unsupported_block_type",
     "legacy_page_index_coerced", "mineru_page_order_nonmonotonic", "mineru_bbox_missing", "mineru_bbox_invalid",
-    "report_limit_exceeded", "mineru_margin_payload_empty", "missing_image_asset", "invalid_image_asset",
+    "report_limit_exceeded", "mineru_margin_payload_empty", "mineru_merged_paragraph_empty", "missing_image_asset", "invalid_image_asset",
     "missing_table_reference", "invalid_table_reference", "empty_table_html", "invalid_table_html", "suspicious_table_html",
 })
 REPORT_REASONS = frozenset({
@@ -915,7 +942,7 @@ REPORT_REASONS = frozenset({
     "outside_selected_rich_payload", "report_bytes", "single_file_bytes", "special_zip_entry", "symlink", "total_bytes",
     "type_too_long", "unaccounted_normalization", "unreadable_archive", "unreadable_json", "unreadable_or_unsupported_image",
     "unsupported_tag", "unsupported_top_level", "wrong_length_or_type", "final_promotional_page",
-    "explicit_table_placeholder", "strict_empty_table_placeholder",
+    "explicit_table_placeholder", "strict_empty_table_placeholder", "merged_paragraph_residue",
 })
 REPORT_DETAIL_VALUES = {
     "code": REPORT_CODES,
@@ -928,7 +955,7 @@ REPORT_DETAIL_VALUES = {
 }
 REPORT_VERSIONS = {
     "schema_version": {"mineru-artifact-validation/v1"},
-    "validator_version": {"mineru-artifact-validator/v1", "mineru-artifact-validator/v2", "mineru-artifact-validator/v3"},
+    "validator_version": {"mineru-artifact-validator/v1", "mineru-artifact-validator/v2", "mineru-artifact-validator/v3", "mineru-artifact-validator/v4"},
     "policy_version": {"mineru-input-policy/v1", "mineru-input-policy/v2"},
 }
 REPORT_NUMERIC_KEYS = frozenset("page_index source_index_in_page source_index row_count cell_count warning_count blocker_count fatal_count omitted_issue_count table_check_count omitted_table_check_count raw_page_count raw_block_count valid_block_count invalid_block_count invalid_page_count image_check_count table_reference_check_count omitted_type_count block_count filtered_promotional_page_index filtered_block_count merged_table_placeholder_count omitted_merged_table_placeholder_count omitted_filtered_block_count previous_page_index index_gap width height".split())
