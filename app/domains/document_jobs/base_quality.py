@@ -110,6 +110,12 @@ def derive_base_quality(job: Any) -> dict | None:
             or not isinstance(source.get("expected_source_type_counts"), dict)
             or source.get("expected_source_type_counts") != source.get("ir_source_type_counts")):
         complete = False
+    # 渲染阶段整页降级（C3）不在验证报告中，单独计入 blocker；旧结果无此字段视为 0。
+    render_degraded = source.get("render_degraded_page_count", 0)
+    if type(render_degraded) is not int or render_degraded < 0:
+        complete = False
+    else:
+        blockers += render_degraded
     report_value = metadata.get("mineru_validation")
     try:
         source_report = MinerUValidationReport.model_validate(report_value)

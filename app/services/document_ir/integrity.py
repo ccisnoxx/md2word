@@ -62,6 +62,8 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
         degraded_count += int(record.get("removed_source_block_count") or 0)
         actual_types.update({str(key): int(value) for key, value in (record.get("removed_source_type_counts") or {}).items()})
     accounted_count = len(main_blocks) + degraded_count
+    # 渲染阶段降级没有验证报告问题，以此计数进入基础质量 blocker。
+    render_degraded = sum(record.get("trigger") == "render" for record in document_ir.metadata.degraded_pages)
     flags: list[str] = []
 
     # 旧 IR 没有 inventory，无法可靠重建 source 合同；仅正式 converter 产物执行对账。
@@ -70,6 +72,7 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
             "expected_source_block_count": None,
             "ir_main_block_count": accounted_count,
             "degraded_source_block_count": degraded_count,
+            "render_degraded_page_count": render_degraded,
             "source_block_count_delta": None,
             "expected_source_type_counts": {},
             "ir_source_type_counts": dict(sorted(actual_types.items())),
@@ -113,6 +116,7 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
         "expected_source_block_count": expected_total,
         "ir_main_block_count": accounted_count,
         "degraded_source_block_count": degraded_count,
+        "render_degraded_page_count": render_degraded,
         "source_block_count_delta": None if expected_total is None else accounted_count - expected_total,
         "expected_source_type_counts": expected_types,
         "ir_source_type_counts": dict(sorted(actual_types.items())),
