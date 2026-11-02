@@ -111,8 +111,6 @@ from app.domains.translation.integrity import (
 from app.domains.translation.provider import OpenAICompatibleTranslationProvider, TranslationProviderCallError, TranslationProviderResponseError
 
 
-# 每轮降级都要完整重渲染；失败页过多时继续逐页重试只会耗尽 Worker 时限，得到更差的超时诊断。
-MAX_RENDER_DEGRADATION_ATTEMPTS = 5
 # 消息只由固定错误码或固定文本构造的异常；其消息可原样作为任务 error_message。
 SAFE_MESSAGE_ERRORS = (MinerUArtifactValidationError, TablePlaceholderError, TableRenderError, TableBuildError,
                        TableEvidenceError, TableValidationError, TranslationIntegrityError)
@@ -3261,7 +3259,7 @@ class DocumentJobExecutionService:
                     render_result = render(rendering, document_ir)
                     break
                 except Exception as exc:
-                    if degradation_attempts >= MAX_RENDER_DEGRADATION_ATTEMPTS:
+                    if degradation_attempts >= self.settings.render_degradation_max_attempts:
                         raise
                     degraded = self._degrade_render_failure_page(rendering, ir_file, document_ir, exc, trace_id=trace_id)
                     if degraded is None:
@@ -3420,7 +3418,8 @@ class DocumentJobExecutionService:
         page_index = context["source_page_index"]
         already = {record.get("page_index") for record in document_ir.metadata.degraded_pages}
         degraded = degradation_closure(document_ir.metadata.logical_table_groups, {page_index})
-        if degraded is None or degraded & already or len(degraded | already) * 2 > len(document_ir.pages):
+        if (degraded is None or degraded & already
+                or not self.document_ir_service.degradation_policy.allows(len(degraded | already), len(document_ir.pages))):
             return None
         try:
             source = self._load_placeholder_source(job)

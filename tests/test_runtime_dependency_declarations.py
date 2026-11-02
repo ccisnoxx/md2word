@@ -102,12 +102,12 @@ class RuntimeDependencyDeclarationTests(TestCase):
 
 
 class PdfCropToolsReadinessTests(TestCase):
-    def _ready(self, available_tools):
+    def _ready(self, available_tools, **runtime_options):
         def which(tool):
             return f"/usr/bin/{tool}" if tool in available_tools else None
 
         with tempfile.TemporaryDirectory() as directory:
-            with TestClient(create_app(build_test_runtime(Path(directory)))) as client:
+            with TestClient(create_app(build_test_runtime(Path(directory), **runtime_options))) as client:
                 with patch("app.services.health_service.shutil.which", side_effect=which):
                     return client.get("/api/v1/health/ready").json()["dependency_checks"]
 
@@ -123,3 +123,11 @@ class PdfCropToolsReadinessTests(TestCase):
         self.assertIs(missing["pdf_crop_tools_available"], False)
         self.assertIn("pdf_crop_tools_missing", missing["readiness_warnings"])
         self.assertEqual(missing["readiness_blockers"], present["readiness_blockers"])
+
+    def test_missing_tool_blocks_production_readiness(self):
+        present = self._ready({"pdfinfo", "pdftoppm"}, app_env="production")
+        missing = self._ready({"pdfinfo"}, app_env="production")
+        self.assertNotIn("pdf_crop_tools_missing", present["readiness_blockers"])
+        self.assertIn("pdf_crop_tools_missing", missing["readiness_blockers"])
+        self.assertIn("pdf_crop_tools_missing", missing["p0_document_jobs_blockers"])
+        self.assertNotIn("pdf_crop_tools_missing", missing["readiness_warnings"])

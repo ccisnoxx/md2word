@@ -22,6 +22,19 @@ NOTICE_RESERVE_EMU = 1_080_000
 
 
 @dataclass(frozen=True, slots=True)
+class PageDegradationPolicy:
+    """验证与渲染阶段共用的数量门槛：防止大部分页失败的文档被当作正常结果。"""
+    max_page_ratio: float = 0.5
+    allow_single_page: bool = False
+
+    def allows(self, degraded_count: int, page_count: int) -> bool:
+        # 单页文档降级即 100%，比例上限没有意义，只看开关。
+        if page_count == 1:
+            return self.allow_single_page
+        return degraded_count <= page_count * self.max_page_ratio
+
+
+@dataclass(frozen=True, slots=True)
 class PageRaster:
     page_index: int
     asset_id: str

@@ -10,10 +10,13 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from PIL import Image
+from pydantic import ValidationError
 
+from app.core.config import Settings
 from app.main import create_app
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.artifact_validator import MinerUArtifactValidationError
+from app.services.document_ir.page_degradation import PageDegradationPolicy
 from app.services.document_ir.table_placeholder import PdfCropSource, TablePlaceholderError, checksum
 from tests import test_fastapi_jobs_backend as fixtures
 
@@ -50,7 +53,8 @@ def _three_pages(bad_page=1):
 
 
 class PageDegradationConverterTests(TestCase):
-    def convert(self, blocks, *, rasterizer, members=None, layout=None, crop_provider=None, source_file_id="file_source"):
+    def convert(self, blocks, *, rasterizer, members=None, layout=None, crop_provider=None, source_file_id="file_source",
+                policy=PageDegradationPolicy()):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "result.zip"
             with zipfile.ZipFile(path, "w") as archive:
@@ -59,7 +63,8 @@ class PageDegradationConverterTests(TestCase):
                     archive.writestr("layout.json", json.dumps(layout))
                 for name, data in (members or {}).items():
                     archive.writestr(name, data)
-            service = MinerUToDocumentIRService(pdf_crop_provider=crop_provider, page_rasterizer=rasterizer)
+            service = MinerUToDocumentIRService(pdf_crop_provider=crop_provider, page_rasterizer=rasterizer,
+                                                degradation_policy=policy)
             return service.convert_zip(path, job_id="job", source_file_id="file_source", document_language="en",
                                        placeholder_source_loader=lambda: PdfCropSource(source_file_id, checksum(PDF), PDF))
 
@@ -92,6 +97,17 @@ class PageDegradationConverterTests(TestCase):
         self.assertEqual(result.document.metadata.degraded_pages[0]["reason_codes"], ["missing_image_asset"])
         self.assertEqual([issue.code for issue in result.validation_report.blockers], ["missing_image_asset"])
 
+    def test_policy_controls_page_limits_at_validation(self):
+        single = [{"type": "table", "html": BAD_TABLE, "page_idx": 0}]
+        with self.assertRaises(MinerUArtifactValidationError):
+            self.convert(single, rasterizer=_FakeRasterizer())
+        result = self.convert(single, rasterizer=_FakeRasterizer(), policy=PageDegradationPolicy(allow_single_page=True))
+        self.assertEqual([record["page_index"] for record in result.document.metadata.degraded_pages], [0])
+        two_bad = _three_pages()
+        two_bad[3] = {"type": "table", "html": BAD_TABLE, "page_idx": 2}
+        result = self.convert(two_bad, rasterizer=_FakeRasterizer(), policy=PageDegradationPolicy(max_page_ratio=0.7))
+        self.assertEqual([record["page_index"] for record in result.document.metadata.degraded_pages], [1, 2])
+
     def test_unmet_preconditions_fail_with_original_error(self):
         both_bad = _three_pages()
         both_bad[3] = {"type": "table", "html": BAD_TABLE, "page_idx": 2}
@@ -107,6 +123,20 @@ class PageDegradationConverterTests(TestCase):
             report = caught.exception.report
             self.assertEqual(report.first_fatal.code, "invalid_table_html")
             self.assertTrue(all(issue.stops_conversion for issue in report.blockers if issue.code == "invalid_table_html"))
+
+
+class PageDegradationSettingsTests(TestCase):
+    def test_default_policy_keeps_half_page_limit_and_rejects_single_page(self):
+        policy = PageDegradationPolicy()
+        self.assertTrue(policy.allows(2, 4))
+        self.assertFalse(policy.allows(3, 4))
+        self.assertFalse(policy.allows(1, 1))
+
+    def test_invalid_settings_are_rejected(self):
+        for invalid in ({"page_degradation_max_ratio": 0}, {"page_degradation_max_ratio": 1.5},
+                        {"render_degradation_max_attempts": -1}, {"render_degradation_max_attempts": 21}):
+            with self.subTest(invalid), self.assertRaises(ValidationError):
+                Settings(_env_file=None, **invalid)
 
 
 class DegradationClosureTests(TestCase):

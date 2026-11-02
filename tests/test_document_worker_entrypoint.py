@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from unittest import TestCase
+from unittest.mock import patch
 
 from app.core.config import Settings
-from scripts.dev.run_document_worker import build_worker_main_args
+from scripts.dev.run_document_worker import build_worker_main_args, check_poppler_tools, main
 
 
 class DocumentWorkerEntrypointTests(TestCase):
@@ -38,3 +39,17 @@ class DocumentWorkerEntrypointTests(TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "DOCUMENT_JOBS_TRANSLATION_BATCH_CELERY_QUEUE"):
             build_worker_main_args(settings)
+
+    def test_production_worker_does_not_start_without_poppler(self):
+        settings = Settings(_env_file=None, app_env="production")
+        with patch("scripts.dev.run_document_worker.poppler_tools_available", return_value=False), \
+                patch("scripts.dev.run_document_worker.Settings", return_value=settings), \
+                patch("scripts.dev.run_document_worker.create_celery_app") as create_celery_app, \
+                self.assertRaisesRegex(RuntimeError, "Poppler"):
+            main()
+        create_celery_app.assert_not_called()
+
+    def test_development_worker_only_warns_without_poppler(self):
+        with patch("scripts.dev.run_document_worker.poppler_tools_available", return_value=False), \
+                self.assertLogs("scripts.dev.run_document_worker", level="WARNING"):
+            check_poppler_tools(Settings(_env_file=None, app_env="dev"))

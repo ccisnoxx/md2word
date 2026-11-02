@@ -20,6 +20,7 @@ from app.api.v1.routers.health_schemas import (
 )
 from app.conversion.runtime import llm_client
 from app.core.config import Settings
+from app.infrastructure.pdf_crop import poppler_tools_available
 from app.domains.audit.repository import AuditEventRepositoryProtocol
 from app.domains.document_jobs.repository import (
     DocumentJobCallbackMessageStoreProtocol,
@@ -41,7 +42,6 @@ from app.domains.users.repository import InternalUserRepositoryProtocol
 DEFAULT_TERM_RULE_SET_ID = "electronics-default"
 DEFAULT_TRANSLATION_PROFILE_ID = "electronics-en2zh"
 RESOURCE_TYPES = ("template", "term_rule_set", "translation_profile")
-NON_PRODUCTION_ENVS = {"dev", "local", "test"}
 DOCUMENT_JOB_STALE_SECONDS = 600
 
 
@@ -161,10 +161,12 @@ class HealthService:
         resource_labels = self._build_default_resource_labels()
         mineru_callback_url_configured = bool(self.settings.mineru_callback_url.strip())
         mineru_uid_configured = mineru_config.uid_configured
+        pdf_crop_tools_available = poppler_tools_available()
         p0_document_jobs = self._build_p0_document_jobs_readiness(
             mineru_api_token_configured=mineru_config.api_token_configured,
             mineru_uid_configured=mineru_uid_configured,
             mineru_config_error=mineru_config_error,
+            pdf_crop_tools_available=pdf_crop_tools_available,
         )
         document_job_observation = self._build_document_job_observation()
         document_job_callback_observation = self._build_document_job_callback_observation()
@@ -210,8 +212,7 @@ class HealthService:
             "mineru_callback_url_configured": mineru_callback_url_configured,
             "mineru_uid_configured": mineru_uid_configured,
             "pdf_submission_available": pdf_submission_available,
-            # 与 PopplerPdfTableCropProvider 相同的 PATH 解析；只观测，不改变裁切行为。
-            "pdf_crop_tools_available": all(shutil.which(tool) for tool in ("pdfinfo", "pdftoppm")),
+            "pdf_crop_tools_available": pdf_crop_tools_available,
             "public_deployment_mode": self.settings.public_deployment_mode,
             "p0_document_jobs_required": p0_document_jobs["required"],
             "p0_document_jobs_ready": p0_document_jobs["ready"],
@@ -276,9 +277,6 @@ class HealthService:
         elif not checks["pdf_submission_available"]:
             warnings.append("mineru_api_token_missing")
             checks["pdf_submission_unavailable_reason"] = "MINERU_API_TOKEN 未配置"
-        if not checks["pdf_crop_tools_available"]:
-            # 只影响缺表格 HTML 且无参考图的占位裁切，不阻断就绪。
-            warnings.append("pdf_crop_tools_missing")
         if not checks["translation_available"] and not checks["translation_required_for_default_mode"]:
             warnings.append("translation_unavailable")
         if ai_provider_config_error is not None and not checks["translation_required_for_default_mode"]:
@@ -338,10 +336,11 @@ class HealthService:
         mineru_api_token_configured: bool,
         mineru_uid_configured: bool,
         mineru_config_error: str | None,
+        pdf_crop_tools_available: bool,
     ) -> dict[str, Any]:
         """判断 P0 document_jobs 自动执行链路是否满足当前环境的发布门禁。"""
 
-        required = self._p0_document_jobs_required()
+        required = self.settings.production_like
         worker_backend = self.settings.document_jobs_worker_backend
         automatic_execution_enabled = worker_backend in {"celery", "eager"}
         blockers: list[str] = []
@@ -361,6 +360,10 @@ class HealthService:
                 blockers.append("document_jobs_translation_batch_celery_queue_missing")
         elif worker_backend == "eager" and required:
             blockers.append("document_jobs_worker_backend_eager_in_production")
+
+        if not pdf_crop_tools_available:
+            # 占位裁切、图片回退和整页降级都依赖 Poppler；生产环境缺失时页面失败无法恢复。
+            (blockers if required else warnings).append("pdf_crop_tools_missing")
 
         if required:
             if self.effective_repository_backend != "mysql":
@@ -387,12 +390,6 @@ class HealthService:
             "blockers": blockers,
             "warnings": warnings,
         }
-
-    def _p0_document_jobs_required(self) -> bool:
-        return (
-            self.settings.app_env.strip().lower() not in NON_PRODUCTION_ENVS
-            or self.settings.public_deployment_mode == "single_tenant_public"
-        )
 
     def _auth_users_source_configured(self) -> bool:
         if self.internal_user_repository is not None and self.internal_user_repository.count_internal_users() > 0:

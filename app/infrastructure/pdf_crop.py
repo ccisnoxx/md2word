@@ -18,6 +18,11 @@ from app.services.document_ir.table_placeholder import (
 )
 
 
+def poppler_tools_available() -> bool:
+    """按 PATH 判断，与裁切器和栅格器构造时的解析方式一致。"""
+    return all(shutil.which(tool) for tool in ("pdfinfo", "pdftoppm"))
+
+
 def _run_poppler(args, output, *, timeout: float) -> None:
     """裁切与整页栅格共用的 Poppler 子进程调用：无标准输入、隔离 stderr、超时与非零退出均失败关闭。"""
     try:

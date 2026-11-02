@@ -53,7 +53,9 @@ from app.services.document_ir.models import (
     DocumentIRMetadata,
     DocumentIRPage,
 )
-from app.services.document_ir.page_degradation import PAGE_RASTER_SOURCE_PATH, degradation_closure, replace_degraded_pages
+from app.services.document_ir.page_degradation import (
+    PAGE_RASTER_SOURCE_PATH, PageDegradationPolicy, degradation_closure, replace_degraded_pages,
+)
 from app.services.document_ir.table_annotations import split_table_annotation_texts
 from app.services.document_ir.table_reference_assets import RASTER_EXTENSIONS, TableReferenceAsset, attach_table_references
 from app.services.document_ir.table_placeholder import (
@@ -102,10 +104,12 @@ class MinerUToDocumentIRService:
 
     def __init__(self, *, policy: MinerUValidationPolicy = DEFAULT_POLICY,
                  pdf_crop_provider: PdfTableCropProvider | None = None,
-                 page_rasterizer: PdfPageRasterizer | None = None) -> None:
+                 page_rasterizer: PdfPageRasterizer | None = None,
+                 degradation_policy: PageDegradationPolicy = PageDegradationPolicy()) -> None:
         self.policy = policy
         self.pdf_crop_provider = pdf_crop_provider
         self.page_rasterizer = page_rasterizer
+        self.degradation_policy = degradation_policy
 
     def convert_zip(
         self,
@@ -212,7 +216,7 @@ class MinerUToDocumentIRService:
                                                     source_file_id=source_file_id)
         degradable_pages = {parse_page_index(block) for block in raw_blocks if block.get("_mineru_degradable")}
         if degradable_pages and (None in degradable_pages or self.page_rasterizer is None or source_loader is None
-                                 or len(degradable_pages) * 2 > len(pages)):
+                                 or not self.degradation_policy.allows(len(degradable_pages), len(pages))):
             # 降级前提不满足时在构建 IR 之前中止，不产生半合法 IR。
             self._abort_deferred(raw_blocks, validator)
 
@@ -411,7 +415,7 @@ class MinerUToDocumentIRService:
         if None in candidate_pages or self.page_rasterizer is None or source_loader is None:
             self._abort_deferred(raw_blocks, validator)
         degraded = self._degradation_closure(document, table_sources, candidate_pages)
-        if degraded is None or len(degraded) * 2 > len(document.pages):
+        if degraded is None or not self.degradation_policy.allows(len(degraded), len(document.pages)):
             self._abort_deferred(raw_blocks, validator)
         source = source_loader()
         if source.file_id != source_file_id or checksum(source.content) != source.checksum_sha256:

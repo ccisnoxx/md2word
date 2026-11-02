@@ -93,7 +93,7 @@ curl http://127.0.0.1:8000/api/v1/health/metrics
 - `default_term_rule_version`
 - `default_translation_profile_version`
 - `mysql_schema_bootstrap_available`
-- `pdf_crop_tools_available`：`pdfinfo` 与 `pdftoppm`（Poppler，`poppler-utils`）是否都在 PATH 中。缺失时只产生非阻断 warning `pdf_crop_tools_missing`：缺表格 HTML 且无参考图的任务无法从源 PDF 裁切占位图，会以 `document_ir_failed` 失败；其他转换不受影响。`docker/prod`、`docker/dev` 镜像已内置；本地开发需自行安装（如 `brew install poppler`）。
+- `pdf_crop_tools_available`：`pdfinfo` 与 `pdftoppm`（Poppler，`poppler-utils`）是否都在 PATH 中。表格占位裁切、图片 PDF 回退和整页降级都依赖它们。缺失时报 `pdf_crop_tools_missing`：生产或 `single_tenant_public` 部署列为阻断项，且 `scripts/dev/run_document_worker.py` 拒绝启动；开发环境只告警，页面失败时无法恢复。`docker/prod`、`docker/dev` 镜像已内置；本地开发需自行安装（如 `brew install poppler`）。
 
 运行时 Python 依赖只来自 `requirements.txt`（镜像只执行 `pip install -r`）；`tests/test_runtime_dependency_declarations.py` 要求 `app/` 的第三方导入都在其中直接声明或进入写明来源的白名单。
 

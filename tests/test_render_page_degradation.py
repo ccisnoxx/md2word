@@ -22,7 +22,7 @@ from app.services.document_ir.models import (
 )
 from app.services.document_ir.artifact_validator import DEFERRABLE_ISSUE_CODES
 from app.services.document_ir.page_degradation import (
-    DEGRADED_REASON_LABELS, NOTICE_RESERVE_EMU, drop_degraded_table_groups, replace_degraded_pages,
+    DEGRADED_REASON_LABELS, NOTICE_RESERVE_EMU, PageDegradationPolicy, drop_degraded_table_groups, replace_degraded_pages,
 )
 from app.services.renderer.evidence import validate_render_result
 from app.services.renderer.table_renderer import TableRenderError
@@ -55,7 +55,7 @@ def _failing_on(*texts, error=ValueError):
 
 
 class RenderPageDegradationPipelineTests(TestCase):
-    def run_job(self, blocks, failing, *, rasterizer=True):
+    def run_job(self, blocks, failing, *, rasterizer=True, max_attempts=None, policy=None):
         with tempfile.TemporaryDirectory() as directory:
             runtime = fixtures.build_test_runtime(
                 Path(directory), auth_jwt_secret_key="test-jwt-secret",
@@ -64,6 +64,10 @@ class RenderPageDegradationPipelineTests(TestCase):
             service = runtime.document_job_execution_service
             service.fake_mineru_client.result_zip_bytes = _zip(blocks)
             service.document_ir_service.page_rasterizer = _FakeRasterizer() if rasterizer else None
+            if max_attempts is not None:
+                service.settings.render_degradation_max_attempts = max_attempts
+            if policy is not None:
+                service.document_ir_service.degradation_policy = policy
             with TestClient(create_app(runtime)) as client, patch.object(DocumentIRWordRenderer, "_render_block", failing):
                 headers = fixtures.build_auth_header(client)
                 source = fixtures.FastAPIJobsBackendTests._upload_source_pdf(self, client, headers)
@@ -150,15 +154,27 @@ class RenderPageDegradationPipelineTests(TestCase):
         self.assertEqual([item["page_index"] for item in ir.metadata.degraded_pages], [1, 4])
 
     def test_attempt_limit_fails_with_current_page(self):
-        with patch("app.domains.document_jobs.execution.MAX_RENDER_DEGRADATION_ATTEMPTS", 1):
-            job, events, _approve, _files, record, _contents = self.run_job(
-                _pages(6), _failing_on("Page 2 body", "Page 5 body"))
+        job, events, _approve, _files, record, _contents = self.run_job(
+            _pages(6), _failing_on("Page 2 body", "Page 5 body"), max_attempts=1)
         self.assertEqual((job["status"], job["failed_stage"]), ("failed", "rendering"))
         self.assertEqual(job["failure_diagnostic"]["page_number"], 5)
         self.assertEqual((job["failure_diagnostic"]["source_page_count"], job["failure_diagnostic"]["page_count_basis"]),
                          (6, "content_blocks"))
         self.assertIsNone(record.result_file_id)
         self.assertEqual(len([event for event in events if event["payload"].get("degraded_from_document_ir_file_id")]), 1)
+
+    def test_zero_attempts_disables_render_degradation(self):
+        job, events, *_rest = self.run_job(_pages(3), _failing_on("Page 2 body"), max_attempts=0)
+        self.assertEqual((job["status"], job["failed_stage"]), ("failed", "rendering"))
+        self.assertFalse([event for event in events if event["payload"].get("degraded_from_document_ir_file_id")])
+
+    def test_policy_applies_to_render_stage(self):
+        single, *_rest = self.run_job(_pages(1), _failing_on("Page 1 body"),
+                                      policy=PageDegradationPolicy(allow_single_page=True))
+        self.assertEqual(single["status"], "succeeded", (single["error_code"], single["error_message"]))
+        strict, *_rest = self.run_job(_pages(4), _failing_on("Page 2 body", "Page 3 body"),
+                                      policy=PageDegradationPolicy(max_page_ratio=0.25))
+        self.assertEqual((strict["status"], strict["failure_diagnostic"]["page_number"]), ("failed", 3))
 
     def test_timeout_is_not_degraded(self):
         job, events, _approve, _files, _record, _contents = self.run_job(

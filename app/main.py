@@ -39,6 +39,7 @@ from app.domains.document_jobs.incidents import DocumentJobIncidentService
 from app.domains.document_jobs.service import DocumentJobService
 from app.domains.files import FileRetentionPolicyService, FileUploadService
 from app.services.document_ir import MinerUToDocumentIRService
+from app.services.document_ir.page_degradation import PageDegradationPolicy
 from app.infrastructure.pdf_crop import PopplerPdfPageRasterizer, PopplerPdfTableCropProvider
 from app.domains.jobs.artifact_storage import LocalArtifactStorageAdapter
 from app.domains.jobs.artifacts import JobArtifactService
@@ -72,8 +73,6 @@ from app.domains.translation.provider import build_translation_provider
 from app.domains.translation.term_set_version_service import TranslationTermSetVersionService
 from app.domains.translation.term_version_service import TermVersionService
 from app.domains.users.service import InternalUserManagementService
-
-NON_PRODUCTION_ENVS = {"dev", "local", "test"}
 
 
 def _build_artifact_storage(settings: Settings, artifact_service: JobArtifactService):
@@ -137,11 +136,7 @@ def _build_document_translation_batch_task_queue(
 def _validate_runtime_guardrails(settings: Settings) -> None:
     """阻止近生产环境以 open jobs 访问模式启动。"""
 
-    production_like = (
-        settings.app_env.strip().lower() not in NON_PRODUCTION_ENVS
-        or settings.public_deployment_mode == "single_tenant_public"
-    )
-    if production_like and settings.jobs_access_mode == "open":
+    if settings.production_like and settings.jobs_access_mode == "open":
         raise RuntimeError(
             "JOBS_ACCESS_MODE=open 不允许用于生产或 single_tenant_public 部署；"
             "请改用 JOBS_ACCESS_MODE=token 或 admin，并配置对应 token。"
@@ -189,7 +184,10 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         retention_days_resolver=file_retention_policy_service.resolve_retention_days,
     )
     document_ir_service = MinerUToDocumentIRService(pdf_crop_provider=PopplerPdfTableCropProvider(),
-                                                    page_rasterizer=PopplerPdfPageRasterizer())
+                                                    page_rasterizer=PopplerPdfPageRasterizer(),
+                                                    degradation_policy=PageDegradationPolicy(
+                                                        max_page_ratio=resolved_settings.page_degradation_max_ratio,
+                                                        allow_single_page=resolved_settings.page_degradation_allow_single_page))
     ai_provider_config_service = AiProviderConfigService(resolved_settings)
     mineru_config_service = MinerUConfigService(resolved_settings)
     translation_provider = build_translation_provider(

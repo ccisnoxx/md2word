@@ -12,6 +12,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+NON_PRODUCTION_ENVS = {"dev", "local", "test"}
+
+
 class Settings(BaseSettings):
     """集中定义环境变量驱动的运行配置和派生路径。"""
 
@@ -60,6 +63,10 @@ class Settings(BaseSettings):
     pdf_upload_max_pages: int = 200
     p0_document_job_timeout_seconds: int = 1200
     p0_document_job_max_retries: int = 2
+    page_degradation_max_ratio: float = Field(default=0.5, gt=0, le=1)
+    page_degradation_allow_single_page: bool = False
+    # 每轮都要完整重渲染，上限防止耗尽 Worker 时限；0 表示关闭渲染阶段降级。
+    render_degradation_max_attempts: int = Field(default=5, ge=0, le=20)
     document_jobs_worker_backend: Literal["disabled", "celery", "eager"] = "disabled"
     document_publication_enabled: bool = False
     word_preview_backend: Literal["disabled", "sandboxed"] = "disabled"
@@ -173,6 +180,12 @@ class Settings(BaseSettings):
     @property
     def root_dir(self) -> Path:
         return REPO_ROOT
+
+    @property
+    def production_like(self) -> bool:
+        """生产或公开部署；启动护栏、就绪门禁和 Worker 依赖检查共用此判断。"""
+        return (self.app_env.strip().lower() not in NON_PRODUCTION_ENVS
+                or self.public_deployment_mode == "single_tenant_public")
 
     @property
     def data_path(self) -> Path:
