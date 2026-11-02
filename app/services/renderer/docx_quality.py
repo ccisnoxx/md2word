@@ -29,18 +29,24 @@ DOCX_XML_NS = {
 LATEX_RESIDUE_RE = re.compile(
     r"(\$[^$]{1,160}\$|\\[A-Za-z]+\b|[_^]\{?\\?[A-Za-z0-9()+\-/]+\}?)"
 )
+LITERAL_IDENTIFIER_RE = re.compile(r"(?<![\w\\])[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+(?!\w)")
+DOCX_QUALITY_VERSION = "docx-quality/v2"
 MANUAL_LIST_MARKER_RE = re.compile(r"^\s*(?:[•■*]|[-–—])\s+")
 WIDE_TABLE_MIN_COLUMNS = 6
 
 
-def analyze_docx_quality_bytes(content: bytes | None, *, formula_report: dict[str, Any] | None = None) -> dict[str, Any]:
-    """从 DOCX bytes 中提取可编辑性和 Word 标准结构证据。"""
+def analyze_docx_quality_bytes(content: bytes | None, *, formula_report: dict[str, Any] | None = None,
+                              _verified_literal_identifiers: frozenset[str] = frozenset(),
+                              _verified_image_annotation_anchors: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """提取 OOXML 证据；源标识符与图注排除项只能由正式 evidence 认证后提供。"""
 
     if not content:
         return {}
     try:
         with zipfile.ZipFile(BytesIO(content)) as package:
-            return _analyze_docx_package(package, formula_report=formula_report)
+            return _analyze_docx_package(package, formula_report=formula_report,
+                verified_literal_identifiers=_verified_literal_identifiers,
+                verified_image_annotation_anchors=_verified_image_annotation_anchors)
     except zipfile.BadZipFile:
         return {}
 
@@ -90,7 +96,9 @@ def build_docx_quality_flags(quality: Mapping[str, Any] | None) -> list[str]:
     return flags
 
 
-def _analyze_docx_package(package: zipfile.ZipFile, *, formula_report: dict[str, Any] | None = None) -> dict[str, Any]:
+def _analyze_docx_package(package: zipfile.ZipFile, *, formula_report: dict[str, Any] | None = None,
+                          verified_literal_identifiers: frozenset[str] = frozenset(),
+                          verified_image_annotation_anchors: frozenset[str] = frozenset()) -> dict[str, Any]:
     try:
         document_xml = package.read("word/document.xml")
     except KeyError:
@@ -119,6 +127,8 @@ def _analyze_docx_package(package: zipfile.ZipFile, *, formula_report: dict[str,
         for paragraph in body_paragraphs
         if paragraph.find("./w:pPr/w:numPr", DOCX_XML_NS) is None
         and not _paragraph_has_dot_tab_leader(paragraph)
+        and not any(node.get(_w_attr("name")) in verified_image_annotation_anchors
+                    for node in paragraph.findall("./w:bookmarkStart", DOCX_XML_NS))
     ]
     semantic_body_paragraph_texts = [_paragraph_text(paragraph) for paragraph in semantic_body_paragraphs]
     joined_text = "\n".join(text for text in paragraph_texts if text)
@@ -147,7 +157,7 @@ def _analyze_docx_package(package: zipfile.ZipFile, *, formula_report: dict[str,
                 parts.append(value)
                 offset += len(value)
         residue_text = "".join(parts)
-    latex_matches = _unique_latex_residue(residue_text, literal_underscores=literal_underscores)
+    latex_matches = _unique_latex_residue(residue_text, verified_literal_identifiers, literal_underscores=literal_underscores)
     text_chars = len(joined_text)
     table_count = len(tables)
     table_shapes = [_table_shape(table) for table in tables]
@@ -302,7 +312,11 @@ def _looks_like_plain_toc_entry(text: str) -> bool:
     return parse_toc_entry_text(text) is not None
 
 
-def _unique_latex_residue(text: str, *, literal_underscores: set[int] | None = None) -> list[str]:
+def _unique_latex_residue(text: str, verified_literal_identifiers: frozenset[str] = frozenset(), *,
+                          literal_underscores: set[int] | None = None) -> list[str]:
+    # 仅排除源语法已确认的完整字面词，不能顺带豁免美元公式、命令或脚本后缀。
+    literal_ranges = [(match.start(), match.end()) for match in LITERAL_IDENTIFIER_RE.finditer(text)
+                      if match.group(0) in verified_literal_identifiers]
     seen: set[str] = set()
     values: list[str] = []
     for match in LATEX_RESIDUE_RE.finditer(text):
@@ -310,6 +324,8 @@ def _unique_latex_residue(text: str, *, literal_underscores: set[int] | None = N
         if (literal_underscores and match.start() in literal_underscores
                 and match.group(0).startswith("_") and "\\" not in match.group(0)
                 and (match.start() == 0 or text[match.start() - 1] != "\\")):
+            continue
+        if any(start <= match.start() and match.end() <= end for start, end in literal_ranges):
             continue
         value = match.group(0).strip()
         if not value or value in seen:

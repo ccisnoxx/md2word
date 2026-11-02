@@ -7962,7 +7962,7 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(create_response.status_code, 201)
         pending_actions = list_response.json()["items"][0]["available_actions"]
-        self.assertEqual(set(pending_actions), {"download", "retry", "cancel", "archive", "unarchive", "clone", "delete", "publish"})
+        self.assertEqual(set(pending_actions), {"download", "retry", "cancel", "archive", "unarchive", "clone", "delete", "publish", "new_generation"})
         self.assertTrue(pending_actions["cancel"]["enabled"])
         self.assertTrue(pending_actions["clone"]["enabled"])
         self.assertFalse(pending_actions["delete"]["enabled"])

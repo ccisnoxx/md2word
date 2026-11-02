@@ -13,6 +13,7 @@ from xml.etree import ElementTree
 from docx import Document
 from docx.enum.section import WD_ORIENTATION, WD_SECTION_START
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
 from docx.shared import Cm, Emu
 
 from app.services.document_ir.models import (
@@ -28,6 +29,7 @@ from app.services.renderer.evidence import build_renderer_evidence, ensure_rende
 from app.services.renderer.docx_quality import analyze_docx_quality_bytes
 from app.services.renderer.layout_plan import build_layout_plan
 from app.services.renderer.template_config import TemplateConfigPackage
+from app.services.renderer.table_renderer import TableRenderError
 from app.services.renderer.word_renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
 
 
@@ -170,13 +172,16 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual(evidence["blocking_quality_flags"], [])
 
     def test_renderer_evidence_blocks_missing_layout_drawing_and_table(self) -> None:
+        from tests.test_formula_rendering import changed_docx, NS
+
         document = DocumentIR(
             schema_version="document-ir/v2",
             metadata=DocumentIRMetadata(job_id="docjob_blocking", source_file_id="file_blocking", document_language="zh"),
             pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
             assets=[DocumentIRAsset(id="asset_chart", kind="image", source_path="chart.png")],
             blocks=[
-                DocumentIRBlock(id="missing_page", type="paragraph", order=0, text="不应静默丢失的正文"),
+                DocumentIRBlock(id="body", type="paragraph", order=0, text="不应静默丢失的正文",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(10, 20, 390, 60), role="body")),
                 DocumentIRBlock(
                     id="missing_drawing",
                     type="image",
@@ -188,34 +193,64 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
                     id="missing_table",
                     type="table",
                     order=2,
-                    html="not-a-table",
-                    text="表格回退文本",
+                    html="<table><tr><td>必须保留的表格正文</td></tr></table>",
                     layout=DocumentIRBlockLayout(page_index=0, bbox=(10, 200, 390, 300), role="body"),
                 ),
             ],
         )
-        word_content = DocumentIRWordRenderer().render_to_bytes(
+        result = DocumentIRWordRenderer().render_to_result(
             document,
             template_path=None,
             config_path=None,
-            image_loader=lambda _asset: None,
+            image_loader=lambda _asset: MINIMAL_PNG_BYTES,
         )
+        baseline = build_renderer_evidence(document, result.content, render_result=result)
+        ensure_renderer_integrity(baseline)
+        self.assertEqual(baseline["render_trace_status"], "complete")
+        self.assertEqual(baseline["layout_block_count"], 3)
+        self.assertEqual(baseline["inline_shape_count"], 1)
+        self.assertEqual(baseline["table_count"], 1)
 
-        evidence = build_renderer_evidence(document, word_content)
+        cases = (
+            ("layout", "ir_layout_integrity:missing_blocks", (2, 1, 1)),
+            ("drawing", "ir_docx_integrity:inline_shape_count_mismatch", (3, 0, 1)),
+            ("table", "ir_docx_integrity:table_count_mismatch", (3, 1, 0)),
+        )
+        for missing, flag, actual_counts in cases:
+            with self.subTest(missing=missing):
+                source = document.model_copy(deep=True)
+                content = result.content
+                if missing == "layout":
+                    source.blocks[0].layout = None
+                else:
+                    def remove(root):
+                        node = root.find(".//w:drawing" if missing == "drawing" else ".//w:tbl", NS)
+                        parent = next(parent for parent in root.iter() if node in list(parent))
+                        parent.remove(node)
+                    content = changed_docx(content, remove)
+                # 历史聚合门直接观察实际缺失，不能靠完整结果的文件 hash 提前失败。
+                evidence = build_renderer_evidence(source, content)
+                self.assertEqual(tuple(evidence[key] for key in (
+                    "expected_layout_block_count", "expected_inline_shape_count", "expected_table_count")), (3, 1, 1))
+                self.assertEqual(tuple(evidence[key] for key in (
+                    "layout_block_count", "inline_shape_count", "table_count")), actual_counts)
+                self.assertEqual(evidence["blocking_quality_flags"], [flag])
+                with self.assertRaises(DocumentIntegrityError) as raised:
+                    ensure_renderer_integrity(evidence)
+                self.assertEqual(raised.exception.evidence["blocking_quality_flags"], [flag])
 
-        self.assertEqual(evidence["expected_layout_block_count"], 3)
-        self.assertEqual(evidence["layout_block_count"], 2)
-        self.assertEqual(evidence["expected_inline_shape_count"], 1)
-        self.assertEqual(evidence["inline_shape_count"], 0)
-        self.assertEqual(evidence["expected_table_count"], 1)
-        self.assertEqual(evidence["table_count"], 0)
-        self.assertIn("ir_layout_integrity:missing_blocks", evidence["blocking_quality_flags"])
-        self.assertIn("ir_docx_integrity:inline_shape_count_mismatch", evidence["blocking_quality_flags"])
-        self.assertIn("ir_docx_integrity:table_count_mismatch", evidence["blocking_quality_flags"])
-        with self.assertRaises(DocumentIntegrityError) as raised:
-            ensure_renderer_integrity(evidence)
-        self.assertIn("expected_inline_shape_count=1", str(raised.exception))
-        self.assertIn("inline_shape_count=0", str(raised.exception))
+    def test_render_to_result_rejects_invalid_table_html_before_output(self) -> None:
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="invalid_table", source_file_id="source", document_language="zh"),
+            blocks=[DocumentIRBlock(id="table", type="table", order=0,
+                html="not-a-table", text="不能把无效 HTML 冒充表格正文")],
+        )
+        with self.assertRaises(TableRenderError) as raised:
+            DocumentIRWordRenderer().render_to_result(document, template_path=None, config_path=None,
+                image_loader=lambda _asset: None)
+        self.assertEqual(raised.exception.code, "table_html_unsupported_structure")
+        self.assertEqual(raised.exception.block_index, 0)
+        self.assertEqual(str(raised.exception), "表格渲染失败：table_html_unsupported_structure，块索引=0。")
 
     def test_render_to_bytes_uses_native_columns_for_v2_region(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -239,6 +274,35 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual(rendered.sections[0].page_width, rendered.sections[1].page_width)
         self.assertEqual(rendered.sections[0].left_margin, rendered.sections[1].left_margin)
         self.assertTrue(rendered.sections[1].header.is_linked_to_previous)
+
+    def test_native_columns_restore_spacing_from_single_column_template(self) -> None:
+        for original_spacing in (None, "0", "480", "720"):
+            with self.subTest(original_spacing=original_spacing), tempfile.TemporaryDirectory() as directory:
+                template_path = Path(directory) / "single-column-template.docx"
+                template = Document()
+                columns = template.sections[0]._sectPr.find(qn("w:cols"))
+                columns.set(qn("w:num"), "1")
+                if original_spacing is None:
+                    columns.attrib.pop(qn("w:space"), None)
+                else:
+                    columns.set(qn("w:space"), original_spacing)
+                template.save(template_path)
+                original_template = template_path.read_bytes()
+                ir = self._make_v2_two_column_document()
+                result = DocumentIRWordRenderer().render_to_result(
+                    ir, template_path=template_path, config_path=None, image_loader=lambda _asset: None,
+                )
+                rendered = Document(io.BytesIO(result.content))
+                native_columns = [section._sectPr.find(qn("w:cols")) for section in rendered.sections]
+                double_columns = [node for node in native_columns if node.get(qn("w:num")) == "2"]
+                self.assertTrue(double_columns)
+                expected_spacing = original_spacing if original_spacing not in (None, "0") else "720"
+                self.assertTrue(all(node.get(qn("w:space")) == expected_spacing for node in double_columns))
+                self.assertEqual(native_columns[-1].get(qn("w:num")), "1")
+                self.assertEqual([paragraph.text for paragraph in rendered.paragraphs].count("Left column"), 1)
+                self.assertEqual([paragraph.text for paragraph in rendered.paragraphs].count("Right column"), 1)
+                self.assertEqual(template_path.read_bytes(), original_template)
+                ensure_renderer_integrity(build_renderer_evidence(ir, result.content, render_result=result))
 
     def test_render_to_bytes_prefers_column_hint_when_ordering_native_columns(self) -> None:
         renderer = DocumentIRWordRenderer()

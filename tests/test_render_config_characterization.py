@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-# tests/test_render_config_characterization.py: 固化渲染配置、术语替换和语言覆盖的加载行为。
+# tests/test_render_config_characterization.py: 固化渲染配置、共享术语替换和语言覆盖的加载行为。
 
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import yaml
+
+from app.conversion.docx_rules.terminology import TerminologyReplacer
+
 try:
     from .runtime_direct_loaders import load_render_config_module
-except ImportError:  # pragma: no cover - compatibility for direct execution
+except ImportError:  # pragma: no cover - 兼容直接执行
     from runtime_direct_loaders import load_render_config_module
 
 
@@ -182,7 +187,6 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
         self.assertFalse(render_config.use_mineru_header_footer)
 
     def test_terminology_replacer_sorts_rules_by_priority_then_length(self):
-        config_path = Path(__file__)
         raw_config = {
             "case_sensitive": True,
             "categories": {
@@ -191,40 +195,70 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
             },
             "subscript_rules": {
                 "fallback": {"V": "VOLT"},
-                "precise": {"VIN": "PIN"},
+                "precise": {"VIN": "PIN", "VOUT": "OUTPUT"},
             },
         }
 
-        with mock.patch.object(self.module.yaml, "safe_load", return_value=raw_config):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "format-rules.yaml"
+            config_path.write_text(yaml.safe_dump(raw_config), encoding="utf-8")
             replacer = self.module.TerminologyReplacer(config_path)
 
-        self.assertEqual([rule.source for rule in replacer.rules], ["VIN", "V"])
-        self.assertEqual(replacer.replace_text("VIN V"), "PIN VOLT")
+        self.assertEqual([rule.source for rule in replacer.rules], ["VOUT", "VIN", "V"])
+        self.assertEqual(replacer.replace_text("VIN VOUT V"), "PIN OUTPUT VOLT")
 
     def test_terminology_replacer_respects_rules_meta_apply_scope_and_case_sensitivity(self):
-        config_path = Path(__file__)
         raw_config = {
             "case_sensitive": True,
             "categories": {
-                "mixed": {"priority": 10},
+                "mixed": {"priority": 100},
             },
             "subscript_rules": {
                 "mixed": {
                     "VIN": "V<sub>IN</sub>",
                     "vout": "V<sub>OUT</sub>",
+                    "OFF": "SHOULD_NOT_APPEAR",
                 }
             },
             "rules_meta": {
                 "VIN": {"apply_scope": "table", "case_sensitive": True, "enabled": True, "priority": 10},
                 "vout": {"apply_scope": "markdown", "case_sensitive": False, "enabled": True, "priority": 20},
+                "OFF": {"enabled": False, "priority": 1},
             },
         }
 
-        with mock.patch.object(self.module.yaml, "safe_load", return_value=raw_config):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "format-rules.yaml"
+            config_path.write_text(yaml.safe_dump(raw_config), encoding="utf-8")
             replacer = self.module.TerminologyReplacer(config_path)
 
-        self.assertEqual(replacer.replace_text("VIN vout"), "VIN V<sub>OUT</sub>")
-        self.assertEqual(replacer._replace_text_for_output_mode("VIN vOut", "table"), "V<sub>IN</sub> vOut")
+        self.assertEqual([(rule.source, rule.priority) for rule in replacer.rules], [("VIN", 10), ("vout", 20)])
+        self.assertEqual(replacer.replace_text("VIN vout VOUT OFF"), "VIN V<sub>OUT</sub> V<sub>OUT</sub> OFF")
+        self.assertEqual(replacer._replace_text_for_output_mode("VIN vin vOut OFF", "table"), "V<sub>IN</sub> vin vOut OFF")
+        self.assertEqual(
+            replacer.replace_html("<table><tr><td>VIN vin vOut OFF</td></tr></table>"),
+            "<table><tr><td>V<sub>IN</sub> vin vOut OFF</td></tr></table>",
+        )
+
+    def test_terminology_replacer_rejects_invalid_yaml(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "invalid-format-rules.yaml"
+            config_path.write_text("subscript_rules: [\n", encoding="utf-8")
+
+            with self.assertRaises(yaml.YAMLError):
+                TerminologyReplacer(config_path)
+
+    def test_terminology_replacer_keeps_missing_or_non_mapping_rules_empty(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "format-rules.yaml"
+            missing = TerminologyReplacer(config_path)
+            config_path.write_text("subscript_rules: []\n", encoding="utf-8")
+            unsupported = TerminologyReplacer(config_path)
+
+        for name, replacer in (("missing", missing), ("non_mapping_rules", unsupported)):
+            with self.subTest(name=name):
+                self.assertEqual(replacer.rules, [])
+                self.assertEqual(replacer.replace_text("VIN"), "VIN")
 
     def test_resolve_document_language_detects_english_from_page_content(self):
         pages = [

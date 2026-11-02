@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import copy
 import random
 import json
 import tempfile
@@ -47,11 +48,11 @@ def warnings_suppressed_duplicate_zip():
 
 
 class MinerUArtifactValidatorTests(unittest.TestCase):
-    def convert(self, payload, members=None, *, policy=None):
+    def convert(self, payload, members=None, *, policy=None, content_list_name="content_list_v2.json"):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "result.zip"
             with zipfile.ZipFile(path, "w") as archive:
-                archive.writestr("content_list_v2.json", json.dumps(payload))
+                archive.writestr(content_list_name, json.dumps(payload))
                 for name, data in (members or {}).items():
                     archive.writestr(name, data)
             return MinerUToDocumentIRService(**({"policy": policy} if policy else {})).convert_zip(
@@ -116,6 +117,181 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
                       {"type": "page_header", "content": {"page_header_content": False}}):
             with self.subTest(block=block), self.assertRaises(MinerUArtifactValidationError):
                 self.convert([[block]])
+
+    def _merged_paragraph_input(self, *, cross_page):
+        """保留实际包的合并前后视图、行内公式和两套坐标，不依赖用户原始文件。"""
+
+        source_bbox = [330, 80, 540, 112]
+        target_bbox = [60, 640, 270, 680]
+        spans = [
+            {"type": "text", "content": "原段落续文 ", "bbox": source_bbox},
+            {"type": "inline_equation", "content": r"10\mu F", "bbox": source_bbox},
+            {"type": "text", "content": " 容量要求", "bbox": source_bbox},
+        ]
+        original = {"type": "text", "index": 1, "bbox": source_bbox, "lines": [{"spans": spans}]}
+        target_original = {"type": "text", "index": 0, "bbox": target_bbox,
+                           "lines": [{"spans": [{"type": "text", "content": "前文 ", "bbox": target_bbox}]}]}
+        target = copy.deepcopy(target_original)
+        moved = copy.deepcopy(spans)
+        if cross_page:
+            for span in moved:
+                span["cross_page"] = True
+        target["lines"].append({"spans": moved})
+        residue = {"type": "text", "index": 1, "bbox": source_bbox, "lines": [], "lines_deleted": True}
+        selected_target = {"type": "paragraph", "bbox": [100, 800, 450, 850], "content": {"paragraph_content": [
+            {"type": "text", "content": "前文 原段落续文 "},
+            {"type": "equation_inline", "content": r"10\mu F"},
+            {"type": "text", "content": " 容量要求"},
+        ]}}
+        selected_residue = {"type": "paragraph", "bbox": [550, 100, 900, 140], "content": {"paragraph_content": []}}
+        layout = {"pdf_info": [{"page_idx": 0, "page_size": [600, 800],
+                                "preproc_blocks": [target_original], "para_blocks": [target]}]}
+        if cross_page:
+            layout["pdf_info"].append({"page_idx": 1, "page_size": [600, 800],
+                                       "preproc_blocks": [original], "para_blocks": [residue]})
+            # 页边缘节点不会改变正文合并关系，也不能被误当成接收段落。
+            header = {"type": "page_header", "bbox": [100, 10, 400, 30],
+                      "content": {"page_header_content": [{"type": "text", "content": "页眉"}]}}
+            payload = [[selected_target, header], [selected_residue]]
+        else:
+            layout["pdf_info"][0]["preproc_blocks"].append(original)
+            layout["pdf_info"][0]["para_blocks"].append(residue)
+            payload = [[selected_target, selected_residue]]
+        return payload, layout
+
+    def _assert_merged_paragraph_conversion(self, *, cross_page):
+        payload, layout = self._merged_paragraph_input(cross_page=cross_page)
+        result = self.convert(payload, {"layout.json": json.dumps(layout)})
+        report = result.validation_report
+        pointer = "/1/0" if cross_page else "/0/1"
+        self.assertTrue(report.can_convert)
+        self.assertEqual(report.fatal_count, 0)
+        self.assertEqual(report.issue_counts["warning"], {"mineru_merged_paragraph_empty": 1})
+        self.assertEqual(report.warnings[0].json_pointer, pointer)
+        self.assertEqual(report.warnings[0].facts, {"reason": "merged_paragraph_residue"})
+        self.assertEqual(report.inventory["raw_block_count"], sum(map(len, payload)))
+        self.assertEqual(report.inventory["invalid_block_count"], 0)
+        self.assertEqual(report.effective_inventory["block_count"], sum(map(len, payload)))
+        self.assertEqual(len(result.document.blocks), sum(map(len, payload)))
+        self.assertEqual(result.document.blocks[-1].metadata["mineru_source"]["json_pointer"], pointer)
+        self.assertIsNone(result.document.blocks[-1].text)
+        self.assertIn("原段落续文", result.document.blocks[0].text)
+        self.assertIn(r"10\mu F", result.document.blocks[0].text)
+        word = DocumentIRWordRenderer().render_to_bytes(
+            result.document, template_path=None, config_path=None, image_loader=lambda _asset: None,
+        )
+        visible = "".join(paragraph.text for paragraph in Document(io.BytesIO(word)).paragraphs)
+        self.assertEqual(visible.count("原段落续文"), 1)
+        self.assertEqual(visible.count("容量要求"), 1)
+        evidence = build_renderer_evidence(result.document, word)
+        ensure_renderer_integrity(evidence)
+        self.assertEqual(evidence["blocking_quality_flags"], [])
+        safe = build_renderer_event_summary({"mineru_validation": report.model_dump(mode="json")})["mineru_validation"]
+        self.assertEqual(safe["warnings"], [report.warnings[0].model_dump(mode="json")])
+        self.assertEqual(safe["validator_version"], "mineru-artifact-validator/v4")
+        self.assertNotIn("原段落续文", json.dumps(safe, ensure_ascii=False))
+
+    def test_cross_column_merge_residue_preserves_text_once_and_source_inventory(self):
+        self._assert_merged_paragraph_conversion(cross_page=False)
+
+    def test_cross_page_merge_residue_preserves_text_once_and_source_inventory(self):
+        self._assert_merged_paragraph_conversion(cross_page=True)
+
+    def test_merge_residue_requires_bound_original_and_retained_selected_text(self):
+        for cross_page in (False, True):
+            for case in ("missing_layout", "unmarked", "string_flag", "wrong_bbox", "wrong_index", "missing_original",
+                         "unmerged_layout", "missing_selected_text", "missing_selected_formula", "wrong_target_bbox",
+                         "extra_body", "malformed_body", "non_finite_projection"):
+                with self.subTest(cross_page=cross_page, case=case):
+                    payload, layout = self._merged_paragraph_input(cross_page=cross_page)
+                    source_page = layout["pdf_info"][-1]
+                    residue = source_page["para_blocks"][-1]
+                    selected = payload[-1][-1]
+                    if case == "unmarked":
+                        residue.pop("lines_deleted")
+                    elif case == "string_flag":
+                        residue["lines_deleted"] = "true"
+                    elif case == "wrong_bbox":
+                        residue["bbox"] = [340, 80, 540, 112]
+                    elif case == "wrong_index":
+                        residue["index"] = 99
+                    elif case == "missing_original":
+                        source_page["preproc_blocks"].pop()
+                    elif case == "unmerged_layout":
+                        layout["pdf_info"][0]["para_blocks"][0]["lines"].pop()
+                    elif case == "missing_selected_text":
+                        payload[0][0]["content"]["paragraph_content"][0]["content"] = "前文"
+                    elif case == "missing_selected_formula":
+                        payload[0][0]["content"]["paragraph_content"].pop(1)
+                    elif case == "wrong_target_bbox":
+                        payload[0][0]["bbox"] = [110, 800, 450, 850]
+                    elif case == "extra_body":
+                        selected["content"]["description"] = "不能丢失的正文"
+                    elif case == "malformed_body":
+                        selected["content"]["paragraph_content"] = [{"type": "text", "content": 42}]
+                    elif case == "non_finite_projection":
+                        for page in layout["pdf_info"]:
+                            page["page_size"] = [1e-308, 1e-308]
+                    members = {} if case == "missing_layout" else {"layout.json": json.dumps(layout)}
+                    with self.assertRaises(MinerUArtifactValidationError) as caught:
+                        self.convert(payload, members)
+                    self.assertEqual(caught.exception.report.first_fatal.code, "mineru_block_payload_invalid")
+                    self.assertFalse(caught.exception.report.can_convert)
+
+    def test_content_list_merge_flags_alone_cannot_exempt_missing_body(self):
+        block = {"type": "paragraph", "bbox": [100, 100, 200, 200], "lines_deleted": True,
+                 "merge_prev": True, "content": {"paragraph_content": []}}
+        with self.assertRaises(MinerUArtifactValidationError) as caught:
+            self.convert([[block]])
+        self.assertEqual(caught.exception.report.first_fatal.facts["reason"], "missing_readable_payload")
+
+    def test_merge_residue_rejects_lost_repeated_text_and_reused_source_identity(self):
+        for case in ("lost_repetition", "duplicate_source", "readable_duplicate_source", "duplicate_target_before",
+                     "duplicate_target_after", "duplicate_layout_target"):
+            with self.subTest(case=case):
+                payload, layout = self._merged_paragraph_input(cross_page=False)
+                if case == "lost_repetition":
+                    target = layout["pdf_info"][0]["para_blocks"][0]
+                    # 原段落此前已有同样正文，不能用原有一次出现冒充合并后应有的第二次。
+                    target["lines"].insert(1, copy.deepcopy(target["lines"][-1]))
+                elif case == "duplicate_source":
+                    payload[0].append(copy.deepcopy(payload[0][-1]))
+                elif case == "readable_duplicate_source":
+                    duplicate = copy.deepcopy(payload[0][-1])
+                    duplicate["content"]["paragraph_content"] = [{"type": "text", "content": "另一个正文节点"}]
+                    payload[0].append(duplicate)
+                elif case == "duplicate_target_before":
+                    payload[0].insert(0, copy.deepcopy(payload[0][0]))
+                elif case == "duplicate_target_after":
+                    payload[0].append(copy.deepcopy(payload[0][0]))
+                else:
+                    layout["pdf_info"][0]["para_blocks"].insert(0, copy.deepcopy(layout["pdf_info"][0]["para_blocks"][0]))
+                with self.assertRaises(MinerUArtifactValidationError) as caught:
+                    self.convert(payload, {"layout.json": json.dumps(layout)})
+                self.assertEqual(caught.exception.report.first_fatal.facts["reason"], "missing_readable_payload")
+
+    def test_merge_proof_is_bound_to_selected_document_and_unique_layout(self):
+        for case in ("own_layout", "missing_own_layout", "own_missing_text", "ambiguous_layout", "unbound_shared_layout"):
+            with self.subTest(case=case):
+                payload, layout = self._merged_paragraph_input(cross_page=False)
+                other_payload, other_layout = self._merged_paragraph_input(cross_page=False)
+                members = {"a_content_list.json": json.dumps(other_payload), "layout.json": json.dumps(other_layout)}
+                name = "sub/b_content_list_v2.json"
+                if case == "unbound_shared_layout":
+                    name = "b_content_list_v2.json"
+                elif case != "missing_own_layout":
+                    if case == "own_missing_text":
+                        layout["pdf_info"][0]["preproc_blocks"][-1]["lines"][0]["spans"][0]["content"] = "另一份正文"
+                        layout["pdf_info"][0]["para_blocks"][0]["lines"][-1]["spans"][0]["content"] = "另一份正文"
+                    members["sub/b_layout.json"] = json.dumps(layout)
+                    if case == "ambiguous_layout":
+                        members["sub/b_middle.json"] = json.dumps(layout)
+                if case == "own_layout":
+                    self.assertTrue(self.convert(payload, members, content_list_name=name).validation_report.can_convert)
+                else:
+                    with self.assertRaises(MinerUArtifactValidationError) as caught:
+                        self.convert(payload, members, content_list_name=name)
+                    self.assertEqual(caught.exception.report.first_fatal.facts["reason"], "missing_readable_payload")
 
     def test_page_and_block_failures_have_source_pointer(self):
         cases = [

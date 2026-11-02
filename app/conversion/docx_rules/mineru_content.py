@@ -40,25 +40,30 @@ FORMULA_TYPES = {
 }
 
 
-def clean_markdown_document(text: str) -> str:
-    """删除非正文 details 块，同时保留有效 Markdown 文本。"""
+def clean_markdown_document(text: str, *, preserve_line_breaks: bool = False) -> str:
+    """删除非正文 details 块；段落正文可保留来源明确给出的全部换行。"""
 
     normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
     cleaned = DETAILS_BLOCK_RE.sub("", normalized)
-    return re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned if preserve_line_breaks else re.sub(r"\n{3,}", "\n\n", cleaned)
 
 
-def clean_text(text: str) -> str:
-    """清理普通正文；数学片段保留源字符与内部空白，供翻译保护和渲染共同消费。"""
+def clean_text(text: str, *, preserve_line_breaks: bool = False) -> str:
+    """归一化非数学空白；正文可保留行边界，数学片段始终保留源字符。"""
 
     source = str(text or "")
+    whitespace_pattern = r"[^\S\n]+" if preserve_line_breaks else r"\s+"
     parts: list[str] = []
     cursor = 0
     for span in scan_math_spans(source):
-        parts.append(re.sub(r"\s+", " ", clean_markdown_document(source[cursor:span.start])))
+        parts.append(re.sub(whitespace_pattern, " ", clean_markdown_document(
+            source[cursor:span.start], preserve_line_breaks=preserve_line_breaks,
+        )))
         parts.append(span.source)
         cursor = span.end
-    parts.append(re.sub(r"\s+", " ", clean_markdown_document(source[cursor:])))
+    parts.append(re.sub(whitespace_pattern, " ", clean_markdown_document(
+        source[cursor:], preserve_line_breaks=preserve_line_breaks,
+    )))
     return "".join(parts).strip()
 
 
@@ -127,15 +132,15 @@ def select_mineru_text_source(
     return None
 
 
-def mineru_raw_text_preserving_lines(block: dict[str, Any]) -> str:
-    """验证器与转换器消费同一正文选择，避免旁支叶字段冒充已保留内容。"""
+def mineru_raw_text_preserving_lines(block: dict[str, Any], *, preserve_line_breaks: bool = False) -> str:
+    """消费同一权威正文；保留模式把字符串交给数学感知清洗，避免先改写公式空白。"""
 
     selected = select_mineru_text_source(block)
     if selected is None:
         return ""
     _field, value, mode = selected
     if mode == "string":
-        return clean_markdown_document(value)
+        return value if preserve_line_breaks else clean_markdown_document(value)
     if mode == "runs":
         return join_text_fragments(value, clean=False)
     return "\n".join(value)
@@ -567,22 +572,6 @@ def select_mineru_text_source(
         if texts:
             return key, texts, "texts"
     return None
-
-
-
-def mineru_raw_text_preserving_lines(block: dict[str, Any]) -> str:
-    """验证器与转换器消费同一正文选择，避免旁支叶字段冒充已保留内容。"""
-
-    selected = select_mineru_text_source(block)
-    if selected is None:
-        return ""
-    _field, value, mode = selected
-    if mode == "string":
-        return clean_markdown_document(value)
-    if mode == "runs":
-        return join_text_fragments(value, clean=False)
-    return "\n".join(value)
-
 
 
 def select_mineru_list_source(

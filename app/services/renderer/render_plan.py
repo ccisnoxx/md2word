@@ -8,8 +8,10 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from app.services.document_ir.models import DocumentIR
-from app.services.renderer.layout_plan import LayoutPlan, LayoutRegion, build_image_plan, image_annotations, split_two_col_blocks
+from app.services.document_ir.models import DocumentIR, DocumentIRBlock
+from app.services.renderer.layout_plan import (
+    LayoutPage, LayoutPlan, LayoutRegion, build_image_plan, complete_two_column_tails, image_annotations, split_two_col_blocks,
+)
 from app.services.renderer.semantic_text import (
     infer_heading_level, is_list_item_text, is_toc_title_text, looks_like_heading_text, parse_toc_entry_text,
 )
@@ -253,8 +255,28 @@ def select_text_policy(text: str, *, list_item: bool = False, allow_heading_infe
     return TextPolicy(mode="paragraph", style_group="normal")
 
 
-def semantic_page_break_block_id(page) -> str | None:
-    block = next((block for region in page.regions for block in region.blocks), None)
+def _complete_two_column_text_region(page: LayoutPage, source_blocks: list[DocumentIRBlock]) -> LayoutRegion | None:
+    """完整左→右文字流沿用来源顺序，避免纵向 band 碎片切断阅读流。
+
+    只调整已有双栏证据页的调度；原布局区域仍用于聚合证据和历史恢复。
+    """
+    if not any(region.kind == "two_col" for region in page.regions):
+        return None
+    body_ids = {block.id for region in page.regions for block in region.blocks}
+    blocks = [block for block in source_blocks if block.id in body_ids]
+    column_runs = []
+    for block in blocks:
+        hint = block.layout.column_hint if block.layout is not None else None
+        if block.type not in {"heading", "paragraph", "formula"} or hint not in {"left", "right"}:
+            return None
+        if not column_runs or column_runs[-1] != hint:
+            column_runs.append(hint)
+    return LayoutRegion("two_col", blocks) if column_runs == ["left", "right"] else None
+
+
+def semantic_page_break_block_id(page: LayoutPage, *, regions: list[LayoutRegion] | None = None) -> str | None:
+    """按调度首块判断起页；未提供调度时保留原布局区域语义。"""
+    block = next((block for region in (page.regions if regions is None else regions) for block in region.blocks), None)
     if block is not None and (block.type == "heading" or block.type == "table" and block.captions
             or block.type == "paragraph" and block.metadata.get("annotation_role") == "table_context"):
         return block.id
@@ -325,10 +347,17 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
                         decisions[block.id].section_id = current
                         decisions[block.id].style_group = kind
                         decisions[block.id].reason_codes = ["decoration_joined"]
-        break_id = semantic_page_break_block_id(page) if not legacy and page_index > 0 and landscape == previous_landscape else None
-        # 复用 RND-503 的实际调度：仅抽出确认组或与原生栏读序冲突的 span。
+        break_id = None
         regions = list(enumerate(page.regions))
         if not legacy:
+            text_region = _complete_two_column_text_region(page, source_blocks)
+            if text_region is not None:
+                regions = [(0, text_region)]
+            else:
+                regions = list(enumerate(complete_two_column_tails(page, source_blocks)))
+            if page_index > 0 and landscape == previous_landscape:
+                break_id = semantic_page_break_block_id(page, regions=[region for _, region in regions])
+            # 复用 RND-503 的图片调度：仅抽出确认组或与原生栏读序冲突的 span。
             body_ids = {block.id for region in page.regions for block in region.blocks}
             source_images = [block.id for block in source_blocks if block.id in body_ids and block.type == "image"]
             native_images = []
@@ -349,9 +378,9 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
                 prefix_max = max(prefix_max, positions[index])
             overlay_ids = {block_id for block_id in source_images if spans[block_id].id in overlay_spans}
             if overlay_ids:
-                regions, pending = [], set()
+                scheduled_regions, regions, pending = regions, [], set()
                 def flush_pending():
-                    for region_index, region in enumerate(page.regions):
+                    for region_index, region in scheduled_regions:
                         blocks = [block for block in region.blocks if block.id in pending]
                         if blocks:
                             regions.append((region_index, LayoutRegion(region.kind, blocks)))

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 from typing import Any
@@ -9,7 +10,15 @@ from typing import Any
 from docx.oxml.ns import qn
 from lxml import etree
 
-from app.conversion.docx_rules.formula import content_math_spans, formula_block_span, sha256_text
+from app.conversion.docx_rules.formula import (
+    FORMULA_FALLBACK_NOTICE,
+    FormulaRenderResult,
+    _word_run,
+    content_math_spans,
+    formula_block_span,
+    render_formula,
+    sha256_text,
+)
 from app.services.document_ir.integrity import DocumentIntegrityError, is_visible_body_block
 from app.services.renderer.render_plan import canonical_bytes, content_hash, document_ir_hash
 
@@ -292,7 +301,7 @@ def semantic_projection(paragraph, *, include_fields=False) -> list:
 
 
 def verify_native_content(document, content: bytes, table_plan, formula_report, image_report, coverage):
-    """固定 grid 与原冻结规则重放叶级投影，不渲染主件、不读取当前配置或写 Artifact。"""
+    """在全源覆盖和物理公式认证后重放叶级投影，保留历史受控降级。"""
     from docx import Document
     from app.conversion.docx_rules.terminology import TerminologyReplacer
     from app.services.renderer.block_evidence import PackageIndex
@@ -322,14 +331,46 @@ def verify_native_content(document, content: bytes, table_plan, formula_report, 
     native = {}
     annotations = {}
 
-    def expected_annotation(item, *, primary):
+    @contextmanager
+    def replay_leaf(actual, source_key):
+        """按该叶的源次序消费已认证 occurrence，不借用同式的其它位置或次数。"""
+        entries = [formula_report["entries"][value - 1] for value in occurrences[source_key]]
+        names = [node.get(qn("w:name")) for node in actual.iter(qn("w:bookmarkStart"))
+                 if node.get(qn("w:name"), "").startswith("md2w_formula_")]
+        if names != [entry["anchor"] for entry in entries]:
+            raise content_failure("ir_render_evidence:target_mismatch")
+        pending = deque(entries)
+
+        def replay_formula(span):
+            if not pending:
+                raise content_failure("ir_render_evidence:target_mismatch")
+            entry = pending.popleft()
+            source = entry["source"]
+            if source["source_sha256"] != sha256_text(span.source) or source["boundary"] != span.boundary:
+                raise content_failure("ir_render_evidence:target_mismatch")
+            if entry["mode"] == "text_fallback":
+                # 冻结报告只决定此 occurrence 的降级模式；提示和逐字原式仍由源独立重建。
+                return FormulaRenderResult("text_fallback",
+                    (_word_run(FORMULA_FALLBACK_NOTICE), _word_run(span.source)), entry["reason"])
+            return render_formula(span)
+
         paragraph = scratch.add_paragraph()
+        scratch.part._md2word_formula_replay = replay_formula
+        try:
+            yield paragraph
+            if pending:
+                raise content_failure("ir_render_evidence:target_mismatch")
+        finally:
+            del scratch.part._md2word_formula_replay
+            paragraph._p.getparent().remove(paragraph._p)
+
+    def expected_annotation(item, actual, *, primary):
         text = getattr(by_id[item.block_id], item.field)[item.item_index].strip()
         style = config.table_note if item.role == "note" else config.normal if item.role == "context" else config.caption
-        if item.role != "caption" or not primary or not writer._fill_caption_paragraph(paragraph, text, style, terminology=rules):
-            writer._fill_paragraph(paragraph, text, style, terminology=rules)
-        value = semantic_projection(paragraph._p)
-        paragraph._p.getparent().remove(paragraph._p)
+        with replay_leaf(actual, (item.block_id, f"{item.field}/{item.item_index}")) as paragraph:
+            if item.role != "caption" or not primary or not writer._fill_caption_paragraph(paragraph, text, style, terminology=rules):
+                writer._fill_paragraph(paragraph, text, style, terminology=rules)
+            value = semantic_projection(paragraph._p)
         return value
 
     for unit, contract in zip(table_plan.units, contracts, strict=True):
@@ -362,21 +403,13 @@ def verify_native_content(document, content: bytes, table_plan, formula_report, 
                     paragraphs = cell.findall(qn("w:p"))
                     if len(paragraphs) != 1 or any(node.tag not in {qn("w:tcPr"), qn("w:p")} for node in cell):
                         raise content_failure("ir_render_evidence:target_mismatch")
-                    paragraph = scratch.add_paragraph()
-                    if owner.row == source_row:
-                        writer._fill_native_grid_runs(paragraph, owner.runs, config, reference_bookmarks=references)
-                    expected = semantic_projection(paragraph._p, include_fields=True)
-                    paragraph._p.getparent().remove(paragraph._p)
+                    source_key = ((fragment.source.block_id, f"html/{owner.source_row_index}/{owner.source_cell_index}")
+                                  if owner.row == source_row else None)
+                    with replay_leaf(paragraphs[0], source_key) as paragraph:
+                        if owner.row == source_row:
+                            writer._fill_native_grid_runs(paragraph, owner.runs, config, reference_bookmarks=references)
+                        expected = semantic_projection(paragraph._p, include_fields=True)
                     if semantic_projection(paragraphs[0], include_fields=True) != expected:
-                        raise content_failure("ir_render_evidence:target_mismatch")
-                    if owner.row == source_row:
-                        field = f"html/{owner.source_row_index}/{owner.source_cell_index}"
-                        expected_occurrences = occurrences[fragment.source.block_id, field]
-                    else:
-                        expected_occurrences = []
-                    actual_names = [node.get(qn("w:name")) for node in cell.iter(qn("w:bookmarkStart"))
-                                    if node.get(qn("w:name"), "").startswith("md2w_formula_")]
-                    if actual_names != [f"md2w_formula_{value:06d}" for value in expected_occurrences]:
                         raise content_failure("ir_render_evidence:target_mismatch")
                 for column, cell in logical.items():
                     if column not in used and any(semantic_projection(paragraph, include_fields=True)
@@ -391,7 +424,7 @@ def verify_native_content(document, content: bytes, table_plan, formula_report, 
         bindings = []
         for offset, item in enumerate(prefix):
             paragraph = children[before + offset]
-            if paragraph.tag != qn("w:p") or semantic_projection(paragraph) != expected_annotation(item, primary=unit.is_group_primary):
+            if paragraph.tag != qn("w:p") or semantic_projection(paragraph) != expected_annotation(item, paragraph, primary=unit.is_group_primary):
                 raise content_failure("ir_render_evidence:target_mismatch")
             bindings.append((item.block_id, item.field, item.item_index, index.paths[paragraph][1]))
         from app.services.document_ir.table_placeholder import decode_placeholders
@@ -399,7 +432,7 @@ def verify_native_content(document, content: bytes, table_plan, formula_report, 
                         if item.fragment_id in {fragment.source.fragment_id for fragment in unit.fragments}]
         for offset, item in enumerate(suffix):
             paragraph = children[position + 1 + len(placeholders) + offset]
-            if paragraph.tag != qn("w:p") or semantic_projection(paragraph) != expected_annotation(item, primary=unit.is_group_primary):
+            if paragraph.tag != qn("w:p") or semantic_projection(paragraph) != expected_annotation(item, paragraph, primary=unit.is_group_primary):
                 raise content_failure("ir_render_evidence:target_mismatch")
             bindings.append((item.block_id, item.field, item.item_index, index.paths[paragraph][1]))
         annotations[unit.key] = tuple(bindings)

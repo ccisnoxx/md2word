@@ -135,7 +135,8 @@ def derive_base_quality(job: Any) -> dict | None:
         source_report = MinerUValidationReport.model_validate(report_value)
     except ValidationError:
         source_report = None
-    if (source_report is None or source_report.validator_version != "mineru-artifact-validator/v3"
+    # v4 仅新增已对账的合并正文警告，沿用 v3 的库存和风险分级合同。
+    if (source_report is None or source_report.validator_version not in {"mineru-artifact-validator/v3", "mineru-artifact-validator/v4"}
             or source_report.policy_version != DEFAULT_POLICY.version):
         complete = False
     else:

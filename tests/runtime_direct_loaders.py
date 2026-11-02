@@ -7,10 +7,23 @@ import re
 import argparse
 import sys
 import types
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_PKG = "app.conversion.runtime"
+
+
+@contextmanager
+def _isolated_runtime_modules():
+    """隔离替身和重载模块；仅恢复模块表不足以撤销已有项目父包的子模块重绑。"""
+    with ExitStack() as scope:
+        scope.enter_context(patch.dict(sys.modules))
+        for name, package in sys.modules.copy().items():
+            if (name == "app" or name.startswith("app.")) and hasattr(package, "__path__"):
+                scope.enter_context(patch.dict(vars(package)))
+        yield
 
 
 def _install_dependency_stubs() -> None:
@@ -135,6 +148,7 @@ def load_llm_client_module():
     return importlib.import_module(f"{RUNTIME_PKG}.llm_client")
 
 
+@_isolated_runtime_modules()
 def load_render_config_module():
     _install_dependency_stubs()
     _reset_modules(
@@ -204,6 +218,7 @@ def load_render_config_module():
     return module
 
 
+@_isolated_runtime_modules()
 def load_text_render_module():
     _install_dependency_stubs()
     _reset_modules(
@@ -221,6 +236,7 @@ def load_text_render_module():
     return module
 
 
+@_isolated_runtime_modules()
 def load_page_repair_module():
     _install_dependency_stubs()
     _reset_modules(
@@ -264,6 +280,7 @@ def load_page_repair_module():
     return module
 
 
+@_isolated_runtime_modules()
 def load_page_layout_module():
     _install_dependency_stubs()
     _reset_modules(
@@ -320,6 +337,7 @@ def load_page_layout_module():
     return module
 
 
+@_isolated_runtime_modules()
 def load_render_table_module():
     _install_dependency_stubs()
     _reset_modules(
@@ -623,6 +641,7 @@ def load_render_table_module():
     return module
 
 
+@_isolated_runtime_modules()
 def load_input_adapter_module():
     _install_dependency_stubs()
     _reset_modules(
