@@ -19,6 +19,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Mm, Twips
 
 from app.conversion.docx_rules.terminology import TerminologyReplacer
+from app.services.document_ir.integrity import build_page_counts
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
 from app.services.renderer.image_renderer import WordImageRendererMixin
 from app.services.renderer.image_evidence import caption_bookmark_inventory, new_image_report, finish_image_report
@@ -89,11 +90,19 @@ def attach_failure_context(error: BaseException, **context: Any) -> None:
         setattr(error, FAILURE_CONTEXT_ATTRIBUTE, context)
 
 
-def _attach_plan_failure_context(error: BaseException, operation_kind: str, block: DocumentIRBlock | None = None) -> None:
+def _source_page_context(document_ir: DocumentIR) -> dict[str, Any]:
+    """失败任务没有交付结果，总页数只能随失败定位一起带出。"""
+    counts = build_page_counts(document_ir) or {}
+    return {"source_page_count": counts.get("source_page_count"), "page_count_basis": counts.get("page_count_basis")}
+
+
+def _attach_plan_failure_context(error: BaseException, document_ir: DocumentIR, operation_kind: str,
+                                 block: DocumentIRBlock | None = None) -> None:
     """计划阶段尚无操作序号；只有能归属到具体块时才带页码，否则按文档级失败展示。"""
     attach_failure_context(error, operation_index=None, operation_kind=operation_kind, section_id=None,
                            block_ids=[block.id] if block is not None else [],
-                           source_page_index=_block_page_index(block) if block is not None else None, unit_id=None)
+                           source_page_index=_block_page_index(block) if block is not None else None, unit_id=None,
+                           **_source_page_context(document_ir))
 
 
 class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, WordImageRendererMixin):
@@ -135,12 +144,12 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         try:
             layout_plan = build_layout_plan(document_ir)
         except Exception as error:
-            _attach_plan_failure_context(error, "layout_plan")
+            _attach_plan_failure_context(error, document_ir, "layout_plan")
             raise
         try:
             table_plan = build_content_table_plan(document_ir, layout_plan)
         except Exception as error:
-            _attach_plan_failure_context(error, "table_plan",
+            _attach_plan_failure_context(error, document_ir, "table_plan",
                                          document_ir.blocks[error.block_index] if isinstance(error, TableRenderError) else None)
             raise
         grid_by_block = {fragment.source.block_id: fragment.render.grid for unit in table_plan.units
@@ -156,7 +165,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             try:
                 tables[block.id] = prepare_table_input(block, template_config)
             except Exception as error:
-                _attach_plan_failure_context(error, "table_prepare", block)
+                _attach_plan_failure_context(error, document_ir, "table_prepare", block)
                 raise
         try:
             plan = build_render_plan(document_ir, layout_plan=layout_plan, effective_config=template_config,
@@ -165,10 +174,10 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             collector = RenderCollector(document_ir, plan)
         except (ValueError, TypeError, UnicodeError) as error:
             failure = render_contract_failure(error)
-            _attach_plan_failure_context(failure, "render_plan")
+            _attach_plan_failure_context(failure, document_ir, "render_plan")
             raise failure from None
         except Exception as error:
-            _attach_plan_failure_context(error, "render_plan")
+            _attach_plan_failure_context(error, document_ir, "render_plan")
             raise
         # 资源快照和计划在创建 Word 对象前固定；后续 writer 只消费同一计划。
         document = Document(io.BytesIO(template_content)) if template_content is not None else Document()
@@ -229,7 +238,8 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                               else decision.source_page_index if decision is not None else None)
                 attach_failure_context(error, operation_index=operation_index, operation_kind=operation.kind,
                     section_id=operation.section_id, block_ids=list(operation.block_ids),
-                    source_page_index=page_index, unit_id=getattr(operation, "unit_id", None))
+                    source_page_index=page_index, unit_id=getattr(operation, "unit_id", None),
+                    **_source_page_context(document_ir))
                 raise
         self._materialize_fragment_markers(document, render_context, reserved_bookmarks)
         collector.created_anchors, collector.block_anchor_counts = materialize_block_anchors(

@@ -86,6 +86,7 @@ class RendererFailureContextTests(TestCase):
                 context = getattr(caught.exception, FAILURE_CONTEXT_ATTRIBUTE)
                 self.assertEqual((context["operation_kind"], context["block_ids"], context["source_page_index"]),
                                  (kind, [], None))
+                self.assertEqual((context["source_page_count"], context["page_count_basis"]), (2, "content_blocks"))
 
 
 class FailureContextWhitelistTests(TestCase):
@@ -95,9 +96,11 @@ class FailureContextWhitelistTests(TestCase):
     def test_valid_context_is_kept_and_unknown_values_dropped(self):
         valid = {"operation_index": 7, "operation_kind": "logical_table", "section_id": "section:0001",
                  "block_ids": ["block_0012"], "source_page_index": 3, "unit_id": "unit:abc", "reason_code": "table_render_geometry",
-                 "message": "不得透传"}
+                 "source_page_count": 9, "page_count_basis": "mineru_layout", "message": "不得透传"}
         self.assertEqual(self._summary(valid), {key: value for key, value in valid.items() if key != "message"})
         self.assertEqual(self._summary({**valid, "source_page_index": -1, "unit_id": "坏 ID"})["source_page_index"], None)
+        narrowed = self._summary({**valid, "source_page_count": -1, "page_count_basis": "guess"})
+        self.assertEqual((narrowed["source_page_count"], narrowed["page_count_basis"]), (None, None))
         for bad in ({**valid, "operation_kind": "shell"}, {**valid, "reason_code": "内部消息"},
                     {**valid, "block_ids": ["block_1"] * 21}, {**valid, "block_ids": ["坏 ID"]}, "not-a-dict"):
             with self.subTest(bad=str(bad)[:40]):
@@ -138,4 +141,5 @@ class RenderFailureDiagnosticApiTests(TestCase):
         self.assertNotIn("内部细节", detail["error_message"])
         self.assertIn("ValueError", detail["error_message"])
         self.assertEqual(set(failed["payload"]["failure_context"]),
-                         {"operation_index", "operation_kind", "section_id", "block_ids", "source_page_index", "unit_id", "reason_code"})
+                         {"operation_index", "operation_kind", "section_id", "block_ids", "source_page_index", "unit_id", "reason_code",
+                          "source_page_count", "page_count_basis"})

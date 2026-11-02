@@ -41,6 +41,16 @@ class DegradedPageSummary(BaseModel):
     reason_codes: list[Literal["invalid_table_html", "missing_image_asset", "invalid_image_asset", "render_failed"]]
 
 
+class SourcePageCounts(BaseModel):
+    """源 PDF 页统计；converted + degraded + filtered 等于总页数。"""
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    source_page_count: Count
+    converted_page_count: Count
+    degraded_page_count: Count
+    filtered_page_count: Count
+    page_count_basis: Literal["mineru_layout", "content_blocks"]
+
+
 class BaseQualityContribution(BaseModel):
     """有界安全摘要；任意正文、路径、配置及私有报告只能留在原 receipt。"""
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -56,6 +66,8 @@ class BaseQualityContribution(BaseModel):
     warning_codes: list[str] = Field(default_factory=list)
     # 只在确有降级页时序列化，未降级任务的持久形状与公开投影保持不变。
     degraded_pages: list[DegradedPageSummary] = Field(default_factory=list, exclude_if=lambda value: not value)
+    # 旧结果没有统计时不序列化，不伪造页数。
+    page_counts: SourcePageCounts | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 def fresh_quality_summary(generation: int) -> dict:
@@ -130,6 +142,10 @@ def derive_base_quality(job: Any) -> dict | None:
         degraded_pages = [DegradedPageSummary.model_validate(item) for item in source.get("degraded_pages", [])]
     except (ValidationError, TypeError):
         degraded_pages, complete = [], False
+    try:
+        page_counts = SourcePageCounts.model_validate(source["page_counts"]) if source.get("page_counts") is not None else None
+    except (ValidationError, TypeError):
+        page_counts, complete = None, False
     report_value = metadata.get("mineru_validation")
     try:
         source_report = MinerUValidationReport.model_validate(report_value)
@@ -200,4 +216,4 @@ def derive_base_quality(job: Any) -> dict | None:
         evaluation_state="complete" if complete else "incomplete",
         reason_code="base_checks_complete" if complete else "base_risk_unclassified" if unknown_count else "base_evidence_incomplete",
         report_sha256=canonical_sha256(metadata), receipt_sha256=receipt_identity(job), counts=counts,
-        warning_codes=sorted(codes), degraded_pages=degraded_pages).model_dump(mode="json")
+        warning_codes=sorted(codes), degraded_pages=degraded_pages, page_counts=page_counts).model_dump(mode="json")

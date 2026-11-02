@@ -45,6 +45,9 @@ def project_failure_diagnostic(
             if index is not None:
                 affected.add(index)
     facts = first.get("facts")
+    # 0 表示验证在库存统计前就失败，等同未知。
+    inventory = report.get("inventory")
+    page_count = (_non_negative_int(inventory.get("raw_page_count")) or None) if isinstance(inventory, dict) else None
     return DocumentJobFailureDiagnosticResponse(
         stage=event.stage,
         scope="document" if page_index is None else "page",
@@ -57,6 +60,8 @@ def project_failure_diagnostic(
         fatal_count=_non_negative_int(report.get("fatal_count")) or 0,
         warning_count=_non_negative_int(report.get("warning_count")) or 0,
         details_truncated=report.get("details_truncated") is True,
+        source_page_count=page_count,
+        page_count_basis="content_blocks" if page_count is not None else None,
     )
 
 
@@ -78,6 +83,8 @@ def _project_render_failure(event: DocumentJobEventRecord) -> DocumentJobFailure
         fatal_count=1,
         block_ids=[item for item in block_ids if isinstance(item, str)] if isinstance(block_ids, list) else [],
         operation_kind=_text(context.get("operation_kind")),
+        source_page_count=_non_negative_int(context.get("source_page_count")),
+        page_count_basis=context.get("page_count_basis") if context.get("page_count_basis") in {"mineru_layout", "content_blocks"} else None,
     )
 
 

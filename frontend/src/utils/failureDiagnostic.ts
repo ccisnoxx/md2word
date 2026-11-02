@@ -10,6 +10,9 @@ export function failureDiagnosticLines(diagnostic: DocumentJobFailureDiagnostic 
       diagnostic.operation_kind ? `操作 ${diagnostic.operation_kind}` : null].filter(Boolean).join("，")
     : [diagnostic.source_type, diagnostic.json_pointer].filter(Boolean).join("，");
   const lines = [
+    ...(diagnostic.source_page_count
+      ? [`源 PDF ${diagnostic.page_count_basis === "mineru_layout" ? "共" : "至少"} ${diagnostic.source_page_count} 页，本次未生成结果`]
+      : []),
     diagnostic.scope === "page" && diagnostic.page_number !== null
       ? `首个失败位置：第 ${diagnostic.page_number} 页${location ? `（${location}）` : ""}`
       : `首个失败位置：文档级问题，无法定位到单页${diagnostic.source === "render_operation" && location ? `（${location}）` : ""}`,

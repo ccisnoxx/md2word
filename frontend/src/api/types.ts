@@ -1506,6 +1506,9 @@ export type DocumentJobFailureDiagnostic = {
   /** 渲染来源时为失败操作涉及的块 ID 与操作类型；旧响应可能缺失。 */
   block_ids?: string[];
   operation_kind?: string | null;
+  /** 源 PDF 总页数；旧响应可能缺失。content_blocks 依据下只能当下限。 */
+  source_page_count?: number | null;
+  page_count_basis?: "mineru_layout" | "content_blocks" | null;
 };
 
 export type DocumentJobResponse = {

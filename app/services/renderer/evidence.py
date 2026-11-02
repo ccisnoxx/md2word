@@ -820,9 +820,11 @@ def _safe_failure_context(value: Any) -> dict[str, Any] | None:
             isinstance(item, str) and FAILURE_ID_RE.fullmatch(item) for item in block_ids):
         return None
     result: dict[str, Any] = {"operation_kind": value["operation_kind"], "reason_code": reason, "block_ids": list(block_ids)}
-    for key in ("operation_index", "source_page_index"):
+    for key in ("operation_index", "source_page_index", "source_page_count"):
         item = value.get(key)
         result[key] = item if type(item) is int and item >= 0 else None
+    basis = value.get("page_count_basis")
+    result["page_count_basis"] = basis if basis in {"mineru_layout", "content_blocks"} else None
     for key in ("section_id", "unit_id"):
         item = value.get(key)
         result[key] = item if isinstance(item, str) and FAILURE_ID_RE.fullmatch(item) else None

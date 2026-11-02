@@ -9,10 +9,13 @@ from unittest.mock import patch
 
 from billiard.exceptions import SoftTimeLimitExceeded
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
+from app.domains.document_jobs.base_quality import BaseQualityContribution, SourcePageCounts
 from app.main import create_app
 from app.services.document_ir import MinerUToDocumentIRService
-from app.services.document_ir.models import DocumentIR
+from app.services.document_ir.integrity import build_page_counts
+from app.services.document_ir.models import DocumentIR, DocumentIRMetadata, DocumentIRPage
 from app.services.document_ir.artifact_validator import DEFERRABLE_ISSUE_CODES
 from app.services.document_ir.page_degradation import (
     DEGRADED_REASON_LABELS, drop_degraded_table_groups, replace_degraded_pages,
@@ -135,6 +138,9 @@ class RenderPageDegradationPipelineTests(TestCase):
         self.assertEqual(switches[1]["degraded_from_document_ir_file_id"], switches[0]["document_ir_file_id"])
         self.assertEqual(record.document_ir_file_id, switches[1]["document_ir_file_id"])
         self.assertEqual(files[record.result_file_id].metadata["source_integrity"]["render_degraded_page_count"], 2)
+        self.assertEqual(job["quality_summary"]["checks_v1"]["document_base"]["page_counts"], {
+            "source_page_count": 6, "converted_page_count": 4, "degraded_page_count": 2, "filtered_page_count": 0,
+            "page_count_basis": "content_blocks"})
         ir = DocumentIR.model_validate_json(contents[record.document_ir_file_id])
         self.assertEqual([item["page_index"] for item in ir.metadata.degraded_pages], [1, 4])
 
@@ -144,6 +150,8 @@ class RenderPageDegradationPipelineTests(TestCase):
                 _pages(6), _failing_on("Page 2 body", "Page 5 body"))
         self.assertEqual((job["status"], job["failed_stage"]), ("failed", "rendering"))
         self.assertEqual(job["failure_diagnostic"]["page_number"], 5)
+        self.assertEqual((job["failure_diagnostic"]["source_page_count"], job["failure_diagnostic"]["page_count_basis"]),
+                         (6, "content_blocks"))
         self.assertIsNone(record.result_file_id)
         self.assertEqual(len([event for event in events if event["payload"].get("degraded_from_document_ir_file_id")]), 1)
 
@@ -166,6 +174,33 @@ class RenderPageDegradationPipelineTests(TestCase):
         self.assertEqual(switch["degraded_page_indexes"], [1])
         ir = DocumentIR.model_validate_json(contents[record.document_ir_file_id])
         self.assertFalse(any(block.type == "table" for block in ir.blocks))
+
+
+class SourcePageCountsTests(TestCase):
+    def _document(self, *, flags=(), degraded=(), layout=False):
+        metadata = {"page_size_source": "layout.json"} if layout else {}
+        return DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="job", source_file_id="file", document_language="en",
+                                        degraded_pages=[{"page_index": index} for index in degraded]),
+            pages=[DocumentIRPage(index=index, width=100.0, height=100.0, metadata=metadata) for index in range(4)],
+            quality_flags=list(flags),
+        )
+
+    def test_counts_add_up_with_filtered_and_degraded_pages(self):
+        counts = build_page_counts(self._document(flags=["final_promotional_page_filtered:4"], degraded=[1, 2], layout=True))
+        self.assertEqual(counts, {"source_page_count": 5, "converted_page_count": 2, "degraded_page_count": 2,
+                                  "filtered_page_count": 1, "page_count_basis": "mineru_layout"})
+
+    def test_legacy_document_without_pages_has_no_counts(self):
+        document = self._document()
+        document.pages = []
+        self.assertIsNone(build_page_counts(document))
+
+    def test_invalid_counts_are_rejected_and_missing_counts_stay_absent(self):
+        with self.assertRaises(ValidationError):
+            SourcePageCounts.model_validate({"source_page_count": -1})
+        self.assertNotIn("page_counts", BaseQualityContribution(generation=0).model_dump(mode="json"))
 
 
 class DegradedNoticeTests(TestCase):

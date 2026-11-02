@@ -9,6 +9,7 @@ from typing import Any
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
 
 
+FILTERED_PAGE_FLAG_PREFIX = "final_promotional_page_filtered:"
 VISUAL_SOURCE_TYPES = {"chart", "image", "figure"}
 FORMULA_SOURCE_TYPES = {
     "equation",
@@ -48,6 +49,25 @@ class DocumentIntegrityError(RuntimeError):
         super().__init__(f"{boundary} 内容完整性校验失败：{summary}{details}")
 
 
+def build_page_counts(document_ir: DocumentIR) -> dict[str, Any] | None:
+    """按源 PDF 页统计（不是 Word 页）；旧 IR 没有页记录时返回 None，不猜页数。"""
+
+    if not document_ir.pages:
+        return None
+    filtered = sum(flag.startswith(FILTERED_PAGE_FLAG_PREFIX) for flag in document_ir.quality_flags)
+    page_indexes = {page.index for page in document_ir.pages}
+    degraded = {record["page_index"] for record in document_ir.metadata.degraded_pages} & page_indexes
+    return {
+        "source_page_count": len(page_indexes) + filtered,
+        "converted_page_count": len(page_indexes) - len(degraded),
+        "degraded_page_count": len(degraded),
+        "filtered_page_count": filtered,
+        # 没有 MinerU 页面元数据时只知道有内容的页，空白页可能未计入，总页数只能当下限。
+        "page_count_basis": ("mineru_layout" if any(page.metadata.get("page_size_source") for page in document_ir.pages)
+                             else "content_blocks"),
+    }
+
+
 def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
     """使用 metadata inventory 与主 IR block 建立 source→IR 对账证据。"""
 
@@ -68,6 +88,7 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
     degraded_pages = [{"page_number": record["page_index"] + 1, "trigger": record.get("trigger"),
                        "reason_codes": list(record.get("reason_codes") or [])}
                       for record in document_ir.metadata.degraded_pages]
+    page_counts = build_page_counts(document_ir)
     flags: list[str] = []
 
     # 旧 IR 没有 inventory，无法可靠重建 source 合同；仅正式 converter 产物执行对账。
@@ -78,6 +99,7 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
             "degraded_source_block_count": degraded_count,
             "render_degraded_page_count": render_degraded,
             "degraded_pages": degraded_pages,
+            "page_counts": page_counts,
             "source_block_count_delta": None,
             "expected_source_type_counts": {},
             "ir_source_type_counts": dict(sorted(actual_types.items())),
@@ -123,6 +145,7 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
         "degraded_source_block_count": degraded_count,
         "render_degraded_page_count": render_degraded,
         "degraded_pages": degraded_pages,
+        "page_counts": page_counts,
         "source_block_count_delta": None if expected_total is None else accounted_count - expected_total,
         "expected_source_type_counts": expected_types,
         "ir_source_type_counts": dict(sorted(actual_types.items())),

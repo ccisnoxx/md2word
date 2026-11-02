@@ -99,6 +99,8 @@ class DocumentJobDeliveryStateApiTests(TestCase):
             "counts": {"count": 6, "formula_count": 1, "fallback_count": 0, "image_count": 1,
                        "table_count": 1, "blocker_count": 0, "warning_count": 8, "unknown_flag_count": 10},
             "warning_codes": ["missing_table_reference"],
+            "page_counts": {"source_page_count": 2, "converted_page_count": 2, "degraded_page_count": 0,
+                            "filtered_page_count": 0, "page_count_basis": "content_blocks"},
         })
         self.assertRegex(base["report_sha256"], r"^[0-9a-f]{64}$")
         self.assertRegex(base["receipt_sha256"], r"^sha256:[0-9a-f]{64}$")

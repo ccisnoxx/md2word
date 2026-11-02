@@ -48,7 +48,17 @@ class ProjectFailureDiagnosticTests(TestCase):
             "source_type": "image", "json_pointer": "/content_list/148", "reason_code": "invalid_image_asset",
             "reason": "unreadable_or_unsupported_image", "affected_page_numbers": [4, 13],
             "fatal_count": 3, "warning_count": 1, "details_truncated": False, "block_ids": [], "operation_kind": None,
+            "source_page_count": None, "page_count_basis": None,
         })
+
+    def test_validation_failure_reports_page_total_as_lower_bound(self):
+        report = {"can_convert": False, "first_fatal": {"code": "invalid_image_asset", "page_index": 1},
+                  "inventory": {"raw_page_count": 7}}
+        result = project_failure_diagnostic(self.job, [_event({"retry_count": 1, "mineru_validation": report})])
+        self.assertEqual((result.source_page_count, result.page_count_basis), (7, "content_blocks"))
+        report["inventory"] = {"raw_page_count": 0}
+        result = project_failure_diagnostic(self.job, [_event({"retry_count": 1, "mineru_validation": report})])
+        self.assertEqual((result.source_page_count, result.page_count_basis), (None, None))
 
     def test_document_failure_has_no_page(self):
         first = {"code": "mineru_package_limit_exceeded", "page_index": None, "json_pointer": "",
@@ -94,6 +104,7 @@ class ProjectFailureDiagnosticTests(TestCase):
             "scope": "document", "page_number": None, "source_type": None, "json_pointer": None,
             "reason_code": "invalid_image_asset", "reason": None, "affected_page_numbers": [],
             "fatal_count": 0, "warning_count": 0, "details_truncated": False, "block_ids": [], "operation_kind": None,
+            "source_page_count": None, "page_count_basis": None,
         })
 
 
@@ -151,6 +162,7 @@ class FailureDiagnosticApiTests(TestCase):
             "source_type": "image", "json_pointer": "/2", "reason_code": "invalid_image_asset",
             "reason": "unreadable_or_unsupported_image", "affected_page_numbers": [3, 5],
             "fatal_count": 2, "warning_count": 5, "details_truncated": False, "block_ids": [], "operation_kind": None,
+            "source_page_count": 5, "page_count_basis": "content_blocks",
         }
         self.assertEqual(detail["failure_diagnostic"], expected)
         self.assertEqual(diagnostics["failure_diagnostic"], expected)
