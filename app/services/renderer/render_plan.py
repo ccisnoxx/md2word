@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
 from app.services.renderer.layout_plan import (
-    LayoutPage, LayoutPlan, LayoutRegion, build_image_plan, complete_two_column_tails, image_annotations, split_two_col_blocks,
+    LayoutPage, LayoutPlan, LayoutRegion, build_image_plan, complete_two_column_tails, image_annotations, is_exclusive_degraded_block, is_exclusive_page, split_two_col_blocks,
 )
 from app.services.renderer.semantic_text import (
     infer_heading_level, is_list_item_text, is_toc_title_text, looks_like_heading_text, parse_toc_entry_text,
@@ -325,9 +325,13 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
 
     current = None
     previous_landscape = False
+    previous_exclusive = False
     for page_index, page in enumerate(layout_plan.pages):
         landscape = page.landscape
-        if current is None or not legacy and landscape != previous_landscape:
+        # 独占页前后都开新页分节：分节继承前一节的单栏收尾，也不会在首页或末页多出空白页。
+        exclusive = is_exclusive_page(page)
+        new_page = landscape != previous_landscape or exclusive or previous_exclusive
+        if current is None or not legacy and new_page:
             current = section(page, start="initial" if current is None else "new_page", landscape=landscape)
         elif page.index not in sections[-1].source_page_indices:
             sections[-1].source_page_indices.append(page.index)
@@ -355,7 +359,7 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
                 regions = [(0, text_region)]
             else:
                 regions = list(enumerate(complete_two_column_tails(page, source_blocks)))
-            if page_index > 0 and landscape == previous_landscape:
+            if page_index > 0 and not new_page:
                 break_id = semantic_page_break_block_id(page, regions=[region for _, region in regions])
             # 复用 RND-503 的图片调度：仅抽出确认组或与原生栏读序冲突的 span。
             body_ids = {block.id for region in page.regions for block in region.blocks}
@@ -407,7 +411,8 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
                 decision = decisions[block.id]
                 decision.section_id, decision.region_id = current, f"page_{page.index}_region_{region_index}"
                 decision.page_break_before = block.id == break_id
-                decision.keep_with_next = block.type == "heading" or block.metadata.get("annotation_role") == "table_context"
+                decision.keep_with_next = (block.type == "heading" or block.metadata.get("annotation_role") == "table_context"
+                                          or block.type == "paragraph" and is_exclusive_degraded_block(block))
                 decision.reason_codes = ["legacy_sequence" if legacy else "layout_region"]
                 if decision.page_break_before:
                     decision.reason_codes.append("semantic_page_break")
@@ -452,6 +457,7 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
             if region.kind == "two_col":
                 current = section(page, start="continuous", landscape=landscape)
         previous_landscape = landscape
+        previous_exclusive = exclusive
     for operation in operations:
         if operation.kind == "block" and len(operation.block_ids) > 1:
             first = decisions[operation.block_ids[0]]

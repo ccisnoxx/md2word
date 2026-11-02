@@ -17,6 +17,8 @@ DEGRADED_REASON_LABELS = {
     "render_failed": "排版渲染失败",
 }
 DEPENDENT_PAGE_REASON = "所属跨页表格的其他页面失败"
+# 整页图像为提示和分节段落预留的高度（3 cm）。随 IR 持久化：存档校验按 IR 重算尺寸，调整此值不影响已生成结果。
+NOTICE_RESERVE_EMU = 1_080_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +74,7 @@ def replace_degraded_pages(document: DocumentIR, rasters: dict[int, bytes], reas
         asset_id = f"asset_degraded_page_{page_index + 1:04d}"
         image_block_id = f"degraded_page_{page_index + 1:04d}_image"
         layout = DocumentIRBlockLayout(page_index=page_index, role="body")
-        synthetic = {"synthetic": "degraded_page", "degraded_page_index": page_index}
+        synthetic = {"synthetic": "degraded_page", "degraded_page_index": page_index, "exclusive_page": True}
         reason_text = "、".join(DEGRADED_REASON_LABELS[code] for code in reason_codes) or DEPENDENT_PAGE_REASON
         blocks.append(DocumentIRBlock(
             id=f"degraded_page_{page_index + 1:04d}_notice", type="paragraph", order=block.order,
@@ -81,7 +83,8 @@ def replace_degraded_pages(document: DocumentIR, rasters: dict[int, bytes], reas
             metadata={**synthetic, "source_type": "degraded_page_notice"}))
         blocks.append(DocumentIRBlock(
             id=image_block_id, type="image", order=block.order, page_index=page_index, layout=layout,
-            asset_ref=asset_id, metadata={**synthetic, "source_type": "degraded_page_image"}))
+            asset_ref=asset_id, metadata={**synthetic, "source_type": "degraded_page_image",
+                                          "notice_reserve_emu": NOTICE_RESERVE_EMU}))
         document.assets.append(DocumentIRAsset(id=asset_id, kind="image", source_path=PAGE_RASTER_SOURCE_PATH))
         pending.append(PageRaster(page_index, asset_id, image_block_id, rasters[page_index],
                                   {"page_index": page_index, "source_pdf_sha256": source_pdf_sha256, "dpi": dpi}))

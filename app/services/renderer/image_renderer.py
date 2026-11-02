@@ -18,7 +18,7 @@ from docx.shared import Twips
 from app.conversion.docx_rules.formula import sha256_text
 from app.services.document_ir.models import DocumentIRAsset, DocumentIRBlock
 from app.services.renderer.image_evidence import (IMAGE_TABLE_PREFIX, expected_annotation, image_anchor,
-    image_dimensions, image_slots, section_geometry, single_image_width, source_image_position)
+    image_available_height, image_dimensions, image_slots, section_geometry, single_image_width, source_image_position)
 from app.services.renderer.layout_plan import ImageSpan, image_annotations
 from app.services.renderer.block_evidence import LocalTarget, paragraph_target
 from app.services.renderer.template_config import TemplateConfigPackage
@@ -78,7 +78,7 @@ class WordImageRendererMixin:
         for index, (block, (content, decoded)) in enumerate(zip(blocks, prepared, strict=True)):
             available = slots[index]["inner_width"] if slots else single_image_width(block, page_width, geometry)
             self._write_image(document, cells[index] if cells else document, block, content, decoded,
-                              available, geometry["effective_height"], template_config, context, entry)
+                              available, image_available_height(block, geometry), template_config, context, entry)
 
     def _image_layout_cells(self, document: Any, width: int, slots: list[dict], marker: str) -> list:
         table = document.add_table(rows=1, cols=len(slots))

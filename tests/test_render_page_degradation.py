@@ -8,6 +8,8 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from billiard.exceptions import SoftTimeLimitExceeded
+from docx import Document
+from docx.enum.section import WD_SECTION_START
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -15,11 +17,14 @@ from app.domains.document_jobs.base_quality import BaseQualityContribution, Sour
 from app.main import create_app
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.integrity import build_page_counts
-from app.services.document_ir.models import DocumentIR, DocumentIRMetadata, DocumentIRPage
+from app.services.document_ir.models import (
+    DocumentIR, DocumentIRBlock, DocumentIRBlockLayout, DocumentIRMetadata, DocumentIRPage,
+)
 from app.services.document_ir.artifact_validator import DEFERRABLE_ISSUE_CODES
 from app.services.document_ir.page_degradation import (
-    DEGRADED_REASON_LABELS, drop_degraded_table_groups, replace_degraded_pages,
+    DEGRADED_REASON_LABELS, NOTICE_RESERVE_EMU, drop_degraded_table_groups, replace_degraded_pages,
 )
+from app.services.renderer.evidence import validate_render_result
 from app.services.renderer.table_renderer import TableRenderError
 from app.services.document_ir.table_placeholder import PdfCropSource, checksum
 from app.services.renderer.word_renderer import DocumentIRWordRenderer
@@ -174,6 +179,54 @@ class RenderPageDegradationPipelineTests(TestCase):
         self.assertEqual(switch["degraded_page_indexes"], [1])
         ir = DocumentIR.model_validate_json(contents[record.document_ir_file_id])
         self.assertFalse(any(block.type == "table" for block in ir.blocks))
+
+
+class DegradedPageIsolationTests(TestCase):
+    """每个降级页独占一个分节；结构在此断言，实际分页另用 LibreOffice 核对。"""
+
+    def _render(self, page_count, degraded, *, exclusive=True):
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="job", source_file_id="file", document_language="en"),
+            pages=[DocumentIRPage(index=index, width=100.0, height=100.0) for index in range(page_count)],
+            blocks=[DocumentIRBlock(id=f"block_{index}", type="paragraph", order=index, page_index=index,
+                                    text=f"Page {index + 1} body", layout=DocumentIRBlockLayout(page_index=index, role="body"))
+                    for index in range(page_count)],
+        )
+        _removed, pending = replace_degraded_pages(
+            document, {page: _png() for page in degraded}, {page: {"reason_codes": ["render_failed"]} for page in degraded},
+            source_pdf_sha256="sha256:x", dpi=144, trigger="render")
+        if not exclusive:
+            for block in document.blocks:
+                block.metadata.pop("exclusive_page", None)
+                block.metadata.pop("notice_reserve_emu", None)
+        content = {item.asset_id: item.content for item in pending}
+        result = DocumentIRWordRenderer().render_to_result(document, template_path=None, config_path=None,
+                                                           image_loader=lambda asset: content.get(asset.id))
+        validate_render_result(document, result.content, result)
+        return result, Document(io.BytesIO(result.content))
+
+    def test_each_degraded_page_gets_its_own_section_without_extra_sections(self):
+        for degraded, expected_sections in (({1}, 3), ({1, 2}, 4), ({0}, 2), ({3}, 2), ({0, 3}, 3)):
+            with self.subTest(degraded=degraded):
+                result, word = self._render(4, degraded)
+                self.assertEqual(len(word.sections), expected_sections)
+                self.assertEqual([section.start_type for section in word.sections[1:]],
+                                 [WD_SECTION_START.NEW_PAGE] * (expected_sections - 1))
+                self.assertEqual(sum(operation.kind == "section" for operation in result.plan.operations), expected_sections)
+
+    def test_notice_stays_with_image_and_image_leaves_notice_room(self):
+        _result, word = self._render(3, {1})
+        notice = next(paragraph for paragraph in word.paragraphs if paragraph.text.startswith("第 2 页"))
+        self.assertTrue(notice.paragraph_format.keep_with_next)
+        section = word.sections[1]
+        usable = section.page_height - section.top_margin - section.bottom_margin
+        self.assertLessEqual(word.inline_shapes[0].height, usable - NOTICE_RESERVE_EMU)
+
+    def test_historical_degraded_page_keeps_flowing_layout(self):
+        result, word = self._render(3, {1}, exclusive=False)
+        self.assertEqual(len(word.sections), 1)
+        self.assertEqual(sum(operation.kind == "section" for operation in result.plan.operations), 1)
 
 
 class SourcePageCountsTests(TestCase):

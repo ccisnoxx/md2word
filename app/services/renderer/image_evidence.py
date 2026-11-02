@@ -116,6 +116,11 @@ def image_dimensions(pixel_width: int, pixel_height: int, width: int, height: in
     return round(pixel_width * scale), round(pixel_height * scale)
 
 
+def image_available_height(block: Any, geometry: dict) -> int:
+    """写入与校验共用；整页降级图要与提示同页，须让出预留高度，否则提示或分节段落会被挤到下一页。"""
+    return geometry["effective_height"] - int(block.metadata.get("notice_reserve_emu") or 0)
+
+
 def single_image_width(block: Any, page_width: float | None, geometry: dict) -> int:
     available = geometry["effective_width"]
     box = block.layout.bbox if block.layout else None
@@ -370,7 +375,7 @@ def _verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, 
                     size_unfit |= min(image_dimensions(decoded.px_width, decoded.px_height,
                         group_slots[index]["inner_width"], geometry["effective_height"])) <= 0
                 available = slots[index]["inner_width"] if slots else single_image_width(block, pages[decision.page_index].width if not legacy_layout and decision.page_index in pages else None, image_geometry)
-                expected_size = image_dimensions(decoded.px_width, decoded.px_height, available, image_geometry["effective_height"])
+                expected_size = image_dimensions(decoded.px_width, decoded.px_height, available, image_available_height(block, image_geometry))
                 _check(actual_size == expected_size == (image["width"], image["height"]), "图片显示尺寸或比例")
                 annotations = image_annotations(block)
                 _check(len(image["annotations"]) == len(annotations), "注释覆盖")

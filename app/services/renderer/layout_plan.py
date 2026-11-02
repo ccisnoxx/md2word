@@ -241,6 +241,15 @@ def build_layout_plan(document_ir: DocumentIR) -> LayoutPlan:
     return LayoutPlan(mode="layout_v2", pages=pages)
 
 
+def is_exclusive_degraded_block(block: DocumentIRBlock) -> bool:
+    """独占一页的降级块；历史 IR 的降级块没有该字段，保持原有流式排版，存档校验不受影响。"""
+    return block.metadata.get("exclusive_page") is True
+
+
+def is_exclusive_page(page: LayoutPage) -> bool:
+    return any(is_exclusive_degraded_block(block) for region in page.regions for block in region.blocks)
+
+
 def _place_unlocated_placeholders(pages: list[LayoutPage], blocks: list[DocumentIRBlock]) -> None:
     """只给未知页占位安排输出锚点；不写源页号，不重排既有页、栏或装饰。
 
@@ -251,7 +260,8 @@ def _place_unlocated_placeholders(pages: list[LayoutPage], blocks: list[Document
         return
     anchors = [(block.order, page_index, region_index, block_index)
                for page_index, page in enumerate(pages) for region_index, region in enumerate(page.regions)
-               for block_index, block in enumerate(region.blocks)]
+               for block_index, block in enumerate(region.blocks)
+               if not is_exclusive_degraded_block(block)]
     insertions: dict[tuple[int, int, int], list[DocumentIRBlock]] = {}
     for block in sorted(blocks, key=lambda item: item.order):
         before = [anchor for anchor in anchors if anchor[0] < block.order]
@@ -263,7 +273,7 @@ def _place_unlocated_placeholders(pages: list[LayoutPage], blocks: list[Document
             _, pi, ri, _ = min(anchors)
             offset = 0
         else:
-            pi, ri, offset = 0, 0, 0
+            pi, ri, offset = next((index for index, page in enumerate(pages) if not is_exclusive_page(page)), 0), 0, 0
         insertions.setdefault((pi, ri, offset), []).append(block)
     for pi, page in enumerate(pages):
         output = []
