@@ -1521,3 +1521,40 @@ Worker 失败消息只保留固定码构造的消息，其余输出异常类型�
 ### Next Steps
 
 - C4 展示与翻译适配；推送待 PR #22 合并后
+
+
+## Session 46: 第三批 C4：降级页展示与翻译适配（第三批完成）
+
+**Date**: 2026-11-02
+**Task**: 第三批 C4：降级页展示与翻译适配（第三批完成）
+**Branch**: `codex/partial-success-20261102`
+
+### Summary
+
+降级页写入基础质量贡献并在详情公开；异常中心收录降级成功任务（page_degraded）；翻译与复核单元跳过合成块并记录跳过页；第三批部分成功与整页降级父任务归档。
+
+### Main Changes
+
+- base_quality 新增 DegradedPageSummary 与 degraded_pages（仅非空序列化）
+- incidents 新增 page_degraded 类型；前端详情降级提示与异常中心文案
+- extract_translation_items 跳过 metadata.synthetic；translation.skipped_degraded_page_numbers
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8d103e13` | (see git log) |
+| `5dfebb03` | (see git log) |
+
+### Testing
+
+- [OK] tests/test_degraded_page_display.py 2 项通过；28 模块 604 项失败集合与基线一致
+- [OK] vue-tsc 通过；vitest 仅既有 jobRequestRaces 14 项失败
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- PR #22 合并后依次推送 safe-error-message 与 partial-success 分支并建 PR；5.4 宽表横排仍暂缓
