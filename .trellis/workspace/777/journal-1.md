@@ -1447,3 +1447,40 @@ Worker 失败消息只保留固定码构造的消息，其余输出异常类型�
 
 - 分支 codex/safe-error-message-20261102 叠加于 PR #22 分支，#22 合并后推送
 - 第三批部分成功按 D1–D6 推进 C1+C2；5.4 暂缓
+
+
+## Session 44: 第三批 C1+C2：验证阶段整页降级与依赖闭包
+
+**Date**: 2026-11-02
+**Task**: 第三批 C1+C2：验证阶段整页降级与依赖闭包
+**Branch**: `codex/partial-success-20261102`
+
+### Summary
+
+带页码的坏表格 HTML 与回退失败的正文图片改为整页降级：替换为提示段落与原 PDF 整页图像，跨页表格组依赖页一并降级；前提不满足时按原错误整体失败；任务成功但质量 blocked、交付 internal_draft。
+
+### Main Changes
+
+- artifact_validator 推迟可降级表格问题，restore_deferred_fatal 统一恢复中止
+- mineru_converter 新增 _degrade_pages/_degradation_closure，PopplerPdfPageRasterizer 144 DPI 整页栅格
+- integrity 扣除降级源块并排除合成块，输出 degraded_source_block_count
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `57d4041e` | (see git log) |
+| `038501d6` | (see git log) |
+
+### Testing
+
+- [OK] tests/test_page_degradation.py 6 项通过；8 模块 223 项回归失败集合与基线一致
+- [OK] 真实 Poppler OPA228 两页样本第 2 页降级，DOCX 目视正确
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- C3 渲染阶段降级、C4 展示与翻译适配；推送待 PR #22 合并后
