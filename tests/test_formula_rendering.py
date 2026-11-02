@@ -116,6 +116,33 @@ class FormulaParserTests(unittest.TestCase):
                     root = self.math("x" + marker + "{\\" + command + "{A B  C}}")
                     self.assertEqual(text_of(root), "xA B  C")
 
+    def test_literal_control_symbols_keep_variable_subscript_and_exponent(self):
+        root = self.math(r"I_{OUT\_MAX}^{2}+40\%+\eta")
+        self.assertEqual(text_of(root), "IOUT_MAX2+40%+η")
+        self.assertEqual(len(root.findall(".//m:sSub", NS)), 1)
+        self.assertEqual(len(root.findall(".//m:sSup", NS)), 1)
+        self.assertEqual(text_of(root.find(".//m:sSub/m:e", NS)), "I")
+        argument = root.find(".//m:sub", NS)
+        self.assertEqual(text_of(argument), "OUT_MAX")
+        self.assertEqual(argument.findall(".//m:sSub", NS), [])
+        self.assertEqual(text_of(root.find(".//m:sup", NS)), "2")
+        for command in ("text", "mathrm", "mathsf"):
+            with self.subTest(command=command):
+                root = self.math("V_{\\" + command + r"{IN\_MAX}}")
+                self.assertEqual(text_of(root.find(".//m:sub", NS)), "IN_MAX")
+                self.assertEqual(len(root.findall(".//m:sSub", NS)), 1)
+
+    def test_eta_stays_within_explicit_math_boundaries(self):
+        self.assertEqual(text_of(self.math(r"\eta")), "η")
+        spans = scan_math_spans(r"效率 $\eta$。")
+        self.assertEqual([span.source for span in spans], [r"$\eta$"])
+        result = render_formula(spans[0])
+        self.assertEqual(result.mode, "omml")
+        self.assertEqual(text_of(result.elements[0]), "η")
+        for source in (r"\eta", r"\\eta", r"效率\eta为给定值"):
+            with self.subTest(source=source):
+                self.assertEqual(scan_math_spans(source), ())
+
     def test_vee_is_logical_symbol_and_tag_keeps_number(self):
         root = self.math(r"a\vee b+\frac{1}{2}\tag{7}")
         self.assertIn("∨", text_of(root))
@@ -126,6 +153,9 @@ class FormulaParserTests(unittest.TestCase):
     def test_expected_failures_preserve_exact_source_and_reason(self):
         cases = {
             r"\unknown{a<2 & b}": "unsupported_command",
+            r"\etax": "unsupported_command",
+            r"x\&y": "invalid_syntax",
+            "x\\": "invalid_syntax",
             r"\frac{1}{2": "invalid_syntax",
             r"\begin{matrix}a&b\end{matrix}": "unsupported_structure",
             r"\begin{cases}x\end{cases}": "unsupported_structure",
@@ -210,6 +240,42 @@ class FormulaParserTests(unittest.TestCase):
 
 
 class FormulaRenderEvidenceTests(unittest.TestCase):
+    def test_datasheet_literals_and_eta_bind_in_block_inline_and_table(self):
+        expressions = (
+            (r"I_{OUT}=0,V_{FB}=V_{REF}\times105\%", "IOUT=0,VFB=VREF×105%", {"sSub": 3}),
+            (r"L_2=\frac{V_{\mathrm{IN\_MAX}}}{40\%}", "L2=VIN_MAX40%", {"sSub": 2, "f": 1}),
+            (r"I_{OUT\_MAX}^{2}=\frac{I_{\text{SAT\_MIN}}}{\eta}+\sqrt{I_{\text{CIN\_RMS}}}",
+                "IOUT_MAX2=ISAT_MINη+ICIN_RMS", {"sSub": 3, "sSup": 1, "f": 1, "rad": 1}),
+        )
+        for expression, visible, structures in expressions:
+            delimited = "$" + expression + "$"
+            cases = (
+                (DocumentIRBlock(id="block", type="formula", order=0, latex=expression), "latex", expression),
+                (DocumentIRBlock(id="inline", type="paragraph", order=0, text="前 " + delimited + " 后"), "text", delimited),
+                (DocumentIRBlock(id="table", type="table", order=0,
+                    html="<table><tr><td>" + delimited + "</td></tr></table>"), "html/0/0", delimited),
+            )
+            for block, field, source in cases:
+                with self.subTest(expression=expression, entry=block.type):
+                    ir = document(block)
+                    result = render(ir)
+                    evidence = build_renderer_evidence(ir, result.content, render_result=result)
+                    ensure_renderer_integrity(evidence)
+                    self.assertEqual(evidence["formula_summary"]["omml_count"], 1)
+                    self.assertEqual(evidence["formula_summary"]["fallback_count"], 0)
+                    self.assertNotIn("formula_text_fallback", evidence["quality_flags"])
+                    entry = result.formula_report["entries"][0]
+                    self.assertEqual((entry["source"]["block_id"], entry["source"]["field"]), (block.id, field))
+                    self.assertEqual(entry["source"]["source_sha256"], hashlib.sha256(source.encode("utf-8")).hexdigest())
+                    root = xml_of(result.content)
+                    math = root.find(".//m:oMath", NS)
+                    self.assertEqual(text_of(math), visible)
+                    self.assertNotIn(FORMULA_FALLBACK_NOTICE, text_of(root))
+                    for tag, count in structures.items():
+                        self.assertEqual(len(math.findall(".//m:" + tag, NS)), count)
+                    for argument in math.findall(".//m:sub", NS):
+                        self.assertEqual(argument.findall(".//m:sSub", NS), [])
+
     def test_saved_left_right_math_keeps_binding_in_block_inline_and_table(self):
         for expression, visible in ((r"\left(\frac{1}{2}\right)", "(12)"),
                                     (r"\left[\frac{1}{2}\right]", "[12]")):
@@ -223,7 +289,7 @@ class FormulaRenderEvidenceTests(unittest.TestCase):
                 with self.subTest(expression=expression, entry=block.type):
                     ir = document(block)
                     result = render(ir)
-                    evidence = build_renderer_evidence(ir, result.content, formula_report=result.formula_report)
+                    evidence = build_renderer_evidence(ir, result.content, render_result=result)
                     ensure_renderer_integrity(evidence)
                     self.assertEqual(evidence["formula_summary"]["omml_count"], 1)
                     self.assertEqual(evidence["formula_summary"]["fallback_count"], 0)
@@ -268,7 +334,7 @@ class FormulaRenderEvidenceTests(unittest.TestCase):
                 with self.subTest(expression=expression, entry=block.type):
                     ir = document(block)
                     result = render(ir)
-                    evidence = build_renderer_evidence(ir, result.content, formula_report=result.formula_report)
+                    evidence = build_renderer_evidence(ir, result.content, render_result=result)
                     ensure_renderer_integrity(evidence)
                     self.assertEqual(evidence["formula_summary"]["formula_count"], 1)
                     self.assertEqual(evidence["formula_summary"]["fallback_count"], 1)
@@ -313,7 +379,7 @@ class FormulaRenderEvidenceTests(unittest.TestCase):
             DocumentIRBlock(id="block", type="formula", order=1, latex="123.45"),
             DocumentIRBlock(id="cell", type="table", order=2, html="<table><tr><td>$123.45$</td></tr></table>"))
         result = render(ir)
-        evidence = build_renderer_evidence(ir, result.content, formula_report=result.formula_report)
+        evidence = build_renderer_evidence(ir, result.content, render_result=result)
         self.assertEqual(evidence["formula_summary"]["omml_count"], 3)
         self.assertEqual(evidence["docx_quality"]["latex_residue_count"], 0)
         self.assertEqual([text_of(math) for math in xml_of(result.content).findall(".//m:oMath", NS)], ["123.45"] * 3)
@@ -324,7 +390,7 @@ class FormulaRenderEvidenceTests(unittest.TestCase):
                 captions=["Table 1: $x^2$"], footnotes=["Note $x^2$"]),
             DocumentIRBlock(id="first", type="paragraph", order=0, text="first $x^2$"))
         result = render(ir)
-        build_renderer_evidence(ir, result.content, formula_report=result.formula_report)
+        ensure_renderer_integrity(build_renderer_evidence(ir, result.content, render_result=result))
         root = xml_of(result.content)
         parents = {id(child): parent for parent in root.iter() for child in parent}
         expected = [("first", "text"), ("table", "captions/0"), ("table", "html/0/0"), ("table", "footnotes/0"), ("later", "text")]
@@ -353,23 +419,29 @@ class FormulaRenderEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence["formula_summary"]["formula_count"], 2)
         self.assertEqual([entry["source"]["field"] for entry in result.formula_report["entries"]], ["captions/0", "footnotes/0"])
 
-    def test_expanded_table_keeps_markup_and_each_repeated_source_formula(self):
+    def test_large_native_table_keeps_markup_and_merged_source_formula_once(self):
         html = '<table><tr><td rowspan="2" colspan="2"><b>V<sub>OUT</sub></b> $x^2$</td><td>' + "a" * 30001 + '</td></tr><tr><td>tail</td></tr></table>'
         ir = document(DocumentIRBlock(id="large", type="table", order=0, html=html))
         result = render(ir)
-        evidence = build_renderer_evidence(ir, result.content, formula_report=result.formula_report)
+        evidence = build_renderer_evidence(ir, result.content, render_result=result)
         ensure_renderer_integrity(evidence)
-        self.assertEqual(evidence["formula_summary"]["formula_count"], 4)
-        self.assertEqual(evidence["formula_summary"]["omml_count"], 2)
-        self.assertEqual(evidence["formula_summary"]["semantic_count"], 2)
+        self.assertEqual(evidence["formula_summary"]["formula_count"], 2)
+        self.assertEqual(evidence["formula_summary"]["omml_count"], 1)
+        self.assertEqual(evidence["formula_summary"]["semantic_count"], 1)
         self.assertEqual({entry["source"]["field"] for entry in result.formula_report["entries"]}, {"html/0/0"})
+        self.assertEqual([entry["disposition"] for entry in result.formula_source_coverage["entries"]], ["rendered"] * 2)
         root = xml_of(result.content)
         self.assertEqual(len(root.findall(".//w:tbl", NS)), 1)
         self.assertEqual(len(root.findall(".//w:tr", NS)), 2)
-        self.assertEqual([len(row.findall("w:tc", NS)) for row in root.findall(".//w:tr", NS)], [3, 3])
-        self.assertEqual(len(root.findall(".//m:sSup", NS)), 2)
-        self.assertEqual(text_of(root).count("VOUT"), 2)
+        self.assertEqual([len(row.findall("w:tc", NS)) for row in root.findall(".//w:tr", NS)], [2, 2])
+        self.assertEqual([node.get(f"{{{NS['w']}}}val") for node in root.findall(".//w:gridSpan", NS)], ["2", "2"])
+        self.assertEqual([node.get(f"{{{NS['w']}}}val", "continue") for node in root.findall(".//w:vMerge", NS)], ["restart", "continue"])
+        self.assertEqual(len(root.findall(".//m:sSup", NS)), 1)
+        self.assertEqual(text_of(root).count("VOUT"), 1)
         self.assertEqual(text_of(root).count("a" * 30001), 1)
+        self.assertEqual(text_of(root).count("tail"), 1)
+        self.assertTrue(any(text_of(run) == "OUT" and run.find("w:rPr/w:b", NS) is not None
+            for run in root.findall(".//w:r", NS)))
 
     def test_all_body_entries_preserve_order_and_each_occurrence(self):
         expression = r"\frac{1}{2}+x^2\tag{7}"
@@ -383,7 +455,7 @@ class FormulaRenderEvidenceTests(unittest.TestCase):
             DocumentIRBlock(id="context", type="paragraph", order=5, text="条件 " + delimited, metadata={"annotation_role": "table_context"}),
         )
         result = render(ir)
-        evidence = build_renderer_evidence(ir, result.content, formula_report=result.formula_report)
+        evidence = build_renderer_evidence(ir, result.content, render_result=result)
         ensure_renderer_integrity(evidence)
         self.assertEqual(evidence["formula_summary"]["formula_count"], 9)
         self.assertEqual(evidence["formula_summary"]["omml_count"], 9)
@@ -400,7 +472,7 @@ class FormulaRenderEvidenceTests(unittest.TestCase):
     def test_mixed_markup_stays_outside_math(self):
         ir = document(DocumentIRBlock(id="t", type="table", order=0, html=r"<table><tr><td><b>before</b> $\frac{1}{2}$ V<sub>OUT</sub> <sup>2</sup> <i>after</i></td></tr></table>"))
         result = render(ir)
-        evidence = build_renderer_evidence(ir, result.content, formula_report=result.formula_report)
+        evidence = build_renderer_evidence(ir, result.content, render_result=result)
         self.assertEqual(evidence["formula_summary"]["omml_count"], 1)
         self.assertEqual(evidence["formula_summary"]["semantic_count"], 2)
         root = xml_of(result.content)
@@ -499,11 +571,17 @@ class FormulaRenderEvidenceTests(unittest.TestCase):
     def test_missing_duplicate_or_forged_anchor_is_rejected(self):
         ir = document(DocumentIRBlock(id="f", type="formula", order=0, latex="x^2"))
         result = render(ir)
+        # 单独验证公式锚点，避免 v2 整体文件 hash 提前拦截而掩盖叶校验缺陷。
+        ensure_renderer_integrity(build_renderer_evidence(ir, result.content, formula_report=result.formula_report))
+        anchor_name = result.formula_report["entries"][0]["anchor"]
+        selector = f".//w:bookmarkStart[@w:name='{anchor_name}']"
+        self.assertIsNotNone(xml_of(result.content).find(selector, NS))
         def missing(root):
-            root.find(".//w:bookmarkStart", NS).set(f"{{{NS['w']}}}name", "missing")
+            root.find(selector, NS).set(f"{{{NS['w']}}}name", "missing")
         def duplicate(root):
-            parent = root.find(".//w:p", NS)
-            parent.append(copy.deepcopy(parent.find("w:bookmarkStart", NS)))
+            anchor = root.find(selector, NS)
+            parent = next(node for node in root.iter() if anchor in list(node))
+            parent.append(copy.deepcopy(anchor))
         def unregistered(root):
             root.find(".//w:p", NS).append(copy.deepcopy(root.find(".//m:oMath", NS)))
         for change in (missing, duplicate, unregistered):

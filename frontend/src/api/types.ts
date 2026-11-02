@@ -1403,7 +1403,7 @@ export type DocumentJobCreateRequest = {
   debug_full_text?: boolean;
 };
 
-export type DocumentJobActionId = "download" | "retry" | "cancel" | "archive" | "unarchive" | "clone" | "delete" | "publish";
+export type DocumentJobActionId = "download" | "retry" | "cancel" | "archive" | "unarchive" | "clone" | "delete" | "publish" | "new_generation";
 
 export type DocumentJobDisabledReason = { code: string; message: string };
 
@@ -1558,9 +1558,10 @@ export type DocumentJobResponse = {
   translation_qa_reviewed_by: string | null;
   translation_qa_reviewed_at: string | null;
   request_snapshot: Record<string, unknown>;
-  // 七种既有动作仍必需；旧后端可暂不提供新增发布动作。
-  available_actions: Record<Exclude<DocumentJobActionId, "publish">, DocumentJobAvailableAction> & {
+  // 七种既有动作仍必需；旧后端可暂不提供发布和发起新代动作。
+  available_actions: Record<Exclude<DocumentJobActionId, "publish" | "new_generation">, DocumentJobAvailableAction> & {
     publish?: DocumentJobAvailableAction;
+    new_generation?: DocumentJobAvailableAction;
   };
   created_at: string;
   updated_at: string;

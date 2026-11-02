@@ -208,7 +208,8 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
         )
         source_document_ir = result.document
         document_ir = _translate_if_needed(source_document_ir, request)
-        render_result = _render_document(document_ir, result.image_assets, request)
+        render_result = _render_document(document_ir,
+            [*result.image_assets, *result.table_reference_assets, *result.table_placeholder_assets], request)
         word_content = render_result.content
 
     renderer_metadata = build_renderer_evidence(document_ir, word_content, formula_report=render_result.formula_report,

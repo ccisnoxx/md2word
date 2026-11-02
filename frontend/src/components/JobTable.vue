@@ -432,6 +432,7 @@ function pendingActionLabel(row: DocumentJobResponse): string {
     clone: "创建中",
     delete: "删除中",
     publish: "发布中",
+    new_generation: "发起新代中",
   };
   return labels[action];
 }

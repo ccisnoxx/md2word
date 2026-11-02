@@ -91,7 +91,7 @@ class MinerUValidationReport(BaseModel):
     """计数是聚合权威；超限报告必须明确未完成，不能用截断明细证明通过。"""
 
     schema_version: Literal["mineru-artifact-validation/v1"] = "mineru-artifact-validation/v1"
-    validator_version: str = "mineru-artifact-validator/v3"
+    validator_version: str = "mineru-artifact-validator/v4"
     policy_version: str = DEFAULT_POLICY.version
     package_sha256: str
     content_list_path: str | None = None
@@ -206,6 +206,17 @@ class MinerUValidatedContent:
     blocks: list[dict[str, Any]]
     report: MinerUValidationReport
     table_references: dict[str, ValidatedTableReference]
+
+
+MinerUBlockKey = tuple[int, tuple[float, float, float, float]]
+
+
+@dataclass(frozen=True, slots=True)
+class MergedParagraphEvidence:
+    """布局中的接收节点与完整正文；仅用于输入验证，不把正文写入诊断报告。"""
+
+    target: MinerUBlockKey
+    target_text: str
 
 
 def bbox_invalid_reason(value: Any) -> str | None:
@@ -474,7 +485,8 @@ class MinerUArtifactValidator:
     def add_package_error(self, error: MinerUPackageError, *, field: str | None = None) -> None:
         self.add_issue(error.code, field=field, facts=error.facts)
 
-    def validate(self, payload: Any, *, package_root: Path, content_list_path: Path) -> MinerUValidatedContent:
+    def validate(self, payload: Any, *, package_root: Path, content_list_path: Path,
+                 merged_paragraphs: dict[MinerUBlockKey, MergedParagraphEvidence] | None = None) -> MinerUValidatedContent:
         # JSON 解码已把合法 surrogate pair 合成字符；残留码位不能进入正文或 UTF-8 报告。
         pending = [payload]
         while pending:
@@ -507,6 +519,10 @@ class MinerUArtifactValidator:
         flat_offsets: Counter[int] = Counter()
         flat_pages: set[int] = set()
         previous_page = None
+        retained_paragraphs: dict[MinerUBlockKey, str] = {}
+        claimed_merges: set[MinerUBlockKey] = set()
+        block_occurrences: Counter[MinerUBlockKey] = Counter()
+        merge_bindings: list[tuple[MinerUSourceLocator, MinerUBlockKey, MinerUBlockKey]] = []
         for outer_index, item in enumerate(payload):
             outer_pointer = f"{prefix}/{outer_index}"
             if nested and not isinstance(item, list):
@@ -587,7 +603,18 @@ class MinerUArtifactValidator:
                     self.add_issue("mineru_bbox_invalid", locator, field="bbox", facts={"reason": reason})
                 self._validate_type_nodes(block, locator)
                 effective_type = classify_mineru_block(block, source_type)
-                self._validate_fields(block, source_type, effective_type, locator)
+                bbox = parse_valid_bbox(block.get("bbox"))
+                block_key = (locator.page_index, bbox) if locator.page_index is not None and bbox is not None else None
+                if block_key is not None:
+                    block_occurrences[block_key] += 1
+                merge = (merged_paragraphs or {}).get(block_key)
+                # 对账完整接收正文及重复次数；同一空源节点的证据不能重复消费。
+                merged_body_retained = (merge is not None and block_key not in claimed_merges
+                                        and retained_paragraphs.get(merge.target) == merge.target_text)
+                if merged_body_retained:
+                    claimed_merges.add(block_key)
+                merged_residue = self._validate_fields(block, source_type, effective_type, locator,
+                                                      merged_body_retained=merged_body_retained)
                 self._validate_asset_paths(block, locator, package_root, content_list_path.parent)
                 if effective_type == "image":
                     inventory["image_check_count"] += 1
@@ -600,12 +627,21 @@ class MinerUArtifactValidator:
                         self._validate_table(block, locator, status, asset)
                 if self.report.fatal_count == before:
                     inventory["valid_block_count"] += 1
+                    if merged_residue:
+                        merge_bindings.append((locator, block_key, merge.target))
+                    if block_key is not None and source_type in {"text", "paragraph", "para"}:
+                        retained_paragraphs[block_key] = "".join(mineru_raw_text_preserving_lines(block).split())
                 else:
                     inventory["invalid_block_count"] += 1
                 normalized.append(copied)
                 self.check_report_limits()
         if not nested:
             inventory["raw_page_count"] = len(flat_pages)
+        for locator, source, target in merge_bindings:
+            if block_occurrences[source] != 1 or block_occurrences[target] != 1:
+                self._payload_issue(locator, "content", "missing_readable_payload")
+                inventory["valid_block_count"] -= 1
+                inventory["invalid_block_count"] += 1
         inventory["type_counts"] = dict(sorted(type_counts.items()))
         self.check_report_limits()
         if not inventory["raw_block_count"]:
@@ -635,12 +671,14 @@ class MinerUArtifactValidator:
             elif isinstance(node, list):
                 pending.extend((value, f"{pointer}/{index}") for index, value in enumerate(node))
 
-    def _validate_fields(self, block: dict[str, Any], source_type: str, effective_type: str, locator: MinerUSourceLocator) -> None:
+    def _validate_fields(self, block: dict[str, Any], source_type: str, effective_type: str, locator: MinerUSourceLocator,
+                         *, merged_body_retained: bool = False) -> bool:
         text_keys = SEMANTIC_TEXT_FIELDS
         run_keys = SEMANTIC_RUN_FIELDS
         annotation_keys = ANNOTATION_FIELDS
         fatal_count_before = self.report.fatal_count
         readable = False
+        merged_residue = False
         contentful_placeholder = False
         invalid_placeholder_html_field: str | None = None
         readable_fields: list[str] = []
@@ -776,6 +814,13 @@ class MinerUArtifactValidator:
                 # MinerU 正式样本包含合法空边缘 runs；保留节点与定位，空正文仍需失败关闭。
                 self.add_issue("mineru_margin_payload_empty", locator, severity="warning", stops_conversion=False,
                                field=margin_field)
+            elif (source_type in {"text", "paragraph", "para"} and merged_body_retained and not readable
+                  and self.report.fatal_count == fatal_count_before
+                  and not collect_text_from_fields(block, tuple(annotation_keys))):
+                # 只接受布局与实际消费正文共同证明的合并残留；原始节点仍保留在清单和 IR 中。
+                self.add_issue("mineru_merged_paragraph_empty", locator, severity="warning", stops_conversion=False,
+                               field="content", facts={"reason": "merged_paragraph_residue"})
+                merged_residue = True
             else:
                 self._payload_issue(locator, "content", "missing_readable_payload")
         has_placeholder_content = (
@@ -789,6 +834,7 @@ class MinerUArtifactValidator:
             self._payload_issue(locator, "content", "contentful_table_placeholder")
         elif source_type == "table_placeholder" and invalid_placeholder_html_field is not None:
             self._payload_issue(locator, invalid_placeholder_html_field, "expected_string")
+        return merged_residue
 
     def _payload_issue(self, locator: MinerUSourceLocator, field: str, reason: str) -> None:
         self.add_issue("mineru_block_payload_invalid", locator, field=field, facts={"reason": reason})

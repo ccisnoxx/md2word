@@ -16,18 +16,41 @@ from unittest.mock import patch
 from xml.etree import ElementTree
 
 from docx import Document
+from PIL import Image
 
 from app.conversion.docx_rules.mineru_content import find_final_promotional_page
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir import MinerUToDocumentIRService, caption_reconciler
 from app.services.document_ir.artifact_validator import MinerUArtifactValidationError
 from app.services.document_ir.models import DocumentIR
+from app.services.document_ir.table_placeholder import (
+    PdfCropResult, PdfCropSource, TablePlaceholderError, checksum, decode_placeholders,
+)
 from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
 from app.services.renderer import DocumentIRWordRenderer
+from app.services.tables.evidence import read_table_evidence
 
 
 # 使用可被真实图片解码器完整读取的中性PNG，保护输入资产校验。
 MINIMAL_PNG_BYTES = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x02\x00\x00\x00\x02\x08\x02\x00\x00\x00\xfd\xd4\x9as\x00\x00\x00\x13IDATx\x9cc\xfc\xff\xff?\x03\x03\x03\x13\x03\x18\x00\x00$\x06\x03\x01]\xa2N\x88\x00\x00\x00\x00IEND\xaeB`\x82'
+
+
+class _RecordingTableCropProvider:
+    """真实多页 PDF/PNG 夹具仅记录接口请求，不替代 Poppler 实际裁图验证。"""
+
+    def __init__(self, source_file_id: str, page_sizes: list[tuple[int, int]]) -> None:
+        pages = [Image.new("RGB", size, "white") for size in page_sizes]
+        output = io.BytesIO()
+        pages[0].save(output, format="PDF", save_all=True, append_images=pages[1:], resolution=72)
+        for page in pages:
+            page.close()
+        content = output.getvalue()
+        self.source = PdfCropSource(source_file_id, checksum(content), content)
+        self.requests = []
+
+    def crop(self, request) -> PdfCropResult:
+        self.requests.append(request)
+        return PdfCropResult(MINIMAL_PNG_BYTES, request.frame)
 
 
 class MinerUToDocumentIRLayoutTests(unittest.TestCase):
@@ -476,7 +499,7 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertEqual(blocks[0].list_items, [r"- Low offset $12\mu \mathrm{V}$", "- Low noise", "- Stable output"])
         self.assertEqual(blocks[1].list_items, ["■ Sensors\nThermocouple\nRTD"])
         self.assertEqual(blocks[2].type, "paragraph")
-        self.assertEqual(blocks[2].text, "ordinary body")
+        self.assertEqual(blocks[2].text, "ordinary\nbody")
         self.assertEqual(blocks[3].text, r"Input $V _ {I N}$ stays visible")
         self.assertEqual(blocks[4].list_items, [r"Limit $I _ {O U T}$"])
         self.assertEqual(blocks[5].latex, fraction)
@@ -893,6 +916,7 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertEqual(len(result.image_assets), 1)
 
     def test_convert_zip_merges_table_placeholder_continuation_and_landscape_orientation(self) -> None:
+        crop = _RecordingTableCropProvider("file_continuation", [(792, 612)] * 2)
         with tempfile.TemporaryDirectory() as temp_dir:
             zip_path = Path(temp_dir) / "mineru.zip"
             self._write_zip(
@@ -915,11 +939,12 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                 },
             )
 
-            result = MinerUToDocumentIRService().convert_zip(
+            result = MinerUToDocumentIRService(pdf_crop_provider=crop).convert_zip(
                 zip_path,
                 job_id="docjob_continuation",
                 source_file_id="file_continuation",
                 document_language="en",
+                placeholder_source_loader=lambda: crop.source,
             )
 
         document = result.document
@@ -930,8 +955,44 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertEqual(document.blocks[0].layout.continuation_heights, [200.0])
         self.assertIn("table_continuation:block_0001", document.quality_flags)
         self.assertIn("layout_wide_table:block_0001", document.quality_flags)
+        self.assertEqual(document.metadata.source_block_count, 1)
+        self.assertEqual(document.metadata.source_type_counts, {"table": 1})
+        fragments = document.metadata.logical_table_groups[0].fragments
+        self.assertEqual([item.source_span.json_pointer for item in fragments], ["/0", "/1"])
+        self.assertEqual([item.render_owner_block_id for item in fragments], [document.blocks[0].id] * 2)
+        self.assertEqual(fragments[1].normalization_reason, "explicit_table_placeholder")
+        self.assertEqual(len(crop.requests), 1)
+        request = crop.requests[0]
+        self.assertEqual(request.source, crop.source)
+        self.assertEqual((request.page_index, request.bbox, request.frame),
+            (1, (72.0, 50.0, 720.0, 250.0), (792.0, 612.0)))
+        binding, = decode_placeholders(document)
+        self.assertEqual(binding.fragment_id, fragments[1].fragment_id)
+        self.assertEqual((binding.source_kind, binding.source_pdf_sha256, binding.asset_sha256),
+            ("source_pdf_crop", crop.source.checksum_sha256, checksum(MINIMAL_PNG_BYTES)))
+        self.assertEqual((binding.page_index, binding.bbox, binding.frame),
+            (request.page_index, request.bbox, request.frame))
+        assets = {asset.asset_id: asset.content for asset in result.table_placeholder_assets}
+        rendered = DocumentIRWordRenderer().render_to_result(document, template_path=None, config_path=None,
+            image_loader=lambda asset: assets.get(asset.id))
+        evidence = build_renderer_evidence(document, rendered.content, render_result=rendered)
+        self.assertEqual(evidence["render_trace_status"], "complete")
+        self.assertEqual(evidence["table_placeholder_count"], 1)
+        ensure_renderer_integrity(evidence)
+        table_evidence = read_table_evidence(evidence["table_evidence"])
+        self.assertEqual(table_evidence.status, "blocked")
+        self.assertEqual(table_evidence.counts.placeholder_count, 1)
+        self.assertEqual(table_evidence.tables[0].render_state, "mixed")
+        placeholder_flags = [flag for flag in table_evidence.tables[0].flags if flag.producer == "table_placeholder"]
+        self.assertEqual([(flag.code, flag.severity, flag.identity) for flag in placeholder_flags],
+            [("table_noneditable_placeholder", "blocker", binding.placeholder_id)])
+        word = Document(io.BytesIO(rendered.content))
+        self.assertEqual([table.cell(0, 0).text for table in word.tables], ["Part"])
+        self.assertEqual(len(word.inline_shapes), 1)
+        self.assertTrue(all(section.page_width > section.page_height for section in word.sections))
 
     def test_convert_zip_merges_real_mineru_empty_table_continuations(self) -> None:
+        crop = _RecordingTableCropProvider("file_real_continuation", [(612, 792)] * 3)
         with tempfile.TemporaryDirectory() as temp_dir:
             zip_path = Path(temp_dir) / "mineru.zip"
             self._write_zip(
@@ -986,11 +1047,12 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                 },
             )
 
-            result = MinerUToDocumentIRService().convert_zip(
+            result = MinerUToDocumentIRService(pdf_crop_provider=crop).convert_zip(
                 zip_path,
                 job_id="docjob_real_continuation",
                 source_file_id="file_real_continuation",
                 document_language="en",
+                placeholder_source_loader=lambda: crop.source,
             )
 
         self.assertEqual(len(result.document.blocks), 2)
@@ -999,6 +1061,40 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertEqual(result.document.blocks[1].html, "<table><tr><td>保留正文</td></tr></table>")
         self.assertEqual(result.document.metadata.source_block_count, 2)
         self.assertEqual(result.document.metadata.source_type_counts, {"table": 2})
+        groups = result.document.metadata.logical_table_groups
+        self.assertEqual([[item.source_span.json_pointer for item in group.fragments] for group in groups],
+            [["/0", "/1", "/2"], ["/3"]])
+        self.assertEqual([item.normalization_reason for item in groups[0].fragments[1:]],
+            ["strict_empty_table_placeholder"] * 2)
+        self.assertEqual([item.raw_fragment.get("img_path") for item in groups[0].fragments[1:2]], [""])
+        self.assertEqual(groups[0].fragments[2].raw_fragment["content"]["image_source"]["path"], "images/")
+        self.assertEqual([(request.page_index, request.bbox, request.frame) for request in crop.requests], [
+            (1, (72.0, 50.0, 540.0, 250.0), (612.0, 792.0)),
+            (2, (72.0, 40.0, 540.0, 280.0), (612.0, 792.0)),
+        ])
+        self.assertTrue(all(request.source == crop.source for request in crop.requests))
+        bindings = decode_placeholders(result.document)
+        self.assertEqual([item.fragment_id for item in bindings],
+            [item.fragment_id for item in groups[0].fragments[1:]])
+        self.assertEqual([item.source_pdf_sha256 for item in bindings], [crop.source.checksum_sha256] * 2)
+        self.assertEqual([item.asset_sha256 for item in bindings], [checksum(MINIMAL_PNG_BYTES)] * 2)
+        assets = {asset.asset_id: asset.content for asset in result.table_placeholder_assets}
+        rendered = DocumentIRWordRenderer().render_to_result(result.document, template_path=None, config_path=None,
+            image_loader=lambda asset: assets.get(asset.id))
+        evidence = build_renderer_evidence(result.document, rendered.content, render_result=rendered)
+        self.assertEqual(evidence["render_trace_status"], "complete")
+        self.assertEqual(evidence["table_placeholder_count"], 2)
+        ensure_renderer_integrity(evidence)
+        table_evidence = read_table_evidence(evidence["table_evidence"])
+        self.assertEqual(table_evidence.status, "blocked")
+        self.assertEqual(table_evidence.counts.placeholder_count, 2)
+        self.assertEqual(table_evidence.tables[0].render_state, "mixed")
+        placeholder_flags = [flag for flag in table_evidence.tables[0].flags if flag.producer == "table_placeholder"]
+        self.assertEqual([(flag.code, flag.severity, flag.identity) for flag in placeholder_flags],
+            [("table_noneditable_placeholder", "blocker", binding.placeholder_id) for binding in bindings])
+        word = Document(io.BytesIO(rendered.content))
+        self.assertEqual([table.cell(0, 0).text for table in word.tables], ["Part", "保留正文"])
+        self.assertEqual(len(word.inline_shapes), 2)
 
     def test_convert_zip_keeps_contentful_or_orphan_empty_tables_fail_closed(self) -> None:
         real_table = {
@@ -1042,13 +1138,54 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                     },
                 )
 
-                with self.assertRaisesRegex(DocumentIntegrityError, "payload_missing:table"):
+                with self.assertRaises(TablePlaceholderError) as raised:
                     MinerUToDocumentIRService().convert_zip(
                         zip_path,
                         job_id="docjob_ambiguous_empty_table",
                         source_file_id="file_ambiguous_empty_table",
                         document_language="zh",
                     )
+                self.assertEqual(raised.exception.code, "table_placeholder_source_unavailable")
+                self.assertEqual(str(raised.exception), "表格占位处理失败：table_placeholder_source_unavailable。")
+                report = raised.exception.mineru_validation_report
+                self.assertEqual(report.normalization["merged_table_placeholder_count"], 0)
+                self.assertEqual(report.effective_inventory["block_count"], len(blocks))
+
+    def test_convert_zip_rejects_placeholder_without_image_or_pdf_source(self) -> None:
+        cases = (
+            {"type": "table_placeholder"},
+            {"type": "table", "html": "", "img_path": ""},
+            {"type": "table", "content": {"html": "", "image_source": {"path": "images/"}}},
+        )
+        for placeholder in cases:
+            with self.subTest(placeholder=placeholder), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "missing-source.zip"
+                self._write_zip(path, blocks=[
+                    {"type": "table", "html": "<table><tr><td>必须保留</td></tr></table>",
+                        "bbox": [72, 120, 540, 300], "page_idx": 0},
+                    {**placeholder, "bbox": [72, 40, 540, 280], "page_idx": 1},
+                ], layout={"pdf_info": [{"page_idx": index, "page_size": [612, 792]} for index in range(2)]})
+                with self.assertRaises(TablePlaceholderError) as raised:
+                    MinerUToDocumentIRService().convert_zip(path, job_id="missing_source",
+                        source_file_id="source", document_language="zh")
+                self.assertEqual(raised.exception.code, "table_placeholder_source_unavailable")
+                self.assertEqual(str(raised.exception), "表格占位处理失败：table_placeholder_source_unavailable。")
+                self.assertEqual(raised.exception.mineru_validation_report.normalization["merged_table_placeholder_count"], 1)
+
+    def test_convert_zip_keeps_missing_body_payload_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "missing-body.zip"
+            self._write_zip(path, blocks=[
+                {"type": "text", "text": "必须保留的正文", "bbox": [72, 80, 540, 100], "page_idx": 0},
+                {"type": "text", "text": "", "bbox": [72, 120, 540, 140], "page_idx": 0},
+            ], layout={"pdf_info": [{"page_idx": 0, "page_size": [612, 792]}]})
+            with self.assertRaises(MinerUArtifactValidationError) as raised:
+                MinerUToDocumentIRService().convert_zip(path, job_id="missing_body",
+                    source_file_id="source", document_language="zh")
+            issue = raised.exception.report.first_fatal
+            self.assertEqual(issue.code, "mineru_block_payload_invalid")
+            self.assertEqual(issue.json_pointer, "/1")
+            self.assertEqual(issue.facts["reason"], "missing_readable_payload")
 
     def test_convert_zip_reassociates_only_strict_numbered_image_groups(self) -> None:
         blocks = [
