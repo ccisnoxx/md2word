@@ -797,7 +797,7 @@ def _type_counts(value):
 
 
 FAILURE_OPERATION_KINDS = frozenset({"section", "configure_page", "decoration", "block", "image_pair", "column_break",
-                                     "logical_table", "table_prepare"})
+                                     "logical_table", "table_prepare", "layout_plan", "table_plan", "render_plan"})
 FAILURE_REASON_CODES = frozenset({
     "table_render_input", "table_render_geometry", "table_render_failed", "table_build_limit", "table_html_encoding",
     "table_html_unsupported_structure", "table_placeholder_crop_failed", "table_placeholder_geometry_invalid",

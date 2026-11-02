@@ -8,6 +8,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import (
     DocumentIR, DocumentIRBlock, DocumentIRBlockLayout, DocumentIRMetadata, DocumentIRPage,
 )
@@ -62,6 +63,29 @@ class RendererFailureContextTests(TestCase):
         context = getattr(caught.exception, FAILURE_CONTEXT_ATTRIBUTE)
         self.assertEqual((context["operation_kind"], context["block_ids"], context["source_page_index"]),
                          ("table_prepare", ["block_0003"], 1))
+
+    def test_table_plan_failure_is_located_by_block_index(self):
+        with patch("app.services.renderer.word_renderer.build_content_table_plan",
+                   side_effect=TableRenderError("table_render_geometry", block_index=2)), \
+                self.assertRaises(TableRenderError) as caught:
+            _render(_document())
+        context = getattr(caught.exception, FAILURE_CONTEXT_ATTRIBUTE)
+        self.assertEqual((context["operation_kind"], context["block_ids"], context["source_page_index"]),
+                         ("table_plan", ["block_0003"], 1))
+
+    def test_unlocated_plan_failures_are_document_level_and_keep_type(self):
+        for kind, target, error, expected in (
+                ("layout_plan", "build_layout_plan", KeyError("内部"), KeyError),
+                ("table_plan", "build_content_table_plan", ValueError("内部"), ValueError),
+                ("render_plan", "build_render_plan", ValueError("内部"), DocumentIntegrityError),
+                ("render_plan", "build_render_plan", KeyError("内部"), KeyError)):
+            with self.subTest(kind=kind, error=type(error).__name__):
+                with patch(f"app.services.renderer.word_renderer.{target}", side_effect=error), \
+                        self.assertRaises(expected) as caught:
+                    _render(_document())
+                context = getattr(caught.exception, FAILURE_CONTEXT_ATTRIBUTE)
+                self.assertEqual((context["operation_kind"], context["block_ids"], context["source_page_index"]),
+                                 (kind, [], None))
 
 
 class FailureContextWhitelistTests(TestCase):

@@ -70,7 +70,7 @@ class PageDegradationConverterTests(TestCase):
         page_two = [block for block in result.document.blocks if block.page_index == 1]
         self.assertEqual([(block.id, block.type) for block in page_two],
                          [("degraded_page_0002_notice", "paragraph"), ("degraded_page_0002_image", "image")])
-        self.assertIn("第 2 页因 invalid_table_html 无法转换", page_two[0].text)
+        self.assertIn("第 2 页因表格结构无法解析无法转换", page_two[0].text)
         self.assertEqual([block.text for block in result.document.blocks if block.page_index in {0, 2}], ["Intro", "After"])
         record = result.document.metadata.degraded_pages[0]
         self.assertEqual((record["page_index"], record["reason_codes"], record["removed_source_block_count"],

@@ -109,5 +109,5 @@ class DegradedSourceTranslationTests(TestCase):
         self.assertEqual(len(sent), 2)
         self.assertFalse(any("无法转换" in text for text in sent))
         notice = next(block for block in target["blocks"] if block["id"] == "degraded_page_0002_notice")
-        self.assertTrue(notice["text"].startswith("第 2 页因 invalid_table_html 无法转换"))
+        self.assertTrue(notice["text"].startswith("第 2 页因表格结构无法解析无法转换"))
         self.assertEqual(target_file.metadata["translation"]["skipped_degraded_page_numbers"], [2])

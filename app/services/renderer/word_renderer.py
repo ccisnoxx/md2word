@@ -22,11 +22,11 @@ from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
 from app.services.renderer.image_renderer import WordImageRendererMixin
 from app.services.renderer.image_evidence import caption_bookmark_inventory, new_image_report, finish_image_report
-from app.services.renderer.layout_plan import build_layout_plan, build_image_plan
+from app.services.renderer.layout_plan import _block_page_index, build_layout_plan, build_image_plan
 from app.services.renderer.render_plan import ResourceIdentity, build_render_plan, content_hash
 from app.services.renderer.block_evidence import RenderCollector, WordRenderResult, ItemEvidence, paragraph_target
 from app.services.renderer.block_anchors import bookmark_inventory, materialize_block_anchors
-from app.services.renderer.table_renderer import WordTableRendererMixin, prepare_table_input
+from app.services.renderer.table_renderer import TableRenderError, WordTableRendererMixin, prepare_table_input
 from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
 from app.services.renderer.text_renderer import WordTextRendererMixin
 from app.services.renderer.logical_table_plan import build_content_table_plan
@@ -89,6 +89,13 @@ def attach_failure_context(error: BaseException, **context: Any) -> None:
         setattr(error, FAILURE_CONTEXT_ATTRIBUTE, context)
 
 
+def _attach_plan_failure_context(error: BaseException, operation_kind: str, block: DocumentIRBlock | None = None) -> None:
+    """计划阶段尚无操作序号；只有能归属到具体块时才带页码，否则按文档级失败展示。"""
+    attach_failure_context(error, operation_index=None, operation_kind=operation_kind, section_id=None,
+                           block_ids=[block.id] if block is not None else [],
+                           source_page_index=_block_page_index(block) if block is not None else None, unit_id=None)
+
+
 class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, WordImageRendererMixin):
     """P0 Word 渲染器：覆盖标题、段落、基础表格和图片。"""
 
@@ -125,8 +132,17 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         from app.services.renderer.resource_identity import normalized_resource_identity
         resources = normalized_resource_identity(template_content=template_content, config=template_config,
             logo_content=logo_content, document_language=options.document_language if options and options.document_language else document_ir.metadata.document_language)
-        layout_plan = build_layout_plan(document_ir)
-        table_plan = build_content_table_plan(document_ir, layout_plan)
+        try:
+            layout_plan = build_layout_plan(document_ir)
+        except Exception as error:
+            _attach_plan_failure_context(error, "layout_plan")
+            raise
+        try:
+            table_plan = build_content_table_plan(document_ir, layout_plan)
+        except Exception as error:
+            _attach_plan_failure_context(error, "table_plan",
+                                         document_ir.blocks[error.block_index] if isinstance(error, TableRenderError) else None)
+            raise
         grid_by_block = {fragment.source.block_id: fragment.render.grid for unit in table_plan.units
                         for fragment in unit.fragments if fragment.render is not None}
         tables = {}
@@ -140,9 +156,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             try:
                 tables[block.id] = prepare_table_input(block, template_config)
             except Exception as error:
-                page_index = block.layout.page_index if block.layout and block.layout.page_index is not None else block.page_index
-                attach_failure_context(error, operation_index=None, operation_kind="table_prepare", section_id=None,
-                                       block_ids=[block.id], source_page_index=page_index, unit_id=None)
+                _attach_plan_failure_context(error, "table_prepare", block)
                 raise
         try:
             plan = build_render_plan(document_ir, layout_plan=layout_plan, effective_config=template_config,
@@ -150,7 +164,12 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 table_strategies={key: value[1] for key, value in tables.items()}, logical_table_plan=table_plan)
             collector = RenderCollector(document_ir, plan)
         except (ValueError, TypeError, UnicodeError) as error:
-            raise render_contract_failure(error) from None
+            failure = render_contract_failure(error)
+            _attach_plan_failure_context(failure, "render_plan")
+            raise failure from None
+        except Exception as error:
+            _attach_plan_failure_context(error, "render_plan")
+            raise
         # 资源快照和计划在创建 Word 对象前固定；后续 writer 只消费同一计划。
         document = Document(io.BytesIO(template_content)) if template_content is not None else Document()
         reserved_bookmarks = bookmark_inventory(document)

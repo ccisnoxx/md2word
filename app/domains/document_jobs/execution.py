@@ -111,6 +111,8 @@ from app.domains.translation.integrity import (
 from app.domains.translation.provider import OpenAICompatibleTranslationProvider, TranslationProviderCallError, TranslationProviderResponseError
 
 
+# 每轮降级都要完整重渲染；失败页过多时继续逐页重试只会耗尽 Worker 时限，得到更差的超时诊断。
+MAX_RENDER_DEGRADATION_ATTEMPTS = 5
 # 消息只由固定错误码或固定文本构造的异常；其消息可原样作为任务 error_message。
 SAFE_MESSAGE_ERRORS = (MinerUArtifactValidationError, TablePlaceholderError, TableRenderError, TableBuildError,
                        TableEvidenceError, TableValidationError, TranslationIntegrityError)
@@ -3227,7 +3229,6 @@ class DocumentJobExecutionService:
                 document_ir = DocumentIR.model_validate_json(ir_bytes)
             except ValueError:
                 raise TablePlaceholderError("table_placeholder_integrity_failed") from None
-            layout_plan = build_layout_plan(document_ir)
             snapshot_resources = rendering.request_snapshot.get("resources")
             snapshot_template = snapshot_resources.get("template") if isinstance(snapshot_resources, dict) else None
             draft_was_authorized_at_creation = (
@@ -3254,19 +3255,24 @@ class DocumentJobExecutionService:
                     ),
                 )
 
-            try:
-                render_result = render(rendering, document_ir)
-            except Exception as exc:
-                degraded = self._degrade_render_failure_page(rendering, ir_file, document_ir, exc, trace_id=trace_id)
-                if degraded is None:
-                    raise
-                if isinstance(degraded, DocumentJobRecord):
-                    return self._finish_selected_or_current(degraded, trace_id=trace_id)
-                # 降级后的新 IR 已成为任务权威指针；只重渲染一次，再失败按本次错误整体失败。
-                rendering, ir_file, ir_bytes, document_ir = degraded
-                attempt = rendering
-                layout_plan = build_layout_plan(document_ir)
-                render_result = render(rendering, document_ir)
+            degradation_attempts = 0
+            while True:
+                try:
+                    render_result = render(rendering, document_ir)
+                    break
+                except Exception as exc:
+                    if degradation_attempts >= MAX_RENDER_DEGRADATION_ATTEMPTS:
+                        raise
+                    degraded = self._degrade_render_failure_page(rendering, ir_file, document_ir, exc, trace_id=trace_id)
+                    if degraded is None:
+                        raise
+                    if isinstance(degraded, DocumentJobRecord):
+                        return self._finish_selected_or_current(degraded, trace_id=trace_id)
+                    # 降级后的新 IR 已成为任务权威指针；后续失败基于它继续判断，不回到旧 IR。
+                    rendering, ir_file, ir_bytes, document_ir = degraded
+                    attempt = rendering
+                    degradation_attempts += 1
+            layout_plan = build_layout_plan(document_ir)
             word_content = render_result.content
             checking = self.job_repository.update_document_job_if_current(
                 rendering.id,
@@ -3408,7 +3414,8 @@ class DocumentJobExecutionService:
         rasterizer = getattr(self.document_ir_service, "page_rasterizer", None)
         if (not isinstance(context, dict) or context.get("source_page_index") is None or rasterizer is None
                 or is_translation_document_job_mode(job.mode)
-                or isinstance(error, (ApiError, OSError, MinerUError, TablePlaceholderError, DocumentIntegrityError))):
+                or isinstance(error, (ApiError, OSError, MinerUError, TablePlaceholderError, DocumentIntegrityError,
+                                      SoftTimeLimitExceeded))):
             return None
         page_index = context["source_page_index"]
         already = {record.get("page_index") for record in document_ir.metadata.degraded_pages}

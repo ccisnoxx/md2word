@@ -8,7 +8,15 @@ from typing import Any, Literal
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock, DocumentIRBlockLayout
 
 PAGE_RASTER_SOURCE_PATH = "derived/pdf-page-raster.png"
-DEGRADED_PAGE_NOTICE = "第 {page} 页因 {reasons} 无法转换，已按原 PDF 页面图像保留，本页不可编辑。"
+DEGRADED_PAGE_NOTICE = "第 {page} 页因{reasons}无法转换，已按原 PDF 页面图像保留，本页不可编辑。"
+# 提示写入交付文档，只用中文；机器原因码留在 metadata.degraded_pages。键须覆盖全部可降级原因，缺失时显式报错。
+DEGRADED_REASON_LABELS = {
+    "missing_image_asset": "图片缺失",
+    "invalid_image_asset": "图片损坏或格式不受支持",
+    "invalid_table_html": "表格结构无法解析",
+    "render_failed": "排版渲染失败",
+}
+DEPENDENT_PAGE_REASON = "所属跨页表格的其他页面失败"
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,10 +73,11 @@ def replace_degraded_pages(document: DocumentIR, rasters: dict[int, bytes], reas
         image_block_id = f"degraded_page_{page_index + 1:04d}_image"
         layout = DocumentIRBlockLayout(page_index=page_index, role="body")
         synthetic = {"synthetic": "degraded_page", "degraded_page_index": page_index}
+        reason_text = "、".join(DEGRADED_REASON_LABELS[code] for code in reason_codes) or DEPENDENT_PAGE_REASON
         blocks.append(DocumentIRBlock(
             id=f"degraded_page_{page_index + 1:04d}_notice", type="paragraph", order=block.order,
             page_index=page_index, layout=layout,
-            text=DEGRADED_PAGE_NOTICE.format(page=page_index + 1, reasons="、".join(reason_codes) or "依赖页降级"),
+            text=DEGRADED_PAGE_NOTICE.format(page=page_index + 1, reasons=reason_text),
             metadata={**synthetic, "source_type": "degraded_page_notice"}))
         blocks.append(DocumentIRBlock(
             id=image_block_id, type="image", order=block.order, page_index=page_index, layout=layout,

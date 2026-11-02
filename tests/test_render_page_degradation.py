@@ -1,4 +1,4 @@
-"""第三批 C3：带页定位的渲染失败降级为整页图像，另存新 IR 后重渲染一次；前提不满足按原错误失败。"""
+"""第三批 C3：带页定位的渲染失败降级为整页图像，另存新 IR 后有界重渲染；前提不满足按当次错误失败。"""
 import io
 import json
 import tempfile
@@ -7,12 +7,17 @@ from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
 
+from billiard.exceptions import SoftTimeLimitExceeded
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.models import DocumentIR
-from app.services.document_ir.page_degradation import drop_degraded_table_groups, replace_degraded_pages
+from app.services.document_ir.artifact_validator import DEFERRABLE_ISSUE_CODES
+from app.services.document_ir.page_degradation import (
+    DEGRADED_REASON_LABELS, drop_degraded_table_groups, replace_degraded_pages,
+)
+from app.services.renderer.table_renderer import TableRenderError
 from app.services.document_ir.table_placeholder import PdfCropSource, checksum
 from app.services.renderer.word_renderer import DocumentIRWordRenderer
 from tests import test_fastapi_jobs_backend as fixtures
@@ -88,7 +93,7 @@ class RenderPageDegradationPipelineTests(TestCase):
         self.assertEqual(word.metadata["source_integrity"]["render_degraded_page_count"], 1)
         ir = DocumentIR.model_validate_json(contents[new_ir_id])
         self.assertEqual([(block.page_index, block.text) for block in ir.blocks if block.type == "paragraph"],
-                         [(0, "Page 1 body"), (1, "第 2 页因 render_failed 无法转换，已按原 PDF 页面图像保留，本页不可编辑。"),
+                         [(0, "Page 1 body"), (1, "第 2 页因排版渲染失败无法转换，已按原 PDF 页面图像保留，本页不可编辑。"),
                           (2, "Page 3 body")])
         record_ = ir.metadata.degraded_pages[0]
         self.assertEqual((record_["trigger"], record_["operation_kind"], record_["render_reason_code"]),
@@ -104,7 +109,7 @@ class RenderPageDegradationPipelineTests(TestCase):
             "无栅格器": dict(blocks=_pages(3), failing=_failing_on("Page 2 body"), rasterizer=False),
             "基础设施错误": dict(blocks=_pages(3), failing=_failing_on("Page 2 body", error=OSError)),
             "超过阈值": dict(blocks=_pages(1), failing=_failing_on("Page 1 body")),
-            "重渲染仍失败": dict(blocks=_pages(4), failing=_failing_on("Page 2 body", "Page 3 body")),
+            "重渲染超过阈值": dict(blocks=_pages(4), failing=_failing_on("Page 2 body", "Page 3 body", "Page 4 body")),
         }
         for name, options in cases.items():
             with self.subTest(name):
@@ -112,11 +117,60 @@ class RenderPageDegradationPipelineTests(TestCase):
                 self.assertEqual((job["status"], job["failed_stage"]), ("failed", "rendering"))
                 self.assertIsNone(record.result_file_id)
                 switched = [event for event in events if event["payload"].get("degraded_from_document_ir_file_id")]
-                self.assertEqual(len(switched), 1 if name == "重渲染仍失败" else 0)
-                if name == "重渲染仍失败":
-                    # 第二次失败按本次错误定位，指针保持在已降级的新 IR。
-                    self.assertEqual(job["failure_diagnostic"]["page_number"], 3)
-                    self.assertEqual(record.document_ir_file_id, switched[0]["payload"]["document_ir_file_id"])
+                self.assertEqual(len(switched), 2 if name == "重渲染超过阈值" else 0)
+                if name == "重渲染超过阈值":
+                    # 第三页已超阈值：按本次错误定位，指针保持在最后一次降级的新 IR。
+                    self.assertEqual(job["failure_diagnostic"]["page_number"], 4)
+                    self.assertEqual(record.document_ir_file_id, switched[-1]["payload"]["document_ir_file_id"])
+
+    def test_independent_failed_pages_are_all_degraded(self):
+        job, events, _approve, files, record, contents = self.run_job(
+            _pages(6), _failing_on("Page 2 body", "Page 5 body"))
+        self.assertEqual(job["status"], "succeeded", (job["error_code"], job["error_message"]))
+        self.assertEqual((job["quality_status"], job["delivery_status"]), ("blocked", "internal_draft"))
+        self.assertEqual([item["page_number"] for item in job["quality_summary"]["checks_v1"]["document_base"]["degraded_pages"]],
+                         [2, 5])
+        switches = [event["payload"] for event in events if event["payload"].get("degraded_from_document_ir_file_id")]
+        self.assertEqual([payload["degraded_page_indexes"] for payload in switches], [[1], [4]])
+        self.assertEqual(switches[1]["degraded_from_document_ir_file_id"], switches[0]["document_ir_file_id"])
+        self.assertEqual(record.document_ir_file_id, switches[1]["document_ir_file_id"])
+        self.assertEqual(files[record.result_file_id].metadata["source_integrity"]["render_degraded_page_count"], 2)
+        ir = DocumentIR.model_validate_json(contents[record.document_ir_file_id])
+        self.assertEqual([item["page_index"] for item in ir.metadata.degraded_pages], [1, 4])
+
+    def test_attempt_limit_fails_with_current_page(self):
+        with patch("app.domains.document_jobs.execution.MAX_RENDER_DEGRADATION_ATTEMPTS", 1):
+            job, events, _approve, _files, record, _contents = self.run_job(
+                _pages(6), _failing_on("Page 2 body", "Page 5 body"))
+        self.assertEqual((job["status"], job["failed_stage"]), ("failed", "rendering"))
+        self.assertEqual(job["failure_diagnostic"]["page_number"], 5)
+        self.assertIsNone(record.result_file_id)
+        self.assertEqual(len([event for event in events if event["payload"].get("degraded_from_document_ir_file_id")]), 1)
+
+    def test_timeout_is_not_degraded(self):
+        job, events, _approve, _files, _record, _contents = self.run_job(
+            _pages(3), _failing_on("Page 2 body", error=SoftTimeLimitExceeded))
+        self.assertEqual(job["status"], "failed")
+        self.assertFalse([event for event in events if event["payload"].get("degraded_from_document_ir_file_id")])
+
+    def test_table_plan_failure_is_degraded_by_located_page(self):
+        def failing_build(block, index):
+            raise TableRenderError("table_render_geometry", block_index=index)
+        blocks = [*_pages(3), {"type": "table", "html": TABLE, "page_idx": 1}]
+        with patch("app.services.renderer.logical_table_plan._build_current", failing_build):
+            job, events, _approve, _files, record, contents = self.run_job(blocks, ORIGINAL_RENDER_BLOCK)
+        self.assertEqual(job["status"], "succeeded", (job["error_code"], job["error_message"]))
+        switch = next(event["payload"] for event in events if event["payload"].get("degraded_from_document_ir_file_id"))
+        self.assertEqual(switch["failure_context"]["operation_kind"], "table_plan")
+        self.assertEqual(switch["failure_context"]["reason_code"], "table_render_geometry")
+        self.assertEqual(switch["degraded_page_indexes"], [1])
+        ir = DocumentIR.model_validate_json(contents[record.document_ir_file_id])
+        self.assertFalse(any(block.type == "table" for block in ir.blocks))
+
+
+class DegradedNoticeTests(TestCase):
+    def test_every_degradable_reason_has_chinese_label(self):
+        self.assertLessEqual({*DEFERRABLE_ISSUE_CODES, "render_failed"}, set(DEGRADED_REASON_LABELS))
 
 
 class DropDegradedTableGroupsTests(TestCase):
