@@ -134,8 +134,8 @@ class ImagePdfFallbackConverterTests(TestCase):
     def test_other_fatal_error_restores_deferred_images_as_fatal(self):
         provider = _RecordingCropProvider()
         with self.assertRaises(MinerUArtifactValidationError) as caught:
-            # 无法解析的表格 HTML 在 complete_validation 才成为中止错误（路径安全错误更早中止，不经过这里）。
-            self.convert([_image("images/a.png"), {"type": "table", "html": "<table><tr><td>unclosed", "page_idx": 0}],
+            # 无页码的坏表格 HTML 在 complete_validation 成为中止错误（有页码的会进入整页降级，路径安全错误更早中止）。
+            self.convert([_image("images/a.png"), {"type": "table", "html": "<table><tr><td>unclosed"}],
                          provider=provider)
         report = caught.exception.report
         self.assertEqual(provider.requests, [])

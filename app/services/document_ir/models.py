@@ -138,6 +138,8 @@ class DocumentIRMetadata(BaseModel):
     table_references_version: Literal["table-reference/v1"] | None = None
     table_placeholders_version: Literal["table-placeholder/v1"] | None = None
     table_placeholders: list[TablePlaceholderBinding] = Field(default_factory=list)
+    # 第三批 C1：整页降级记录（页码、原因、问题指针、移除的源块计数与指针、页面图像资产、源 PDF sha256）。
+    degraded_pages: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DocumentIRAsset(BaseModel):

@@ -10,6 +10,7 @@ from typing import Any, get_args
 from fastapi import status
 
 from app.core.errors import ApiError
+from app.domains.document_jobs.base_quality import DegradedPageSummary, current_base
 from app.domains.document_jobs.delivery_state import translation_qa_projection
 from app.domains.document_jobs.failure_diagnostic import project_failure_diagnostic
 from app.domains.document_jobs.models import DocumentJobRecord, DocumentJobStage, DocumentJobStatus
@@ -220,15 +221,17 @@ class DocumentJobIncidentService:
         stalled_minutes = self._stalled_minutes(job, now)
         stalled = stalled_minutes is not None and stalled_minutes >= DEFAULT_STALLED_MINUTES
         blocked = job.review_status == "blocked"
-        is_incident = job.status == "failed" or blocked or retryable or stalled
-        failure_type = self._classify_failure(job, stalled=stalled)
-        priority = self._priority(job, retryable=retryable, stalled=stalled, blocked=blocked)
+        degraded_pages = self._degraded_pages(job)
+        is_incident = job.status == "failed" or blocked or retryable or stalled or bool(degraded_pages)
+        failure_type = self._classify_failure(job, stalled=stalled, degraded=bool(degraded_pages))
+        priority = self._priority(job, retryable=retryable, stalled=stalled, blocked=blocked, degraded=bool(degraded_pages))
         suggested_action = self._suggested_action(
             job,
             failure_type=failure_type,
             retryable=retryable,
             retry_disabled_reason=retry_disabled_reason,
             stalled=stalled,
+            degraded_pages=degraded_pages,
         )
         return DocumentJobIncidentQueueItemResponse(
             job=DocumentJobResponse(
@@ -249,8 +252,17 @@ class DocumentJobIncidentService:
                 retry_action=retry_action,
                 stalled=stalled,
                 stalled_minutes=stalled_minutes,
+                degraded_pages=degraded_pages,
             ),
         )
+
+    @staticmethod
+    def _degraded_pages(job: DocumentJobRecord) -> list[DegradedPageSummary]:
+        """只认本代已完成任务的基础质量贡献；失败或旧贡献没有降级页。"""
+        if job.status != "succeeded":
+            return []
+        base = current_base(job)
+        return list(base.degraded_pages) if base is not None else []
 
     def _validate_list_filters(
         self,
@@ -288,9 +300,11 @@ class DocumentJobIncidentService:
             raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "job_ids 不能重复。")
         return normalized
 
-    def _classify_failure(self, job: DocumentJobRecord, *, stalled: bool) -> DocumentJobIncidentFailureType:
+    def _classify_failure(self, job: DocumentJobRecord, *, stalled: bool, degraded: bool = False) -> DocumentJobIncidentFailureType:
         if stalled or job.error_code == "document_job_timeout":
             return "timeout_or_stalled"
+        if degraded:
+            return "page_degraded"
         if job.status == "failed" and job.error_code in TRANSLATION_ERROR_CODES:
             return "translation_failed"
         if job.status == "failed" and job.error_code in CONVERSION_ERROR_CODES:
@@ -334,12 +348,12 @@ class DocumentJobIncidentService:
             return True
         return any(token in haystack for token in ARTIFACT_MISSING_TOKENS)
 
-    def _priority(self, job: DocumentJobRecord, *, retryable: bool, stalled: bool, blocked: bool) -> int:
+    def _priority(self, job: DocumentJobRecord, *, retryable: bool, stalled: bool, blocked: bool, degraded: bool) -> int:
         if stalled or blocked:
             return 0
         if retryable:
             return 1
-        if job.status == "failed":
+        if job.status == "failed" or degraded:
             return 2
         return 3
 
@@ -351,9 +365,13 @@ class DocumentJobIncidentService:
         retryable: bool,
         retry_disabled_reason: str | None,
         stalled: bool,
+        degraded_pages: list[DegradedPageSummary],
     ) -> str:
         if stalled:
             return "长时间未更新，先刷新状态"
+        if degraded_pages:
+            pages = "、".join(str(item.page_number) for item in degraded_pages)
+            return f"核对第 {pages} 页的整页图像，确认可接受或修复源文件后新建任务"
         if job.retry_count >= 2:
             return "多次失败，建议查看事件日志"
         if retryable:
@@ -373,8 +391,12 @@ class DocumentJobIncidentService:
         retry_action: DocumentJobAvailableActionResponse | None,
         stalled: bool,
         stalled_minutes: int | None,
+        degraded_pages: list[DegradedPageSummary],
     ) -> list[str]:
         evidence: list[str] = []
+        for item in degraded_pages:
+            stage = "渲染" if item.trigger == "render" else "验证"
+            evidence.append(f"第 {item.page_number} 页{stage}阶段降级：{'、'.join(item.reason_codes) or '依赖页'}")
         if job.failed_stage:
             evidence.append(f"failed_stage={job.failed_stage}")
         if job.error_code:

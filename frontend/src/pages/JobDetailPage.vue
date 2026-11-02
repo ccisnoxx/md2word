@@ -493,6 +493,13 @@
             </el-table>
           </el-card>
 
+          <el-card v-if="degradedPages.length" class="page-section card-flat" shadow="never">
+            <el-alert type="warning" :closable="false" show-icon
+              title="部分页面无法转换，已按原 PDF 页面图像保留（不可编辑），结果仅可内部下载，不能批准或发布。">
+              <p v-for="line in degradedPageLines(degradedPages)" :key="line">{{ line }}</p>
+            </el-alert>
+          </el-card>
+
           <el-card v-if="job.status === 'failed'" class="page-section card-flat" shadow="never">
             <div class="section-header">
               <div>
@@ -883,6 +890,7 @@ import { copyDownloadLink, openDownloadLink, type DownloadLinkNotice } from "@/u
 import { configOptionKey, configVersionId, findConfigOption } from "@/utils/configOptions";
 import { documentJobRequestSnapshotForDisplay } from "@/utils/documentJobConfig";
 import { failureDiagnosticLines } from "@/utils/failureDiagnostic";
+import { degradedPageLines, readDegradedPages } from "@/utils/degradedPages";
 import {
   summarizeTranslationBatches,
   translationBatchAiCallLogSummaryText,
@@ -1170,6 +1178,8 @@ const translationBatchHealthText = computed(() => {
   return `成功 ${translationBatchSummary.value.succeeded} / ${translationBatchSummary.value.total}`;
 });
 const latestErrorEvent = computed(() => [...events.value].reverse().find((event) => event.level === "error") || null);
+const degradedPages = computed(() => readDegradedPages(job.value?.quality_summary));
+
 const failureSummary = computed(() => {
   if (!job.value) {
     return "任务处理失败。";

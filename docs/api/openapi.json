@@ -3805,6 +3805,7 @@
               "artifact_missing",
               "timeout_or_stalled",
               "worker_or_dispatch_failed",
+              "page_degraded",
               "unknown"
             ],
             "title": "Failure Type",
@@ -25167,6 +25168,7 @@
               "enum": [
                 "artifact_missing",
                 "conversion_failed",
+                "page_degraded",
                 "qa_unavailable",
                 "timeout_or_stalled",
                 "translation_failed",

@@ -408,8 +408,9 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
     if Counter(fragment.block_id for fragment in fragments if fragment.block_id) != Counter(blocks.keys()):
         _fail("block_inventory")
     # 用不参与翻译的源定位还原正文顺序，重读时不相信关系中自报的正证据。
+    # 派生块与整页降级的合成块都不是源块，不参与正文源顺序。
     body_sources = [block.metadata["mineru_source"] for block in document.blocks
-                    if not block.metadata.get("source_block_id") and
+                    if not block.metadata.get("source_block_id") and not block.metadata.get("synthetic") and
                     (block.layout is None or block.layout.role == "body")]
     body_sources.extend(fragment.source_span.model_dump(exclude={"bbox"})
                         for fragment in fragments if fragment.block_id is None)

@@ -48,6 +48,9 @@ from app.core.errors import ApiError
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, TableReferenceProvenance
 from app.services.document_ir.artifact_validator import MinerUArtifactValidationError
 from app.services.document_ir.integrity import DocumentIntegrityError
+from app.services.document_ir.page_degradation import (
+    PAGE_RASTER_SOURCE_PATH, degradation_closure, drop_degraded_table_groups, replace_degraded_pages,
+)
 from app.services.document_ir.table_reference_assets import (
     RASTER_EXTENSIONS, TABLE_REFERENCE_ROLE, decode_table_references,
 )
@@ -907,6 +910,8 @@ class DocumentJobExecutionService:
                         "normalized_from_sha256": image_asset.normalized_from[1]} if image_asset.normalized_from else {}),
                     **({"origin": "pdf_region_crop", "pdf_fallback": image_asset.pdf_fallback}
                        if image_asset.pdf_fallback else {}),
+                    **({"origin": "pdf_page_raster", "page_raster": image_asset.page_raster}
+                       if image_asset.page_raster else {}),
                 },
             )
             image_file_ids.append(image_file.id)
@@ -2377,6 +2382,8 @@ class DocumentJobExecutionService:
             "term_snapshot_hash": succeeded_batches[0].term_snapshot_hash if succeeded_batches else None,
             "ai_call_log_file_ids": ai_call_log_file_ids,
             "debug_archive_file_ids": debug_archive_file_ids,
+            "skipped_degraded_page_numbers": sorted(record["page_index"] + 1
+                                                    for record in translated.metadata.degraded_pages),
         }
         translation_provenance = save_translation_publication_provenance(job, publication_calls, file_service=self.file_service)
         translation_metadata["publication_provenance_file_id"] = translation_provenance.id
@@ -3234,17 +3241,32 @@ class DocumentJobExecutionService:
                 rendering.template_version_id,
                 allow_draft=draft_was_authorized_at_creation,
             )
-            render_result = self.word_renderer.render_to_result(
-                document_ir,
-                template_path=template_selection.template_path,
-                config_path=template_selection.layout_config_path,
-                image_loader=self._build_image_loader(rendering, document_ir),
-                options=DocumentIRRenderOptions(
-                    subscript_config_path=self.settings.subscript_config_path,
-                    document_language=document_ir.metadata.document_language,
-                    template_version_id=template_selection.template_version_id,
-                ),
-            )
+            def render(job: DocumentJobRecord, document: DocumentIR):
+                return self.word_renderer.render_to_result(
+                    document,
+                    template_path=template_selection.template_path,
+                    config_path=template_selection.layout_config_path,
+                    image_loader=self._build_image_loader(job, document),
+                    options=DocumentIRRenderOptions(
+                        subscript_config_path=self.settings.subscript_config_path,
+                        document_language=document.metadata.document_language,
+                        template_version_id=template_selection.template_version_id,
+                    ),
+                )
+
+            try:
+                render_result = render(rendering, document_ir)
+            except Exception as exc:
+                degraded = self._degrade_render_failure_page(rendering, ir_file, document_ir, exc, trace_id=trace_id)
+                if degraded is None:
+                    raise
+                if isinstance(degraded, DocumentJobRecord):
+                    return self._finish_selected_or_current(degraded, trace_id=trace_id)
+                # 降级后的新 IR 已成为任务权威指针；只重渲染一次，再失败按本次错误整体失败。
+                rendering, ir_file, ir_bytes, document_ir = degraded
+                attempt = rendering
+                layout_plan = build_layout_plan(document_ir)
+                render_result = render(rendering, document_ir)
             word_content = render_result.content
             checking = self.job_repository.update_document_job_if_current(
                 rendering.id,
@@ -3373,6 +3395,82 @@ class DocumentJobExecutionService:
             if failed.status == "running" and failed.retry_count == attempt.retry_count and failed.prepared_result is not None:
                 return self._finish_prepared_result(failed, trace_id=trace_id)
             return failed
+
+    def _degrade_render_failure_page(
+        self, job: DocumentJobRecord, ir_file: DocumentFileRecord, document_ir: DocumentIR, error: Exception,
+        *, trace_id: str | None,
+    ) -> tuple[DocumentJobRecord, DocumentFileRecord, bytes, DocumentIR] | DocumentJobRecord | None:
+        """第三批 C3：带页定位的渲染失败把该页（及表格依赖页）降级为整页图像，另存新 IR 并条件切换任务指针。
+
+        返回 None 表示不满足降级前提，调用方按原错误失败；返回任务记录表示指针切换落败（已被并发推进）。
+        """
+        context = self._worker_failure_evidence(error).get("failure_context")
+        rasterizer = getattr(self.document_ir_service, "page_rasterizer", None)
+        if (not isinstance(context, dict) or context.get("source_page_index") is None or rasterizer is None
+                or is_translation_document_job_mode(job.mode)
+                or isinstance(error, (ApiError, OSError, MinerUError, TablePlaceholderError, DocumentIntegrityError))):
+            return None
+        page_index = context["source_page_index"]
+        already = {record.get("page_index") for record in document_ir.metadata.degraded_pages}
+        degraded = degradation_closure(document_ir.metadata.logical_table_groups, {page_index})
+        if degraded is None or degraded & already or len(degraded | already) * 2 > len(document_ir.pages):
+            return None
+        try:
+            source = self._load_placeholder_source(job)
+            if source.file_id != job.source_file_id or placeholder_checksum(source.content) != source.checksum_sha256:
+                return None
+            rasters = {page: rasterizer.rasterize(source, page) for page in sorted(degraded)}
+            candidate = document_ir.model_copy(deep=True)
+            reason = {"reason_codes": ["render_failed"], "operation_kind": context.get("operation_kind"),
+                      "render_reason_code": context.get("reason_code")}
+            removed_ids, pending = replace_degraded_pages(
+                candidate, rasters, {page_index: reason}, source_pdf_sha256=source.checksum_sha256,
+                dpi=getattr(rasterizer, "DPI", None), trigger="render")
+            drop_degraded_table_groups(candidate, removed_ids)
+            candidate = DocumentIR.model_validate(candidate.model_dump(mode="python"))
+        except (TablePlaceholderError, ValueError):
+            # 栅格失败或替换后 IR 不再自洽（如保留组的续表诊断指向被删片段）：放弃降级。
+            return None
+        raster_file_ids: list[str] = []
+        for item in pending:
+            image_file = self.file_service.register_generated_content(
+                tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+                file_type="image_asset", filename=f"{item.asset_id}_page.png", mime_type="image/png",
+                content=item.content, object_version=f"g{job.retry_count}_{uuid4().hex}",
+                metadata={"source_file_id": job.source_file_id,
+                          "mineru_raw_result_file_id": ir_file.metadata.get("mineru_raw_result_file_id"),
+                          "source_path": PAGE_RASTER_SOURCE_PATH, "asset_id": item.asset_id, "block_id": item.block_id,
+                          "retry_count": job.retry_count, "origin": "pdf_page_raster", "page_raster": item.page_raster},
+            )
+            raster_file_ids.append(image_file.id)
+            asset = next(asset for asset in candidate.assets if asset.id == item.asset_id)
+            asset.file_id, asset.object_key = image_file.id, image_file.object_key
+            asset.mime_type, asset.checksum_sha256 = image_file.mime_type, image_file.checksum_sha256
+        ir_content = candidate.model_dump_json(indent=2).encode("utf-8")
+        new_ir_file = self.file_service.register_generated_content(
+            tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+            file_type="document_ir", filename=ir_file.original_filename,
+            object_version=f"g{job.retry_count}_{uuid4().hex}", mime_type="application/json", content=ir_content,
+            metadata={**ir_file.metadata, **self._document_ir_layout_metadata(candidate),
+                      "degraded_from_document_ir_file_id": ir_file.id},
+        )
+        switched = self.job_repository.update_document_job_if_current(
+            job.id, allowed_statuses={"running"}, allowed_stages={"rendering"},
+            expected_retry_count=job.retry_count, expected_document_ir_file_id=ir_file.id,
+            require_no_prepared_result=True, document_ir_file_id=new_ir_file.id,
+            image_asset_file_ids=[*job.image_asset_file_ids, *raster_file_ids], updated_at=utc_now(),
+        )
+        if switched is None:
+            return job
+        self._record_event(
+            switched, event_type="file_registered", stage="rendering",
+            message=f"第 {', '.join(str(page + 1) for page in sorted(degraded))} 页渲染失败，已按原 PDF 页面图像降级并重新渲染。",
+            payload={"file_id": new_ir_file.id, "file_type": "document_ir", "document_ir_file_id": new_ir_file.id,
+                     "degraded_from_document_ir_file_id": ir_file.id, "degraded_page_indexes": sorted(degraded),
+                     "image_asset_file_ids": raster_file_ids, "failure_context": context},
+            trace_id=trace_id,
+        )
+        return switched, new_ir_file, ir_content, candidate
 
     def _finish_selected_or_current(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         current = self.job_repository.get_document_job(job.id) or job

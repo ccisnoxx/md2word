@@ -53,22 +53,38 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
 
     expected_total = document_ir.metadata.source_block_count
     expected_types = dict(document_ir.metadata.source_type_counts)
-    main_blocks = [block for block in document_ir.blocks if not block.metadata.get("source_block_id")]
+    # 合成块（整页降级的提示与页面图像）不是源块；降级移除的源块按记录计入，保持源→IR 一一对账。
+    main_blocks = [block for block in document_ir.blocks
+                   if not block.metadata.get("source_block_id") and not block.metadata.get("synthetic")]
     actual_types = Counter(str(block.metadata.get("source_type") or "text") for block in main_blocks)
+    degraded_count = 0
+    for record in document_ir.metadata.degraded_pages:
+        degraded_count += int(record.get("removed_source_block_count") or 0)
+        actual_types.update({str(key): int(value) for key, value in (record.get("removed_source_type_counts") or {}).items()})
+    accounted_count = len(main_blocks) + degraded_count
+    # 渲染阶段降级没有验证报告问题，以此计数进入基础质量 blocker。
+    render_degraded = sum(record.get("trigger") == "render" for record in document_ir.metadata.degraded_pages)
+    # 降级页摘要由基础质量按受控模型校验后公开；此处只做投影，不含正文与指针。
+    degraded_pages = [{"page_number": record["page_index"] + 1, "trigger": record.get("trigger"),
+                       "reason_codes": list(record.get("reason_codes") or [])}
+                      for record in document_ir.metadata.degraded_pages]
     flags: list[str] = []
 
     # 旧 IR 没有 inventory，无法可靠重建 source 合同；仅正式 converter 产物执行对账。
     if expected_total is None and not expected_types:
         return {
             "expected_source_block_count": None,
-            "ir_main_block_count": len(main_blocks),
+            "ir_main_block_count": accounted_count,
+            "degraded_source_block_count": degraded_count,
+            "render_degraded_page_count": render_degraded,
+            "degraded_pages": degraded_pages,
             "source_block_count_delta": None,
             "expected_source_type_counts": {},
             "ir_source_type_counts": dict(sorted(actual_types.items())),
             "blocking_quality_flags": [],
         }
 
-    if expected_total is not None and expected_total != len(main_blocks):
+    if expected_total is not None and expected_total != accounted_count:
         flags.append("source_ir_integrity:block_count_mismatch")
     if expected_types and expected_types != dict(actual_types):
         flags.append("source_ir_integrity:type_count_mismatch")
@@ -103,8 +119,11 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
     unique_flags = list(dict.fromkeys(flags))
     return {
         "expected_source_block_count": expected_total,
-        "ir_main_block_count": len(main_blocks),
-        "source_block_count_delta": None if expected_total is None else len(main_blocks) - expected_total,
+        "ir_main_block_count": accounted_count,
+        "degraded_source_block_count": degraded_count,
+        "render_degraded_page_count": render_degraded,
+        "degraded_pages": degraded_pages,
+        "source_block_count_delta": None if expected_total is None else accounted_count - expected_total,
         "expected_source_type_counts": expected_types,
         "ir_source_type_counts": dict(sorted(actual_types.items())),
         "blocking_quality_flags": unique_flags,

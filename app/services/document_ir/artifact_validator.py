@@ -30,6 +30,8 @@ from app.services.document_ir.mineru_package import (
 
 
 ALLOWED_RASTER_FORMATS = frozenset({"PNG", "JPEG", "GIF", "BMP", "TIFF", "WEBP"})
+# 可推迟到 converter 结算的页级问题：P0-4 图片回退与第三批整页降级。
+DEFERRABLE_ISSUE_CODES = frozenset({"missing_image_asset", "invalid_image_asset", "invalid_table_html"})
 SEMANTIC_TEXT_FIELDS = frozenset({"text", "latex", "math_content", "equation_content", "description", "alt"})
 SEMANTIC_RUN_FIELDS = frozenset({"title_content", "paragraph_content", "page_header_content", "page_footer_content", "page_number_content", "item_content"})
 ANNOTATION_FIELDS = frozenset({"caption", "footnote", "captions", "footnotes", "table_caption", "table_footnote",
@@ -398,15 +400,24 @@ class MinerUArtifactValidator:
                             content_list_path: Path) -> None:
         """既有归一化完成后验证保留对象；原始安全问题始终在此前阻断。"""
         filtered = {source["json_pointer"] for source in self.report.normalization.get("filtered_blocks", [])}
+        degradable_tables: set[str] = set()
+        effective_pointers = {block["_mineru_source"]["json_pointer"] for block in effective_blocks}
         for issue in self.report.blockers:
             # 旧空表判据只读取可识别 HTML；非空坏 HTML 不能借合并回执获得空表豁免。
             if issue.code == "invalid_table_html" and issue.json_pointer not in filtered and not issue.stops_conversion:
+                # 只推迟仍在有效块中的坏表格；已被归一化移除的块无从降级，必须照旧中止。
+                if issue.page_index is not None and issue.json_pointer in effective_pointers:
+                    # 第三批 C1：有页码的坏表格先推迟，由 converter 决定整页降级或恢复中止。
+                    degradable_tables.add(issue.json_pointer)
+                    continue
                 issue.stops_conversion = True
                 self.report.fatal_count += 1
                 self.report.can_convert = False
                 self.report.first_fatal = self.report.first_fatal or issue
         for block in effective_blocks:
             locator = MinerUSourceLocator.model_validate(block["_mineru_source"])
+            if locator.json_pointer in degradable_tables:
+                block["_mineru_degradable"] = locator.json_pointer
             if classify_mineru_block(block, locator.source_type or "") == "image":
                 asset, status = self._validate_asset(block, locator, package_root, content_list_path.parent,
                                                      required=True, defer_fatal=True)
@@ -416,10 +427,11 @@ class MinerUArtifactValidator:
                     block["_mineru_image_fallback"] = locator.json_pointer
         self.check_report_limits()
         if not self.report.can_convert:
-            # 已有其他中止错误时不再尝试回退；待回退图片恢复为中止错误，报告与回退功能引入前一致。
+            # 已有其他中止错误时不再尝试回退或降级；推迟问题恢复为中止，报告与这些功能引入前一致。
             for block in effective_blocks:
-                if block.get("_mineru_image_fallback") is not None:
-                    self.resolve_image_fallback(block["_mineru_image_fallback"], recovered=False)
+                for key in ("_mineru_image_fallback", "_mineru_degradable"):
+                    if block.get(key) is not None:
+                        self.restore_deferred_fatal(block[key])
             raise MinerUArtifactValidationError(self.report)
         self.report.sort_details()
 
@@ -443,10 +455,20 @@ class MinerUArtifactValidator:
             self.add_issue("image_asset_pdf_fallback", locator, severity="warning", stops_conversion=False,
                            field="image_source", facts={"reason": issue.facts.get("reason")})
         else:
-            issue.stops_conversion = True
-            self.report.fatal_count += 1
-            self.report.can_convert = False
-            self.report.first_fatal = self.report.first_fatal or issue
+            self.restore_deferred_fatal(json_pointer)
+            return
+        self.check_report_limits()
+
+    def restore_deferred_fatal(self, json_pointer: str) -> None:
+        """把推迟的非中止问题（回退图片或可降级表格）恢复为中止错误。"""
+        issue = next((item for item in self.report.blockers if item.json_pointer == json_pointer
+                      and item.code in DEFERRABLE_ISSUE_CODES and not item.stops_conversion), None)
+        if issue is None:
+            raise ValueError("推迟问题缺少对应的验证记录。")
+        issue.stops_conversion = True
+        self.report.fatal_count += 1
+        self.report.can_convert = False
+        self.report.first_fatal = self.report.first_fatal or issue
         self.check_report_limits()
 
     def add_package_error(self, error: MinerUPackageError, *, field: str | None = None) -> None:

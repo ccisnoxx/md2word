@@ -1447,3 +1447,114 @@ Worker 失败消息只保留固定码构造的消息，其余输出异常类型�
 
 - 分支 codex/safe-error-message-20261102 叠加于 PR #22 分支，#22 合并后推送
 - 第三批部分成功按 D1–D6 推进 C1+C2；5.4 暂缓
+
+
+## Session 44: 第三批 C1+C2：验证阶段整页降级与依赖闭包
+
+**Date**: 2026-11-02
+**Task**: 第三批 C1+C2：验证阶段整页降级与依赖闭包
+**Branch**: `codex/partial-success-20261102`
+
+### Summary
+
+带页码的坏表格 HTML 与回退失败的正文图片改为整页降级：替换为提示段落与原 PDF 整页图像，跨页表格组依赖页一并降级；前提不满足时按原错误整体失败；任务成功但质量 blocked、交付 internal_draft。
+
+### Main Changes
+
+- artifact_validator 推迟可降级表格问题，restore_deferred_fatal 统一恢复中止
+- mineru_converter 新增 _degrade_pages/_degradation_closure，PopplerPdfPageRasterizer 144 DPI 整页栅格
+- integrity 扣除降级源块并排除合成块，输出 degraded_source_block_count
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `57d4041e` | (see git log) |
+| `038501d6` | (see git log) |
+
+### Testing
+
+- [OK] tests/test_page_degradation.py 6 项通过；8 模块 223 项回归失败集合与基线一致
+- [OK] 真实 Poppler OPA228 两页样本第 2 页降级，DOCX 目视正确
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- C3 渲染阶段降级、C4 展示与翻译适配；推送待 PR #22 合并后
+
+
+## Session 45: 第三批 C3：渲染阶段整页降级
+
+**Date**: 2026-11-02
+**Task**: 第三批 C3：渲染阶段整页降级
+**Branch**: `codex/partial-success-20261102`
+
+### Summary
+
+带页定位的渲染失败把该页及表格依赖页降级为整页图像，另存新 IR 并条件切换任务指针后重渲染一次；渲染阶段降级计入 base_quality blocker；页替换逻辑抽为 page_degradation 共用模块。
+
+### Main Changes
+
+- 新增 app/services/document_ir/page_degradation.py，converter 改为调用
+- execution._degrade_render_failure_page 与一次重渲染
+- 来源对账输出 render_degraded_page_count，base_quality 计入 blocker
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cd9f98d9` | (see git log) |
+| `d2d532e2` | (see git log) |
+
+### Testing
+
+- [OK] tests/test_render_page_degradation.py 3 项通过；C1/P0-4 13 项保持通过
+- [OK] 12 模块 207 项与 test_fastapi_jobs_backend 217 项失败集合与基线一致
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- C4 展示与翻译适配；推送待 PR #22 合并后
+
+
+## Session 46: 第三批 C4：降级页展示与翻译适配（第三批完成）
+
+**Date**: 2026-11-02
+**Task**: 第三批 C4：降级页展示与翻译适配（第三批完成）
+**Branch**: `codex/partial-success-20261102`
+
+### Summary
+
+降级页写入基础质量贡献并在详情公开；异常中心收录降级成功任务（page_degraded）；翻译与复核单元跳过合成块并记录跳过页；第三批部分成功与整页降级父任务归档。
+
+### Main Changes
+
+- base_quality 新增 DegradedPageSummary 与 degraded_pages（仅非空序列化）
+- incidents 新增 page_degraded 类型；前端详情降级提示与异常中心文案
+- extract_translation_items 跳过 metadata.synthetic；translation.skipped_degraded_page_numbers
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8d103e13` | (see git log) |
+| `5dfebb03` | (see git log) |
+
+### Testing
+
+- [OK] tests/test_degraded_page_display.py 2 项通过；28 模块 604 项失败集合与基线一致
+- [OK] vue-tsc 通过；vitest 仅既有 jobRequestRaces 14 项失败
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- PR #22 合并后依次推送 safe-error-message 与 partial-success 分支并建 PR；5.4 宽表横排仍暂缓
