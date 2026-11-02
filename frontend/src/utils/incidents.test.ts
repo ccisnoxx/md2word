@@ -5,6 +5,7 @@ import {
   buildIncidentDiagnosticGuidance,
   countBatchRetryable,
   failedOrSkippedBatchItems,
+  incidentFailureTagType,
   incidentPriorityLabel,
   isDocumentJobIncidentStage,
   isIncidentFailureType,
@@ -129,6 +130,15 @@ describe("incident helpers", () => {
   it("labels stalled or blocked incidents ahead of retryable incidents", () => {
     expect(incidentPriorityLabel(buildIncident("stalled", false, true))).toBe("P0");
     expect(incidentPriorityLabel(buildIncident("retryable", true))).toBe("P1");
+  });
+
+  it("整页降级的成功任务按 P2 展示并给出核对降级页的指引", () => {
+    const degraded = buildIncident("degraded", false);
+    degraded.job.status = "succeeded";
+    degraded.failure_type = "page_degraded";
+    expect(incidentPriorityLabel(degraded)).toBe("P2");
+    expect(incidentFailureTagType("page_degraded")).toBe("warning");
+    expect(buildIncidentDiagnosticGuidance(degraded).bullets.join(" ")).toContain("整页图像");
   });
 
   it("builds diagnostic guidance from retryability, failure type, and retry count", () => {

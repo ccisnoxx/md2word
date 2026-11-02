@@ -1696,6 +1696,7 @@ export type DocumentJobIncidentFailureType =
   | "artifact_missing"
   | "timeout_or_stalled"
   | "worker_or_dispatch_failed"
+  | "page_degraded"
   | "unknown";
 
 export type DocumentJobIncidentSort =

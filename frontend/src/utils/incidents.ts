@@ -19,6 +19,7 @@ export const incidentFailureTypes: DocumentJobIncidentFailureType[] = [
   "artifact_missing",
   "timeout_or_stalled",
   "worker_or_dispatch_failed",
+  "page_degraded",
   "unknown",
 ];
 
@@ -39,6 +40,7 @@ export const incidentFailureTypeText: Record<DocumentJobIncidentFailureType, str
   artifact_missing: "产物缺失",
   timeout_or_stalled: "超时/停滞",
   worker_or_dispatch_failed: "Worker/投递失败",
+  page_degraded: "整页降级",
   unknown: "未知",
 };
 
@@ -82,7 +84,8 @@ export function incidentFailureTagType(
   if (failureType === "conversion_failed" || failureType === "translation_failed" || failureType === "worker_or_dispatch_failed") {
     return "danger";
   }
-  if (failureType === "artifact_missing" || failureType === "timeout_or_stalled" || failureType === "qa_unavailable") {
+  if (failureType === "artifact_missing" || failureType === "timeout_or_stalled" || failureType === "qa_unavailable"
+    || failureType === "page_degraded") {
     return "warning";
   }
   return "info";
@@ -95,7 +98,7 @@ export function incidentPriorityLabel(item: DocumentJobIncidentQueueItemResponse
   if (item.retryable) {
     return "P1";
   }
-  if (item.job.status === "failed") {
+  if (item.job.status === "failed" || item.failure_type === "page_degraded") {
     return "P2";
   }
   return "P3";
@@ -123,6 +126,8 @@ export function buildIncidentDiagnosticGuidance(item: DocumentJobIncidentQueueIt
     bullets.push("先打开 QA 入口或任务详情，确认 DocumentIR、AI 调用日志和 debug 归档是否可读。");
   } else if (item.failure_type === "timeout_or_stalled" || item.stalled) {
     bullets.push(`任务已停滞${item.stalled_minutes !== null ? ` ${item.stalled_minutes} 分钟` : ""}，先刷新诊断和事件再升级处理。`);
+  } else if (item.failure_type === "page_degraded") {
+    bullets.push("任务已生成但部分页面以原 PDF 整页图像保留，只能内部下载；核对证据摘要中的降级页，确认可接受或修复源文件后新建任务。");
   } else if (item.failure_type === "worker_or_dispatch_failed") {
     bullets.push("优先查看最近事件中的投递、Worker 或队列错误，保留 trace_id 给技术运营。");
   }

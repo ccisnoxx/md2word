@@ -2382,6 +2382,8 @@ class DocumentJobExecutionService:
             "term_snapshot_hash": succeeded_batches[0].term_snapshot_hash if succeeded_batches else None,
             "ai_call_log_file_ids": ai_call_log_file_ids,
             "debug_archive_file_ids": debug_archive_file_ids,
+            "skipped_degraded_page_numbers": sorted(record["page_index"] + 1
+                                                    for record in translated.metadata.degraded_pages),
         }
         translation_provenance = save_translation_publication_provenance(job, publication_calls, file_service=self.file_service)
         translation_metadata["publication_provenance_file_id"] = translation_provenance.id

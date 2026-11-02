@@ -74,6 +74,8 @@ class RenderPageDegradationPipelineTests(TestCase):
         job, events, approve, files, record, contents = self.run_job(_pages(3), _failing_on("Page 2 body"))
         self.assertEqual(job["status"], "succeeded", (job["error_code"], job["error_message"]))
         self.assertEqual((job["quality_status"], job["delivery_status"]), ("blocked", "internal_draft"))
+        self.assertEqual(job["quality_summary"]["checks_v1"]["document_base"]["degraded_pages"],
+                         [{"page_number": 2, "trigger": "render", "reason_codes": ["render_failed"]}])
         self.assertGreaterEqual(approve.status_code, 400, approve.text)
         switch = next(event for event in events if event["payload"].get("degraded_from_document_ir_file_id"))
         self.assertEqual(switch["payload"]["degraded_page_indexes"], [1])

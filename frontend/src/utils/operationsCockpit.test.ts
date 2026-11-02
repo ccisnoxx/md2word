@@ -154,6 +154,7 @@ describe("operations cockpit helpers", () => {
           artifact_missing: 0,
           timeout_or_stalled: 0,
           worker_or_dispatch_failed: 0,
+          page_degraded: 0,
           unknown: 0,
         },
       },

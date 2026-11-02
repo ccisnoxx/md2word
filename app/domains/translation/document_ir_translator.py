@@ -521,6 +521,9 @@ class DocumentIRTranslationService:
         targets: list[DocumentIRTranslationTarget] = []
         items: list[TranslationTextItem] = []
         for block in sorted(document_ir.blocks, key=lambda item: item.order):
+            if block.metadata.get("synthetic"):
+                # 整页降级的提示与页面图像不是源文本：提示保持中文，不送翻译、不进复核单元。
+                continue
             cls._append_block_text(block, targets, items)
             cls._append_list_items(block, targets, items)
             cls._append_table_text_nodes(block, targets, items)

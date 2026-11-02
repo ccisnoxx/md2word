@@ -33,6 +33,14 @@ class BaseQualityCounts(BaseModel):
     unknown_flag_count: Count = 0
 
 
+class DegradedPageSummary(BaseModel):
+    """第三批整页降级的公开摘要：页码、触发阶段与受控原因码，不含正文或源指针。"""
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    page_number: Annotated[int, Field(ge=1)]
+    trigger: Literal["validation", "render"]
+    reason_codes: list[Literal["invalid_table_html", "missing_image_asset", "invalid_image_asset", "render_failed"]]
+
+
 class BaseQualityContribution(BaseModel):
     """有界安全摘要；任意正文、路径、配置及私有报告只能留在原 receipt。"""
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -46,6 +54,8 @@ class BaseQualityContribution(BaseModel):
     receipt_sha256: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")] | None = None
     counts: BaseQualityCounts = Field(default_factory=BaseQualityCounts)
     warning_codes: list[str] = Field(default_factory=list)
+    # 只在确有降级页时序列化，未降级任务的持久形状与公开投影保持不变。
+    degraded_pages: list[DegradedPageSummary] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
 def fresh_quality_summary(generation: int) -> dict:
@@ -116,6 +126,10 @@ def derive_base_quality(job: Any) -> dict | None:
         complete = False
     else:
         blockers += render_degraded
+    try:
+        degraded_pages = [DegradedPageSummary.model_validate(item) for item in source.get("degraded_pages", [])]
+    except (ValidationError, TypeError):
+        degraded_pages, complete = [], False
     report_value = metadata.get("mineru_validation")
     try:
         source_report = MinerUValidationReport.model_validate(report_value)
@@ -185,4 +199,4 @@ def derive_base_quality(job: Any) -> dict | None:
         evaluation_state="complete" if complete else "incomplete",
         reason_code="base_checks_complete" if complete else "base_risk_unclassified" if unknown_count else "base_evidence_incomplete",
         report_sha256=canonical_sha256(metadata), receipt_sha256=receipt_identity(job), counts=counts,
-        warning_codes=sorted(codes)).model_dump(mode="json")
+        warning_codes=sorted(codes), degraded_pages=degraded_pages).model_dump(mode="json")
