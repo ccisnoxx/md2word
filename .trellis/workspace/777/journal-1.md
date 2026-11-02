@@ -1484,3 +1484,40 @@ Worker 失败消息只保留固定码构造的消息，其余输出异常类型�
 ### Next Steps
 
 - C3 渲染阶段降级、C4 展示与翻译适配；推送待 PR #22 合并后
+
+
+## Session 45: 第三批 C3：渲染阶段整页降级
+
+**Date**: 2026-11-02
+**Task**: 第三批 C3：渲染阶段整页降级
+**Branch**: `codex/partial-success-20261102`
+
+### Summary
+
+带页定位的渲染失败把该页及表格依赖页降级为整页图像，另存新 IR 并条件切换任务指针后重渲染一次；渲染阶段降级计入 base_quality blocker；页替换逻辑抽为 page_degradation 共用模块。
+
+### Main Changes
+
+- 新增 app/services/document_ir/page_degradation.py，converter 改为调用
+- execution._degrade_render_failure_page 与一次重渲染
+- 来源对账输出 render_degraded_page_count，base_quality 计入 blocker
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cd9f98d9` | (see git log) |
+| `d2d532e2` | (see git log) |
+
+### Testing
+
+- [OK] tests/test_render_page_degradation.py 3 项通过；C1/P0-4 13 项保持通过
+- [OK] 12 模块 207 项与 test_fastapi_jobs_backend 217 项失败集合与基线一致
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- C4 展示与翻译适配；推送待 PR #22 合并后
