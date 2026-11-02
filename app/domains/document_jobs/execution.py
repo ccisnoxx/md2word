@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from app.domains.document_jobs.table_evidence import has_evidence, save_report, verify_report, validate_candidate_binding, recheck_verified_report
 from app.services.tables.evidence import TableEvidenceError
+from app.services.tables.html_normalizer import TableBuildError
+from app.services.tables.quality import TableValidationError
 
 # app/domains/document_jobs/execution.py: 提供 document_jobs Worker 投递端口和幂等执行骨架。
 
@@ -77,6 +79,7 @@ from app.services.renderer.evidence import (
     validate_persisted_renderer_content,
 )
 from app.services.renderer import image_evidence
+from app.services.renderer.table_renderer import TableRenderError
 from app.services.renderer.word_renderer import FAILURE_CONTEXT_ATTRIBUTE
 from app.services.renderer.block_anchors import validate_block_anchor_evidence
 from app.services.renderer.layout_plan import build_layout_plan
@@ -103,6 +106,11 @@ from app.domains.translation.integrity import (
     ValidatedTranslationBatch,
 )
 from app.domains.translation.provider import OpenAICompatibleTranslationProvider, TranslationProviderCallError, TranslationProviderResponseError
+
+
+# 消息只由固定错误码或固定文本构造的异常；其消息可原样作为任务 error_message。
+SAFE_MESSAGE_ERRORS = (MinerUArtifactValidationError, TablePlaceholderError, TableRenderError, TableBuildError,
+                       TableEvidenceError, TableValidationError, TranslationIntegrityError)
 
 
 class _TranslationBatchStorageError(RuntimeError):
@@ -1231,7 +1239,7 @@ class DocumentJobExecutionService:
                     job,
                     failed_stage="translating",
                     error_code="translation_failed",
-                    error_message=str(exc),
+                    error_message=self._worker_failure_message(exc),
                     trace_id=trace_id,
                     integrity=exc.evidence,
                 )
@@ -1565,7 +1573,7 @@ class DocumentJobExecutionService:
                 claimed,
                 job,
                 expected_plans=expected_plans,
-                error_message=str(exc),
+                error_message=self._worker_failure_message(exc),
                 trace_id=trace_id,
             )
         except (KeyError, ValueError, RuntimeError, FileNotFoundError, OSError) as exc:
@@ -1668,7 +1676,7 @@ class DocumentJobExecutionService:
                     expected_plans=installed_batches,
                     status="failed",
                     error_code=exc.code,
-                    error_message=str(exc),
+                    error_message=self._worker_failure_message(exc),
                     retryable=False,
                     updated_at=utc_now(),
                 )
@@ -1676,7 +1684,7 @@ class DocumentJobExecutionService:
                     current_job,
                     failed_stage="translating",
                     error_code="translation_failed",
-                    error_message=str(exc),
+                    error_message=self._worker_failure_message(exc),
                     trace_id=trace_id,
                 )
                 return None
@@ -2256,7 +2264,7 @@ class DocumentJobExecutionService:
                     job,
                     failed_stage="translation_validating",
                     error_code=error_code,
-                    error_message=str(exc),
+                    error_message=self._worker_failure_message(exc),
                     trace_id=trace_id,
                     duration_ms=int((time.perf_counter() - started_at) * 1000),
                 )
@@ -3877,14 +3885,19 @@ class DocumentJobExecutionService:
 
     @staticmethod
     def _worker_failure_message(error: Exception) -> str:
-        """完整性异常的自由证据也不能借异常消息进入事件或日志。"""
+        """Worker 失败消息唯一构造点：只保留由固定码/固定文本构造的消息，任意异常原文不进入任务、事件或日志。"""
         if isinstance(error, DocumentIntegrityError):
             return str(DocumentIntegrityError(error.boundary, build_renderer_event_summary(dict(error.evidence))))
         if isinstance(error, MinerUError):
             return "MinerU 外部调用失败。"
         if isinstance(error, OSError):
             return "Worker 文件或对象存储操作失败。"
-        return str(error)
+        if isinstance(error, SAFE_MESSAGE_ERRORS):
+            return str(error)
+        if isinstance(error, DocumentIRTranslationError):
+            # 该类型会包装上游 str(exc)，只公开机器码。
+            return f"翻译处理失败：{error.code}。"
+        return f"Worker 执行失败（{type(error).__name__}），详见事件 trace_id。"
 
     @staticmethod
     def _worker_failure_evidence(error: Exception) -> dict[str, Any]:

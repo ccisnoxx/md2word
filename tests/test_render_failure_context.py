@@ -109,7 +109,9 @@ class RenderFailureDiagnosticApiTests(TestCase):
         self.assertTrue(diagnostic["block_ids"][0].startswith("block_"))
         self.assertEqual(diagnostics["failure_diagnostic"], diagnostic)
         failed = next(event for event in events if event["event_type"] == "stage_failed")
-        # error_message 记录异常消息属既有行为（不在本任务范围）；新增的 failure_context 不得含消息原文。
-        self.assertNotIn("内部细节", str(failed["payload"]["failure_context"]))
+        # 异常原文既不进入 failure_context，也不进入任务与事件的 error_message。
+        self.assertNotIn("内部细节", str(failed["payload"]))
+        self.assertNotIn("内部细节", detail["error_message"])
+        self.assertIn("ValueError", detail["error_message"])
         self.assertEqual(set(failed["payload"]["failure_context"]),
                          {"operation_index", "operation_kind", "section_id", "block_ids", "source_page_index", "unit_id", "reason_code"})
