@@ -39,7 +39,7 @@ from app.domains.document_jobs.incidents import DocumentJobIncidentService
 from app.domains.document_jobs.service import DocumentJobService
 from app.domains.files import FileRetentionPolicyService, FileUploadService
 from app.services.document_ir import MinerUToDocumentIRService
-from app.infrastructure.pdf_crop import PopplerPdfTableCropProvider
+from app.infrastructure.pdf_crop import PopplerPdfPageRasterizer, PopplerPdfTableCropProvider
 from app.domains.jobs.artifact_storage import LocalArtifactStorageAdapter
 from app.domains.jobs.artifacts import JobArtifactService
 from app.domains.jobs.command import JobCommandService
@@ -188,7 +188,8 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_file_repository,
         retention_days_resolver=file_retention_policy_service.resolve_retention_days,
     )
-    document_ir_service = MinerUToDocumentIRService(pdf_crop_provider=PopplerPdfTableCropProvider())
+    document_ir_service = MinerUToDocumentIRService(pdf_crop_provider=PopplerPdfTableCropProvider(),
+                                                    page_rasterizer=PopplerPdfPageRasterizer())
     ai_provider_config_service = AiProviderConfigService(resolved_settings)
     mineru_config_service = MinerUConfigService(resolved_settings)
     translation_provider = build_translation_provider(

@@ -87,6 +87,11 @@ class PdfTableCropProvider(Protocol):
     def crop(self, request: PdfCropRequest) -> PdfCropResult: ...
 
 
+class PdfPageRasterizer(Protocol):
+    """整页降级用：返回源 PDF 指定页的 PNG；失败抛 TablePlaceholderError。"""
+    def rasterize(self, source: PdfCropSource, page_index: int) -> bytes: ...
+
+
 @dataclass(frozen=True, slots=True)
 class PlaceholderAsset:
     asset_id: str

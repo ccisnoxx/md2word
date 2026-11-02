@@ -907,6 +907,8 @@ class DocumentJobExecutionService:
                         "normalized_from_sha256": image_asset.normalized_from[1]} if image_asset.normalized_from else {}),
                     **({"origin": "pdf_region_crop", "pdf_fallback": image_asset.pdf_fallback}
                        if image_asset.pdf_fallback else {}),
+                    **({"origin": "pdf_page_raster", "page_raster": image_asset.page_raster}
+                       if image_asset.page_raster else {}),
                 },
             )
             image_file_ids.append(image_file.id)

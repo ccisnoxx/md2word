@@ -37,6 +37,7 @@ from app.services.document_ir.integrity import DocumentIntegrityError, build_sou
 from app.services.document_ir.caption_reconciler import reconcile_captions
 from app.services.document_ir.logical_table_group import TableSourceLedger, attach_logical_table_groups, capture_table_sources
 from app.services.document_ir.artifact_validator import (
+    DEFERRABLE_ISSUE_CODES,
     MinerUArtifactValidator, MinerUArtifactValidationError, MinerUValidationReport, ValidatedImage, ValidatedTableReference,
 )
 from app.services.document_ir.mineru_package import (
@@ -47,6 +48,7 @@ from app.services.document_ir.models import (
     DocumentIR,
     DocumentIRAsset,
     DocumentIRBlock,
+    DocumentIRBlockLayout,
     DocumentIRBlockType,
     DocumentIRMetadata,
     DocumentIRPage,
@@ -54,11 +56,13 @@ from app.services.document_ir.models import (
 from app.services.document_ir.table_annotations import split_table_annotation_texts
 from app.services.document_ir.table_reference_assets import RASTER_EXTENSIONS, TableReferenceAsset, attach_table_references
 from app.services.document_ir.table_placeholder import (
-    PdfCropRequest, PdfCropSource, PdfTableCropProvider, PlaceholderAsset, TablePlaceholderError, checksum,
+    PdfCropRequest, PdfCropSource, PdfPageRasterizer, PdfTableCropProvider, PlaceholderAsset, TablePlaceholderError, checksum,
     prepare_placeholders, validate_geometry, validate_image,
 )
 
 PDF_FALLBACK_SOURCE_PATH = "derived/pdf-region-crop.png"
+PAGE_RASTER_SOURCE_PATH = "derived/pdf-page-raster.png"
+DEGRADED_PAGE_NOTICE = "第 {page} 页因 {reasons} 无法转换，已按原 PDF 页面图像保留，本页不可编辑。"
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +77,8 @@ class MinerUImageAsset:
     normalized_from: tuple[str, str] | None = None
     # P0-4：MinerU 图片不可用时由源 PDF 裁切；记录页码、原始 bbox、PDF 点框、frame 与源 PDF sha256。
     pdf_fallback: dict[str, Any] | None = None
+    # 第三批 C1：整页降级的页面图像；记录页码、源 PDF sha256 与 DPI。
+    page_raster: dict[str, Any] | None = None
 
     @property
     def stored_name(self) -> str:
@@ -96,9 +102,11 @@ class MinerUToDocumentIRService:
     """P0 MinerU -> DocumentIR v2 转换器，优先保留块顺序和资产引用。"""
 
     def __init__(self, *, policy: MinerUValidationPolicy = DEFAULT_POLICY,
-                 pdf_crop_provider: PdfTableCropProvider | None = None) -> None:
+                 pdf_crop_provider: PdfTableCropProvider | None = None,
+                 page_rasterizer: PdfPageRasterizer | None = None) -> None:
         self.policy = policy
         self.pdf_crop_provider = pdf_crop_provider
+        self.page_rasterizer = page_rasterizer
 
     def convert_zip(
         self,
@@ -202,6 +210,11 @@ class MinerUToDocumentIRService:
         source_loader = functools.cache(placeholder_source_loader) if placeholder_source_loader is not None else None
         fallback_crops = self._crop_image_fallbacks(raw_blocks, pages, validator, source_loader,
                                                     source_file_id=source_file_id)
+        degradable_pages = {parse_page_index(block) for block in raw_blocks if block.get("_mineru_degradable")}
+        if degradable_pages and (None in degradable_pages or self.page_rasterizer is None or source_loader is None
+                                 or len(degradable_pages) * 2 > len(pages)):
+            # 降级前提不满足时在构建 IR 之前中止，不产生半合法 IR。
+            self._abort_deferred(raw_blocks, validator)
 
         for index, raw_block in enumerate(raw_blocks):
             block_id = f"block_{index + 1:04d}"
@@ -247,7 +260,10 @@ class MinerUToDocumentIRService:
                 asset_id = f"asset_{block_id}"
                 asset_ref = asset_id
                 fallback_pointer = raw_block.get("_mineru_image_fallback")
-                if fallback_pointer is not None:
+                if raw_block.get("_mineru_degradable") is not None:
+                    # 回退失败但可整页降级：该页随后整体替换为页面图像，此处不登记资产。
+                    asset_ref = None
+                elif fallback_pointer is not None:
                     content, fallback = fallback_crops[fallback_pointer]
                     image_assets.append(MinerUImageAsset(
                         asset_id=asset_id, block_id=block_id, source_path=PDF_FALLBACK_SOURCE_PATH,
@@ -327,6 +343,8 @@ class MinerUToDocumentIRService:
             assets=ir_assets,
             quality_flags=quality_flags,
         )
+        table_sources = self._degrade_pages(document, raw_blocks, table_sources, validator, source_loader,
+                                            image_assets, source_file_id=source_file_id)
         # 在来源账本/ref owner 上准备事实，再一次验证最终模型与源清单；不输出半合法 IR。
         attach_logical_table_groups(document, table_sources)
         reference_assets = attach_table_references(document, table_references)
@@ -362,11 +380,132 @@ class MinerUToDocumentIRService:
                 failed.append(pointer)
         for pointer in crops:
             validator.resolve_image_fallback(pointer, recovered=True)
-        for pointer in failed:
-            validator.resolve_image_fallback(pointer, recovered=False)
-        if failed:
-            raise MinerUArtifactValidationError(validator.report)
+        failed_blocks = [block for block in raw_blocks if block.get("_mineru_image_fallback") in set(failed)]
+        if any(parse_page_index(block) is None for block in failed_blocks):
+            self._abort_deferred(raw_blocks, validator, extra=failed)
+        for block in failed_blocks:
+            # 回退失败的图片留待整页降级结算；降级不可行时由 _degrade_pages 恢复中止。
+            block["_mineru_degradable"] = block["_mineru_image_fallback"]
         return crops
+
+    @staticmethod
+    def _abort_deferred(raw_blocks: list[dict[str, Any]], validator: MinerUArtifactValidator,
+                        *, extra: list[str] = ()) -> None:
+        """降级或回退不可行：所有仍推迟的问题恢复为中止后抛出，报告与这些功能引入前一致。"""
+        pointers = {block["_mineru_degradable"] for block in raw_blocks if block.get("_mineru_degradable")}
+        for pointer in sorted(pointers | set(extra)):
+            validator.restore_deferred_fatal(pointer)
+        raise MinerUArtifactValidationError(validator.report)
+
+    def _degrade_pages(self, document: DocumentIR, raw_blocks: list[dict[str, Any]], table_sources: TableSourceLedger,
+                       validator: MinerUArtifactValidator, source_loader: Callable[[], PdfCropSource] | None,
+                       image_assets: list[MinerUImageAsset], *, source_file_id: str) -> TableSourceLedger:
+        """第三批 C1+C2：可降级问题所在页及其表格依赖页替换为提示 + 整页图像；任一前提不满足即整体中止。"""
+        degradable = [block for block in raw_blocks if block.get("_mineru_degradable")]
+        if not degradable:
+            return table_sources
+        candidate_pages = {parse_page_index(block) for block in degradable}
+        if None in candidate_pages or self.page_rasterizer is None or source_loader is None:
+            self._abort_deferred(raw_blocks, validator)
+        degraded = self._degradation_closure(document, table_sources, candidate_pages)
+        if degraded is None or len(degraded) * 2 > len(document.pages):
+            self._abort_deferred(raw_blocks, validator)
+        source = source_loader()
+        if source.file_id != source_file_id or checksum(source.content) != source.checksum_sha256:
+            self._abort_deferred(raw_blocks, validator)
+        rasters: dict[int, bytes] = {}
+        for page_index in sorted(degraded):
+            try:
+                rasters[page_index] = self.page_rasterizer.rasterize(source, page_index)
+            except TablePlaceholderError:
+                self._abort_deferred(raw_blocks, validator)
+        reasons: dict[int, dict[str, list[str]]] = {}
+        for block in degradable:
+            pointer = block["_mineru_degradable"]
+            issue = next(item for item in validator.report.blockers if item.json_pointer == pointer
+                         and item.code in DEFERRABLE_ISSUE_CODES and not item.stops_conversion)
+            entry = reasons.setdefault(parse_page_index(block), {"reason_codes": [], "issue_pointers": []})
+            entry["reason_codes"].append(issue.code)
+            entry["issue_pointers"].append(pointer)
+        removed = [block for block in document.blocks if block.page_index in degraded]
+        removed_ids = {block.id for block in removed}
+        blocks: list[DocumentIRBlock] = []
+        records: list[dict[str, Any]] = []
+        for block in document.blocks:
+            if block.page_index not in degraded:
+                blocks.append(block)
+                continue
+            if any(record["page_index"] == block.page_index for record in records):
+                continue
+            page_index = block.page_index
+            page_removed = [item for item in removed if item.page_index == page_index]
+            main_removed = [item for item in page_removed if not item.metadata.get("source_block_id")]
+            entry = reasons.get(page_index, {"reason_codes": [], "issue_pointers": []})
+            asset_id = f"asset_degraded_page_{page_index + 1:04d}"
+            layout = DocumentIRBlockLayout(page_index=page_index, role="body")
+            synthetic = {"synthetic": "degraded_page", "degraded_page_index": page_index}
+            reason_text = "、".join(sorted(set(entry["reason_codes"]))) or "依赖页降级"
+            blocks.append(DocumentIRBlock(
+                id=f"degraded_page_{page_index + 1:04d}_notice", type="paragraph", order=block.order,
+                page_index=page_index, layout=layout,
+                text=DEGRADED_PAGE_NOTICE.format(page=page_index + 1, reasons=reason_text),
+                metadata={**synthetic, "source_type": "degraded_page_notice"}))
+            blocks.append(DocumentIRBlock(
+                id=f"degraded_page_{page_index + 1:04d}_image", type="image", order=block.order,
+                page_index=page_index, layout=layout, asset_ref=asset_id,
+                metadata={**synthetic, "source_type": "degraded_page_image"}))
+            document.assets.append(DocumentIRAsset(id=asset_id, kind="image", source_path=PAGE_RASTER_SOURCE_PATH))
+            image_assets.append(MinerUImageAsset(
+                asset_id=asset_id, block_id=f"degraded_page_{page_index + 1:04d}_image",
+                source_path=PAGE_RASTER_SOURCE_PATH, mime_type="image/png", content=rasters[page_index],
+                page_raster={"page_index": page_index, "source_pdf_sha256": source.checksum_sha256,
+                             "dpi": getattr(self.page_rasterizer, "DPI", None)}))
+            records.append({
+                "page_index": page_index, "reason_codes": sorted(set(entry["reason_codes"])),
+                "issue_pointers": sorted(entry["issue_pointers"]), "page_image_asset_id": asset_id,
+                "source_pdf_sha256": source.checksum_sha256,
+                "removed_source_block_count": len(main_removed),
+                "removed_source_type_counts": dict(sorted(Counter(
+                    str(item.metadata.get("source_type") or "text") for item in main_removed).items())),
+                "removed_source_pointers": [item.metadata["mineru_source"]["json_pointer"] for item in main_removed
+                                            if isinstance(item.metadata.get("mineru_source"), dict)],
+            })
+        removed_assets = {block.asset_ref for block in removed if block.asset_ref}
+        document.blocks = blocks
+        document.assets = [asset for asset in document.assets if asset.id not in removed_assets]
+        image_assets[:] = [asset for asset in image_assets if asset.block_id not in removed_ids]
+        document.quality_flags = [flag for flag in document.quality_flags
+                                  if not any(flag.endswith(":" + block_id) for block_id in removed_ids)]
+        document.metadata.degraded_pages = sorted(records, key=lambda record: record["page_index"])
+        return TableSourceLedger(
+            table_sources.checksum,
+            tuple(item for item in table_sources.tables if item.span.page_index not in degraded),
+            tuple(item for item in table_sources.body_order if item[1] not in degraded),
+        )
+
+    @staticmethod
+    def _degradation_closure(document: DocumentIR, table_sources: TableSourceLedger,
+                             candidate_pages: set[int]) -> set[int] | None:
+        """在副本上试算逻辑表格组：跨越降级页的组整体纳入；组含合并回执或无页码片段时返回 None（放弃降级）。"""
+        trial = document.model_copy(deep=True)
+        try:
+            attach_logical_table_groups(trial, table_sources)
+        except ValueError:
+            return None
+        degraded = set(candidate_pages)
+        changed = True
+        while changed:
+            changed = False
+            for group in trial.metadata.logical_table_groups:
+                group_pages = {fragment.source_span.page_index for fragment in group.fragments}
+                if not group_pages & degraded:
+                    continue
+                if None in group_pages or any(fragment.block_id is None for fragment in group.fragments):
+                    return None
+                if not group_pages <= degraded:
+                    degraded |= group_pages
+                    changed = True
+        return degraded
 
     def _crop_from_source_pdf(self, raw_block: dict[str, Any], page: DocumentIRPage | None,
                               source_loader: Callable[[], PdfCropSource] | None,
