@@ -1491,7 +1491,7 @@ export type DocumentJobResourceSnapshot = {
 
 /** 当前代 MinerU 验证失败定位；页码 1 起始，文档级问题 page_number 为 null。 */
 export type DocumentJobFailureDiagnostic = {
-  source: "mineru_validation";
+  source: "mineru_validation" | "render_operation";
   stage: string;
   scope: "page" | "document";
   page_number: number | null;
@@ -1503,6 +1503,9 @@ export type DocumentJobFailureDiagnostic = {
   fatal_count: number;
   warning_count: number;
   details_truncated: boolean;
+  /** 渲染来源时为失败操作涉及的块 ID 与操作类型；旧响应可能缺失。 */
+  block_ids?: string[];
+  operation_kind?: string | null;
 };
 
 export type DocumentJobResponse = {

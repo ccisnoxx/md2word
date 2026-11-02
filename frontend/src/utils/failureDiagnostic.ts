@@ -5,11 +5,14 @@ export function failureDiagnosticLines(diagnostic: DocumentJobFailureDiagnostic 
   if (!diagnostic) {
     return [];
   }
-  const location = [diagnostic.source_type, diagnostic.json_pointer].filter(Boolean).join("，");
+  const location = diagnostic.source === "render_operation"
+    ? [diagnostic.block_ids?.length ? `块 ${diagnostic.block_ids.join("、")}` : null,
+      diagnostic.operation_kind ? `操作 ${diagnostic.operation_kind}` : null].filter(Boolean).join("，")
+    : [diagnostic.source_type, diagnostic.json_pointer].filter(Boolean).join("，");
   const lines = [
     diagnostic.scope === "page" && diagnostic.page_number !== null
       ? `首个失败位置：第 ${diagnostic.page_number} 页${location ? `（${location}）` : ""}`
-      : "首个失败位置：文档级问题，无法定位到单页",
+      : `首个失败位置：文档级问题，无法定位到单页${diagnostic.source === "render_operation" && location ? `（${location}）` : ""}`,
     `原因：${diagnostic.reason_code}${diagnostic.reason ? ` / ${diagnostic.reason}` : ""}`,
   ];
   if (diagnostic.affected_page_numbers.length) {

@@ -47,7 +47,7 @@ class ProjectFailureDiagnosticTests(TestCase):
             "source": "mineru_validation", "stage": "ir_converting", "scope": "page", "page_number": 13,
             "source_type": "image", "json_pointer": "/content_list/148", "reason_code": "invalid_image_asset",
             "reason": "unreadable_or_unsupported_image", "affected_page_numbers": [4, 13],
-            "fatal_count": 3, "warning_count": 1, "details_truncated": False,
+            "fatal_count": 3, "warning_count": 1, "details_truncated": False, "block_ids": [], "operation_kind": None,
         })
 
     def test_document_failure_has_no_page(self):
@@ -93,7 +93,7 @@ class ProjectFailureDiagnosticTests(TestCase):
         self.assertEqual(result.model_dump(exclude={"stage", "source"}), {
             "scope": "document", "page_number": None, "source_type": None, "json_pointer": None,
             "reason_code": "invalid_image_asset", "reason": None, "affected_page_numbers": [],
-            "fatal_count": 0, "warning_count": 0, "details_truncated": False,
+            "fatal_count": 0, "warning_count": 0, "details_truncated": False, "block_ids": [], "operation_kind": None,
         })
 
 
@@ -150,7 +150,7 @@ class FailureDiagnosticApiTests(TestCase):
             "source": "mineru_validation", "stage": "ir_converting", "scope": "page", "page_number": 3,
             "source_type": "image", "json_pointer": "/2", "reason_code": "invalid_image_asset",
             "reason": "unreadable_or_unsupported_image", "affected_page_numbers": [3, 5],
-            "fatal_count": 2, "warning_count": 5, "details_truncated": False,
+            "fatal_count": 2, "warning_count": 5, "details_truncated": False, "block_ids": [], "operation_kind": None,
         }
         self.assertEqual(detail["failure_diagnostic"], expected)
         self.assertEqual(diagnostics["failure_diagnostic"], expected)

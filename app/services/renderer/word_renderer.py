@@ -80,6 +80,15 @@ class _RenderContext:
     image_loader: Any = None
 
 
+FAILURE_CONTEXT_ATTRIBUTE = "md2word_failure_context"
+
+
+def attach_failure_context(error: BaseException, **context: Any) -> None:
+    """把渲染操作定位挂到异常上；已有（更内层）上下文时保留原值。执行层只读取并白名单过滤。"""
+    if getattr(error, FAILURE_CONTEXT_ATTRIBUTE, None) is None:
+        setattr(error, FAILURE_CONTEXT_ATTRIBUTE, context)
+
+
 class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, WordImageRendererMixin):
     """P0 Word 渲染器：覆盖标题、段落、基础表格和图片。"""
 
@@ -120,10 +129,21 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         table_plan = build_content_table_plan(document_ir, layout_plan)
         grid_by_block = {fragment.source.block_id: fragment.render.grid for unit in table_plan.units
                         for fragment in unit.fragments if fragment.render is not None}
-        tables = {block.id: (SimpleNamespace(rows=range(grid_by_block[block.id].rows),
-                    max_columns=grid_by_block[block.id].columns), "standard") if block.id in grid_by_block
-                    else prepare_table_input(block, template_config)
-                  for block in document_ir.blocks if block.type == "table"}
+        tables = {}
+        for block in document_ir.blocks:
+            if block.type != "table":
+                continue
+            if block.id in grid_by_block:
+                tables[block.id] = (SimpleNamespace(rows=range(grid_by_block[block.id].rows),
+                    max_columns=grid_by_block[block.id].columns), "standard")
+                continue
+            try:
+                tables[block.id] = prepare_table_input(block, template_config)
+            except Exception as error:
+                page_index = block.layout.page_index if block.layout and block.layout.page_index is not None else block.page_index
+                attach_failure_context(error, operation_index=None, operation_kind="table_prepare", section_id=None,
+                                       block_ids=[block.id], source_page_index=page_index, unit_id=None)
+                raise
         try:
             plan = build_render_plan(document_ir, layout_plan=layout_plan, effective_config=template_config,
                 resource_identity=resources, table_models={key: value[0] for key, value in tables.items()},
@@ -158,29 +178,40 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         decisions = {decision.block_id: decision for decision in plan.decisions}
         native_units = {unit.key: unit for unit in table_plan.units}
         unit_contracts = {unit.unit_id: unit for unit in plan.table_units}
-        for operation in plan.operations:
-            if operation.kind == "section":
-                if operation.start_kind != "initial":
-                    section = document.add_section(WD_SECTION_START.NEW_PAGE if operation.start_kind == "new_page" else WD_SECTION_START.CONTINUOUS)
-                    if operation.start_kind == "continuous":
-                        self._set_section_columns(section, operation.columns)
-            elif operation.kind == "configure_page":
-                self._configure_layout_page_section(document, template_config, landscape=operation.landscape)
-            elif operation.kind == "decoration":
-                self._render_page_decoration(document, operation, blocks, template_config, collector)
-            elif operation.kind == "column_break":
-                document.add_paragraph().add_run().add_break(WD_BREAK.COLUMN)
-            elif operation.kind == "logical_table":
-                self._render_native_unit(document, native_units[operation.unit_id], unit_contracts[operation.unit_id],
-                    blocks, template_config, render_context, page_break_before=decisions[operation.block_ids[0]].page_break_before)
-            elif operation.kind == "block":
-                block = blocks[operation.block_ids[0]]
-                if block.type == "image":
-                    self._render_image_span(document, render_context.image_spans[block.id], [blocks[key] for key in operation.block_ids],
-                        assets_by_id, template_config, image_loader, render_context, page_width=operation.page_width)
-                else:
-                    self._render_block(document, block, assets_by_id, template_config, image_loader, render_context,
-                        decision=decisions[block.id], table_model=tables.get(block.id, (None, None))[0], page_width=operation.page_width)
+        for operation_index, operation in enumerate(plan.operations):
+            try:
+                if operation.kind == "section":
+                    if operation.start_kind != "initial":
+                        section = document.add_section(WD_SECTION_START.NEW_PAGE if operation.start_kind == "new_page" else WD_SECTION_START.CONTINUOUS)
+                        if operation.start_kind == "continuous":
+                            self._set_section_columns(section, operation.columns)
+                elif operation.kind == "configure_page":
+                    self._configure_layout_page_section(document, template_config, landscape=operation.landscape)
+                elif operation.kind == "decoration":
+                    self._render_page_decoration(document, operation, blocks, template_config, collector)
+                elif operation.kind == "column_break":
+                    document.add_paragraph().add_run().add_break(WD_BREAK.COLUMN)
+                elif operation.kind == "logical_table":
+                    self._render_native_unit(document, native_units[operation.unit_id], unit_contracts[operation.unit_id],
+                        blocks, template_config, render_context, page_break_before=decisions[operation.block_ids[0]].page_break_before)
+                elif operation.kind == "block":
+                    block = blocks[operation.block_ids[0]]
+                    if block.type == "image":
+                        self._render_image_span(document, render_context.image_spans[block.id], [blocks[key] for key in operation.block_ids],
+                            assets_by_id, template_config, image_loader, render_context, page_width=operation.page_width)
+                    else:
+                        self._render_block(document, block, assets_by_id, template_config, image_loader, render_context,
+                            decision=decisions[block.id], table_model=tables.get(block.id, (None, None))[0], page_width=operation.page_width)
+            except Exception as error:
+                # 只补充定位后原样抛出：异常类型、失败分类与错误码不变。
+                # 块类操作本身不带页索引，取首块渲染决策中的源页。
+                decision = decisions.get(operation.block_ids[0]) if operation.block_ids else None
+                page_index = (operation.source_page_index if operation.source_page_index is not None
+                              else decision.source_page_index if decision is not None else None)
+                attach_failure_context(error, operation_index=operation_index, operation_kind=operation.kind,
+                    section_id=operation.section_id, block_ids=list(operation.block_ids),
+                    source_page_index=page_index, unit_id=getattr(operation, "unit_id", None))
+                raise
         self._materialize_fragment_markers(document, render_context, reserved_bookmarks)
         collector.created_anchors, collector.block_anchor_counts = materialize_block_anchors(
             document, collector.records, collector.targets, reserved_bookmarks)
