@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Protocol
 
 from bs4 import BeautifulSoup
@@ -21,13 +21,15 @@ from app.domains.translation.models import (
     TranslationProviderRequest,
     TranslationProviderResult,
     TranslationTextItem,
+    TranslationTableContext,
     normalize_translation_source_term,
 )
 from app.domains.translation.provider import TranslationProvider, TranslationProviderResponseError
 from app.domains.translation.integrity import (
     TranslationIntegrityEvidence, TranslationIntegrityError, TranslationIntegrityValidator,
 )
-from app.domains.translation.protected_tokens import EncodedTokenBatch, ProtectedTokenKind, encode
+from app.domains.translation.protected_tokens import EncodedTokenBatch, ProtectedTokenKind
+from app.domains.translation.table_context import TableContextBuilder, TableContextMappingError, context_char_count
 
 
 _TRACE_CONTEXT_RADIUS = 40
@@ -129,7 +131,7 @@ class PreparedTranslationRequest:
 
 
 class DocumentIRTranslationService:
-    """DocumentIR 文本翻译服务；不让 AI 接触结构、资产或样式信息。"""
+    """翻译 DocumentIR 文本；可选只读表格上下文不参与结构或内容回填。"""
 
     def __init__(
         self,
@@ -137,11 +139,13 @@ class DocumentIRTranslationService:
         *,
         max_items_per_request: int = DEFAULT_MAX_ITEMS_PER_PROVIDER_REQUEST,
         max_chars_per_request: int = DEFAULT_MAX_CHARS_PER_PROVIDER_REQUEST,
+        table_context_enabled: bool = False,
     ) -> None:
         self.provider = provider
         self.validator = TranslationIntegrityValidator()
         self.max_items_per_request = max(1, int(max_items_per_request))
         self.max_chars_per_request = max(1, int(max_chars_per_request))
+        self.table_context_enabled = table_context_enabled
 
     def translate(
         self,
@@ -219,6 +223,7 @@ class DocumentIRTranslationService:
         if not items:
             return targets, items, []
         targets_by_id = {target.item_id: target for target in targets}
+        raw_contexts = self._build_table_contexts(document_ir, tuple(items))
         batches: list[DocumentIRTranslationBatchPlan] = []
         current: list[TranslationTextItem] = []
         current_chars = 0
@@ -250,8 +255,7 @@ class DocumentIRTranslationService:
         for item in items:
             target = targets_by_id[item.id]
             item_chars = len(item.text)
-            encoded_item = self.validator.prepare((item,), max_chars=max_chars)
-            self._validate_formula_protection((item,), encoded_item)
+            self._prepare_request_content((item,), raw_contexts, max_chars=max_chars)
             item_page = target.page_number
             next_page_start = current_page_start
             next_page_end = current_page_end
@@ -264,8 +268,14 @@ class DocumentIRTranslationService:
                 and next_page_end is not None
                 and next_page_end - next_page_start + 1 > max_pages
             )
-            candidate = encode(tuple([*current, item]))
-            exceeds_chars = bool(current) and sum(len(value.text) for value in candidate.items) > max_chars
+            exceeds_chars = False
+            if current:
+                try:
+                    self._prepare_request_content(tuple([*current, item]), raw_contexts, max_chars=max_chars)
+                except TranslationIntegrityError as exc:
+                    if exc.code != "translation_request_budget_exceeded":
+                        raise
+                    exceeds_chars = True
             exceeds_items = bool(current) and len(current) >= self.max_items_per_request
             if exceeds_pages or exceeds_chars or exceeds_items:
                 flush()
@@ -295,10 +305,10 @@ class DocumentIRTranslationService:
         max_chars_per_request: int | None = None,
     ) -> PreparedTranslationRequest:
         source_items = tuple(items)
-        encoded = self.validator.prepare(
-            source_items, max_chars=max_chars_per_request if max_chars_per_request is not None else self.max_chars_per_request,
+        encoded, contexts = self._prepare_request_content(
+            source_items, self._build_table_contexts(document_ir, source_items),
+            max_chars=max_chars_per_request if max_chars_per_request is not None else self.max_chars_per_request,
         )
-        self._validate_formula_protection(source_items, encoded)
         matched_terms, term_traces = self._match_request_terms(
             items=items,
             term_version=term_version,
@@ -323,8 +333,36 @@ class DocumentIRTranslationService:
             parent_batch_id=parent_batch_id,
             page_start=page_start,
             page_end=page_end,
+            table_contexts=contexts,
         )
         return PreparedTranslationRequest(source_items, request, encoded)
+
+    def _build_table_contexts(
+        self, document_ir: DocumentIR, items: tuple[TranslationTextItem, ...],
+    ) -> dict[str, TranslationTableContext]:
+        if not self.table_context_enabled:
+            return {}
+        try:
+            return TableContextBuilder().build(document_ir, items)
+        except TableContextMappingError:
+            raise DocumentIRTranslationError(
+                "表格上下文无法与原始单元格可靠对应。", code="translation_table_context_unmapped",
+            ) from None
+
+    def _prepare_request_content(
+        self, source_items: tuple[TranslationTextItem, ...], raw_contexts: dict[str, TranslationTableContext],
+        *, max_chars: int,
+    ) -> tuple[EncodedTokenBatch, tuple[TranslationTableContext, ...]]:
+        """计划和调用共享编码与预算，完整性证据始终只描述原正文集合。"""
+        encoded = self.validator.prepare(source_items, max_chars=max_chars)
+        self._validate_formula_protection(source_items, encoded)
+        contexts = TableContextBuilder().encode_and_select(raw_contexts, encoded, max_chars=max_chars) if raw_contexts else ()
+        chars = sum(len(item.text) for item in encoded.items) + sum(context_char_count(context) for context in contexts)
+        if chars > max_chars or (self.table_context_enabled and len(source_items) > self.max_items_per_request):
+            code = "translation_request_budget_exceeded"
+            evidence = self.validator.call_failure_evidence(source_items, encoded, error_code=code)
+            raise TranslationIntegrityError(code, replace(evidence, stage="budget"))
+        return encoded, contexts
 
     @staticmethod
     def _validate_formula_protection(

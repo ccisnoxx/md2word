@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # app/domains/translation/models.py: 定义翻译配置资源在 service 和 conversion 边界间传递的快照。
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -205,6 +205,27 @@ class TranslationTextItem:
 
 
 @dataclass(frozen=True, slots=True)
+class TranslationTableContext:
+    """输入专用的只读表格视图；文字须先经 Codec 编码，不参与输出或来源账本。"""
+
+    item_id: str = field(repr=False)
+    table_id: str
+    row: int
+    column: int
+    rowspan: int
+    colspan: int
+    header_path: tuple[str, ...] = field(default=(), repr=False)
+    row_parameters: tuple[str, ...] = field(default=(), repr=False)
+    truncated: bool = False
+
+    def to_payload(self) -> dict:
+        """关联 ID 留在请求内存中，JSON 上下文只携带结构和编码文字。"""
+        payload = asdict(self)
+        del payload["item_id"]
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
 class TranslationProviderRequest:
     """发送给 translation provider 的结构化请求，不包含密钥。"""
 
@@ -223,6 +244,7 @@ class TranslationProviderRequest:
     parent_batch_id: str | None = None
     page_start: int | None = None
     page_end: int | None = None
+    table_contexts: tuple[TranslationTableContext, ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True, slots=True)

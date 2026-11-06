@@ -143,6 +143,7 @@ class Settings(BaseSettings):
     translation_provider_backend: Literal["disabled", "openai_compatible"] = "disabled"
     translation_provider_timeout_seconds: float = 120.0
     translation_provider_max_output_tokens: int = 12000
+    translation_table_context_enabled: bool = False
     ai_provider_config_path: str = "var/config/ai_provider_config.json"
     translation_debug_archive_enabled: bool = False
     translation_debug_archive_retention_days: int = 1
