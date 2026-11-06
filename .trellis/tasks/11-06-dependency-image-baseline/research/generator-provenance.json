@@ -1,0 +1,10 @@
+{
+  "version": "uv 0.11.19 (x86_64-unknown-linux-gnu)",
+  "filename": "uv-0.11.19-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+  "source_url": "https://files.pythonhosted.org/packages/5a/74/2bd8b51e1d76210fd424ae55ec3f34ded5a10eeff3dd38aeb03c816a0af2/uv-0.11.19-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+  "sha256": "731d9fab8db5d41590af64236d03f8069c8da665fd0f9493b85985f19c86cd90",
+  "binary_sha256": "a00d3a24514fc0403fc232c9c99bf5e542657c38f4ed941e0611731e4cff268b",
+  "license": "MIT OR Apache-2.0",
+  "downloaded_at": "2026-11-06T08:45:58.066030+00:00",
+  "role": "锁生成工具，不属于运行依赖"
+}

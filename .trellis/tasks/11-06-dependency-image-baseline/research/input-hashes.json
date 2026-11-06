@@ -1,0 +1,9 @@
+{
+  "requirements.txt": "fb15812d47bbaa988d1b7007906eec453bae37aba4871f9160c4faa5d2db2540",
+  "requirements/locks/cp311-linux-amd64.txt": "09676451b4382e8e443668a34be93e456345d39db2e06117205aa1056e623526",
+  ".trellis/tasks/11-06-dependency-image-baseline/research/constraints.txt": "a4c7c1c5eaf011b038afc631771d0a763a069789bfdd9ee6b196effeb563e875",
+  ".trellis/tasks/11-06-dependency-image-baseline/research/pypi-provenance.json": "088edc26e91f49913fb7d943f9e73fffe3b5be86d7a2984b6905f4949d3f762c",
+  ".trellis/tasks/11-06-dependency-image-baseline/research/wheelhouse-provenance.json": "af03334121f9678335ca000296ae4093ce959e7a3ba4019b8057e25553aa0738",
+  ".trellis/tasks/11-06-dependency-image-baseline/research/generator-provenance.json": "6d43073448e7708dfcc8cfd2d500a4ccf013af8aad7fb0d5a14d42c2a7be6695",
+  ".trellis/tasks/11-06-dependency-image-baseline/research/source-inputs.json": "adcaddc98a1c1b936aa5670b301c5448e0dabfb0bacabc1abdab4f9e4f9fcd23"
+}
