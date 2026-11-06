@@ -95,7 +95,7 @@ direct：uploaded → parsing → parsed → ir_converting
 
 三个新阶段均属于 `status=running`，支持取消、超时定位和恢复。失败终态仍为 `status=failed, stage=failed`，由 `failed_stage` 保存真正失败的位置。事件 `stage` 与实际工作一致，携带 generation、trace 和安全摘要；`duration_ms` 是本次可测调用的耗时，未知全阶段耗时保持空值。
 
-旧阶段和历史记录保留。响应中的 `stage`/`failed_stage` 继续使用字符串，前端对未知阶段显示原值；事件和异常筛选只接受服务端支持的阶段。`available_actions` 仍是动作可用性的权威来源；响应增加只读的质量、复核、交付状态投影。当前没有批准发布或发布动作写入口。
+旧阶段和历史记录保留。响应中的 `stage`/`failed_stage` 继续使用字符串，前端对未知阶段显示原值；事件和异常筛选只接受服务端支持的阶段。`available_actions` 仍是动作可用性的权威来源；响应增加只读的质量、复核、交付状态投影。发布提交入口为 `POST /api/v1/document-jobs/{job_id}/publish`，提交时完整核验。
 
 质量、复核和交付状态（CON-103）分别为 `pending/passed/warning/blocked`、`unreviewed/approved/needs_fix/blocked`、`internal_draft/ready_to_publish/published`，摘要默认 `{}`。旧 QA 原值保留但未绑定当前结果时只作历史记录，不自动成为批准证据。合法成功主件可内部下载，`approved` 不授予发布资格；retry 新代、clone 或结果换件使旧证据失效。
 
@@ -223,6 +223,14 @@ direct：uploaded → parsing → parsed → ir_converting
 - 可见性同时限定租户和公司；Admin 可查看该范围全部任务，其他角色只查看本人创建的任务。全部计数与列表使用相同的权限边界。
 - 时间相同时按任务 ID 排序，方向与主排序一致；`total` 和汇总均不受分页影响。QA 汇总只统计翻译模式，固定四键补零，状态汇总仅返回实际出现的状态键。
 - SQLite/MySQL 使用同一读快照完成筛选、汇总与分页。数据库查询投影尚未回填或版本不兼容时返回 `503 service_unavailable`，不会以缺失任务的成功结果代替；GET 不执行回填。启用步骤见后端运维手册。
+- 列表 `available_actions.publish` 仅按既有状态条件决定 `enabled` 和禁用原因，包括 Admin、结果可下载、质量 passed/warning、有效复核 approved、未发布、发布写入开启、未归档未删除。列表不读取发布证据正文，内部 `publication_evidence` 检查保持 `not_checked`，不增加响应字段；按钮可用后仍可能在提交时因证据异常被拒绝；此时列表沿用既有规则将 `delivery_status` 投影为 `ready_to_publish`，可能与详情不同，不写回持久化状态。详情、发布前检查及发布 POST 继续完整实时核验，其他动作和非管理员语义保持。
+
+### `GET /api/v1/document-job-incidents`
+
+- 用途：按原可见性边界筛选、排序和分页查询异常任务；`total` 与 `summary` 仍基于全部匹配异常任务，不限于当前页。
+- 筛选前只计算必要的状态和文件元数据：有效复核、重试资格、停滞、降级页及原搜索摘要。完整 `available_actions` 仅为当前页构建，筛选与页内动作均不读取发布证据正文。
+- 页内 `publish` 与任务列表一致，仅按状态准入，内部 `publication_evidence` 为 `not_checked`；其他动作、分类和各项计数保持。列表可点仍可能在提交时被拒，`ready_to_publish` 只作既有返回投影，不写回状态。
+- 异常诊断、批量操作、任务详情、发布前检查和发布 POST 保持原有核验；响应 schema 不变。
 
 ### `GET /api/v1/document-jobs/{job_id}`
 
@@ -237,7 +245,7 @@ direct：uploaded → parsing → parsed → ir_converting
 | `disabled_reason` | 禁用原因；`enabled=true` 时为 `null`。 |
 | `retryable` | 仅用于 `retry` 动作，表示失败是否属于可重试失败；其他动作固定为 `false`。 |
 
-CON-104 为 `download`/`publish` 增加只读 `disabled_reason_code`；下载成功时主 DOCX 返回 `classification=internal_only` 及适用 warning，普通 Artifact 不套用主件分类。`publish.eligible` 只表达核心资格，`enabled` 仍为真实执行许可；当前没有发布 endpoint，publish 始终 disabled，并保留有序 `disabled_reasons`。
+CON-104 为 `download`/`publish` 增加只读 `disabled_reason_code`；下载成功时主 DOCX 返回 `classification=internal_only` 及适用 warning，普通 Artifact 不套用主件分类。`publish.eligible` 只表达核心资格，不能代替 `enabled`；详情的 `publish.enabled` 包含发布证据核验，禁用时保留有序 `disabled_reasons`。列表的 `publish.enabled` 仅代表状态准入，发布 POST 始终独立完整核验。
 
 ### `GET /api/v1/document-jobs/{job_id}/events`
 

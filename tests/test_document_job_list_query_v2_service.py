@@ -275,7 +275,7 @@ from tests.document_job_list_query_v2_publication_fixtures import V2PublicationF
 
 class DocumentJobListV2PublicationTests(V2PublicationFixture, TestCase):
     def test_legacy_real_table_report_publication_action_is_page_bounded(self):
-        """历史兼容任务的实际表格、预览与发布检查完整保留，证明窄读覆盖全部重核点。"""
+        """历史兼容任务保留页内解码约束，列表发布状态判断不触发表格深度重核。"""
         for kind in ("file", "sqlite"):
             with self.subTest(kind=kind), self.publication_runtime(kind=kind) as (
                     runtime, job, admin, user, client, headers, provider):
@@ -299,7 +299,7 @@ class DocumentJobListV2PublicationTests(V2PublicationFixture, TestCase):
                 self.assertEqual(payload["total"], 1)
                 self.assertEqual(payload["items"][0]["delivery_status"], "ready_to_publish")
                 self.assertTrue(payload["items"][0]["available_actions"]["publish"]["enabled"], payload)
-                self.assertGreaterEqual(guard.call_count, 8)
+                self.assertEqual(guard.call_count, 0)
                 self.assertEqual(len(provider.inputs), 1)
 
     def test_modern_table_layout_risk_remains_pending_and_cannot_publish(self):
