@@ -30,6 +30,8 @@ Follow this pattern for runtime dependencies:
 
 `app/api/v1/router.py` owns the `/api/v1` prefix and aggregates business routers from `app/domains/**/router.py`.
 
+截至 2026-11-06（基线 `79f20cef`），[v1 router](../../../app/api/v1/router.py) 已不挂载旧 `/api/v1/jobs` HTTP 入口；公开文档任务入口为 Files + Document Jobs。仍挂载的 MinerU callback router 不表示旧 `/jobs` 入口恢复。
+
 Current pattern:
 
 - API-owned auth/health routers live under `app/api/v1/routers/`.
@@ -69,7 +71,7 @@ Examples:
 
 `app/services/` holds shared services that are not cleanly owned by one business domain, such as auth, health, Document IR conversion, and rendering.
 
-`app/conversion/` is the conversion library boundary. `docs/dev/backend-local-setup-and-architecture.md` identifies `app/conversion/runtime_facade.py` and `app/conversion/runtime_runner.py` as the stable backend-facing runtime path. Backend code should use the conversion entrypoint/facade rather than importing historical root scripts.
+`app/conversion/` 保留 legacy 转换运行时与共享转换规则。[main.py](../../../app/main.py) 的 `build_runtime()` 仍装配 `stage_service`，经 `ConversionService`、`runtime_facade` 调用 `runtime_runner`；[独立 StageWorker 入口](../../../scripts/dev/run_stage_worker.py) 也仍存在。HTTP 入口下线不等于运行时、Worker 或队列已清除；正式 Document Jobs 使用 DocumentIR + Renderer，本地调试入口见下文。legacy 调用使用 conversion entrypoint/facade，不直接导入历史根脚本。
 
 `app/workers/` owns worker implementations. Script entrypoints under `scripts/dev/` adapt them for local/PyCharm use:
 
@@ -120,7 +122,7 @@ Operational and release scripts live under:
 - Local scripts pass MinerU zip/directory inputs to `formal_mineru_conversion`, not to `app.conversion.runtime_runner`.
 - The adapter must call `MinerUToDocumentIRService.convert_zip()` and `DocumentIRWordRenderer.render_to_bytes()`.
 - Layout fixes belong in `app/services/document_ir/*`, `app/services/renderer/*`, or shared DOCX rules under `app/conversion/docx_rules/*`.
-- `runtime_runner` remains a legacy `/api/v1/jobs` backing path and historical comparison point; it is not the default local debugging core.
+- `runtime_runner` 是仍装配的 legacy stage 转换路径和历史对照点；旧 `/api/v1/jobs` HTTP 入口已下线，它不是默认本地调试核心。
 - Translation modes must not silently fall back to direct. Missing key/response should fail or be reported as blocked after writing any requested local translation request evidence.
 
 ### 4. Validation & Error Matrix
