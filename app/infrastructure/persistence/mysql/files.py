@@ -2,14 +2,15 @@ from __future__ import annotations
 
 # app/infrastructure/persistence/mysql/files.py: MySQL backend的正式文档文件仓储。
 
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime
 import json
 from typing import Any
 
 from app.domains.files.models import DocumentFileRecord
-from app.domains.document_jobs.list_query import document_file_review_projection_from_raw
+from app.domains.files.repository import DocumentFileReaderProtocol
+from app.domains.document_jobs.list_query import document_file_review_storage_from_raw
 from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend
 from app.domains.files.result_registration import (
     expired_file, materialized_file, patched_file, ensure_file_mutation_allowed,
@@ -20,8 +21,15 @@ from app.domains.files.result_registration import (
 class MysqlDocumentFileRepository:
     """在同一文件序列化点维护候选身份、物化和不可逆生命周期。"""
 
-    def __init__(self, backend: MysqlPersistenceBackend) -> None:
+    def __init__(self, backend: MysqlPersistenceBackend, *,
+                 read_connect: Callable[[], AbstractContextManager[Any]] | None = None) -> None:
         self.backend = backend
+        self._read_connect = read_connect
+
+    @contextmanager
+    def read_session(self) -> Iterator[DocumentFileReaderProtocol]:
+        with self.backend.read_session() as read_connect:
+            yield MysqlDocumentFileRepository(self.backend, read_connect=read_connect)
 
     @contextmanager
     def _locked_file(self, file_id: str) -> Iterator[tuple[Any, DocumentFileRecord | None]]:
@@ -36,22 +44,22 @@ class MysqlDocumentFileRepository:
 
     def _write_file(self, connection: Any, record: DocumentFileRecord, *, create: bool = False) -> None:
         payload = self.backend.dump_payload(record)
-        projection = json.dumps(document_file_review_projection_from_raw(payload), ensure_ascii=False)
+        projection = document_file_review_storage_from_raw(payload)
         if create:
-            query = "INSERT INTO document_files (file_id, payload, created_at, updated_at, review_query_json) VALUES (%s, %s, %s, %s, %s)"
-            params = (record.id, payload, record.created_at.isoformat(), record.updated_at.isoformat(), projection)
+            query = "INSERT INTO document_files (file_id, payload, created_at, updated_at, review_query_json, review_descriptor_key, review_receipt_key) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            params = (record.id, payload, record.created_at.isoformat(), record.updated_at.isoformat(), *projection)
         else:
-            query = "UPDATE document_files SET payload = %s, created_at = %s, updated_at = %s, review_query_json = %s WHERE file_id = %s"
-            params = (payload, record.created_at.isoformat(), record.updated_at.isoformat(), projection, record.id)
+            query = "UPDATE document_files SET payload = %s, created_at = %s, updated_at = %s, review_query_json = %s, review_descriptor_key = %s, review_receipt_key = %s WHERE file_id = %s"
+            params = (payload, record.created_at.isoformat(), record.updated_at.isoformat(), *projection, record.id)
         with connection.cursor() as cursor:
             cursor.execute(query, params)
 
     def is_document_file_protected(self, file_id: str) -> bool:
-        with self.backend.connect() as connection:
+        with (self._read_connect or self.backend.connect)() as connection:
             return self._is_protected(connection, file_id)
 
     def _is_protected(self, connection: Any, file_id: str) -> bool:
-        # 调用者已持有文件行锁；这是本短事务的首个一致读，不能移到取锁之前。
+        # 写路径调用者已持有文件行锁；其首个一致读不能移到取锁之前。
         with connection.cursor() as cursor:
             cursor.execute("SELECT protected_file_ids FROM document_job_publications")
             rows = cursor.fetchall()
@@ -69,7 +77,7 @@ class MysqlDocumentFileRepository:
             return record
 
     def get_document_file(self, file_id: str) -> DocumentFileRecord | None:
-        with self.backend.connect() as connection:
+        with (self._read_connect or self.backend.connect)() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT payload FROM document_files WHERE file_id = %s", (file_id,))
                 row = cursor.fetchone()

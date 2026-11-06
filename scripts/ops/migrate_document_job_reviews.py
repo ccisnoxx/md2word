@@ -13,7 +13,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.core.config import Settings
-from app.domains.document_jobs.list_query import DocumentJobListProjectionUnstable, document_job_list_projection_from_raw
+from app.domains.document_jobs.list_query import DocumentJobListProjectionUnstable, document_job_list_storage_from_raw
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.review import (
     REVIEW_ENVELOPE, ReviewRecord, decode_file_history, legacy_review_import, review_validity,
@@ -95,15 +95,16 @@ def _commit_import(repository, connection, payload, updated, record, backend):
         marker = "?" if backend == "database" else "%s"
         serialized = json.dumps(raw, ensure_ascii=False)
         try:
-            projection = json.dumps(document_job_list_projection_from_raw(serialized), ensure_ascii=False)
+            storage = document_job_list_storage_from_raw(serialized)
         except DocumentJobListProjectionUnstable:
             # 保留原导入对缺时间 raw 的处理；动态默认值不能冻结成可查询事实。
-            projection = None
+            storage = (None, None, None, None)
         _execute(connection, backend,
             f"UPDATE document_jobs SET payload = {marker}, quality_status = {marker}, review_status = {marker}, "
-            f"delivery_status = {marker}, quality_summary_json = {marker}, list_query_json = {marker} "
+            f"delivery_status = {marker}, quality_summary_json = {marker}, list_query_json = {marker}, "
+            f"list_descriptor_key = {marker}, list_receipt_key = {marker}, list_table_snapshot_key = {marker} "
             f"WHERE job_id = {marker}",
-            (serialized, *document_job_state_columns(updated), projection, updated.id))
+            (serialized, *document_job_state_columns(updated), *storage, updated.id))
 
 
 def migrate_document_job_reviews(settings: Settings, *, mode="dry-run", phase="all", batch_size=100,
@@ -160,7 +161,9 @@ def migrate_document_job_reviews(settings: Settings, *, mode="dry-run", phase="a
                 columns = _schema_columns(connection, backend)
                 if not {"job_id", "payload", "quality_status", "review_status", "delivery_status", "quality_summary_json"}.issubset(columns):
                     raise MigrationError("state_migration_required")
-                if mode == "apply" and phase != "schema" and "list_query_json" not in columns:
+                if mode == "apply" and phase != "schema" and not {
+                    "list_query_json", "list_descriptor_key", "list_receipt_key", "list_table_snapshot_key",
+                }.issubset(columns):
                     raise MigrationError("list_query_schema_missing")
                 has_table = _has_table(connection, backend)
                 report["schema_missing"] = not has_table

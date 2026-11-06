@@ -1,0 +1,2 @@
+{"stage": "database", "read_only": 1, "version": "8.4.9"}
+{"stage": "size", "table": "document_jobs", "rows_count": 119, "payload_bytes": 4118682.0, "projection_avg_bytes": 111623.1849, "projection_max_bytes": 2377676}

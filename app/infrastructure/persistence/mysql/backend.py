@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -63,8 +63,8 @@ class MysqlPersistenceBackend:
         )
 
     @contextmanager
-    def connect(self) -> Iterator[Any]:
-        connection = self._connect_factory()
+    def _transaction(self, connection: Any) -> Iterator[Any]:
+        """普通连接和读取会话共用原有的逐操作提交、回滚规则。"""
         try:
             yield connection
             connection.commit()
@@ -72,8 +72,34 @@ class MysqlPersistenceBackend:
             if hasattr(connection, "rollback"):
                 connection.rollback()
             raise
+
+    @contextmanager
+    def connect(self) -> Iterator[Any]:
+        connection = self._connect_factory()
+        try:
+            with self._transaction(connection):
+                yield connection
         finally:
             connection.close()
+
+    @contextmanager
+    def read_session(self) -> Iterator[Callable[[], AbstractContextManager[Any]]]:
+        """只复用当前会话的物理连接；每次读取仍独立结束事务。"""
+        connection = None
+
+        @contextmanager
+        def read_connect() -> Iterator[Any]:
+            nonlocal connection
+            if connection is None:
+                connection = self._connect_factory()
+            with self._transaction(connection):
+                yield connection
+
+        try:
+            yield read_connect
+        finally:
+            if connection is not None:
+                connection.close()
 
     def initialize_schema(self) -> None:
         with self.connect() as connection:

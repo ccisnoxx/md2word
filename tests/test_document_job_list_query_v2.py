@@ -13,6 +13,7 @@ from app.domains.document_jobs.list_query import (
     DocumentJobListQuery, DocumentJobListProjectionUnstable, document_job_list_projection,
     document_job_list_projection_from_raw, document_file_review_projection,
     document_file_review_projection_from_raw, query_document_job_records,
+    document_job_list_storage_from_raw, document_file_review_storage_from_raw,
 )
 from app.domains.document_jobs.list_query_facts import equality_key, receipt_file_key
 from app.domains.document_jobs.models import DocumentJobPreparedResult, DocumentJobRecord
@@ -57,6 +58,27 @@ def keys_equal(left, right):
 
 
 class ListFactsTests(TestCase):
+    def test_storage_splits_complete_keys_and_keeps_nonword_empty_keys(self):
+        file = word(metadata={"large": "中文\\\"" * 20000})
+        item = bound_job(file, receipt=True)
+        for record, builder, storage, names, version in (
+            (item, document_job_list_projection_from_raw, document_job_list_storage_from_raw,
+             ("descriptor_key", "receipt_key", "table_snapshot_key"), 3),
+            (file, document_file_review_projection_from_raw, document_file_review_storage_from_raw,
+             ("descriptor_key", "receipt_key"), 2),
+        ):
+            with self.subTest(record=type(record).__name__):
+                raw = json.dumps(record.model_dump(mode="json"), ensure_ascii=False)
+                complete = builder(raw)
+                small_json, *keys = storage(raw)
+                small = json.loads(small_json)
+                self.assertEqual(keys, [complete[name] for name in names])
+                self.assertTrue(all(name not in small for name in names))
+                self.assertEqual(small, {**{name: value for name, value in complete.items() if name not in names}, "version": version})
+                self.assertLess(len(small_json.encode()), len(json.dumps(complete, ensure_ascii=False).encode()) // 10)
+        nonword = document_file_review_storage_from_raw(word(file_type="source_pdf").model_dump(mode="json"))
+        self.assertEqual(nonword[1:], ("", ""))
+
     def test_canonical_matches_python_numeric_container_and_datetime_equality(self):
         cases = [(True, 1), (1, 1.0), (-0.0, False), (2**53+1, float(2**53+1)),
             ({"a": [True, {"x": 2}], "b": None}, {"b": None, "a": [1.0, {"x": 2.0}]}),
@@ -122,8 +144,10 @@ class ListSqlV2Tests(TestCase):
         self.connection = sqlite3.connect(":memory:")
         self.connection.row_factory = sqlite3.Row
         self.addCleanup(self.connection.close)
-        self.connection.execute("CREATE TABLE document_jobs (job_id TEXT PRIMARY KEY, payload TEXT, list_query_json TEXT)")
-        self.connection.execute("CREATE TABLE document_files (file_id TEXT PRIMARY KEY, payload TEXT, review_query_json TEXT)")
+        self.connection.execute("CREATE TABLE document_jobs (job_id TEXT PRIMARY KEY, payload TEXT, list_query_json TEXT, "
+            "list_descriptor_key TEXT, list_receipt_key TEXT, list_table_snapshot_key TEXT)")
+        self.connection.execute("CREATE TABLE document_files (file_id TEXT PRIMARY KEY, payload TEXT, review_query_json TEXT, "
+            "review_descriptor_key TEXT, review_receipt_key TEXT)")
         self.query = DocumentJobListQuery("T", "C", as_of=NOW)
         self.jobs = []
         self.files = {}
@@ -133,12 +157,12 @@ class ListSqlV2Tests(TestCase):
         self.files = {file.id: file for file in files}
         for item in jobs:
             raw = json.dumps(item.model_dump(mode="json"), ensure_ascii=False)
-            self.connection.execute("INSERT INTO document_jobs VALUES (?, ?, ?)",
-                (item.id, raw, json.dumps(document_job_list_projection_from_raw(raw), ensure_ascii=False)))
+            self.connection.execute("INSERT INTO document_jobs VALUES (?, ?, ?, ?, ?, ?)",
+                (item.id, raw, *document_job_list_storage_from_raw(raw)))
         for file in files:
             raw = json.dumps(file.model_dump(mode="json"), ensure_ascii=False)
-            self.connection.execute("INSERT INTO document_files VALUES (?, ?, ?)",
-                (file.id, raw, json.dumps(document_file_review_projection_from_raw(raw), ensure_ascii=False)))
+            self.connection.execute("INSERT INTO document_files VALUES (?, ?, ?, ?, ?)",
+                (file.id, raw, *document_file_review_storage_from_raw(raw)))
 
     def run_query(self, query=None):
         from app.infrastructure.persistence.document_job_list_query import query_document_jobs_sql
@@ -183,8 +207,8 @@ class ListSqlV2Tests(TestCase):
         self.assertEqual(later.translation_qa_summary["unreviewed"], 1)
         changed = file.model_copy(update={"deletion_claim": "claim"})
         raw = json.dumps(changed.model_dump(mode="json"))
-        self.connection.execute("UPDATE document_files SET payload=?, review_query_json=?",
-            (raw, json.dumps(document_file_review_projection_from_raw(raw))))
+        self.connection.execute("UPDATE document_files SET payload=?, review_query_json=?, review_descriptor_key=?, review_receipt_key=?",
+            (raw, *document_file_review_storage_from_raw(raw)))
         self.assertEqual(self.run_query().translation_qa_summary["unreviewed"], 1)
         self.assertEqual(tuple(before), tuple(self.connection.execute("SELECT payload, list_query_json FROM document_jobs").fetchone()))
 
@@ -195,8 +219,8 @@ class ListSqlV2Tests(TestCase):
             self.run_query(replace(self.query, q="not matching", translation_qa_status="blocked"))
         changed = file.model_copy(update={"deletion_claim": "claim"})
         raw = json.dumps(changed.model_dump(mode="json"))
-        self.connection.execute("UPDATE document_files SET payload=?, review_query_json=?",
-            (raw, json.dumps(document_file_review_projection_from_raw(raw))))
+        self.connection.execute("UPDATE document_files SET payload=?, review_query_json=?, review_descriptor_key=?, review_receipt_key=?",
+            (raw, *document_file_review_storage_from_raw(raw)))
         self.assertEqual(self.run_query().translation_qa_summary["unreviewed"], 1)
 
     def test_receipt_kind_error_reachable_published_and_prior_mismatch(self):
@@ -210,8 +234,8 @@ class ListSqlV2Tests(TestCase):
             self.run_query()
         changed = file.model_copy(update={"review_source_revision": 1})
         raw = json.dumps(changed.model_dump(mode="json"))
-        self.connection.execute("UPDATE document_files SET payload=?, review_query_json=?",
-            (raw, json.dumps(document_file_review_projection_from_raw(raw))))
+        self.connection.execute("UPDATE document_files SET payload=?, review_query_json=?, review_descriptor_key=?, review_receipt_key=?",
+            (raw, *document_file_review_storage_from_raw(raw)))
         self.assertEqual(self.run_query().translation_qa_summary["approved"], 1)
 
     def test_nonverified_status_and_static_quality_exception(self):
@@ -223,8 +247,9 @@ class ListSqlV2Tests(TestCase):
         self.assertEqual(self.run_query().translation_qa_summary["needs_fix"], 1)
         invalid = item.model_copy(update={"quality_summary": {"checks_v1": []}})
         raw = json.dumps(invalid.model_dump(mode="json"))
-        self.connection.execute("UPDATE document_jobs SET payload=?, list_query_json=?",
-            (raw, json.dumps(document_job_list_projection_from_raw(raw))))
+        self.connection.execute("UPDATE document_jobs SET payload=?, list_query_json=?, "
+            "list_descriptor_key=?, list_receipt_key=?, list_table_snapshot_key=?",
+            (raw, *document_job_list_storage_from_raw(raw)))
         with self.assertRaises(ValueError):
             self.run_query(replace(self.query, page=99))
 
@@ -236,7 +261,7 @@ class ListSqlV2Tests(TestCase):
             self.assertEqual(decode.call_count, 1)
         with patch.object(DocumentJobRecord, "model_validate_json", side_effect=AssertionError("不应解码")):
             self.assertEqual(self.run_query(replace(self.query, page=99)).items, [])
-        projection = document_file_review_projection(word("wrong", "a"))
+        projection = json.loads(document_file_review_storage_from_raw(word("wrong", "a").model_dump(mode="json"))[0])
         self.connection.execute("UPDATE document_files SET review_query_json=?", (json.dumps(projection),))
         with self.assertRaises(ValueError):
             self.run_query()
@@ -298,23 +323,23 @@ class ListSqlV2Tests(TestCase):
             effective_review_job(item, overflow, now=NOW)
         changed = overflow.model_copy(update={"review_source_revision": 1})
         raw = json.dumps(changed.model_dump(mode="json"))
-        self.connection.execute("UPDATE document_files SET payload=?, review_query_json=?",
-            (raw, json.dumps(document_file_review_projection_from_raw(raw))))
+        self.connection.execute("UPDATE document_files SET payload=?, review_query_json=?, review_descriptor_key=?, review_receipt_key=?",
+            (raw, *document_file_review_storage_from_raw(raw)))
         self.assertEqual(self.run_query().translation_qa_summary["unreviewed"], 1)
 
     def test_shape_requires_keys_correct_scalar_types_and_missing_columns_fail_explicitly(self):
         from app.domains.document_jobs.list_query import DocumentJobListProjectionUnavailable
         item, file = bound_job(), word()
         self.seed([item], [file])
-        for patch_values in ({"version": 1}, {"version": True}, {"created_us": "0"},
-                             {"result_present": None}, {"descriptor_key": None}, {"search": [1]}):
+        for patch_values in ({"version": 2}, {"version": True}, {"created_us": "0"},
+                             {"result_present": None}, {"descriptor_key_comparable": None}, {"search": [1]}):
             with self.subTest(patch=patch_values):
-                projection = {**document_job_list_projection(item), **patch_values}
+                projection = {**json.loads(document_job_list_storage_from_raw(item.model_dump(mode="json"))[0]), **patch_values}
                 self.connection.execute("UPDATE document_jobs SET list_query_json=?", (json.dumps(projection),))
                 with self.assertRaises(DocumentJobListProjectionUnavailable):
                     self.run_query()
-        self.connection.execute("UPDATE document_jobs SET list_query_json=?", (json.dumps(document_job_list_projection(item)),))
-        projection = document_file_review_projection(file)
+        self.connection.execute("UPDATE document_jobs SET list_query_json=?", (document_job_list_storage_from_raw(item.model_dump(mode="json"))[0],))
+        projection = json.loads(document_file_review_storage_from_raw(file.model_dump(mode="json"))[0])
         del projection["revision"]
         self.connection.execute("UPDATE document_files SET review_query_json=?", (json.dumps(projection),))
         with self.assertRaises(DocumentJobListProjectionUnavailable):
@@ -322,3 +347,67 @@ class ListSqlV2Tests(TestCase):
         self.connection.execute("ALTER TABLE document_files DROP COLUMN review_query_json")
         with self.assertRaises(DocumentJobListProjectionUnavailable):
             self.run_query()
+
+    def test_key_columns_reject_null_blob_and_missing_columns(self):
+        from app.domains.document_jobs.list_query import DocumentJobListProjectionUnavailable
+        from app.infrastructure.persistence.document_job_list_query import is_document_job_table_evidence_snapshot_current_sql
+        item, file = bound_job(receipt=True), word()
+        self.seed([item], [file])
+        for table, columns in (
+            ("document_jobs", ("list_descriptor_key", "list_receipt_key", "list_table_snapshot_key")),
+            ("document_files", ("review_descriptor_key", "review_receipt_key")),
+        ):
+            for column in columns:
+                original = self.connection.execute(f"SELECT {column} FROM {table}").fetchone()[0]
+                for invalid in (None, b"not-text"):
+                    with self.subTest(column=column, invalid=invalid):
+                        self.connection.execute(f"UPDATE {table} SET {column}=?", (invalid,))
+                        with self.assertRaises(DocumentJobListProjectionUnavailable):
+                            self.run_query()
+                        if table == "document_jobs":
+                            with self.assertRaises(DocumentJobListProjectionUnavailable):
+                                is_document_job_table_evidence_snapshot_current_sql(self.connection, item, mysql=False)
+                self.connection.execute(f"UPDATE {table} SET {column}=?", (original,))
+                self.connection.execute(f"ALTER TABLE {table} RENAME COLUMN {column} TO missing_key")
+                with self.assertRaises(DocumentJobListProjectionUnavailable):
+                    self.run_query()
+                self.connection.execute(f"ALTER TABLE {table} RENAME COLUMN missing_key TO {column}")
+
+    def test_independent_key_comparison_is_exact_and_comparable_flags_still_apply(self):
+        from app.infrastructure.persistence.document_job_list_query import is_document_job_table_evidence_snapshot_current_sql
+        item, file = bound_job(receipt=True), word()
+        self.seed([item], [file])
+        self.assertEqual(self.run_query().translation_qa_summary["approved"], 1)
+        for column in ("review_descriptor_key", "review_receipt_key"):
+            original = self.connection.execute(f"SELECT {column} FROM document_files").fetchone()[0]
+            for changed in (original + " ", original.upper(), ""):
+                with self.subTest(column=column, changed=changed[-20:]):
+                    self.connection.execute(f"UPDATE document_files SET {column}=?", (changed,))
+                    self.assertEqual(self.run_query().translation_qa_summary["unreviewed"], 1)
+            self.connection.execute(f"UPDATE document_files SET {column}=?", (original,))
+        for flag in ("descriptor_key_comparable", "receipt_key_comparable"):
+            projection = json.loads(document_job_list_storage_from_raw(item.model_dump(mode="json"))[0])
+            projection[flag] = 0
+            self.connection.execute("UPDATE document_jobs SET list_query_json=?", (json.dumps(projection),))
+            self.assertEqual(self.run_query().translation_qa_summary["unreviewed"], 1)
+        self.connection.execute("UPDATE document_jobs SET list_table_snapshot_key=list_table_snapshot_key || ' '")
+        self.assertFalse(is_document_job_table_evidence_snapshot_current_sql(self.connection, item, mysql=False))
+
+    def test_both_dialects_read_key_columns_without_extracting_large_json_values(self):
+        from app.infrastructure.persistence.document_job_list_query import (
+            _ListSql, is_document_job_table_evidence_snapshot_current_sql, query_document_jobs_sql,
+        )
+        for mysql in (False, True):
+            statements = []
+            def read(statement, params=()):
+                statements.append(statement)
+                return [{"n": 0, "unavailable": 0}] if "COUNT(" in statement and "GROUP BY" not in statement else []
+            with self.subTest(mysql=mysql), patch.object(_ListSql, "read", side_effect=read):
+                query_document_jobs_sql(None, self.query, mysql=mysql)
+                is_document_job_table_evidence_snapshot_current_sql(None, job(), mysql=mysql)
+            generated = "\n".join(statements)
+            for name in ("descriptor_key", "receipt_key", "table_snapshot_key"):
+                self.assertNotIn(f"'$.{name}'", generated)
+            for column in ("j.list_descriptor_key", "j.list_receipt_key", "f.review_descriptor_key",
+                           "f.review_receipt_key", "list_table_snapshot_key"):
+                self.assertIn(f"CAST({column} AS BINARY)" if mysql else f"({column} COLLATE BINARY)", generated)

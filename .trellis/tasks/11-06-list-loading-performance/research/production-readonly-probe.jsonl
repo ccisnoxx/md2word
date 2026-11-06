@@ -1,0 +1,22 @@
+{"stage": "database", "read_only": 1, "version": "8.4.9"}
+{"stage": "size", "table": "document_jobs", "rows_count": 119, "payload_bytes": 4118682.0, "projection_avg_bytes": 111623.1849, "projection_max_bytes": 2377676}
+{"stage": "size", "table": "document_files", "rows_count": 1928, "payload_bytes": 7701723.0, "projection_avg_bytes": 8995.2765, "projection_max_bytes": 2376229}
+{"stage": "scope_counts", "counts": [119]}
+{"stage": "sql", "index": 0, "seconds": 3.044212, "rows": 1, "statement_bytes": 4559}
+{"stage": "sql", "index": 1, "seconds": 2.253691, "rows": 1, "statement_bytes": 2612}
+{"stage": "sql", "index": 2, "seconds": 0.650418, "rows": 1, "statement_bytes": 1256}
+{"stage": "sql", "index": 3, "seconds": 1.341003, "rows": 1, "statement_bytes": 2144}
+{"stage": "sql", "index": 4, "seconds": 0.285318, "rows": 0, "statement_bytes": 974}
+{"stage": "sql", "index": 5, "seconds": 0.287116, "rows": 0, "statement_bytes": 974}
+{"stage": "sql", "index": 6, "seconds": 0.294437, "rows": 0, "statement_bytes": 2505}
+{"stage": "sql", "index": 7, "seconds": 0.287253, "rows": 1, "statement_bytes": 3417}
+{"stage": "sql", "index": 8, "seconds": 0.650396, "rows": 2, "statement_bytes": 966}
+{"stage": "sql", "index": 9, "seconds": 0.294268, "rows": 1, "statement_bytes": 8342}
+{"stage": "sql", "index": 10, "seconds": 0.684327, "rows": 2, "statement_bytes": 966}
+{"stage": "sql", "index": 11, "seconds": 0.637431, "rows": 1, "statement_bytes": 886}
+{"stage": "sql", "index": 12, "seconds": 0.709882, "rows": 20, "statement_bytes": 1024}
+{"stage": "list_repository", "seconds": 11.734191, "total": 74, "page_items": 20, "sql_seconds": 11.419752}
+{"stage": "incident_load_payloads", "seconds": 0.010649, "rows": 119}
+{"stage": "incident_decode", "seconds": 0.068135, "jobs": 119}
+{"stage": "incident_initial_review", "seconds": 0.00122, "rows": 74, "file_calls": 0, "file_seconds": 0}
+{"stage": "incident_classification_view", "seconds": 1.943747, "rows": 74, "file_calls": 68, "file_seconds": 1.449863}

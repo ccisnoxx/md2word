@@ -1,4 +1,4 @@
-"""v2 派生事实共享写者：真实 SQLite 原子性与 fake MySQL 调用形状。"""
+"""拆列派生事实共享写者：真实 SQLite 原子性与 fake MySQL 调用形状。"""
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -9,8 +9,8 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from app.domains.document_jobs.list_query import (
-    DocumentJobListQuery, document_job_list_projection_from_raw,
-    document_file_review_projection_from_raw,
+    DocumentJobListQuery, document_job_list_storage_from_raw,
+    document_file_review_storage_from_raw,
 )
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.new_generation import NewGenerationSubmission, GENERATION_REQUESTS_ENVELOPE
@@ -24,6 +24,8 @@ from app.infrastructure.persistence.mysql.document_jobs import MysqlDocumentJobR
 from app.infrastructure.persistence.mysql.files import MysqlDocumentFileRepository
 
 NOW = datetime.now(timezone.utc)
+JOB_STORAGE_COLUMNS = ("list_query_json", "list_descriptor_key", "list_receipt_key", "list_table_snapshot_key")
+FILE_STORAGE_COLUMNS = ("review_query_json", "review_descriptor_key", "review_receipt_key")
 
 
 def job_record(job_id="job", **patches):
@@ -56,14 +58,14 @@ class SqliteV2WriterTests(TestCase):
 
     def assert_job_projection(self, identity="job"):
         row = self.row("document_jobs", "job_id", identity)
-        self.assertEqual(json.loads(row["list_query_json"]), document_job_list_projection_from_raw(row["payload"]))
-        self.assertEqual(json.loads(row["list_query_json"])["version"], 2)
+        self.assertEqual(tuple(row[column] for column in JOB_STORAGE_COLUMNS), document_job_list_storage_from_raw(row["payload"]))
+        self.assertEqual(json.loads(row["list_query_json"])["version"], 3)
         return row
 
     def assert_file_projection(self, identity="word"):
         row = self.row("document_files", "file_id", identity)
-        self.assertEqual(json.loads(row["review_query_json"]), document_file_review_projection_from_raw(row["payload"]))
-        self.assertEqual(json.loads(row["review_query_json"])["version"], 1)
+        self.assertEqual(tuple(row[column] for column in FILE_STORAGE_COLUMNS), document_file_review_storage_from_raw(row["payload"]))
+        self.assertEqual(json.loads(row["review_query_json"])["version"], 2)
         return row
 
     def test_all_file_writers_project_serialized_values_and_deletion_claim_without_revision(self):
@@ -127,7 +129,7 @@ class SqliteV2WriterTests(TestCase):
         raw = json.loads(row["payload"])
         self.assertNotIn("created_at", raw)
         self.assertEqual(raw["unknown_raw"], original["unknown_raw"])
-        self.assertIsNone(row["list_query_json"])
+        self.assertEqual(tuple(row[column] for column in JOB_STORAGE_COLUMNS), (None, None, None, None))
         self.assertEqual(row["created_at"], NOW.isoformat())
         with self.backend.connect() as connection:
             raw["created_at"] = NOW.isoformat()
@@ -172,7 +174,7 @@ class SqliteV2WriterTests(TestCase):
         with self.backend.connect() as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM document_job_review_records").fetchone()[0], 0)
 
-    def test_bootstrap_adds_two_columns_without_rewriting_legacy_data(self):
+    def test_bootstrap_adds_storage_columns_without_rewriting_legacy_data(self):
         path = Path(self.temp.name) / "legacy.sqlite"
         with sqlite3.connect(path) as connection:
             connection.executescript("CREATE TABLE document_jobs(job_id TEXT PRIMARY KEY,payload TEXT,created_at TEXT,updated_at TEXT);"
@@ -182,8 +184,8 @@ class SqliteV2WriterTests(TestCase):
         backend = SqlitePersistenceBackend(path)
         backend.initialize_schema()
         with backend.connect() as connection:
-            self.assertEqual(tuple(connection.execute("SELECT payload,created_at,updated_at,list_query_json FROM document_jobs").fetchone()), ("{}", "c", "u", None))
-            self.assertEqual(tuple(connection.execute("SELECT payload,created_at,updated_at,review_query_json FROM document_files").fetchone()), ("{}", "c", "u", None))
+            self.assertEqual(tuple(connection.execute("SELECT payload,created_at,updated_at,list_query_json,list_descriptor_key,list_receipt_key,list_table_snapshot_key FROM document_jobs").fetchone()), ("{}", "c", "u", None, None, None, None))
+            self.assertEqual(tuple(connection.execute("SELECT payload,created_at,updated_at,review_query_json,review_descriptor_key,review_receipt_key FROM document_files").fetchone()), ("{}", "c", "u", None, None, None))
 
     def test_current_snapshot_port_opens_a_new_connection_at_each_guard(self):
         connections = []
@@ -227,19 +229,60 @@ class MysqlV2WriterShapeTests(TestCase):
         repository = MysqlDocumentJobRepository(backend)
         repository.create_document_job(job_record())
         sql, params = connection.sql[-1]
-        self.assertIn("list_query_json", sql)
-        self.assertEqual(json.loads(params[-1]), document_job_list_projection_from_raw(params[1]))
+        for column in JOB_STORAGE_COLUMNS:
+            self.assertIn(column, sql)
+        self.assertEqual(sql.count("%s"), len(params))
+        self.assertEqual(params[-4:], document_job_list_storage_from_raw(params[1]))
         connection.payload = params[1]
         repository.update_document_job("job", error_message="changed")
         sql, params = connection.sql[-1]
-        self.assertIn("list_query_json = %s", sql)
-        self.assertEqual(json.loads(params[-2]), document_job_list_projection_from_raw(params[0]))
+        for column in JOB_STORAGE_COLUMNS:
+            self.assertIn(f"{column} = %s", sql)
+        self.assertEqual(sql.count("%s"), len(params))
+        self.assertEqual(params[-5:-1], document_job_list_storage_from_raw(params[0]))
         connection.payload = None
         files = MysqlDocumentFileRepository(backend)
         files.create_document_file(file_record())
         sql, params = connection.sql[-1]
-        self.assertIn("review_query_json", sql)
-        self.assertEqual(json.loads(params[-1]), document_file_review_projection_from_raw(params[1]))
+        for column in FILE_STORAGE_COLUMNS:
+            self.assertIn(column, sql)
+        self.assertEqual(sql.count("%s"), len(params))
+        self.assertEqual(params[-3:], document_file_review_storage_from_raw(params[1]))
+        connection.payload = params[1]
+        files.update_document_file("word", etag="已更新")
+        sql, params = connection.sql[-1]
+        for column in FILE_STORAGE_COLUMNS:
+            self.assertIn(f"{column} = %s", sql)
+        self.assertEqual(sql.count("%s"), len(params))
+        self.assertEqual(params[-4:-1], document_file_review_storage_from_raw(params[0]))
+
+    def test_state_backfill_binds_all_keys_or_clears_the_whole_group(self):
+        for stable in (True, False):
+            with self.subTest(stable=stable):
+                payload = job_record().model_dump(mode="json")
+                payload.pop("review_status")
+                if not stable:
+                    payload.pop("created_at")
+                connection = FakeMysqlConnection(json.dumps(payload))
+                repository = MysqlDocumentJobRepository(self.backend(connection))
+                self.assertTrue(repository.backfill_document_job_state_if_missing("job"))
+                sql, params = connection.sql[-1]
+                for column in JOB_STORAGE_COLUMNS:
+                    self.assertIn(f"{column} = %s", sql)
+                self.assertEqual(sql.count("%s"), len(params))
+                expected = document_job_list_storage_from_raw(params[0]) if stable else (None, None, None, None)
+                self.assertEqual(params[-5:-1], expected)
+
+    def test_schema_adds_missing_keys_without_rewriting_job_or_file_data(self):
+        connection = FakeMysqlConnection()
+        self.backend(connection).initialize_schema()
+        statements = [" ".join(sql.split()) for sql, _ in connection.sql]
+        for table, columns in (("document_jobs", JOB_STORAGE_COLUMNS), ("document_files", FILE_STORAGE_COLUMNS)):
+            create = next(sql for sql in statements if sql.startswith(f"CREATE TABLE IF NOT EXISTS {table} ("))
+            for column in columns:
+                self.assertIn(f"{column} LONGTEXT NULL", create)
+                self.assertIn(f"ALTER TABLE {table} ADD COLUMN {column} LONGTEXT NULL", statements)
+            self.assertFalse(any(sql.startswith((f"UPDATE {table} ", f"INSERT INTO {table} ")) for sql in statements))
 
     def test_query_sets_repeatable_read_and_cleans_up_failure(self):
         connection = FakeMysqlConnection()
@@ -262,8 +305,8 @@ class SqliteV2PublishedWriterTests(TestCase):
         observed = set()
         def write(repository, connection, record, **kwargs):
             original(repository, connection, record, **kwargs)
-            row = connection.execute("SELECT payload,list_query_json FROM document_jobs WHERE job_id = ?", (record.id,)).fetchone()
-            self.assertEqual(json.loads(row["list_query_json"]), document_job_list_projection_from_raw(row["payload"]))
+            row = connection.execute("SELECT * FROM document_jobs WHERE job_id = ?", (record.id,)).fetchone()
+            self.assertEqual(tuple(row[column] for column in JOB_STORAGE_COLUMNS), document_job_list_storage_from_raw(row["payload"]))
             if record.prepared_result is not None:
                 observed.add("prepared")
             if record.word_preview_state is not None:

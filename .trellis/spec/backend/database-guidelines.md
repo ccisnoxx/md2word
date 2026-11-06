@@ -79,12 +79,45 @@ Use parameterized SQL:
 
 Do not format user or request values directly into SQL strings.
 
-Connection helpers define commit behavior:
+连接上下文拥有事务收尾：
 
-- `MysqlPersistenceBackend.connect()` commits on success and rolls back on exception.
-- `SqlitePersistenceBackend.connect()` commits on successful context exit and closes the connection.
+- `MysqlPersistenceBackend.connect()` 成功提交、异常回滚、退出关闭；与读取会话共用 `_transaction(connection)` 的原有规则。
+- `SqlitePersistenceBackend.connect()` 成功退出时提交，随后关闭连接。
+- 默认仍为每个仓储操作的短连接/短事务；异常列表只在下述局部读取会话中复用物理连接，不形成跨操作事务。没有通用查询构造器、ORM事务管理器或跨领域事务框架。
 
-当前未建立此约定：there is no shared query builder, ORM transaction manager, or multi-statement domain transaction abstraction. Existing adapters open a short connection per repository method.
+### 异常列表的局部读取会话
+
+**1. 范围与触发。** 线上分类逐条文件/保护读取反复建连是已测瓶颈。仅异常列表的首次有效复核与分类采用请求级会话；参数校验、起始时钟和搜索归一化先完成，分类结束立即关闭，页内动作仍复用 `observed_result_view`。详情、诊断、下载和POST默认路径不加入会话。
+
+**2. 签名。** `DocumentFileReaderProtocol` 只提供 `get_document_file(file_id) -> DocumentFileRecord | None` 与 `is_document_file_protected(file_id) -> bool`；`DocumentFileRepositoryProtocol.read_session() -> AbstractContextManager[DocumentFileReaderProtocol]`。
+`MysqlPersistenceBackend.read_session()` 产出 `Callable[[], AbstractContextManager[Any]]` 作为逐操作连接上下文；`MysqlDocumentFileRepository(..., read_connect=None)` 的局部实例仅让上述两方法使用它。service的 `list_visible_jobs`、`_effective_job`、`build_incident_classification_view`、`_build_result_read_view`、`_get_completed_result_file`、`_ensure_file_not_expired` 接受可选关键词 `file_reader`，缺省仍用原仓储。
+
+**3. 合同。** MySQL第一次读取才建物理连接，零读取不建连；每次原操作独立提交/回滚，下一次取得新的事务观察，绝不把会话改成长RR快照。会话退出关闭连接，不自动重连、重试、缓存或跳过读取。局部仓储与显式reader不修改共享service/backend的连接模式。file/SQLite会话无状态，复用原仓储行为。没有新增HTTP字段、数据库列或环境配置；写方法及锁定读取继续使用原 `backend.connect()`。
+
+**4. 校验与错误矩阵。**
+
+| 条件 | 必须保持的结果 |
+| --- | --- |
+| 文件缺件 | 原None和调用者原有ApiError/禁用动作处理 |
+| get返回坏JSON、模型或不匹配ID | 原事务已提交后校验并抛出；不变成None，不挪进事务 |
+| 保护关系JSON解析失败或SQL失败 | 当前操作回滚并传播；退出会话关闭连接 |
+| 可达naive/aware、质量或descriptor错误 | 保留原前缀与时钟，不能为了提速跳过正常任务的检查 |
+| 建连、提交、回滚或现有连接失败 | 沿既有错误处理传播、最终释放；不增加自动恢复 |
+| 多请求共享应用service | 每请求持有独立reader/连接，不替换singleton字段 |
+
+物理connect/close从多次变为一次，连接层故障机会和关闭时点必然变化；保留业务校验及事务错误顺序，不宣称逐连接运输故障完全等价。
+
+**5. 正常、缺省、错误场景。** 正常：同一reader两次get共享物理连接，但第一次提交后外部更新可被第二次读取观察。缺省：未传file_reader的详情/下载照常逐次建连。错误：保护关系坏JSON回滚并使本请求失败，不能返回未保护或空异常列表。
+
+**6. 必要验证。** fake记录单次建连、逐次提交/错误回滚、零读/异常关闭，以及get校验在commit后而保护解析在事务内。真实MySQL显式确认RR，用第二连接提交文件/保护关系变化，证明下一操作见到新值；fake不能替代。直接回归保护两阶段有效复核、分类前/后到期、页内观察复用、完整响应/summary/动作差分，以及并发reader隔离；具体执行证据见[当前任务](../../tasks/11-06-list-loading-performance/research/incident-session-implementation.md)。
+
+**7. 错误与正确做法。** 错误：在会话末尾统一commit、给共享service临时换仓储，或过滤掉“正常”任务来少读文件。正确：显式传递局部reader并保留原两阶段顺序，每次原读取都结束自己的事务，例如：
+
+```python
+with file_repository.read_session() as reader:
+    first = reader.get_document_file(file_id)  # 本次读取已结束事务。
+    second = reader.get_document_file(file_id)  # 新事务观察，不缓存 first。
+```
 
 ## 正式回调消息持久化
 
@@ -158,11 +191,12 @@ Connection helpers define commit behavior:
 
 有效复核与双表合同见[任务列表有效复核 v2](./document-job-list-query-v2.md)；下列搜索、时间和排序约束由v1继承，仍适用于当前实现。旧单表回填和raw review分类不再适用。
 
-- `document_jobs.list_query_json` 版本2与 `document_files.review_query_json` 版本1保存各自静态事实，payload保持权威；有效复核按单次 `as_of` 关联当前文件计算。
+- `document_jobs.list_query_json` 存储版本3与 `document_files.review_query_json` 存储版本2保存各自的小字段静态事实；完整 key 分别存入 job 的 `list_descriptor_key/list_receipt_key/list_table_snapshot_key` 和 file 的 `review_descriptor_key/review_receipt_key`。SQLite TEXT/MySQL LONGTEXT nullable，NULL 表示未回填，合法不适用值为空串；payload保持权威，有效复核按单次 `as_of` 关联当前文件计算。
 - SQLite/MySQL在同一只读快照完成权限、全部筛选、三类汇总、排序和分页；包含动作构建的完整任务payload解码量不超过页条数，实时表格guard读取窄事实。
 - 权限同时精确比较tenant/company，Admin可查看范围内全部任务，其他角色限定created_by；MySQL不得依赖不区分大小写或重音的默认collation。
 - q先strip，再对id、source_file_id、任务快照original_filename、error_code、error_message五字段分别Python casefold并做字面子串匹配；快照文件名仅dict中的str参与。不串接、不做Unicode normalization，`%`、`_`、反斜线不是通配符；使用INSTR/binary LOCATE，不用LOWER/LIKE替代。
 - 时间键使用精确signed整数微秒，区分naive/aware，不用浮点或本机时区转换。日期下界先比较，再比较通过者的上界，之后应用翻译模式；单行也须满足边界类型兼容。只对完整筛选域检查实际排序列，ID与主排序同向。
 - job/file共享writer及直接SQL迁移旁路均须同行维护投影；缺失或不兼容事实必须明确失败，不允许GET修复或全量Python回退；事实与payload一致性由全量verify检查，不能仅以非NULL证明未陈旧。
-- `scripts/ops/migrate_document_job_list_query.py` 回填两表，apply先文件后任务，分别使用 `--after-file-id` / `--after-job-id` 续跑；verify须从空游标在同一只读快照全量核对两表，不能分页续跑verify。
+- 列表就绪检查合入同快照既有查询，覆盖 V 统计域任务及其关联文件；可见性字段损坏也须失败关闭，不以坏字段或 NULL 静默排除。不再每请求独立全表 shape COUNT，也不缓存跨请求有效性；完整范围和回归合同见[列表 v2 Spec](./document-job-list-query-v2.md)。
+- `scripts/ops/migrate_document_job_list_keys.py` 与原 `migrate_document_job_list_query.py` 共用当前拆列回填实现：同行更新小 JSON 和完整 key，apply先文件后任务，分别使用 `--after-file-id` / `--after-job-id` 续跑；verify须从空游标在同一只读快照全量核对两表所有派生列，不能分页续跑verify。CLI必须显式指定backend及连接目标，不读取.env；dry-run不DDL/DML，apply仅对不一致行UPDATE，其他表禁止写入。
 - 旧writer恢复后两表必须从头重建；停写、备份恢复及切换程序见[后端运维手册](../../../docs/runbooks/backend.md#documentjob-列表查询投影)。真实引擎验证使用 `tests.test_document_job_list_query_v2_mysql` 的明确隔离环境，不读.env、不复用业务库；fake与skip不算真实MySQL证据。

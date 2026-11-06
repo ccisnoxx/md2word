@@ -14,12 +14,13 @@ from app.domains.files.models import DocumentFileRecord
 
 _JOB_TEXT = ("id", "tenant_id", "company_id", "created_by", "status", "mode", "review_status", "stage",
     "delivery_status", "result_id", "quality_error", "binding_error", "review_path", "binding_revision",
-    "binding_checksum", "descriptor_key", "receipt_key", "effective_quality", "receipt_expiry_kind",
-    "created_kind", "updated_kind", "table_snapshot_key")
+    "binding_checksum", "effective_quality", "receipt_expiry_kind", "created_kind", "updated_kind")
+_JOB_KEY_COLUMNS = ("list_descriptor_key", "list_receipt_key", "list_table_snapshot_key")
+_FILE_KEY_COLUMNS = ("review_descriptor_key", "review_receipt_key")
 _JOB_FLAGS = ("deleted", "archived", "result_present", "descriptor_key_comparable", "receipt_present",
     "receipt_expiry_present", "receipt_key_comparable", "table_snapshot_key_comparable")
 _FILE_TEXT = ("id", "tenant_id", "company_id", "file_type", "job_id")
-_WORD_TEXT = ("status", "revision", "checksum", "expiry_kind", "descriptor_error", "descriptor_key", "receipt_key")
+_WORD_TEXT = ("status", "revision", "checksum", "expiry_kind", "descriptor_error")
 _WORD_FLAGS = ("deletion_claim", "checksum_present", "expiry_present", "descriptor_key_comparable", "receipt_key_comparable")
 
 
@@ -40,12 +41,17 @@ class _ListSql:
             # 旧结构缺少新增列属于明确不可用；其他 SQL/连接错误继续原样传播。
             missing = (self.mysql and error.args and error.args[0] == 1054) or (
                 isinstance(error, sqlite3.OperationalError) and "no such column:" in str(error))
-            if missing and any(column in str(error) for column in ("list_query_json", "review_query_json")):
+            if missing and any(column in str(error) for column in (
+                "list_query_json", "review_query_json", *_JOB_KEY_COLUMNS, *_FILE_KEY_COLUMNS,
+            )):
                 raise DocumentJobListProjectionUnavailable("列表查询事实列未就绪。") from error
             raise
 
     def extracted(self, source: str, name: str):
         return f"JSON_EXTRACT({source}, '$.{name}')"
+
+    def key(self, column: str):
+        return f"CAST({column} AS BINARY)" if self.mysql else f"({column} COLLATE BINARY)"
 
     def text(self, source: str, name: str, *, binary: bool = True):
         value = self.extracted(source, name)
@@ -73,7 +79,10 @@ class _ListSql:
             # MySQL 8.4 会将微秒时间报告为 UNSIGNED INTEGER，值仍须使用有符号范围比较。
             kinds = "('INTEGER', 'UNSIGNED INTEGER')" if self.mysql else "('integer')"
             return f"{self.kind(source, name)} IN {kinds}"
-        checks = [is_integer("version"), f"{self.number(source, 'version')} = {2 if job else 1}"]
+        checks = [is_integer("version"), f"{self.number(source, 'version')} = {3 if job else 2}"]
+        for column in _JOB_KEY_COLUMNS if job else _FILE_KEY_COLUMNS:
+            # MySQL 的 LONGTEXT 由 schema 保证；SQLite 还须拒绝逐行存储的 BLOB。
+            checks.append(f"{column} IS NOT NULL" if self.mysql else f"TYPEOF({column}) = 'text'")
         checks += [f"{self.kind(source, name)} = '{string}'" for name in texts]
         checks += [f"({is_integer(name)} AND {self.number(source, name)} IN (0, 1))" for name in flags]
         checks += [is_integer(name) for name in numbers]
@@ -91,11 +100,6 @@ class _ListSql:
         # CASE 保证坏 JSON 不进入 JSON_EXTRACT；缺键产生的 NULL 不能被当作有效。
         return f"CASE WHEN JSON_VALID({source}) THEN COALESCE(({' AND '.join(checks)}), 0) ELSE 0 END"
 
-    def assert_ready(self, table: str, column: str, *, job: bool):
-        rows = self.read(f"SELECT COUNT(*) AS n FROM {table} WHERE ({self.shape(column, job=job)}) = 0")
-        if rows[0]["n"]:
-            raise DocumentJobListProjectionUnavailable("列表查询事实缺失、损坏或版本不支持。")
-
 
 def is_document_job_table_evidence_snapshot_current_sql(connection, expected: DocumentJobRecord, *, mysql: bool) -> bool:
     """保留每次独立当前读；不返回 payload，不把普通来源变化当作存储错误。"""
@@ -104,7 +108,7 @@ def is_document_job_table_evidence_snapshot_current_sql(connection, expected: Do
     ready = sql.shape(source, job=True)
     key, comparable = table_evidence_snapshot_key(expected)
     equal = (f"{sql.number(source, 'deleted')} = 0 AND {sql.number(source, 'table_snapshot_key_comparable')} = 1 "
-             f"AND {1 if comparable else 0} = 1 AND {sql.text(source, 'table_snapshot_key')} = {sql.marker}")
+             f"AND {1 if comparable else 0} = 1 AND {sql.key('list_table_snapshot_key')} = {sql.marker}")
     rows = sql.read(f"SELECT {ready} AS ready, CASE WHEN ({ready}) = 1 THEN "
         f"CASE WHEN {equal} THEN 1 ELSE 0 END ELSE 0 END AS is_current "
         f"FROM document_jobs WHERE job_id = {sql.marker}", (key, expected.id))
@@ -117,13 +121,13 @@ def is_document_job_table_evidence_snapshot_current_sql(connection, expected: Do
 
 def query_document_jobs_sql(connection: Any, query: DocumentJobListQuery, *, mysql: bool) -> DocumentJobListResult:
     sql = _ListSql(connection, mysql)
-    sql.assert_ready("document_jobs", "list_query_json", job=True)
-    sql.assert_ready("document_files", "review_query_json", job=False)
     marker = sql.marker
+    # 隐藏任务的文件未做完整校验，优化器可能先于可见性 WHERE 评估文件谓词。
+    file_source = "CASE WHEN JSON_VALID(f.review_query_json) THEN f.review_query_json END"
     j = lambda name: sql.text("j.list_query_json", name)
-    f = lambda name: sql.text("f.review_query_json", name)
+    f = lambda name: sql.text(file_source, name)
     jn = lambda name: sql.number("j.list_query_json", name)
-    fn = lambda name: sql.number("f.review_query_json", name)
+    fn = lambda name: sql.number(file_source, name)
     as_of, kind = datetime_query_key(query.as_of)
     if kind != "aware":
         raise ValueError("列表观察时刻必须包含时区。")
@@ -146,7 +150,32 @@ def query_document_jobs_sql(connection: Any, query: DocumentJobListQuery, *, mys
     def count(conditions, params):
         return sql.read(f"SELECT COUNT(*) AS n FROM {source} WHERE {' AND '.join(conditions)}", (as_of, *params))[0]["n"]
 
-    if count([*visible, gate, "f.file_id IS NOT NULL", f"{f('id')} <> {j('result_id')}"], values):
+    # 可见性本身也来自投影；缺键/类型错误不能被 WHERE 的 NULL 静默排除。
+    string = "STRING" if mysql else "text"
+    integers = "('INTEGER', 'UNSIGNED INTEGER')" if mysql else "('integer')"
+    visibility_checks = [f"{sql.kind('j.list_query_json', name)} = '{string}'"
+                         for name in ("tenant_id", "company_id", "created_by")]
+    visibility_checks += [f"({sql.kind('j.list_query_json', name)} IN {integers} "
+                          f"AND {jn(name)} IN (0, 1))" for name in ("deleted", "archived")]
+    visibility_ready = ("CASE WHEN JSON_VALID(j.list_query_json) THEN COALESCE(("
+                        + " AND ".join(visibility_checks) + "), 0) ELSE 0 END")
+    scope = (f"CASE WHEN ({visibility_ready}) = 1 THEN "
+             f"CASE WHEN {' AND '.join(visible)} THEN 1 ELSE 0 END ELSE 1 END")
+    # JOIN 和 ID 比较不能依赖优化器按 WHERE/AND 的书写顺序短路坏 JSON。
+    safe_result_id = (f"CASE WHEN JSON_VALID(j.list_query_json) THEN "
+                      f"CASE WHEN {gate} THEN {result_id} END END")
+    preflight_source = ("document_jobs j LEFT JOIN document_files f "
+                        f"ON f.file_id = {safe_result_id}")
+    readiness = sql.read(
+        f"SELECT COUNT(CASE WHEN ({sql.shape('j.list_query_json', job=True)}) = 0 THEN 1 "
+        f"WHEN f.file_id IS NOT NULL AND ({sql.shape('f.review_query_json', job=False)}) = 0 "
+        "THEN 1 END) AS unavailable, "
+        "COUNT(CASE WHEN JSON_VALID(f.review_query_json) THEN "
+        f"CASE WHEN {f('id')} <> {safe_result_id} THEN 1 END END) AS n "
+        f"FROM {preflight_source} WHERE ({scope}) = 1", tuple(values))[0]
+    if readiness["unavailable"]:
+        raise DocumentJobListProjectionUnavailable("列表查询事实缺失、损坏或版本不支持。")
+    if readiness["n"]:
         raise ValueError("文件寻址与 payload 的 id 不一致。")
     if count([*visible, observed, f"{fn('deletion_claim')} = 0", f"{fn('expiry_present')} = 1",
               f"{f('expiry_kind')} <> 'aware'"], values):
@@ -166,7 +195,7 @@ def query_document_jobs_sql(connection: Any, query: DocumentJobListQuery, *, mys
     same_revision = f"{f('revision')} = {j('binding_revision')}"
     rule_error(f("descriptor_error"), [live, same_revision])
     descriptor = (f"({fn('descriptor_key_comparable')} = 1 AND {jn('descriptor_key_comparable')} = 1 "
-                  f"AND {f('descriptor_key')} = {j('descriptor_key')})")
+                  f"AND {sql.key('f.review_descriptor_key')} = {sql.key('j.list_descriptor_key')})")
     checksum = f"({fn('checksum_present')} = 0 OR {f('checksum')} = {j('binding_checksum')})"
     receipt_prefix = [live, same_revision, descriptor, checksum, f"{jn('receipt_present')} = 1"]
     if count([*visible, *receipt_prefix, f"{fn('expiry_present')} = 1", f"{jn('receipt_expiry_present')} = 1",
@@ -175,7 +204,7 @@ def query_document_jobs_sql(connection: Any, query: DocumentJobListQuery, *, mys
     receipt = (f"({jn('receipt_present')} = 0 OR ({fn('expiry_present')} = 1 "
         f"AND {jn('receipt_expiry_present')} = 1 AND {fn('expiry_us')} <= {jn('receipt_expiry_us')} "
         f"AND {fn('receipt_key_comparable')} = 1 AND {jn('receipt_key_comparable')} = 1 "
-        f"AND {f('receipt_key')} = {j('receipt_key')}))")
+        f"AND {sql.key('f.review_receipt_key')} = {sql.key('j.list_receipt_key')}))")
     valid = (f"CASE WHEN {j('review_path')} = 'unbound' THEN {j('review_status')} <> 'approved' "
         f"WHEN {j('review_path')} = 'invalid' THEN 0 ELSE ({live} AND {same_revision} AND {descriptor} "
         f"AND {checksum} AND {receipt} AND ({j('review_status')} <> 'approved' OR {j('effective_quality')} <> 'blocked')) END")

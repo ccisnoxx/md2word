@@ -336,6 +336,8 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         created_at VARCHAR(40) NOT NULL,
         updated_at VARCHAR(40) NOT NULL,
         review_query_json LONGTEXT NULL,
+        review_descriptor_key LONGTEXT NULL,
+        review_receipt_key LONGTEXT NULL,
         KEY idx_document_files_created_at (created_at, file_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
@@ -381,6 +383,9 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         delivery_status VARCHAR(32) NOT NULL DEFAULT 'internal_draft',
         quality_summary_json LONGTEXT NULL,
         list_query_json LONGTEXT NULL,
+        list_descriptor_key LONGTEXT NULL,
+        list_receipt_key LONGTEXT NULL,
+        list_table_snapshot_key LONGTEXT NULL,
         KEY idx_document_jobs_created_at (created_at, job_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
@@ -484,7 +489,12 @@ MYSQL_SCHEMA_POST_COLUMN_MAINTENANCE_STATEMENTS: tuple[str, ...] = (
 
 MYSQL_SCHEMA_COLUMN_MAINTENANCE: tuple[tuple[str, str, str], ...] = (
     ("document_jobs", "list_query_json", "list_query_json LONGTEXT NULL"),
+    ("document_jobs", "list_descriptor_key", "list_descriptor_key LONGTEXT NULL"),
+    ("document_jobs", "list_receipt_key", "list_receipt_key LONGTEXT NULL"),
+    ("document_jobs", "list_table_snapshot_key", "list_table_snapshot_key LONGTEXT NULL"),
     ("document_files", "review_query_json", "review_query_json LONGTEXT NULL"),
+    ("document_files", "review_descriptor_key", "review_descriptor_key LONGTEXT NULL"),
+    ("document_files", "review_receipt_key", "review_receipt_key LONGTEXT NULL"),
     ("document_jobs", "quality_status", "quality_status VARCHAR(32) NOT NULL DEFAULT 'pending'"),
     ("document_jobs", "review_status", "review_status VARCHAR(32) NOT NULL DEFAULT 'unreviewed'"),
     ("document_jobs", "delivery_status", "delivery_status VARCHAR(32) NOT NULL DEFAULT 'internal_draft'"),

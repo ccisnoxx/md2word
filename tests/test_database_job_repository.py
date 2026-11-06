@@ -261,10 +261,12 @@ class _FakeMysqlCursor:
                         self.database.table_columns[table] = {
                             "job_id", "payload", "created_at", "updated_at", "quality_status",
                             "review_status", "delivery_status", "quality_summary_json", "list_query_json",
+                            "list_descriptor_key", "list_receipt_key", "list_table_snapshot_key",
                         }
                     if table == "document_files" and table not in self.database.table_columns:
                         self.database.table_columns[table] = {
                             "file_id", "payload", "created_at", "updated_at", "review_query_json",
+                            "review_descriptor_key", "review_receipt_key",
                         }
             self._rows = []
             return
@@ -477,16 +479,18 @@ class _FakeMysqlCursor:
                         payload, *state_values, record_id = params
                     self.database.document_jobs[record_id].update(
                         payload=payload,
-                        **dict(zip(("quality_status", "review_status", "delivery_status", "quality_summary_json", "list_query_json"), state_values, strict=True)),
+                        **dict(zip(("quality_status", "review_status", "delivery_status", "quality_summary_json", "list_query_json",
+                                    "list_descriptor_key", "list_receipt_key", "list_table_snapshot_key"), state_values, strict=True)),
                     )
                 else:
-                    payload, created_at, updated_at, projection, record_id = params
+                    payload, created_at, updated_at, projection, descriptor_key, receipt_key, record_id = params
                     getattr(self.database, table)[record_id].update(payload=payload, created_at=created_at,
-                                                                  updated_at=updated_at, review_query_json=projection)
+                                                                  updated_at=updated_at, review_query_json=projection,
+                                                                  review_descriptor_key=descriptor_key, review_receipt_key=receipt_key)
                 self._rows = []
                 return
         if normalized.startswith("insert into document_files"):
-            file_id, payload, created_at, updated_at, projection = params
+            file_id, payload, created_at, updated_at, projection, descriptor_key, receipt_key = params
             if file_id in self.database.document_files and "on duplicate key" not in normalized:
                 raise ValueError("主键冲突。")
             self.database.document_files[file_id] = {
@@ -495,6 +499,8 @@ class _FakeMysqlCursor:
                 "created_at": created_at,
                 "updated_at": updated_at,
                 "review_query_json": projection,
+                "review_descriptor_key": descriptor_key,
+                "review_receipt_key": receipt_key,
             }
             self._rows = []
             return
@@ -504,7 +510,7 @@ class _FakeMysqlCursor:
             return
         if (normalized.startswith("select case when json_valid(list_query_json)")
                 and normalized.endswith("from document_jobs where job_id = %s")):
-            from app.domains.document_jobs.list_query import document_job_list_projection_from_raw
+            from app.domains.document_jobs.list_query import document_job_list_storage_from_raw
 
             expected_key, job_id = params
             row = self.database.document_jobs.get(job_id)
@@ -512,10 +518,12 @@ class _FakeMysqlCursor:
                 self._rows = []
                 return
             projection = json.loads(row["list_query_json"]) if row["list_query_json"] is not None else None
-            ready = projection == document_job_list_projection_from_raw(row["payload"])
+            ready = tuple(row[column] for column in (
+                "list_query_json", "list_descriptor_key", "list_receipt_key", "list_table_snapshot_key",
+            )) == document_job_list_storage_from_raw(row["payload"])
             self._rows = [{"ready": int(ready), "is_current": int(ready and not projection["deleted"]
                 and projection["table_snapshot_key_comparable"] and "and 1 = 1 and" in normalized
-                and projection["table_snapshot_key"] == expected_key)}]
+                and row["list_table_snapshot_key"] == expected_key)}]
             return
         if normalized.startswith("select payload from document_files where file_id"):
             row = self.database.document_files.get(params[0])
@@ -604,7 +612,8 @@ class _FakeMysqlCursor:
                 "payload": payload,
                 "created_at": created_at,
                 "updated_at": updated_at,
-                **dict(zip(("quality_status", "review_status", "delivery_status", "quality_summary_json", "list_query_json"), state_values, strict=True)),
+                **dict(zip(("quality_status", "review_status", "delivery_status", "quality_summary_json", "list_query_json",
+                            "list_descriptor_key", "list_receipt_key", "list_table_snapshot_key"), state_values, strict=True)),
             }
             self._rows = []
             return
@@ -1939,14 +1948,16 @@ class PersistenceAdapterTests(TestCase):
             persisted_job = runtime.document_job_repository.get_document_job(job_id)
             self._assert_callback_word_result(runtime, persisted_job)
             from app.domains.document_jobs.list_query import (
-                document_file_review_projection_from_raw, document_job_list_projection_from_raw,
+                document_file_review_storage_from_raw, document_job_list_storage_from_raw,
             )
             stored_job = fake_mysql.document_jobs[job_id]
-            self.assertEqual(json.loads(stored_job["list_query_json"]),
-                             document_job_list_projection_from_raw(stored_job["payload"]))
+            self.assertEqual(tuple(stored_job[column] for column in (
+                "list_query_json", "list_descriptor_key", "list_receipt_key", "list_table_snapshot_key",
+            )), document_job_list_storage_from_raw(stored_job["payload"]))
             for stored_file in fake_mysql.document_files.values():
-                self.assertEqual(json.loads(stored_file["review_query_json"]),
-                                 document_file_review_projection_from_raw(stored_file["payload"]))
+                self.assertEqual(tuple(stored_file[column] for column in (
+                    "review_query_json", "review_descriptor_key", "review_receipt_key",
+                )), document_file_review_storage_from_raw(stored_file["payload"]))
             persisted_files = runtime.document_file_repository.list_document_files()
             replayable_messages = runtime.document_job_callback_message_store.list_replayable_callback_messages(job_id)
             callback_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status(job_id)

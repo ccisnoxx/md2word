@@ -3,11 +3,12 @@ from __future__ import annotations
 # app/infrastructure/persistence/file/files.py: file backend的正式文档文件仓储。
 
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from datetime import datetime
 from typing import Any
 
 from app.domains.files.models import DocumentFileRecord
+from app.domains.files.repository import DocumentFileReaderProtocol
 from app.infrastructure.persistence.file.backend import FilePersistenceBackend
 from app.domains.files.result_registration import (
     expired_file, materialized_file, patched_file, ensure_file_mutation_allowed,
@@ -21,6 +22,9 @@ class FileDocumentFileRepository:
 
     def __init__(self, backend: FilePersistenceBackend) -> None:
         self.backend = backend
+
+    def read_session(self) -> AbstractContextManager[DocumentFileReaderProtocol]:
+        return nullcontext(self)
 
     @contextmanager
     def _locked_file(self, file_id: str) -> Iterator[tuple[Any, DocumentFileRecord | None]]:

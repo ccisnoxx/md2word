@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from app.domains.document_jobs.list_query import (
     DocumentJobListQuery, DocumentJobListProjectionUnavailable, DocumentJobListResult,
-    document_job_list_projection,
+    document_job_list_projection, document_job_list_storage_from_raw,
 )
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.review import effective_review_job
@@ -195,8 +195,9 @@ class DocumentJobListQueryTests(TestCase):
         self.seed([job()])
         updated = self.sqlite.update_document_job("a", error_message="Straße")
         with self.sqlite.backend.connect() as connection:
-            stored = connection.execute("SELECT list_query_json FROM document_jobs").fetchone()[0]
-        self.assertEqual(json.loads(stored), document_job_list_projection(updated))
+            stored = connection.execute("SELECT list_query_json, list_descriptor_key, list_receipt_key, "
+                                        "list_table_snapshot_key FROM document_jobs").fetchone()
+        self.assertEqual(tuple(stored), document_job_list_storage_from_raw(updated.model_dump(mode="json")))
         self.sqlite.backfill_document_job_state_if_missing("a")
         self.assertEqual(self.sqlite.query_document_jobs(replace(self.query, q="strasse")).total, 1)
 
@@ -234,7 +235,7 @@ class DocumentJobListQueryTests(TestCase):
             def execute(cursor, sql, params=()):
                 if sql.startswith("SELECT j.payload AS payload,"):
                     raise RuntimeError("模拟页面读取失败")
-                cursor.rows = ([{"n": 0}] if "COUNT(" in sql and "GROUP BY" not in sql else [])
+                cursor.rows = ([{"n": 0, "unavailable": 0}] if "COUNT(" in sql and "GROUP BY" not in sql else [])
             def fetchall(cursor): return cursor.rows
 
         class Connection:
@@ -255,7 +256,7 @@ class DocumentJobListQueryTests(TestCase):
             def __exit__(cursor, *args): pass
             def execute(cursor, sql, params=()):
                 statements.append((sql, params))
-                cursor.rows = ([{"n": 0}] if "COUNT(" in sql and "GROUP BY" not in sql else [])
+                cursor.rows = ([{"n": 0, "unavailable": 0}] if "COUNT(" in sql and "GROUP BY" not in sql else [])
             def fetchall(cursor): return cursor.rows
         class Connection:
             committed = False

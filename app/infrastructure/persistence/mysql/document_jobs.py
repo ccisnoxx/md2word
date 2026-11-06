@@ -19,7 +19,7 @@ from app.domains.document_jobs.review import (
 )
 from app.domains.document_jobs.list_query import (
     DocumentJobListQuery, DocumentJobListResult, DocumentJobListProjectionUnstable,
-    document_job_list_projection_from_raw,
+    document_job_list_storage_from_raw,
 )
 from app.infrastructure.persistence.document_job_list_query import (
     query_document_jobs_sql, is_document_job_table_evidence_snapshot_current_sql,
@@ -58,14 +58,15 @@ class MysqlDocumentJobRepository:
 
     def create_document_job(self, record: DocumentJobRecord) -> DocumentJobRecord:
         payload = self.backend.dump_payload(record)
-        projection = json.dumps(document_job_list_projection_from_raw(payload), ensure_ascii=False)
+        projection = document_job_list_storage_from_raw(payload)
         with self.backend.connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO document_jobs (job_id, payload, created_at, updated_at, "
-                    "quality_status, review_status, delivery_status, quality_summary_json, list_query_json) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    "quality_status, review_status, delivery_status, quality_summary_json, list_query_json, "
+                    "list_descriptor_key, list_receipt_key, list_table_snapshot_key) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (record.id, payload, record.created_at.isoformat(), record.updated_at.isoformat(),
-                     *document_job_state_columns(record), projection),
+                     *document_job_state_columns(record), *projection),
                 )
         return record
 
@@ -82,12 +83,13 @@ class MysqlDocumentJobRepository:
                 }
             decode_generation_requests(payload)
             serialized = json.dumps(payload, ensure_ascii=False)
-            projection = json.dumps(document_job_list_projection_from_raw(serialized), ensure_ascii=False)
+            projection = document_job_list_storage_from_raw(serialized)
             cursor.execute(
                 "UPDATE document_jobs SET payload = %s, created_at = %s, updated_at = %s, "
-                "quality_status = %s, review_status = %s, delivery_status = %s, quality_summary_json = %s, list_query_json = %s WHERE job_id = %s",
+                "quality_status = %s, review_status = %s, delivery_status = %s, quality_summary_json = %s, list_query_json = %s, "
+                "list_descriptor_key = %s, list_receipt_key = %s, list_table_snapshot_key = %s WHERE job_id = %s",
                 (serialized, record.created_at.isoformat(), record.updated_at.isoformat(),
-                 *document_job_state_columns(record), projection, record.id),
+                 *document_job_state_columns(record), *projection, record.id),
             )
 
     @contextmanager
@@ -221,16 +223,17 @@ class MysqlDocumentJobRepository:
             updated = backfill_document_job_state_payload(payload)
             serialized = json.dumps(updated, ensure_ascii=False)
             try:
-                projection = json.dumps(document_job_list_projection_from_raw(serialized), ensure_ascii=False)
+                projection = document_job_list_storage_from_raw(serialized)
             except DocumentJobListProjectionUnstable:
                 # 状态回填保留原始缺键；不能把模型生成的 now 冻结成查询事实。
-                projection = None
+                projection = (None, None, None, None)
             with connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE document_jobs SET payload = %s, quality_status = %s, review_status = %s, "
-                    "delivery_status = %s, quality_summary_json = %s, list_query_json = %s WHERE job_id = %s",
+                    "delivery_status = %s, quality_summary_json = %s, list_query_json = %s, "
+                    "list_descriptor_key = %s, list_receipt_key = %s, list_table_snapshot_key = %s WHERE job_id = %s",
                     (serialized,
-                     *document_job_state_columns(DocumentJobRecord.model_validate(updated)), projection, job_id),
+                     *document_job_state_columns(DocumentJobRecord.model_validate(updated)), *projection, job_id),
                 )
             return updated != payload
 

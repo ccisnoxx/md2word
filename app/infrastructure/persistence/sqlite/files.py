@@ -3,13 +3,14 @@ from __future__ import annotations
 # app/infrastructure/persistence/sqlite/files.py: sqlite backend的正式文档文件仓储。
 
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from datetime import datetime
 import json
 from typing import Any
 
 from app.domains.files.models import DocumentFileRecord
-from app.domains.document_jobs.list_query import document_file_review_projection_from_raw
+from app.domains.files.repository import DocumentFileReaderProtocol
+from app.domains.document_jobs.list_query import document_file_review_storage_from_raw
 from app.infrastructure.persistence.sqlite.backend import SqlitePersistenceBackend
 from app.domains.files.result_registration import (
     expired_file, materialized_file, patched_file, ensure_file_mutation_allowed,
@@ -23,6 +24,9 @@ class SqliteDocumentFileRepository:
     def __init__(self, backend: SqlitePersistenceBackend) -> None:
         self.backend = backend
 
+    def read_session(self) -> AbstractContextManager[DocumentFileReaderProtocol]:
+        return nullcontext(self)
+
     @contextmanager
     def _locked_file(self, file_id: str) -> Iterator[tuple[Any, DocumentFileRecord | None]]:
         with self.backend.connect() as connection:
@@ -35,13 +39,13 @@ class SqliteDocumentFileRepository:
 
     def _write_file(self, connection: Any, record: DocumentFileRecord, *, create: bool = False) -> None:
         payload = self.backend.dump_payload(record)
-        projection = json.dumps(document_file_review_projection_from_raw(payload), ensure_ascii=False)
+        projection = document_file_review_storage_from_raw(payload)
         if create:
-            query = "INSERT INTO document_files (file_id, payload, created_at, updated_at, review_query_json) VALUES (?, ?, ?, ?, ?)"
-            params = (record.id, payload, record.created_at.isoformat(), record.updated_at.isoformat(), projection)
+            query = "INSERT INTO document_files (file_id, payload, created_at, updated_at, review_query_json, review_descriptor_key, review_receipt_key) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            params = (record.id, payload, record.created_at.isoformat(), record.updated_at.isoformat(), *projection)
         else:
-            query = "UPDATE document_files SET payload = ?, created_at = ?, updated_at = ?, review_query_json = ? WHERE file_id = ?"
-            params = (payload, record.created_at.isoformat(), record.updated_at.isoformat(), projection, record.id)
+            query = "UPDATE document_files SET payload = ?, created_at = ?, updated_at = ?, review_query_json = ?, review_descriptor_key = ?, review_receipt_key = ? WHERE file_id = ?"
+            params = (payload, record.created_at.isoformat(), record.updated_at.isoformat(), *projection, record.id)
         connection.execute(query, params)
 
     def is_document_file_protected(self, file_id: str) -> bool:

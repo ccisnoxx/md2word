@@ -20,7 +20,7 @@ from app.domains.document_jobs.review import (
 )
 from app.domains.document_jobs.list_query import (
     DocumentJobListQuery, DocumentJobListResult, DocumentJobListProjectionUnstable,
-    document_job_list_projection_from_raw,
+    document_job_list_storage_from_raw,
 )
 from app.infrastructure.persistence.document_job_list_query import (
     query_document_jobs_sql, is_document_job_table_evidence_snapshot_current_sql,
@@ -59,14 +59,15 @@ class SqliteDocumentJobRepository:
 
     def create_document_job(self, record: DocumentJobRecord) -> DocumentJobRecord:
         payload = self.backend.dump_payload(record)
-        projection = json.dumps(document_job_list_projection_from_raw(payload), ensure_ascii=False)
+        projection = document_job_list_storage_from_raw(payload)
         with self.backend.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 "INSERT INTO document_jobs (job_id, payload, created_at, updated_at, "
-                "quality_status, review_status, delivery_status, quality_summary_json, list_query_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "quality_status, review_status, delivery_status, quality_summary_json, list_query_json, "
+                "list_descriptor_key, list_receipt_key, list_table_snapshot_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (record.id, payload, record.created_at.isoformat(), record.updated_at.isoformat(),
-                 *document_job_state_columns(record), projection),
+                 *document_job_state_columns(record), *projection),
             )
         return record
 
@@ -82,12 +83,13 @@ class SqliteDocumentJobRepository:
             }
         decode_generation_requests(payload)
         serialized = json.dumps(payload, ensure_ascii=False)
-        projection = json.dumps(document_job_list_projection_from_raw(serialized), ensure_ascii=False)
+        projection = document_job_list_storage_from_raw(serialized)
         connection.execute(
             "UPDATE document_jobs SET payload = ?, created_at = ?, updated_at = ?, "
-            "quality_status = ?, review_status = ?, delivery_status = ?, quality_summary_json = ?, list_query_json = ? WHERE job_id = ?",
+            "quality_status = ?, review_status = ?, delivery_status = ?, quality_summary_json = ?, list_query_json = ?, "
+            "list_descriptor_key = ?, list_receipt_key = ?, list_table_snapshot_key = ? WHERE job_id = ?",
             (serialized, record.created_at.isoformat(), record.updated_at.isoformat(),
-             *document_job_state_columns(record), projection, record.id),
+             *document_job_state_columns(record), *projection, record.id),
         )
 
     @contextmanager
@@ -219,15 +221,16 @@ class SqliteDocumentJobRepository:
             updated = backfill_document_job_state_payload(payload)
             serialized = json.dumps(updated, ensure_ascii=False)
             try:
-                projection = json.dumps(document_job_list_projection_from_raw(serialized), ensure_ascii=False)
+                projection = document_job_list_storage_from_raw(serialized)
             except DocumentJobListProjectionUnstable:
                 # 状态回填保留原始缺键；不能把模型生成的 now 冻结成查询事实。
-                projection = None
+                projection = (None, None, None, None)
             connection.execute(
                 "UPDATE document_jobs SET payload = ?, quality_status = ?, review_status = ?, "
-                "delivery_status = ?, quality_summary_json = ?, list_query_json = ? WHERE job_id = ?",
+                "delivery_status = ?, quality_summary_json = ?, list_query_json = ?, "
+                "list_descriptor_key = ?, list_receipt_key = ?, list_table_snapshot_key = ? WHERE job_id = ?",
                 (serialized,
-                 *document_job_state_columns(DocumentJobRecord.model_validate(updated)), projection, job_id),
+                 *document_job_state_columns(DocumentJobRecord.model_validate(updated)), *projection, job_id),
             )
             return updated != payload
 
