@@ -1,0 +1,73 @@
+{
+  "job_id": "docjob_914c18d077b8",
+  "generation": 1,
+  "failed_at": "2026-11-06T15:31:34.096004Z",
+  "classification": {
+    "status": "failed",
+    "failed_stage": "ir_converting",
+    "error_code": "document_ir_failed"
+  },
+  "failure_context": {
+    "operation_kind": "table_placeholder",
+    "reason_code": "table_placeholder_geometry_invalid",
+    "block_ids": [
+      "block_0634"
+    ],
+    "operation_index": null,
+    "source_page_index": 52,
+    "source_page_count": 53,
+    "page_count_basis": "mineru_layout",
+    "section_id": null,
+    "unit_id": null
+  },
+  "mineru_validation": {
+    "can_convert": true,
+    "first_fatal": null,
+    "fatal_count": 0
+  },
+  "source_pdf_page_count": 53,
+  "raw_zip_hash_verified": true,
+  "source_table_matches": [
+    {
+      "content_index": 639,
+      "page_index": 52,
+      "html_empty": true
+    }
+  ],
+  "diagnostic": {
+    "source": "table_placeholder",
+    "stage": "ir_converting",
+    "scope": "page",
+    "page_number": 53,
+    "source_type": null,
+    "json_pointer": null,
+    "reason_code": "table_placeholder_geometry_invalid",
+    "reason": null,
+    "affected_page_numbers": [
+      53
+    ],
+    "fatal_count": 1,
+    "warning_count": 0,
+    "details_truncated": false,
+    "block_ids": [
+      "block_0634"
+    ],
+    "operation_kind": "table_placeholder",
+    "source_page_count": 53,
+    "page_count_basis": "mineru_layout"
+  },
+  "retry_events": [
+    {
+      "event_type": "retry_requested",
+      "stage": "parsed"
+    },
+    {
+      "event_type": "stage_started",
+      "stage": "ir_converting"
+    },
+    {
+      "event_type": "stage_failed",
+      "stage": "ir_converting"
+    }
+  ]
+}
