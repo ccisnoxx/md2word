@@ -148,11 +148,23 @@ class TemplateReadService:
             elif is_bundled_seed:
                 # manifest 元数据可编辑；只核对 DOCX 身份与旧 payload 自身的完整性。
                 registered_payload = record.payload or {}
+                registered_docx_path = registered_payload.get("docx_path")
+                registered_path = (
+                    self._resolve_manifest_path(registered_docx_path).resolve()
+                    if isinstance(registered_docx_path, str) and registered_docx_path
+                    else None
+                )
                 if (
                     record.status == ResourceVersionStatus.DRAFT
                     or registered_payload.get("template_id") != template.id
                     or str(registered_payload.get("version")) != version
-                    or any(registered_payload.get(key) != payload[key] for key in ("docx_path", "docx_sha256"))
+                    or registered_payload.get("docx_sha256") != payload["docx_sha256"]
+                    # 同哈希受管副本属于同版 seed，但目录本身和解析后越界的路径不属于。
+                    or registered_path is None
+                    or not (
+                        registered_path == resolved_template_path
+                        or managed_version_dir in registered_path.parents
+                    )
                     or record.snapshot_hash != self._snapshot_hash(registered_payload)
                 ):
                     raise ValueError(f"模板 seed 版本与已登记资源冲突: {template.id}@{version}")
