@@ -1,0 +1,56 @@
+{
+  "id": "source-audit-remediation-plan",
+  "name": "source-audit-remediation-plan",
+  "title": "源码审查结论核实与分阶段整改规划",
+  "description": "核实 79f20cef 源码审查，形成证据矩阵及分阶段范围、优先级、验收标准；仅规划，不改业务代码，不引入 CI 或全量测试。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-11-06",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "规划交付完成，整改进展部分完成：B03及其回调夹具专项已完成本地定向验收。总任务保留planning，其余10批次未由本轮启动；未测试/提交/推送/归档。",
+  "meta": {
+    "work_kind": "planning_and_progress_tracking",
+    "baseline_commit": "79f20cef9ca0bb1a59af635e2408e130c4935e2d",
+    "planning_deliverables": "delivered",
+    "remediation_progress": "partially_completed",
+    "completed_batches": [
+      "B03"
+    ],
+    "remaining_batches": [
+      "B01",
+      "B02",
+      "B04",
+      "B05",
+      "B06",
+      "B07",
+      "B08",
+      "B09",
+      "B10",
+      "B11"
+    ],
+    "batch_status": {
+      "B03": "completed_local_targeted_acceptance"
+    },
+    "related_tasks": [
+      ".trellis/tasks/11-06-mineru-download-boundary",
+      ".trellis/tasks/11-06-callback-test-fixture-readiness"
+    ],
+    "progress_report": ".trellis/tasks/11-06-source-audit-remediation-plan/progress.md",
+    "last_evidence_sync": "2026-11-06",
+    "remaining_batch_implementation_authorized": false
+  }
+}

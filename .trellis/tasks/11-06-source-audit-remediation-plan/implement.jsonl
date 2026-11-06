@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "仅核对正式与 legacy 调用归属，不触发代码实施"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "状态、receipt、schema 与存储边界"}
+{"file": ".trellis/spec/backend/translation-integrity-validator.md", "reason": "整批验真、回填与证据不变量"}
+{"file": ".trellis/spec/backend/translation-batch-lifecycle.md", "reason": "attempt、lease 和同 job 原子边界"}
+{"file": ".trellis/spec/backend/index.md", "reason": "由索引定位 Word 规则，按 PIPE-001/002、INPUT-002 等相关段落读取；完整大文件超过注入上限，不将截断内容当作完整合同"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端拆分候选的权限/布局边界；当前不跑应用检查"}
+{"file": ".trellis/tasks/11-06-source-audit-remediation-plan/research/audit-matrix.md", "reason": "本轮源码事实、行号与未验证边界"}
+{"file": ".trellis/tasks/11-06-source-audit-remediation-plan/research/existing-work.md", "reason": "任务去重与历史状态边界"}
+{"file": ".trellis/tasks/11-06-source-audit-remediation-plan/design.md", "reason": "本轮路线图，不代表未来业务实施授权"}
