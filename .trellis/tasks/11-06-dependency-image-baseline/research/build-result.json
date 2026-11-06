@@ -1,0 +1,9 @@
+{
+  "tag": "md2word-b02-candidate:20261106",
+  "exit_code": 0,
+  "started_at": "2026-11-06T08:54:57.085516+00:00",
+  "finished_at": "2026-11-06T08:55:55.327666+00:00",
+  "build_count": 1,
+  "log_sha256": "f2e27d305c56d809733f1430aee679560832aa3cb7e7c60bf2b7476cafcc9ecb",
+  "image_id": "sha256:ab256928db7c1e46ef11f9945ed5f9cc45d25eedb44ecd57c2f506081579e7ad"
+}

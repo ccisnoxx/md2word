@@ -1,0 +1,46 @@
+{
+  "reported_by": "Codex",
+  "external_acceptance": "pending",
+  "criteria": [
+    {
+      "id": "AC01",
+      "status": "met",
+      "evidence": "来源、目标、工具及输入 hash 已记录；56 个原运行 wheel 加官方 Pillow 构成完整 57 项运行制品，pip 单列。"
+    },
+    {
+      "id": "AC02",
+      "status": "met",
+      "evidence": "A/B 独立解析及安装得到相同 57 项版本/hash，两边 pip check 通过，实际安装制品均匹配官方来源记录。"
+    },
+    {
+      "id": "AC03",
+      "status": "met",
+      "evidence": "运行闭包与既有候选 57 项一致；仅根声明补 rsa extra，工具包单列，无业务依赖版本变化。"
+    },
+    {
+      "id": "AC04",
+      "status": "met",
+      "evidence": "dev/prod 同锁同基础 digest，MySQL/Redis 固定官方 digest；唯一候选构建成功，未启动的 API/Worker 身份容器 image ID 一致。"
+    },
+    {
+      "id": "AC05",
+      "status": "met",
+      "evidence": "仅 A 执行指定四个真实 DOCX 用例，4/4 通过；版本未变化，不追加 XML 比较框架。"
+    },
+    {
+      "id": "AC06",
+      "status": "met",
+      "evidence": "已记录 apt/Poppler/系统包及时间戳剩余漂移，不声明整镜像字节可复现、Word 客户端或生产验收通过。"
+    },
+    {
+      "id": "AC-R1",
+      "status": "met",
+      "evidence": "任务目录及五个前缀临时容器、候选镜像保留；生产四容器状态/启动时间与原 wheelhouse hash 前后一致，资源清单见 remote-resources.json。"
+    },
+    {
+      "id": "AC-R2",
+      "status": "met",
+      "evidence": "最终产品及任务文件经过实际连接标识扫描与人工复核；无主机 IP、连接端口、登录账户或凭据，通用回环地址与应用账号保持。"
+    }
+  ]
+}

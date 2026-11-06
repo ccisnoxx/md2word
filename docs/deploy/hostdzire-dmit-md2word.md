@@ -42,9 +42,9 @@ last_reviewed: 2026-06-29
 1. 在本地完成代码或文档改写，跑不依赖真实服务的检查并提交。
 2. 推送 `main` 到 GitHub，确认 `git ls-remote origin refs/heads/main` 返回目标 commit。
 3. 用私密 VPS 登录信息 SSH 到 `hostdzire`；不要把 `/Users/sc/work_file/bak_file/VPS.txt` 的内容写入仓库、任务记录或对话。
-4. 在 `hostdzire` 新建 `/root/md2word-releases/<short-sha>`，从 GitHub bare 源缓存 fetch 目标 commit，再用 `git archive` 导出运行包。
-5. 从当前运行 release 复制 `.env` 和 `deploy/auth_internal_users.json`，只更新非敏感的 `APP_VERSION` / `DEPLOYMENT_ID`。
-6. 在新 release 内 build/up Docker Compose，并检查 API、Worker、MySQL、Redis/Celery。
+4. 在 `hostdzire` 新建 `${RELEASE_DIR}`，从 GitHub bare 源缓存 fetch 目标 commit，再用 `git archive` 导出运行包；按 [依赖锁与构建输入](./p0-docker-deployment.md#依赖锁与构建输入) 的来源记录核对 57 个运行 wheel 的文件名、平台与 SHA-256，补齐 `${RELEASE_DIR}/requirements/wheels/`，不含 pip 工具。
+5. 从当前运行 release 复制 `.env` 和 `deploy/auth_internal_users.json`，更新非敏感的 `APP_VERSION` / `DEPLOYMENT_ID`，并为本次产物设置独立的版本化 `MD2WORD_IMAGE`。
+6. 在新 release 内执行 Docker Compose `build api`，再 `up -d --no-build`；API/Worker 共用该产物并核对实际 image ID，随后检查 API、Worker、MySQL、Redis/Celery。
 7. 先跑 `/health/ready` 和 `check_release.py --runtime-url`，再按需求决定是否跑 Golden Sample 预检和真实 4 样本回归。
 
 普通代码更新只动 `hostdzire`。只有域名、证书、WireGuard 或前置转发异常时才排查 `dmit`。
@@ -137,23 +137,26 @@ sed -i "s/^DEPLOYMENT_ID=.*/DEPLOYMENT_ID=hostdzire-${RELEASE_ID}-${SHORT_SHA}/"
   "${RELEASE_DIR}/.env"
 
 cd "${RELEASE_DIR}"
-docker compose --env-file .env -f docker/prod/docker-compose.yml build
-docker compose --env-file .env -f docker/prod/docker-compose.yml up -d
+# 先按来源记录准备并核对 57 个运行 wheel；Git archive 不包含这些制品。
+test -d "${RELEASE_DIR}/requirements/wheels"
+export MD2WORD_IMAGE="md2word-p0:${SHORT_SHA}-${RELEASE_ID}"
+docker compose --env-file .env -f docker/prod/docker-compose.yml build api
+docker compose --env-file .env -f docker/prod/docker-compose.yml up -d --no-build
 docker compose --env-file .env -f docker/prod/docker-compose.yml ps
 docker compose --env-file .env -f docker/prod/docker-compose.yml logs --tail=120 api worker
 ```
 
-如果 `.env` 里还没有 `APP_VERSION` 或 `DEPLOYMENT_ID`，先追加这两个字段，再执行 `up -d --force-recreate api worker` 让 API/Worker 读取新的发布标识。MySQL、Redis 和 Docker volumes 不随 release 目录切换而删除。
+如果 `.env` 里还没有 `APP_VERSION` 或 `DEPLOYMENT_ID`，先追加这两个字段，再执行 `up -d --no-build --force-recreate api worker` 让 API/Worker 读取新的发布标识。MySQL、Redis 和 Docker volumes 不随 release 目录切换而删除。
 
-回滚时回到上一版 release 目录执行：
+回滚时使用已保留的上一版本化镜像身份，并核对它对应的 image ID。以下命令适用于消费 `MD2WORD_IMAGE` 的 release；`PREVIOUS_MD2WORD_IMAGE` 必须来自上一版保留记录：
 
 ```bash
-cd /root/md2word-releases/<previous-short-sha>
-docker compose --env-file .env -f docker/prod/docker-compose.yml build
-docker compose --env-file .env -f docker/prod/docker-compose.yml up -d --force-recreate api worker
+cd "${PREVIOUS_RELEASE_DIR:?请设置上一版发布目录}"
+export MD2WORD_IMAGE="${PREVIOUS_MD2WORD_IMAGE:?请设置已保留的上一版镜像引用}"
+docker compose --env-file .env -f docker/prod/docker-compose.yml up -d --no-build --force-recreate api worker
 ```
 
-新旧 release 共用 `md2word-p0:latest` 镜像标签，因此必须先在旧 release 重新构建，再强制重建 API/Worker；仅执行 `up` 可能继续运行新代码。回滚不执行 `down -v`，MySQL、Redis 和 Docker volumes 保持不变。
+新旧 release 使用各自的版本化镜像，回滚复用已保留的旧产物，不重建或复用新标签冒充旧产物。没有旧产物时，须按对应旧版配方单独准备；B02 之前的编排还需按其镜像引用规则处理，不能假设设置 `MD2WORD_IMAGE` 即可覆盖。回滚不执行 `down -v`，MySQL、Redis 和 Docker volumes 保持不变。
 
 ## 证书和入口
 

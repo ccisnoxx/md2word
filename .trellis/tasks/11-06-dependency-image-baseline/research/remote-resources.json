@@ -1,0 +1,159 @@
+{
+  "target": "hostdzire",
+  "directory": "${B02_REMOTE_DIR}",
+  "directory_bytes": 805328242,
+  "disk_free_after": 63672127488,
+  "containers": [
+    {
+      "name": "/md2word-b02-a-20261106",
+      "id": "4532a51fd0a4e943715f160566233b3eac1aa78109eff64674e3bda705e7d476",
+      "image_id": "sha256:b701198cb708b68d9413ca67d6311bd97c9389a2c5fe4da0511fc652642366cd",
+      "status": "exited",
+      "exit_code": 137,
+      "writable_bytes": 9887744,
+      "rootfs_bytes": 151392256,
+      "mounts": [
+        {
+          "source": "${B02_REMOTE_DIR}/tools",
+          "destination": "/tools",
+          "rw": false
+        },
+        {
+          "source": "${B02_REMOTE_DIR}/wheelhouse",
+          "destination": "/wheels",
+          "rw": false
+        },
+        {
+          "source": "${B02_REMOTE_DIR}/A",
+          "destination": "/work",
+          "rw": true
+        },
+        {
+          "source": "${B02_REMOTE_DIR}/source",
+          "destination": "/src",
+          "rw": false
+        },
+        {
+          "source": "${B02_REMOTE_DIR}/inputs",
+          "destination": "/inputs",
+          "rw": false
+        }
+      ]
+    },
+    {
+      "name": "/md2word-b02-b-20261106",
+      "id": "fbd0cfc070035a0e4050a5d642b854bcbe6de875ca286fffc9b95e994646e038",
+      "image_id": "sha256:b701198cb708b68d9413ca67d6311bd97c9389a2c5fe4da0511fc652642366cd",
+      "status": "exited",
+      "exit_code": 137,
+      "writable_bytes": 28672,
+      "rootfs_bytes": 141533184,
+      "mounts": [
+        {
+          "source": "${B02_REMOTE_DIR}/source",
+          "destination": "/src",
+          "rw": false
+        },
+        {
+          "source": "${B02_REMOTE_DIR}/inputs",
+          "destination": "/inputs",
+          "rw": false
+        },
+        {
+          "source": "${B02_REMOTE_DIR}/tools",
+          "destination": "/tools",
+          "rw": false
+        },
+        {
+          "source": "${B02_REMOTE_DIR}/wheelhouse",
+          "destination": "/wheels",
+          "rw": false
+        },
+        {
+          "source": "${B02_REMOTE_DIR}/B",
+          "destination": "/work",
+          "rw": true
+        }
+      ]
+    },
+    {
+      "name": "/md2word-b02-image-check-20261106",
+      "id": "7a3124360f79b01ae855b20664ffd8bcfd1879059cbb580fcd3142addfa50e82",
+      "image_id": "sha256:ab256928db7c1e46ef11f9945ed5f9cc45d25eedb44ecd57c2f506081579e7ad",
+      "status": "exited",
+      "exit_code": 0,
+      "writable_bytes": 12288,
+      "rootfs_bytes": 419676160,
+      "mounts": [
+        {
+          "source": "${B02_REMOTE_DIR}/wheelhouse",
+          "destination": "/wheels",
+          "rw": false
+        },
+        {
+          "source": "${B02_REMOTE_DIR}/inputs",
+          "destination": "/inputs",
+          "rw": false
+        }
+      ]
+    },
+    {
+      "name": "/md2word-b02-api-identity-20261106",
+      "id": "bf429c26d0e9261cbcfbbc23cf9901dabed2f96b3fe97782be82b295ed65fb67",
+      "image_id": "sha256:ab256928db7c1e46ef11f9945ed5f9cc45d25eedb44ecd57c2f506081579e7ad",
+      "status": "created",
+      "exit_code": 0,
+      "writable_bytes": 4096,
+      "rootfs_bytes": 419667968,
+      "mounts": []
+    },
+    {
+      "name": "/md2word-b02-worker-identity-20261106",
+      "id": "876c547d5bf7f199077aae4701c55fe996f82b82658ac3d7163edfea9480cd42",
+      "image_id": "sha256:ab256928db7c1e46ef11f9945ed5f9cc45d25eedb44ecd57c2f506081579e7ad",
+      "status": "created",
+      "exit_code": 0,
+      "writable_bytes": 4096,
+      "rootfs_bytes": 419667968,
+      "mounts": []
+    }
+  ],
+  "candidate_image": {
+    "tag": "md2word-b02-candidate:20261106",
+    "id": "sha256:ab256928db7c1e46ef11f9945ed5f9cc45d25eedb44ecd57c2f506081579e7ad",
+    "size": 164124356
+  },
+  "protected_after": [
+    {
+      "name": "/md2word-p0-api-1",
+      "id": "9cd2f53120562d02be7d99bee111517ecae8c823a2901503df1696e4263f4b3f",
+      "image": "sha256:ed9ed78998e7ecb459bfd011e43afd84a57d6f6fec07c2ef925bf5de526026d6",
+      "status": "running",
+      "started_at": "2026-10-30T17:44:07.784513119Z"
+    },
+    {
+      "name": "/md2word-p0-mysql-1",
+      "id": "56c40a62b9377e7cacb3a0e040a9865f4a7fef76df87e4502befe2e3a2454e96",
+      "image": "sha256:c36050afdca850f23cef85703f84c7531a5ae155a11b5ee1c60acb09937c4084",
+      "status": "running",
+      "started_at": "2026-10-29T04:15:44.059421206Z"
+    },
+    {
+      "name": "/md2word-p0-redis-1",
+      "id": "06f72de6f2e24e8890932df0e90ffbb1732c918a3cbb6eb6aa4639a80e088bef",
+      "image": "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+      "status": "running",
+      "started_at": "2026-10-29T04:15:44.011312378Z"
+    },
+    {
+      "name": "/md2word-p0-worker-1",
+      "id": "db94b6473d9ebdb9527e9fc6fcae48e55553e0d0bba1af678183bad9d4902139",
+      "image": "sha256:ed9ed78998e7ecb459bfd011e43afd84a57d6f6fec07c2ef925bf5de526026d6",
+      "status": "running",
+      "started_at": "2026-10-30T17:44:20.430692426Z"
+    }
+  ],
+  "protected_unchanged": true,
+  "production_wheelhouse_unchanged": true,
+  "size_boundary": "目录按 du apparent bytes；镜像/rootfs 包含共享层，不能直接相加；Docker 构建缓存未清理且未单独归因。"
+}

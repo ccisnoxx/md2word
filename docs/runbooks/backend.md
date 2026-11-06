@@ -12,7 +12,9 @@ last_reviewed: 2026-06-17
 
 ## 0. 线上优先验证边界
 
-当前 P0 验收以 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md) 为准：本地只做代码/文档改写和不依赖真实服务的检查，完整 API、Worker、MySQL、Redis/Celery、MinerU 和 Golden Sample 证据在 `hostdzire` 收集。
+当前 P0 验收以 [线上优先验证流程](../deploy/online-first-validation-workflow.md) 为准：本地只做代码/文档改写和不依赖真实服务的检查，完整 API、Worker、MySQL、Redis/Celery、MinerU 和 Golden Sample 证据在 `hostdzire` 收集。
+
+B02 镜像构建以 [Docker 部署说明的依赖锁与构建输入](../deploy/p0-docker-deployment.md#依赖锁与构建输入) 为准。旧线上流程中的镜像构建/回滚命令仅适用于 B02 之前的版本，不构成新镜像的构建步骤；版本化镜像选择与回退边界见同一部署说明。
 
 不要为了当前 P0 验收在本机启动前后端、MySQL、Redis/Celery、Worker 或前端 smoke。以下本地命令仅保留给专项开发调试使用，不构成本轮发布证据。
 
@@ -79,7 +81,9 @@ curl http://127.0.0.1:8000/api/v1/health/metrics
 - `mysql_schema_bootstrap_available`
 - `pdf_crop_tools_available`：`pdfinfo` 与 `pdftoppm`（Poppler，`poppler-utils`）是否都在 PATH 中。表格占位裁切、图片 PDF 回退和整页降级都依赖它们。缺失时报 `pdf_crop_tools_missing`：生产或 `single_tenant_public` 部署列为阻断项，且 `scripts/dev/run_document_worker.py` 拒绝启动；开发环境只告警，页面失败时无法恢复。`docker/prod`、`docker/dev` 镜像已内置；本地开发需自行安装（如 `brew install poppler`）。
 
-运行时 Python 依赖只来自 `requirements.txt`（镜像只执行 `pip install -r`）；`tests/test_runtime_dependency_declarations.py` 要求 `app/` 的第三方导入都在其中直接声明或进入写明来源的白名单。
+`requirements.txt` 负责直接依赖声明；`tests/test_runtime_dependency_declarations.py` 要求 `app/` 的第三方导入都在其中直接声明或进入写明来源的白名单。镜像安装消费完整 hash 锁 `requirements/locks/cp311-linux-amd64.txt`，目标限定 CPython 3.11.18 / Debian 13 / linux/amd64；根声明变更须同步重新解析和核对锁，传递闭包不能代替直接声明。
+
+dev/prod 构建均需在上下文的 `requirements/wheels/` 提供已对账官方 PyPI 文件与 SHA-256 的 57 个运行 wheel，不含 pip 工具；使用固定基础镜像自带的 pip 24.0 离线、hash 校验、仅 wheel 安装。`PyMySQL[rsa]` 保留既有 RSA 依赖能力，不表示已验证真实数据库 RSA 握手。API/Worker 共用 `MD2WORD_IMAGE`：生产必填，使用版本化标签并核对实际 image ID；开发默认 `md2word-dev:local`，可用同名变量覆盖，API 构建与 API/Worker 运行均固定 `linux/amd64`。制品来源清单、固定 Python/MySQL/Redis 引用及发布准备步骤见 [Docker 部署说明](../deploy/p0-docker-deployment.md#依赖锁与构建输入)。apt/Poppler 系统包仍可能漂移，锁与定向 DOCX 测试不代表整镜像字节可复现或生产验收。
 
 `metrics` 是 JSON 运维计数，不是 Prometheus 格式；当前包括 `document_jobs` 状态计数、`document_job_callback_messages` 计数、资源版本计数和 audit event 总数；旧 `jobs`、`stage_messages` 字段仅保留为空对象，不读取旧仓储。
 
@@ -372,4 +376,4 @@ P0 Golden Sample 以 `tests/fixtures/golden_samples/pdfs` 下的四个 OPA228 da
 
 这四份样本通过 Files + Document Jobs 主链路执行 `direct_pdf_to_word`。P0 通过条件是 4/4 任务成功、4/4 结果 DOCX 可由 Word 打开、4/4 由 admin reviewer 人工签字通过；不再以扩充到 10-20 份样本作为阻塞条件。人工质量线要求接近原版排版并符合 Word 文档排版标准，二者冲突时以可维护的 Word 标准结构为准。
 
-正式执行地点是 hostdzire；本地不跑真实 Golden Sample 转换。执行、签字和证据回填步骤见 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md)。
+正式执行地点是 hostdzire；本地不跑真实 Golden Sample 转换。执行、签字和证据回填步骤见 [线上优先验证流程](../deploy/online-first-validation-workflow.md)。

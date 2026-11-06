@@ -1,0 +1,15 @@
+{
+  "provides_extra": [
+    "rsa",
+    "ed25519"
+  ],
+  "requires_dist": [
+    "cryptography>=46.0.7; extra == \"rsa\"",
+    "PyNaCl>=1.6.2; extra == \"ed25519\""
+  ],
+  "cryptography_available": true,
+  "pip_checks": {
+    "A": true,
+    "B": true
+  }
+}

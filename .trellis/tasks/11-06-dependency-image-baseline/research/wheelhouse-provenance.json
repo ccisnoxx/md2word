@@ -1,0 +1,52 @@
+{
+  "target": "hostdzire",
+  "remote_dir": "${B02_REMOTE_DIR}",
+  "disk_free_before": 65515270144,
+  "protected_before": [
+    {
+      "name": "/md2word-p0-api-1",
+      "id": "9cd2f53120562d02be7d99bee111517ecae8c823a2901503df1696e4263f4b3f",
+      "image": "sha256:ed9ed78998e7ecb459bfd011e43afd84a57d6f6fec07c2ef925bf5de526026d6",
+      "status": "running",
+      "started_at": "2026-10-30T17:44:07.784513119Z"
+    },
+    {
+      "name": "/md2word-p0-mysql-1",
+      "id": "56c40a62b9377e7cacb3a0e040a9865f4a7fef76df87e4502befe2e3a2454e96",
+      "image": "sha256:c36050afdca850f23cef85703f84c7531a5ae155a11b5ee1c60acb09937c4084",
+      "status": "running",
+      "started_at": "2026-10-29T04:15:44.059421206Z"
+    },
+    {
+      "name": "/md2word-p0-redis-1",
+      "id": "06f72de6f2e24e8890932df0e90ffbb1732c918a3cbb6eb6aa4639a80e088bef",
+      "image": "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+      "status": "running",
+      "started_at": "2026-10-29T04:15:44.011312378Z"
+    },
+    {
+      "name": "/md2word-p0-worker-1",
+      "id": "db94b6473d9ebdb9527e9fc6fcae48e55553e0d0bba1af678183bad9d4902139",
+      "image": "sha256:ed9ed78998e7ecb459bfd011e43afd84a57d6f6fec07c2ef925bf5de526026d6",
+      "status": "running",
+      "started_at": "2026-10-30T17:44:20.430692426Z"
+    }
+  ],
+  "pillow": {
+    "filename": "pillow-12.2.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "source_url": "https://files.pythonhosted.org/packages/e9/bd/e51a61b1054f09437acfbc2ff9106c30d1eb76bc1453d428399946781253/pillow-12.2.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "metadata_url": "https://pypi.org/pypi/pillow/12.2.0/json",
+    "official_sha256": "e74473c875d78b8e9d5da2a70f7099549f9eb37ded4e2f6a463e60125bccd176",
+    "download_sha256": "e74473c875d78b8e9d5da2a70f7099549f9eb37ded4e2f6a463e60125bccd176",
+    "downloaded_at": "2026-11-06T08:44:34.240729+00:00",
+    "size": 7079655,
+    "license": "MIT-CMU",
+    "selection": "CPython 3.11 / x86_64 / glibc 2.41；兼容候选中优先选择较高 manylinux 标签"
+  },
+  "existing_runtime_wheels": 56,
+  "runtime_wheels": 57,
+  "tool_wheels": [
+    "pip-26.2.2-py3-none-any.whl"
+  ],
+  "source_hashes_unchanged": true
+}

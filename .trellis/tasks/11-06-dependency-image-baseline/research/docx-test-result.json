@@ -1,0 +1,23 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "-w",
+    "/src",
+    "md2word-b02-a-20261106",
+    "env",
+    "-i",
+    "PATH=/usr/local/bin:/usr/bin:/bin",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "PYTHONUNBUFFERED=1",
+    "/work/venv/bin/python",
+    "-m",
+    "unittest",
+    "tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations",
+    "tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_writes_fraction_omml_in_formula_and_table_cells",
+    "tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_writes_heading_list_and_formula_ooxml_semantics",
+    "tests.test_formal_mineru_render_evidence.FormalMinerURenderEvidenceTests.test_formal_conversion_returns_bound_v2_evidence"
+  ],
+  "exit_code": 0,
+  "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.508s\n\nOK\n"
+}

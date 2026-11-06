@@ -10,6 +10,7 @@ tests/__pycache__/
 tests/tmp/*
 !tests/tmp/.gitkeep
 .python_packages/
+requirements/wheels/
 data/
 var/
 app/__pycache__/

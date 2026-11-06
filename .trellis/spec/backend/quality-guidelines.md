@@ -43,7 +43,10 @@ Questions to answer:
 
 ### 运行时依赖声明
 
-- 镜像只执行 `pip install -r requirements.txt`；`app/` 中任何第三方导入（含函数内延迟导入）必须在其中直接声明，不能依赖本地 venv 里被其他包间接带入的版本。`tests/test_runtime_dependency_declarations.py` 是该合同的守卫，传递依赖或有意可选依赖只能进入其白名单并写明父依赖或降级行为。
+- `requirements.txt` 是直接依赖声明入口；`app/` 中任何第三方导入（含函数内延迟导入）必须在其中直接声明，不能依赖本地 venv 里被其他包间接带入的版本。`tests/test_runtime_dependency_declarations.py` 是该合同的守卫，传递依赖或有意可选依赖只能进入其白名单并写明父依赖或降级行为。
+- dev/prod 镜像共同消费 `requirements/locks/cp311-linux-amd64.txt` 完整版本/hash 锁与经官方 PyPI 文件身份对账的 `requirements/wheels/`，仅覆盖 CPython 3.11.18 / Debian 13 trixie / linux/amd64。根声明或目标版本变更须同步重新解析并核对闭包与制品来源；锁内的传递依赖不能替代根声明。首版保留 57 项运行依赖及 `PyMySQL[rsa]` 能力，不隐含升级或降级。
+- 安装须显式 `--isolated --no-index --find-links --require-hashes --only-binary=:all:`，缺 wheel、来源/hash 不符或解析冲突时停止；不得自动回退索引或 sdist。A/B 干净 venv 只有 pip 24.0、setuptools 79.0.1，未安装 wheel；候选镜像保留固定 Python digest 自带的全局工具 pip 24.0、setuptools 79.0.1、wheel 0.46.3。两种环境均使用 pip 24.0 安装，工具不计入运行锁，不执行无版本 pip 升级。来源与构建准备见 [Docker 部署说明](../../../docs/deploy/p0-docker-deployment.md#依赖锁与构建输入)。
+- API/Worker 共用 `MD2WORD_IMAGE`：生产必填，开发默认 `md2word-dev:local` 并允许同名变量覆盖；构建一次后复用并核对实际 image ID。开发 API 构建与 API/Worker 运行均固定 `linux/amd64`，Apple Silicon 使用仿真，不扩展锁的平台范围。Python/MySQL/Redis 使用已核实的官方 digest。apt/Poppler 系统包未锁快照，依赖锁与镜像身份不等于整镜像逐字节可复现，也不能替代真实 Word 客户端或生产验收。
 - 系统工具（当前为 Poppler `pdfinfo`/`pdftoppm`）由 `docker/prod`、`docker/dev` Dockerfile 安装，并在 readiness 中暴露可用性（`pdf_crop_tools_available`，缺失为非阻断 warning `pdf_crop_tools_missing`）。
 - 线上 hostdzire 镜像经仓库外固定发布包增量构建，不能作为仓库依赖完整的证据；验证仓库可复现性须用仓库 Dockerfile 构建。
 
