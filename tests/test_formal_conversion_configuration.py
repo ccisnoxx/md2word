@@ -1,4 +1,4 @@
-"""固化正式配置归属迁移后的默认值、旧入口及离线健康判定。"""
+"""固化正式配置归属迁移后的默认值、生成配置及离线健康判定。"""
 
 from __future__ import annotations
 
@@ -13,8 +13,6 @@ from types import SimpleNamespace
 from unittest import TestCase, mock
 
 from app.clients import openai_sdk
-from app.conversion import runtime_config
-from app.conversion.runtime import llm_client, translation_runtime
 from app.core import conversion_config
 from app.domains.translation import modes
 from scripts.dev import (
@@ -74,19 +72,13 @@ class FormalConversionConfigurationTests(TestCase):
             self.assertEqual(conversion_config.load_dotenv_file(path),
                              {"MODEL": "second", "EMPTY": "", "URL": "a=b"})
 
-    def test_legacy_exports_and_generated_config_share_formal_objects(self):
-        for name in ("APP_CONFIG", "AppConfig", "ROOT_DIR", "DOTENV_PATH",
-                     "load_app_config", "load_dotenv_file", "_env"):
-            self.assertIs(getattr(runtime_config, name), getattr(conversion_config, name))
-        self.assertIs(llm_client.OpenAI, openai_sdk.OpenAI)
-        self.assertEqual(llm_client.DEFAULT_MODEL, openai_sdk.DEFAULT_MODEL)
+    def test_generated_config_and_translation_defaults_use_formal_objects(self):
         for name, expected in (
             ("DEFAULT_TARGET_LANGUAGE", "zh-CN"),
             ("DEFAULT_TRANSLATION_DOMAIN", "electronics engineering technical document"),
             ("TRANSLATION_PROMPT_VERSION", "translation-minimal-v1"),
         ):
             self.assertEqual(getattr(modes, name), expected)
-            self.assertEqual(getattr(translation_runtime, name), expected)
         namespace = {}
         with mock.patch.dict(os.environ, {"MD2WORD_OFFICIAL_REPO": str(conversion_config.ROOT_DIR)}):
             exec(migrate_md2word_main_sandbox.build_compat_config(conversion_config.ROOT_DIR), namespace)

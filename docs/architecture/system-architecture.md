@@ -7,7 +7,7 @@ last_reviewed: 2026-10-03
 
 # 系统架构
 
-> **局部复核（2026-11-06，源码基线 `79f20cef`）**：本次仅补充第 2 节 legacy `/jobs` HTTP 与运行时边界，并更新第 7.2、8 节的 Codec/Validator 接入事实。其余章节、拓扑与目标描述仍沿用 `e51e6ccd129f59d1b372dfc6907def1fd6bb5cd8` / 2026-10-03 的历史基线，未作全面复核；页首 `baseline_commit` 和 `last_reviewed` 保持历史值。
+> **局部复核（2026-11-06，源码基线 `79f20cef`）**：第 2 节按 B05 第 3、4 步更新旧 Jobs 运行时移除边界，并更新第 7.2、8 节的 Codec/Validator 接入事实。其余章节、拓扑与目标描述仍沿用 `e51e6ccd129f59d1b372dfc6907def1fd6bb5cd8` / 2026-10-03 的历史基线，未作全面复核；页首 `baseline_commit` 和 `last_reviewed` 保持历史值。
 
 ## 1. 架构风格
 
@@ -40,7 +40,7 @@ flowchart LR
 
 生产 Docker Compose 当前包括 API、Worker、Redis 和 MySQL；API 与 Worker共用 Python 镜像，产物卷挂载到 `/app/var`。
 
-2026-11-06 局部复核：legacy `/api/v1/jobs` HTTP 路由已下线，[v1 路由聚合](../../app/api/v1/router.py) 装配 Files + Document Jobs，未挂载旧 jobs router（参见 [legacy Jobs API 说明](../api/jobs.md)）。这不代表 legacy 运行时已全部移除：[app/main.py](../../app/main.py) 的 `build_runtime()` 仍构建 `JobStageService` 并将其装配为 `stage_service`；[独立启动脚本](../../scripts/dev/run_stage_worker.py) 仍调用 `StageWorker(runtime).run_forever()`，[StageWorker](../../app/workers/stage_worker.py) 通过 `runtime.stage_service.dispatch_message()` 消费 stage message。上述是入口和装配的源码事实，不表示本次确认了该独立 Worker 的部署或运行状态。
+2026-11-06 B05 第 3、4 步源码更新：[v1 路由聚合](../../app/api/v1/router.py) 文档转换入口统一使用正式 Files + Document Jobs 与保留的 MinerU callback；[app/main.py](../../app/main.py) 已删除旧服务和 stage 调度/启动重放，旧 StageWorker、未挂载 Jobs 路由与转换运行时也已删除。共享 `jobs` 模型、资源快照、路径仍被正式任务使用。`jobs`、`job_files`、`stage_messages` 三张既有旧空表留待 B08 治理，本次不 DROP；`job_events` 继续供正式任务读写。此处是源码状态，不代表部署或线上验收。
 
 ## 3. 目标逻辑组件
 
@@ -212,7 +212,7 @@ Translation → DocumentIR models + Provider port
 - 前端推断后端状态迁移；
 - API router 实现表格、翻译或 OOXML 算法；
 - Redis/Celery 状态作为任务业务真源；
-- `jobs` legacy 链路与 `document_jobs` 新链路重复增加新能力。
+- 重新接回已删除的旧 Jobs/stage 转换链路，或在共享 `jobs` 模块中恢复第二套任务执行实现。
 
 ## 7. 运行时交互
 

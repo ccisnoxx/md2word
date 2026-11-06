@@ -26,11 +26,6 @@ from app.domains.saved_views.models import SavedViewRecord
 from app.domains.saved_views.repository import SavedViewScope
 from app.domains.jobs.models import (
     JobEvent,
-    JobFile,
-    JobRecord,
-    JobStageMessage,
-    SourcePdfJobContext,
-    build_source_pdf_context_patch,
     utc_now,
 )
 from app.domains.audit.models import AuditEvent
@@ -52,11 +47,10 @@ from app.infrastructure.persistence import (
     build_sqlite_persistence_adapters,
 )
 from app.services.auth import hash_password
-from app.infrastructure.persistence.file import FileJobSnapshotRepository
-from app.infrastructure.persistence.mysql import MysqlDocumentJobRepository, MysqlJobSnapshotRepository, MysqlPersistenceConfig
-from app.infrastructure.persistence.sqlite import SqliteDocumentJobRepository, SqliteJobSnapshotRepository
+from app.infrastructure.persistence.file import FileDocumentJobRepository
+from app.infrastructure.persistence.mysql import MysqlDocumentJobRepository, MysqlPersistenceConfig
+from app.infrastructure.persistence.sqlite import SqliteDocumentJobRepository
 from app.main import build_runtime, create_app
-from app.domains.jobs.query import JobQueryService
 from tests.test_fastapi_jobs_backend import (
     build_auth_header,
     build_auth_users_json,
@@ -150,7 +144,6 @@ class _FakeMysqlDatabase:
     """仅记录 SQL 和连接边界，不模拟真实事务回滚或 InnoDB 锁。"""
 
     def __init__(self) -> None:
-        self.jobs: dict[str, dict[str, Any]] = {}
         self.job_events: list[dict[str, Any]] = []
         self.audit_events: list[dict[str, Any]] = []
         self.acceptance_runs: dict[str, dict[str, Any]] = {}
@@ -163,8 +156,6 @@ class _FakeMysqlDatabase:
         self.document_job_publications: dict[str, dict[str, Any]] = {}
         self.document_job_callback_messages: dict[str, dict[str, Any]] = {}
         self.document_job_translation_batches: dict[str, dict[str, Any]] = {}
-        self.job_files: dict[tuple[str, str], dict[str, Any]] = {}
-        self.stage_messages: dict[str, dict[str, Any]] = {}
         self.saved_views: dict[str, dict[str, Any]] = {}
         self.resource_versions: dict[tuple[str, str, str], dict[str, Any]] = {}
         self.resource_default_versions: dict[tuple[str, str], dict[str, Any]] = {}
@@ -227,10 +218,7 @@ class _FakeMysqlCursor:
         self.rowcount = 0
         if normalized.startswith("create table"):
             for table in (
-                "jobs",
                 "job_events",
-                "job_files",
-                "stage_messages",
                 "saved_views",
                 "resource_versions",
                 "resource_default_versions",
@@ -332,26 +320,6 @@ class _FakeMysqlCursor:
             column_name = normalized.split()[5]
             self.database.table_columns.setdefault("translation_terms", set()).add(column_name)
             self._rows = []
-            return
-        if normalized.startswith("insert into jobs"):
-            job_id, payload, created_at, updated_at = params
-            self.database.jobs[job_id] = {
-                "job_id": job_id,
-                "payload": payload,
-                "created_at": created_at,
-                "updated_at": updated_at,
-            }
-            self._rows = []
-            return
-        if normalized.startswith("select payload from jobs where job_id"):
-            row = self.database.jobs.get(params[0])
-            self._rows = [{"payload": row["payload"]}] if row is not None else []
-            return
-        if normalized.startswith("select payload from jobs order by"):
-            self._rows = [
-                {"payload": row["payload"]}
-                for row in sorted(self.database.jobs.values(), key=lambda item: (item["created_at"], item["job_id"]))
-            ]
             return
         if normalized.startswith("insert into job_events"):
             job_id, payload, created_at = params
@@ -774,72 +742,6 @@ class _FakeMysqlCursor:
             for row in rows:
                 counts[row["status"]] = counts.get(row["status"], 0) + 1
             self._rows = [{"status": status, "count": count} for status, count in counts.items()]
-            return
-        if normalized.startswith("insert into job_files"):
-            job_id, file_type, payload, created_at = params
-            self.database.job_files[(job_id, file_type)] = {
-                "job_id": job_id,
-                "file_type": file_type,
-                "payload": payload,
-                "created_at": created_at,
-            }
-            self._rows = []
-            return
-        if normalized.startswith("select payload from job_files where job_id"):
-            rows = [row for row in self.database.job_files.values() if row["job_id"] == params[0]]
-            self._rows = [{"payload": row["payload"]} for row in sorted(rows, key=lambda item: (item["created_at"], item["file_type"]))]
-            return
-        if normalized.startswith("insert into stage_messages"):
-            message_id, job_id, status, payload, created_at, updated_at = params
-            self.database.stage_messages[message_id] = {
-                "message_id": message_id,
-                "job_id": job_id,
-                "status": status,
-                "payload": payload,
-                "created_at": created_at,
-                "updated_at": updated_at,
-            }
-            self._rows = []
-            return
-        if normalized.startswith("select payload from stage_messages where message_id"):
-            row = self.database.stage_messages.get(params[0])
-            self._rows = [{"payload": row["payload"]}] if row is not None else []
-            return
-        if normalized.startswith("update stage_messages"):
-            job_id, status, payload, created_at, updated_at, message_id = params
-            self.database.stage_messages[message_id] = {
-                "message_id": message_id,
-                "job_id": job_id,
-                "status": status,
-                "payload": payload,
-                "created_at": created_at,
-                "updated_at": updated_at,
-            }
-            self._rows = []
-            return
-        if "from stage_messages where status in" in normalized:
-            rows = [
-                row
-                for row in self.database.stage_messages.values()
-                if row["status"] in {"pending", "running"}
-            ]
-            self._rows = [{"payload": row["payload"]} for row in sorted(rows, key=lambda item: (item["created_at"], item["message_id"]))]
-            return
-        if normalized.startswith("select payload from stage_messages order by"):
-            self._rows = [
-                {"payload": row["payload"]}
-                for row in sorted(self.database.stage_messages.values(), key=lambda item: (item["created_at"], item["message_id"]))
-            ]
-            return
-        if normalized.startswith("select status, count(*) as count from stage_messages"):
-            counts: dict[str, int] = {}
-            for row in self.database.stage_messages.values():
-                counts[row["status"]] = counts.get(row["status"], 0) + 1
-            self._rows = [{"status": status, "count": count} for status, count in counts.items()]
-            return
-        if normalized.startswith("delete from stage_messages"):
-            self.database.stage_messages.pop(params[0], None)
-            self._rows = []
             return
         if normalized.startswith("insert into resource_versions"):
             resource_type, resource_id, version, status, snapshot_hash, payload_ref, payload, created_at, updated_at = params
@@ -1558,10 +1460,7 @@ class PersistenceAdapterTests(TestCase):
         self.assertEqual(
             fake_mysql.created_tables,
             {
-                "jobs",
                 "job_events",
-                "job_files",
-                "stage_messages",
                 "saved_views",
                 "resource_versions",
                 "resource_default_versions",
@@ -1898,11 +1797,9 @@ class PersistenceAdapterTests(TestCase):
         with TemporaryDirectory() as temp_dir:
             database_path = Path(temp_dir) / "metadata.sqlite3"
             first_adapters = build_sqlite_persistence_adapters(database_path)
-            job = self._build_source_pdf_job("job_persisted")
-
-            first_adapters.job_repository.create_job(job)
+            job_id = "job_persisted"
             first_adapters.job_event_repository.append_event(
-                job.id,
+                job_id,
                 JobEvent(
                     stage="job_created",
                     message="created",
@@ -1912,11 +1809,13 @@ class PersistenceAdapterTests(TestCase):
             )
 
             second_adapters = build_sqlite_persistence_adapters(database_path)
-            persisted_job = second_adapters.job_repository.get_job(job.id)
-            persisted_events = second_adapters.job_event_repository.list_events(job.id)
+            persisted_events = second_adapters.job_event_repository.list_events(job_id)
+            with second_adapters.job_event_repository.backend.connect() as connection:
+                tables = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
 
-        self.assertIsNotNone(persisted_job)
-        self.assertEqual(persisted_job.id, job.id)
+        self.assertIn("job_events", tables)
+        self.assertFalse({"jobs", "job_files", "stage_messages"} & tables)
+
         self.assertEqual([event.stage for event in persisted_events], ["job_created"])
 
     def test_document_jobs_api_pdf_callback_flow_uses_database_repository(self):
@@ -2069,8 +1968,6 @@ class PersistenceAdapterTests(TestCase):
         self.assertEqual(callback_counts["processed"], 1)
         self.assertEqual(checks["configured_repository_backend"], "mysql")
         self.assertEqual(checks["effective_repository_backend"], "mysql")
-        self.assertEqual(checks["stage_message_store"], "mysql")
-        self.assertTrue(checks["stage_spool_dir_exists"])
 
     def test_document_jobs_api_retry_flow_uses_database_repository(self):
         with TemporaryDirectory() as temp_dir:
@@ -2114,50 +2011,6 @@ class PersistenceAdapterTests(TestCase):
         self.assertIsInstance(runtime.document_job_repository, SqliteDocumentJobRepository)
         self.assertEqual(persisted_job.status, "succeeded")
 
-    def test_replay_pending_flow_uses_database_repository(self):
-        with TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir), jobs_repository_backend="database")
-            job = JobRecord(
-                id="job_database_replay",
-                source_filename="source.pdf",
-                status="queued",
-                progress=10,
-                source_kind="source_pdf",
-                lifecycle_status="uploaded",
-                execution_status="queued",
-                source_pdf_context=SourcePdfJobContext(),
-            )
-            runtime.job_repository.create_job(job)
-            for message in (
-                JobStageMessage(
-                    id="msg_database_pending",
-                    job_id=job.id,
-                    stage="submit_to_mineru",
-                    trace_id="trace_database_pending",
-                    status="pending",
-                ),
-                JobStageMessage(
-                    id="msg_database_running",
-                    job_id=job.id,
-                    stage="process_callback",
-                    trace_id="trace_database_running",
-                    status="running",
-                ),
-                JobStageMessage(
-                    id="msg_database_failed",
-                    job_id=job.id,
-                    stage="convert_package",
-                    trace_id="trace_database_failed",
-                    status="failed",
-                ),
-            ):
-                runtime.stage_message_store.put_stage_message(message)
-            dispatched: list[str] = []
-            runtime.stage_service.dispatch_message = lambda message_id: dispatched.append(message_id)
-
-            runtime.stage_dispatcher.replay_pending()
-
-        self.assertEqual(dispatched, ["msg_database_pending", "msg_database_running"])
 
     def test_build_runtime_switches_to_database_repository_and_readiness(self):
         with TemporaryDirectory() as temp_dir:
@@ -2171,14 +2024,11 @@ class PersistenceAdapterTests(TestCase):
             runtime = build_runtime(settings)
             checks = runtime.health_service.build_dependency_checks()
 
-        self.assertIsInstance(runtime.job_repository, SqliteJobSnapshotRepository)
-        self.assertIsNot(runtime.job_repository, runtime.stage_message_store)
+        self.assertIsInstance(runtime.document_job_repository, SqliteDocumentJobRepository)
         self.assertEqual(checks["configured_repository_backend"], "database")
         self.assertEqual(checks["effective_repository_backend"], "database")
-        self.assertEqual(checks["stage_message_store"], "database")
         self.assertEqual(checks["artifact_storage"], "local_file")
         self.assertTrue(checks["jobs_dir_exists"])
-        self.assertTrue(checks["stage_spool_dir_exists"])
 
     def test_build_runtime_switches_to_mysql_repository_and_readiness(self):
         with TemporaryDirectory() as temp_dir:
@@ -2205,14 +2055,11 @@ class PersistenceAdapterTests(TestCase):
                 runtime = build_runtime(settings)
             checks = runtime.health_service.build_dependency_checks()
 
-        self.assertIsInstance(runtime.job_repository, MysqlJobSnapshotRepository)
-        self.assertIsNot(runtime.job_repository, runtime.stage_message_store)
+        self.assertIsInstance(runtime.document_job_repository, MysqlDocumentJobRepository)
         self.assertEqual(checks["configured_repository_backend"], "mysql")
         self.assertEqual(checks["effective_repository_backend"], "mysql")
-        self.assertEqual(checks["stage_message_store"], "mysql")
         self.assertEqual(checks["artifact_storage"], "local_file")
         self.assertTrue(checks["jobs_dir_exists"])
-        self.assertTrue(checks["stage_spool_dir_exists"])
 
     def test_build_runtime_keeps_file_repository_as_local_default(self):
         with TemporaryDirectory() as temp_dir:
@@ -2223,15 +2070,12 @@ class PersistenceAdapterTests(TestCase):
             database_file_exists = settings.jobs_metadata_database_file.exists()
 
         self.assertEqual(settings.jobs_repository_backend, "file")
-        self.assertIsInstance(runtime.job_repository, FileJobSnapshotRepository)
+        self.assertIsInstance(runtime.document_job_repository, FileDocumentJobRepository)
         self.assertEqual(checks["configured_repository_backend"], "file")
         self.assertEqual(checks["effective_repository_backend"], "file")
-        self.assertEqual(checks["stage_message_store"], "file")
         self.assertFalse(database_file_exists)
 
     def _exercise_metadata_contract(self, adapters: PersistenceAdapters) -> None:
-        job_repository = adapters.job_repository
-        job_file_repository = adapters.job_file_repository
         job_event_repository = adapters.job_event_repository
         audit_event_repository = adapters.audit_event_repository
         acceptance_run_repository = adapters.acceptance_run_repository
@@ -2242,35 +2086,11 @@ class PersistenceAdapterTests(TestCase):
         document_job_event_repository = adapters.document_job_event_repository
         document_job_callback_message_store = adapters.document_job_callback_message_store
         saved_view_repository = adapters.saved_view_repository
-        stage_message_store = adapters.stage_message_store
 
-        job = self._build_source_pdf_job("job_contract")
-        job_repository.create_job(job)
-
-        stored_job = job_repository.get_job(job.id)
-        self.assertIsNotNone(stored_job)
-        self.assertEqual(stored_job.read_mineru_batch_id(), "batch_1")
-        self.assertEqual(stored_job.mineru_batch_id, "batch_1")
-
-        updated_job = job_repository.update_job(
-            job.id,
-            status="parsed",
-            lifecycle_status="parsed",
-            **build_source_pdf_context_patch(stored_job, result_zip_url="https://mineru.net/result.zip"),
-        )
-        self.assertEqual(updated_job.status, "parsed")
-        self.assertEqual(updated_job.read_mineru_result_zip_url(), "https://mineru.net/result.zip")
-        self.assertEqual(job_repository.get_job(job.id).mineru_result_zip_url, "https://mineru.net/result.zip")
-
-        job_file_repository.upsert_file(job.id, JobFile(file_type="source_pdf", path="input/source.pdf"))
-        job_file_repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
-        job_file_repository.upsert_file(job.id, JobFile(file_type="source_pdf", path="input/replaced-source.pdf"))
-        files_by_type = {file.file_type: file for file in job_file_repository.list_files(job.id)}
-        self.assertEqual(set(files_by_type), {"source_pdf", "result_docx"})
-        self.assertEqual(files_by_type["source_pdf"].path, "input/replaced-source.pdf")
+        job_id = "job_contract"
 
         job_event_repository.append_event(
-            job.id,
+            job_id,
             JobEvent(
                 stage="job_created",
                 message="created",
@@ -2279,7 +2099,7 @@ class PersistenceAdapterTests(TestCase):
             ),
         )
         job_event_repository.append_event(
-            job.id,
+            job_id,
             JobEvent(
                 stage="translation_completed",
                 message="completed",
@@ -2288,7 +2108,7 @@ class PersistenceAdapterTests(TestCase):
             ),
         )
         self.assertEqual(
-            [event.stage for event in job_event_repository.list_events(job.id)],
+            [event.stage for event in job_event_repository.list_events(job_id)],
             ["job_created", "translation_completed"],
         )
 
@@ -2299,7 +2119,7 @@ class PersistenceAdapterTests(TestCase):
                 actor_role="admin",
                 action="job.retry",
                 target_type="job",
-                target_id=job.id,
+                target_id=job_id,
                 reason="contract",
                 details={"workflow": "retry", "attempt": 1},
                 trace_id="trace_audit",
@@ -2367,7 +2187,7 @@ class PersistenceAdapterTests(TestCase):
             id="file_contract",
             tenant_id="tenant_default",
             company_id="company_default",
-            job_id=job.id,
+            job_id=job_id,
             file_type="source_pdf",
             storage_provider="local_object",
             bucket="local-object",
@@ -2673,52 +2493,6 @@ class PersistenceAdapterTests(TestCase):
             ["file_ai_log"],
         )
 
-        pending = JobStageMessage(
-            id="msg_pending",
-            job_id=job.id,
-            stage="convert_package",
-            trace_id="trace_stage",
-            status="pending",
-        )
-        running = JobStageMessage(
-            id="msg_running",
-            job_id=job.id,
-            stage="submit_to_mineru",
-            trace_id="trace_stage",
-            status="running",
-        )
-        failed = JobStageMessage(
-            id="msg_failed",
-            job_id=job.id,
-            stage="process_callback",
-            trace_id="trace_stage",
-            status="failed",
-        )
-        for message in (pending, running, failed):
-            stage_message_store.put_stage_message(message)
-
-        lease_expires_at = utc_now() + timedelta(seconds=900)
-        updated_message = stage_message_store.update_stage_message(
-            "msg_pending",
-            status="running",
-            attempts=1,
-            lease_owner="in_process",
-            leased_at=utc_now(),
-            lease_expires_at=lease_expires_at,
-        )
-        self.assertEqual(updated_message.status, "running")
-        self.assertEqual(updated_message.attempts, 1)
-        self.assertEqual(updated_message.lease_owner, "in_process")
-        self.assertEqual(updated_message.lease_expires_at, lease_expires_at)
-        self.assertEqual(
-            {message.id for message in stage_message_store.list_replayable_stage_messages()},
-            {"msg_pending", "msg_running"},
-        )
-        self.assertEqual(stage_message_store.count_stage_messages_by_status(), {"pending": 0, "running": 2, "failed": 1})
-        stage_message_store.delete_stage_message("msg_running")
-        self.assertIsNone(stage_message_store.get_stage_message("msg_running"))
-        self.assertEqual(stage_message_store.count_stage_messages_by_status(), {"pending": 0, "running": 1, "failed": 1})
-
         saved_view_scope = SavedViewScope(
             tenant_id="tenant_default",
             company_id="company_default",
@@ -2791,22 +2565,6 @@ class PersistenceAdapterTests(TestCase):
             ["savedview_qa"],
         )
 
-        query_service = JobQueryService(job_repository, job_file_repository, job_event_repository)
-        detail_job, detail_files, detail_events = query_service.get_job_detail(job.id)
-        listed_jobs, total, summary = query_service.list_jobs(
-            page=1,
-            page_size=10,
-            status_filter="parsed",
-            query_text="source",
-            sort="updated_at_desc",
-        )
-        self.assertEqual(detail_job.id, job.id)
-        self.assertEqual(len(detail_files), 2)
-        self.assertEqual(len(detail_events), 2)
-        self.assertEqual(total, 1)
-        self.assertEqual([listed_job.id for listed_job in listed_jobs], [job.id])
-        self.assertEqual(summary["parsed"], 1)
-
     def _upload_source_pdf(
         self,
         client: TestClient,
@@ -2835,14 +2593,3 @@ class PersistenceAdapterTests(TestCase):
         if upload_response.status_code != 201:
             raise AssertionError(upload_response.json())
         return upload_response.json()["file"]
-
-    def _build_source_pdf_job(self, job_id: str) -> JobRecord:
-        return JobRecord(
-            id=job_id,
-            source_filename="source.pdf",
-            status="uploaded",
-            source_kind="source_pdf",
-            lifecycle_status="uploaded",
-            execution_status="idle",
-            source_pdf_context=SourcePdfJobContext(batch_id="batch_1", data_id="data_1"),
-        )

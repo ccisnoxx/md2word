@@ -8,14 +8,6 @@ import sqlite3
 
 SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
     """
-    CREATE TABLE IF NOT EXISTS jobs (
-        job_id TEXT PRIMARY KEY,
-        payload TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-    )
-    """,
-    """
     CREATE TABLE IF NOT EXISTS job_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         job_id TEXT NOT NULL,
@@ -26,29 +18,6 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
     """
     CREATE INDEX IF NOT EXISTS idx_job_events_job_id_id
     ON job_events (job_id, id)
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS job_files (
-        job_id TEXT NOT NULL,
-        file_type TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY (job_id, file_type)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS stage_messages (
-        message_id TEXT PRIMARY KEY,
-        job_id TEXT NOT NULL,
-        status TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-    )
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_stage_messages_status_created_at
-    ON stage_messages (status, created_at, message_id)
     """,
     """
     CREATE TABLE IF NOT EXISTS audit_events (

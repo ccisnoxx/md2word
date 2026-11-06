@@ -16,7 +16,6 @@ from requests.adapters import HTTPAdapter
 from urllib3.exceptions import ReadTimeoutError
 
 from app.clients.mineru_client import MinerUClient, MinerUError
-from app.domains.jobs.models import JobRecord, SourcePdfJobContext
 from app.main import create_app
 from tests import test_fastapi_jobs_backend as fixtures
 
@@ -275,7 +274,7 @@ class MinerUDownloadBoundaryTests(unittest.TestCase):
         runtime.mineru_config_service.update_credentials(
             api_token="synthetic-rotated-api", uid="synthetic-rotated-uid", updated_by="boundary-test",
         )
-        for factory in (runtime.stage_service._build_mineru_client, runtime.document_job_execution_service._build_mineru_client):
+        for factory in (runtime.document_job_execution_service._build_mineru_client,):
             with self.subTest(factory=factory.__qualname__):
                 client = factory()
                 self.addCleanup(client.session.close)
@@ -372,33 +371,6 @@ class MinerUDownloadBoundaryTests(unittest.TestCase):
                         self.assertEqual(runtime.document_job_repository.get_document_job(job_id).stage, "parsing")
                 self.assertEqual([request.url for request in transport.requests], [START_URL] if redirect else [])
 
-    def test_legacy_saved_result_recovery_uses_real_downloader(self):
-        for redirect in (False, True):
-            with self.subTest(redirect=redirect):
-                runtime = fixtures.build_test_runtime(self.root / str(redirect), mineru_api_token=f"api-{SECRET}")
-                stage = runtime.stage_service
-                client = stage._build_mineru_client()
-                self.addCleanup(client.session.close)
-                stage._custom_mineru_client_factory = lambda: client
-                job = JobRecord(
-                    id="legacy-boundary", source_filename="source.pdf", status="parsed", progress=60,
-                    source_kind="source_pdf", lifecycle_status="parsed", execution_status="idle",
-                    source_pdf_context=SourcePdfJobContext(
-                        batch_id="batch-boundary", data_id="legacy-boundary", upstream_status="done",
-                        result_zip_url=START_URL if redirect else f"https://evil.test/result.zip?signature={SECRET}",
-                    ),
-                )
-                runtime.job_repository.create_job(job)
-                transport = DownloadTransport([(302, f"https://evil.test/result.zip?signature={SECRET}", b"redirect", False)])
-                with transport.installed():
-                    message = stage.enqueue_parsed_result_conversion(job, trace_id="boundary-legacy")
-                    stage.dispatch_message(message.id)
-                failed = runtime.job_repository.get_job(job.id)
-                self.assertEqual(failed.status, "failed")
-                self.assertEqual(failed.error_code, "parsed_result_download_failed")
-                self.assertNotIn(SECRET, failed.error_message)
-                self.assertEqual(runtime.job_file_repository.list_files(job.id), [])
-                self.assertEqual([request.url for request in transport.requests], [START_URL] if redirect else [])
 
 
 if __name__ == "__main__":

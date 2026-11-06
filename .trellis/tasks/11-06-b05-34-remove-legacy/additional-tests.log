@@ -1,0 +1,147 @@
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+test_cli_default_model_and_limits_share_configuration (tests.test_formal_conversion_configuration.FormalConversionConfigurationTests.test_cli_default_model_and_limits_share_configuration) ... ok
+test_configuration_defaults_remain_literal_values (tests.test_formal_conversion_configuration.FormalConversionConfigurationTests.test_configuration_defaults_remain_literal_values) ... ok
+test_dotenv_parser_and_root_remain_unchanged (tests.test_formal_conversion_configuration.FormalConversionConfigurationTests.test_dotenv_parser_and_root_remain_unchanged) ... ok
+test_environment_keeps_empty_value_priority_and_integer_limits (tests.test_formal_conversion_configuration.FormalConversionConfigurationTests.test_environment_keeps_empty_value_priority_and_integer_limits) ... ok
+test_generated_config_and_translation_defaults_use_formal_objects (tests.test_formal_conversion_configuration.FormalConversionConfigurationTests.test_generated_config_and_translation_defaults_use_formal_objects) ... ok
+test_health_sdk_availability_preserves_key_requirement_and_reason (tests.test_formal_conversion_configuration.FormalConversionConfigurationTests.test_health_sdk_availability_preserves_key_requirement_and_reason) ... ok
+test_sdk_probe_and_model_fallback_keep_import_time_semantics (tests.test_formal_conversion_configuration.FormalConversionConfigurationTests.test_sdk_probe_and_model_fallback_keep_import_time_semantics) ... ok
+test_allowed_redirects_use_real_requests_resolution (tests.test_mineru_download_boundary.MinerUDownloadBoundaryTests.test_allowed_redirects_use_real_requests_resolution) ... ok
+test_allowed_urls_preserve_signed_query_and_bytes (tests.test_mineru_download_boundary.MinerUDownloadBoundaryTests.test_allowed_urls_preserve_signed_query_and_bytes) ... ok
+test_disallowed_redirect_never_reaches_transport_or_truncates_output (tests.test_mineru_download_boundary.MinerUDownloadBoundaryTests.test_disallowed_redirect_never_reaches_transport_or_truncates_output) ... ok
+test_download_isolates_api_credentials_and_preserves_environment (tests.test_mineru_download_boundary.MinerUDownloadBoundaryTests.test_download_isolates_api_credentials_and_preserves_environment) ... ok
+test_failure_paths_are_bounded_safe_and_release_resources (tests.test_mineru_download_boundary.MinerUDownloadBoundaryTests.test_failure_paths_are_bounded_safe_and_release_resources) ... ok
+test_formal_callback_checks_before_enqueue_and_again_in_worker (tests.test_mineru_download_boundary.MinerUDownloadBoundaryTests.test_formal_callback_checks_before_enqueue_and_again_in_worker) ... [trace_id=boundary-callback job_id=docjob_373733d7a731 generation=0 stage=parsing status=failure_observed error_code=mineru_failed error_type=MinerUError]
+[trace_id=boundary-callback job_id=docjob_373733d7a731 stage=parsing status=failed] MinerU 外部调用失败。
+ok
+test_formal_polling_rejects_initial_and_redirect_targets (tests.test_mineru_download_boundary.MinerUDownloadBoundaryTests.test_formal_polling_rejects_initial_and_redirect_targets) ... [trace_id=48db88467a124e0ca976647eed8f289c job_id=docjob_3f84ac5da2e0 generation=0 stage=parsing status=failure_observed error_code=mineru_failed error_type=MinerUError]
+[trace_id=48db88467a124e0ca976647eed8f289c job_id=docjob_3f84ac5da2e0 stage=parsing status=failed] MinerU 外部调用失败。
+[trace_id=99064ed7ffb94270af9d067e3f2f379b job_id=docjob_ebf367ab2851 generation=0 stage=parsing status=failure_observed error_code=mineru_failed error_type=MinerUError]
+[trace_id=99064ed7ffb94270af9d067e3f2f379b job_id=docjob_ebf367ab2851 stage=parsing status=failed] MinerU 外部调用失败。
+ok
+test_initial_url_rejected_before_transport_and_output (tests.test_mineru_download_boundary.MinerUDownloadBoundaryTests.test_initial_url_rejected_before_transport_and_output) ... ok
+test_production_factories_use_custom_allowlist_and_existing_resolver (tests.test_mineru_download_boundary.MinerUDownloadBoundaryTests.test_production_factories_use_custom_allowlist_and_existing_resolver) ... ok
+test_document_file_retention_plan_marks_expired_without_deleting_objects (tests.test_artifact_retention.DocumentFileRetentionTests.test_document_file_retention_plan_marks_expired_without_deleting_objects) ... ERROR
+test_mineru_config_api_updates_runtime_token_without_exposing_secret (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_mineru_config_api_updates_runtime_token_without_exposing_secret) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:59: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  response = await handler(conn, exc)  # type: ignore[arg-type]
+ok
+test_mineru_config_invalid_file_blocks_without_settings_fallback (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_mineru_config_invalid_file_blocks_without_settings_fallback) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_alert_delivery_preview_is_admin_only_and_readonly (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_alert_delivery_preview_is_admin_only_and_readonly)
+验证 Ops alert delivery preview 只允许 Admin 且不写审计或外发通知。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_alert_delivery_adapter_contract_is_admin_only_readonly_and_blocks_real_send (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_alert_delivery_adapter_contract_is_admin_only_readonly_and_blocks_real_send)
+验证 alert delivery adapter contract 只读，并且真实发送能力仍保持 blocked。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_alert_delivery_fake_send_audits_and_dedupes_without_external_delivery (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_alert_delivery_fake_send_audits_and_dedupes_without_external_delivery)
+验证 fake alert delivery 写一次审计，dedupe 窗口内重复请求不重复写。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_alert_delivery_fake_send_includes_adapter_contract_parity_in_audit (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_alert_delivery_fake_send_includes_adapter_contract_parity_in_audit)
+验证 fake-send response 和 audit details 都包含同版 adapter contract 证据。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_alert_delivery_rejects_invalid_targets_and_updates_action_registry (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_alert_delivery_rejects_invalid_targets_and_updates_action_registry)
+验证 alert delivery 拒绝非精确目标，并暴露 fake outbox registry 合同。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_alert_destination_dry_run_is_admin_only_readonly_and_masks_secrets (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_alert_destination_dry_run_is_admin_only_readonly_and_masks_secrets)
+验证 alert destination dry-run 只读、Admin-only，并且不返回 secret value。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default)
+验证 real-send preview 默认 blocked，且不解析 secret、不调用 provider、不写 audit。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+FAIL
+test_ops_real_alert_delivery_rejects_non_pilot_targets_and_bad_confirmation (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_rejects_non_pilot_targets_and_bad_confirmation)
+验证 real-send 只接受固定 pilot destination、alert code 和 confirmation。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_real_alert_delivery_kill_switch_blocks_before_secret_and_provider (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_kill_switch_blocks_before_secret_and_provider)
+验证 kill switch 在解析 secret 和调用 provider 前阻断，并写入脱敏 audit。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+FAIL
+test_ops_real_alert_delivery_success_uses_injected_provider_and_dedupes (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_success_uses_injected_provider_and_dedupes)
+验证 real-send 成功路径使用注入 provider，重复请求 dedupe 且不泄露 secret。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+FAIL
+test_ops_real_alert_delivery_rate_limits_failed_provider_attempts (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_rate_limits_failed_provider_attempts)
+验证 provider 失败尝试达到 Phase 7 rate limit 后不再调用 provider。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+FAIL
+test_ops_integration_capabilities_report_phase7_slack_pilot_ready_without_side_effects (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_integration_capabilities_report_phase7_slack_pilot_ready_without_side_effects)
+验证 control plane 可报告 Phase 7 Slack pilot ready，但不解析 secret 或调用 provider。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+FAIL
+
+======================================================================
+ERROR: test_document_file_retention_plan_marks_expired_without_deleting_objects (tests.test_artifact_retention.DocumentFileRetentionTests.test_document_file_retention_plan_marks_expired_without_deleting_objects)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_artifact_retention.py", line 43, in test_document_file_retention_plan_marks_expired_without_deleting_objects
+    adapters.document_file_repository.create_document_file(old_file)
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/infrastructure/persistence/file/files.py", line 45, in create_document_file
+    ensure_new_file_identity(record)
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/domains/files/result_registration.py", line 149, in ensure_new_file_identity
+    raise ValueError("新文件对象路径缺少固定位置的独立 file_id。")
+ValueError: 新文件对象路径缺少固定位置的独立 file_id。
+
+======================================================================
+FAIL: test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default)
+验证 real-send preview 默认 blocked，且不解析 secret、不调用 provider、不写 audit。
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 2967, in test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default
+    self.assertEqual(admin_response.status_code, 200)
+AssertionError: 400 != 200
+
+======================================================================
+FAIL: test_ops_real_alert_delivery_kill_switch_blocks_before_secret_and_provider (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_kill_switch_blocks_before_secret_and_provider)
+验证 kill switch 在解析 secret 和调用 provider 前阻断，并写入脱敏 audit。
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 3114, in test_ops_real_alert_delivery_kill_switch_blocks_before_secret_and_provider
+    self.assertEqual(response.status_code, 200)
+AssertionError: 400 != 200
+
+======================================================================
+FAIL: test_ops_real_alert_delivery_success_uses_injected_provider_and_dedupes (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_success_uses_injected_provider_and_dedupes)
+验证 real-send 成功路径使用注入 provider，重复请求 dedupe 且不泄露 secret。
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 3192, in test_ops_real_alert_delivery_success_uses_injected_provider_and_dedupes
+    self.assertEqual(first_response.status_code, 200)
+AssertionError: 400 != 200
+
+======================================================================
+FAIL: test_ops_real_alert_delivery_rate_limits_failed_provider_attempts (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_rate_limits_failed_provider_attempts)
+验证 provider 失败尝试达到 Phase 7 rate limit 后不再调用 provider。
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 3267, in test_ops_real_alert_delivery_rate_limits_failed_provider_attempts
+    self.assertEqual([response.status_code for response in responses], [200, 200, 200, 200])
+AssertionError: Lists differ: [400, 400, 400, 400] != [200, 200, 200, 200]
+
+First differing element 0:
+400
+200
+
+- [400, 400, 400, 400]
+?  ^    ^    ^    ^
+
++ [200, 200, 200, 200]
+?  ^    ^    ^    ^
+
+
+======================================================================
+FAIL: test_ops_integration_capabilities_report_phase7_slack_pilot_ready_without_side_effects (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_integration_capabilities_report_phase7_slack_pilot_ready_without_side_effects)
+验证 control plane 可报告 Phase 7 Slack pilot ready，但不解析 secret 或调用 provider。
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 3956, in test_ops_integration_capabilities_report_phase7_slack_pilot_ready_without_side_effects
+    self.assertEqual(alert_delivery["status"], "ready")
+AssertionError: 'blocked' != 'ready'
+- blocked
++ ready
+
+
+----------------------------------------------------------------------
+Ran 31 tests in 2.846s
+
+FAILED (failures=5, errors=1)

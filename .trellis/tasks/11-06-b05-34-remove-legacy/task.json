@@ -1,0 +1,9 @@
+{
+  "id": "b05-34-remove-legacy",
+  "title": "B05 第 3、4 步：移除旧转换链路",
+  "status": "in_progress",
+  "description": "用户已授权任务文档后直接实施；状态仅限任务目录，不运行 archive/add_session。",
+  "implementation_status": "completed",
+  "verification_status": "partial",
+  "baseline_failures": 4
+}

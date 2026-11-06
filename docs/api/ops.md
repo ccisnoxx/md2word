@@ -191,7 +191,7 @@ The registry and preview endpoints return:
 }
 ```
 
-Preview reads only metadata repositories. It does not call `stage_service`, `stage_dispatcher`, lifecycle execution services, provider clients, file delete services, or notification integrations.
+Preview reads only metadata repositories. It does not invoke DocumentJob execution or recovery, provider clients, file delete services, or notification integrations.
 
 ## Alert Delivery Fake Outbox
 
@@ -203,7 +203,7 @@ Request:
 
 ```json
 {
-  "alert_codes": ["stage_spool_failed_messages_present"],
+  "alert_codes": ["document_job_callback_failed_messages_present"],
   "channel": "local_outbox",
   "dedupe_window_minutes": 60
 }
@@ -224,7 +224,7 @@ Request:
 
 ```json
 {
-  "alert_codes": ["stage_spool_failed_messages_present"],
+  "alert_codes": ["document_job_callback_failed_messages_present"],
   "channel": "local_outbox",
   "reason": "ops drill",
   "confirmation": "SEND FAKE OPS ALERTS",
@@ -286,6 +286,8 @@ Safety metadata always reports:
 The API never returns or stores webhook URLs, credentials, provider secrets, local paths, file bytes, prompt text, or full health payloads.
 
 ### `POST /api/v1/ops/alert-deliveries/real-send/preview`
+
+**B05 更新：** 此历史 pilot 的固定许可码仍为 `stage_spool_failed_messages_present`。当前健康服务已不再生成该告警，因此 active-alert 门禁无法满足，不能据此执行正式发送；迁移到正式回调告警需要另行授权。合成安全测试不表示真实发送可用。
 
 Admin-only Phase 7 Slack webhook pilot preview. It validates gates for exactly one destination and one alert code, but does not resolve the secret value, call Slack, send a webhook, or write audit.
 
@@ -366,7 +368,7 @@ Default:
 []
 ```
 
-Configured value is a JSON array:
+Configured value is a JSON array. The following callback-alert example is for destination dry-run; it does not change the fixed real-send pilot allowlist:
 
 ```json
 [
@@ -376,7 +378,7 @@ Configured value is a JSON array:
     "enabled": false,
     "secret_ref": "OPS_SLACK_WEBHOOK_URL",
     "target_label": "#ops-alerts-phase7-pilot",
-    "allowlist": ["stage_spool_failed_messages_present"],
+    "allowlist": ["document_job_callback_failed_messages_present"],
     "rate_limit_per_hour": 3,
     "dedupe_window_minutes": 60
   }
@@ -399,7 +401,7 @@ Request:
 
 ```json
 {
-  "alert_codes": ["stage_spool_failed_messages_present"],
+  "alert_codes": ["document_job_callback_failed_messages_present"],
   "destination_ids": ["ops-slack-primary"]
 }
 ```

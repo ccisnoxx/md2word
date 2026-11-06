@@ -8,40 +8,12 @@ from typing import Any
 
 MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
     """
-    CREATE TABLE IF NOT EXISTS jobs (
-        job_id VARCHAR(128) PRIMARY KEY,
-        payload LONGTEXT NOT NULL,
-        created_at VARCHAR(40) NOT NULL,
-        updated_at VARCHAR(40) NOT NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
     CREATE TABLE IF NOT EXISTS job_events (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         job_id VARCHAR(128) NOT NULL,
         payload LONGTEXT NOT NULL,
         created_at VARCHAR(40) NOT NULL,
         KEY idx_job_events_job_id_id (job_id, id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS job_files (
-        job_id VARCHAR(128) NOT NULL,
-        file_type VARCHAR(64) NOT NULL,
-        payload LONGTEXT NOT NULL,
-        created_at VARCHAR(40) NOT NULL,
-        PRIMARY KEY (job_id, file_type)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS stage_messages (
-        message_id VARCHAR(128) PRIMARY KEY,
-        job_id VARCHAR(128) NOT NULL,
-        status VARCHAR(32) NOT NULL,
-        payload LONGTEXT NOT NULL,
-        created_at VARCHAR(40) NOT NULL,
-        updated_at VARCHAR(40) NOT NULL,
-        KEY idx_stage_messages_status_created_at (status, created_at, message_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """

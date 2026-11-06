@@ -11,7 +11,6 @@ Evidence:
 - `app/domains/document_jobs/router.py`
 - `app/domains/files/service.py`
 - `scripts/dev/run_api.py`
-- `scripts/dev/run_stage_worker.py`
 
 ## Runtime Composition
 
@@ -24,7 +23,7 @@ Follow this pattern for runtime dependencies:
 - Read runtime dependencies in routers through `Depends(get_runtime)` from `app/api/dependencies.py`.
 - Avoid constructing repositories, clients, or services directly inside route handlers unless the existing route already owns a narrow local helper.
 
-`create_app()` registers `register_api_error_handlers(app)`, CORS, trace/access logging middleware, startup replay tasks, and `api_v1_router`. `app = LazyDefaultApp()` delays reading `.env` and connecting runtime dependencies until the ASGI app is actually called.
+`create_app()` registers `register_api_error_handlers(app)`, CORS, trace/access logging middleware, 正式 DocumentJob 启动恢复任务, and `api_v1_router`. `app = LazyDefaultApp()` delays reading `.env` and connecting runtime dependencies until the ASGI app is actually called.
 
 ## API Layout
 
@@ -55,7 +54,7 @@ Business domains live under `app/domains/<domain>/`. The exact file set varies b
 Examples:
 
 - `app/domains/document_jobs/` has `models.py`, `schemas.py`, `router.py`, `service.py`, `repository.py`, `workflow.py`, `execution.py`, `recovery.py`, and incident routers.
-- `app/domains/jobs/` has separated command/query/stage/lifecycle/workflow modules for the legacy jobs workflow and stage message processing.
+- `app/domains/jobs/` 保留正式 DocumentJob 共用的模型、资源快照、路径、事件端口及 MinerU callback router；旧服务、调度、状态机和未挂载路由已删除。
 - `app/domains/files/` splits upload service, retention, quota policy, cleanup, validation, repository, schemas, and router.
 
 当前未建立此约定：not every domain has the same file names or all of `model/schema/router/service/repository`. Match the nearest existing domain with the same kind of behavior instead of forcing a uniform template.
@@ -71,12 +70,11 @@ Examples:
 
 `app/services/` holds shared services that are not cleanly owned by one business domain, such as auth, health, Document IR conversion, and rendering.
 
-`app/conversion/` 保留 legacy 转换运行时与共享转换规则。[main.py](../../../app/main.py) 的 `build_runtime()` 仍装配 `stage_service`，经 `ConversionService`、`runtime_facade` 调用 `runtime_runner`；[独立 StageWorker 入口](../../../scripts/dev/run_stage_worker.py) 也仍存在。HTTP 入口下线不等于运行时、Worker 或队列已清除；正式 Document Jobs 使用 DocumentIR + Renderer，本地调试入口见下文。legacy 调用使用 conversion entrypoint/facade，不直接导入历史根脚本。
+`app/conversion/` 仅保留正式链路使用的共享规则闭包，包括 `docx_rules` 与 `table_html_parser`。B05 第 3、4 步已删除旧转换运行时和 StageWorker；`build_runtime()` 只装配正式 Document Jobs + DocumentIR + Renderer，启动时只运行正式恢复服务。本地调试入口见下文。
 
 `app/workers/` owns worker implementations. Script entrypoints under `scripts/dev/` adapt them for local/PyCharm use:
 
 - `scripts/dev/run_api.py` runs `uvicorn` against `app.main:app`.
-- `scripts/dev/run_stage_worker.py` builds runtime and runs `StageWorker`.
 - `scripts/dev/run_document_worker.py` is the Document Jobs worker entrypoint.
 
 ## Infrastructure And Runtime Data
@@ -90,7 +88,7 @@ Examples:
 
 `resources/` contains versioned seed/config assets such as templates, template configs, prompts, and term rules. `var/` and `data/` are runtime data directories and are not the versioned source of truth.
 
-`docs/dev/backend-local-setup-and-architecture.md` documents the current runtime shape, including `var/jobs/{job_id}/job.json`, `files.json`, `events.jsonl`, `stage_messages/`, `tmp/`, and config state files.
+`docs/dev/backend-local-setup-and-architecture.md` 说明正式 `document_jobs/`、`document_files/`、callback/batch、共享 `jobs/<id>/resources/`、`tmp/` 和配置目录。旧 stage spool 不再创建或消费。
 
 ## Tests And Scripts
 
@@ -122,7 +120,7 @@ Operational and release scripts live under:
 - Local scripts pass MinerU zip/directory inputs to `formal_mineru_conversion`, not to `app.conversion.runtime_runner`.
 - The adapter must call `MinerUToDocumentIRService.convert_zip()` and `DocumentIRWordRenderer.render_to_bytes()`.
 - Layout fixes belong in `app/services/document_ir/*`, `app/services/renderer/*`, or shared DOCX rules under `app/conversion/docx_rules/*`.
-- `runtime_runner` 是仍装配的 legacy stage 转换路径和历史对照点；旧 `/api/v1/jobs` HTTP 入口已下线，它不是默认本地调试核心。
+- 旧转换运行时已删除；禁止重新接回旧 `/api/v1/jobs` 或 stage 转换路径。
 - Translation modes must not silently fall back to direct. Missing key/response should fail or be reported as blocked after writing any requested local translation request evidence.
 
 ### 4. Validation & Error Matrix

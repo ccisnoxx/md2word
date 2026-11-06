@@ -1,0 +1,12 @@
+{
+  "changed_schemas": [
+    "HealthMetricsResponse",
+    "HealthOpsAlertItem",
+    "HealthOpsAlertSummary"
+  ],
+  "paths_unchanged": true,
+  "preexisting_drift": [
+    "DocumentJobFailureDiagnosticResponse.source_page_count",
+    "DocumentJobFailureDiagnosticResponse.page_count_basis"
+  ]
+}

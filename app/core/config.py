@@ -53,8 +53,6 @@ class Settings(BaseSettings):
     jobs_artifact_s3_download_mode: Literal["redirect", "stream"] = "redirect"
     jobs_artifact_s3_presign_expires_seconds: int = 3600
     jobs_worker_mode: Literal["in_process", "external"] = "in_process"
-    jobs_worker_poll_interval_seconds: float = 2.0
-    jobs_worker_id: str = "md2word-worker"
     stage_message_lease_seconds: int = 900
     jobs_upload_max_bytes: int = 52_428_800
     oss_upload_presign_expires_seconds: int = 600
@@ -195,10 +193,6 @@ class Settings(BaseSettings):
     @property
     def jobs_dir(self) -> Path:
         return self.data_path / "jobs"
-
-    @property
-    def stage_messages_dir(self) -> Path:
-        return self.data_path / "stage_messages"
 
     @property
     def tmp_dir(self) -> Path:

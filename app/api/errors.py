@@ -6,10 +6,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.conversion.contracts import ConversionFailure
 from app.core.errors import ApiError, ApiErrorCode
-from app.domains.jobs.workflow import JobWorkflowViolation
-from app.domains.jobs.artifact_integrity import ArtifactFingerprintMismatch
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
 from app.domains.mineru.config import MinerUConfigError, MinerUConfigWriteError
 
@@ -37,28 +34,6 @@ def bad_request_http_exception(exc: ValueError) -> HTTPException:
     """把边界输入异常映射为稳定的 400 响应。"""
 
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-
-
-def artifact_download_http_exception(exc: FileNotFoundError | ValueError) -> HTTPException:
-    """把 artifact storage 的本地异常映射为稳定的下载接口 HTTP 错误。"""
-
-    if isinstance(exc, ArtifactFingerprintMismatch):
-        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    if isinstance(exc, FileNotFoundError):
-        return not_found_http_exception(exc)
-    return bad_request_http_exception(exc)
-
-
-async def _job_workflow_violation_handler(_request: Request, exc: JobWorkflowViolation) -> JSONResponse:
-    """把 workflow policy 拒绝统一暴露为 409 conflict。"""
-
-    return api_error_response(_request, status.HTTP_409_CONFLICT, "job_state_conflict", exc.message)
-
-
-async def _conversion_failure_handler(_request: Request, exc: ConversionFailure) -> JSONResponse:
-    """把同步转换入口失败统一暴露为服务不可用。"""
-
-    return api_error_response(_request, status.HTTP_503_SERVICE_UNAVAILABLE, "conversion_failed", exc.message)
 
 
 async def _job_resource_snapshot_error_handler(_request: Request, exc: JobResourceSnapshotError) -> JSONResponse:
@@ -213,6 +188,4 @@ def register_api_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(MinerUConfigWriteError, _mineru_config_write_error_handler)
     app.add_exception_handler(HTTPException, _http_exception_handler)
     app.add_exception_handler(RequestValidationError, _request_validation_exception_handler)
-    app.add_exception_handler(JobWorkflowViolation, _job_workflow_violation_handler)
-    app.add_exception_handler(ConversionFailure, _conversion_failure_handler)
     app.add_exception_handler(JobResourceSnapshotError, _job_resource_snapshot_error_handler)
