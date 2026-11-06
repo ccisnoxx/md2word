@@ -4,6 +4,16 @@
       <JobStatusBadge :status="job.status" />
       <JobProgress :status="job.status" :stage="job.stage" :progress="job.progress" />
     </div>
+    <el-alert
+      v-if="job.status === 'failed'"
+      class="failure-summary"
+      type="error"
+      :closable="false"
+      show-icon
+      title="任务处理失败"
+    >
+      <p v-for="line in jobFailureSummaryLines(job)" :key="line">{{ line }}</p>
+    </el-alert>
     <el-descriptions :column="2" border>
       <el-descriptions-item label="模式">{{ jobModeText[job.mode] || job.mode }}</el-descriptions-item>
       <el-descriptions-item v-if="!usesTranslationResources(job)" label="转换说明">保持原文语言和语义，不调用 AI。</el-descriptions-item>
@@ -56,6 +66,7 @@
 </template>
 
 <script setup lang="ts">
+import { jobFailureSummaryLines } from "@/utils/failureDiagnostic";
 import JobProgress from "@/components/JobProgress.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import {
@@ -103,6 +114,11 @@ const {
   gap: 18px;
   align-items: center;
   margin-bottom: 18px;
+}
+
+.failure-summary {
+  margin-bottom: 18px;
+  overflow-wrap: anywhere;
 }
 
 .state-alert {

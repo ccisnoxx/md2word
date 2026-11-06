@@ -290,7 +290,7 @@
     </div>
     <el-alert class="failure-summary" type="error" :closable="false" show-icon :title="failureSummary">
       <p>{{ failureHelpText }}</p>
-      <p v-for="line in failureDiagnosticLines(job.failure_diagnostic)" :key="line">{{ line }}</p>
+      <p v-for="line in jobFailureSummaryLines(job, job.failure_diagnostic, true)" :key="line">{{ line }}</p>
       <p v-if="latestErrorEvent">
         最近错误事件：
         {{ latestErrorEvent.message }}
@@ -311,7 +311,7 @@ import { Refresh } from "@element-plus/icons-vue";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import EvidenceSurfaceSection from "@/components/EvidenceSurfaceSection.vue";
 import { formatDateTime, documentJobQualityFlagText, jobStageText } from "@/utils/format";
-import { failureDiagnosticLines } from "@/utils/failureDiagnostic";
+import { jobFailureSummaryLines } from "@/utils/failureDiagnostic";
 import { degradedPageLines } from "@/utils/degradedPages";
 import {
   translationBatchAiCallLogSummaryText,
