@@ -1,12 +1,10 @@
 """Worker 失败消息只保留固定码构造的消息，任意异常原文不进入任务 error_message。"""
 from unittest import TestCase
 
-from app.domains.document_jobs.execution import DocumentJobExecutionService
+from app.domains.document_jobs._failure_policy import worker_failure_message as message
 from app.domains.translation.document_ir_translator import DocumentIRTranslationError
 from app.services.document_ir.table_placeholder import TablePlaceholderError
 from app.services.renderer.table_renderer import TableRenderError
-
-message = DocumentJobExecutionService._worker_failure_message
 
 
 class WorkerFailureMessageTests(TestCase):

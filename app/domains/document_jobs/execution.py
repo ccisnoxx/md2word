@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from app.domains.document_jobs.table_evidence import has_evidence, save_report, verify_report, validate_candidate_binding, recheck_verified_report
 from app.services.tables.evidence import TableEvidenceError
-from app.services.tables.html_normalizer import TableBuildError
-from app.services.tables.quality import TableValidationError
 
 # app/domains/document_jobs/execution.py: 提供 document_jobs Worker 投递端口和幂等执行骨架。
 
@@ -25,6 +23,7 @@ from billiard.exceptions import SoftTimeLimitExceeded
 
 from app.clients.mineru_client import MinerUClient, MinerUError
 from app.core.config import Settings
+from app.domains.document_jobs import _failure_policy as failure_policy
 from app.domains.document_jobs.preview import DocumentJobPreviewService
 from app.domains.document_jobs.publication_provenance import (
     actual_call_fact, batch_publication_provenance, save_translation_publication_provenance,
@@ -82,8 +81,6 @@ from app.services.renderer.evidence import (
     validate_persisted_renderer_content,
 )
 from app.services.renderer import image_evidence
-from app.services.renderer.table_renderer import TableRenderError
-from app.services.renderer.word_renderer import FAILURE_CONTEXT_ATTRIBUTE
 from app.services.renderer.block_anchors import validate_block_anchor_evidence
 from app.services.renderer.layout_plan import build_layout_plan
 from app.domains.translation.audit import (
@@ -109,11 +106,6 @@ from app.domains.translation.integrity import (
     ValidatedTranslationBatch,
 )
 from app.domains.translation.provider import OpenAICompatibleTranslationProvider, TranslationProviderCallError, TranslationProviderResponseError
-
-
-# 消息只由固定错误码或固定文本构造的异常；其消息可原样作为任务 error_message。
-SAFE_MESSAGE_ERRORS = (MinerUArtifactValidationError, TablePlaceholderError, TableRenderError, TableBuildError,
-                       TableEvidenceError, TableValidationError, TranslationIntegrityError)
 
 
 class _TranslationBatchStorageError(RuntimeError):
@@ -1244,7 +1236,7 @@ class DocumentJobExecutionService:
                     job,
                     failed_stage="translating",
                     error_code="translation_failed",
-                    error_message=self._worker_failure_message(exc),
+                    error_message=failure_policy.worker_failure_message(exc),
                     trace_id=trace_id,
                     integrity=exc.evidence,
                 )
@@ -1578,7 +1570,7 @@ class DocumentJobExecutionService:
                 claimed,
                 job,
                 expected_plans=expected_plans,
-                error_message=self._worker_failure_message(exc),
+                error_message=failure_policy.worker_failure_message(exc),
                 trace_id=trace_id,
             )
         except (KeyError, ValueError, RuntimeError, FileNotFoundError, OSError) as exc:
@@ -1681,7 +1673,7 @@ class DocumentJobExecutionService:
                     expected_plans=installed_batches,
                     status="failed",
                     error_code=exc.code,
-                    error_message=self._worker_failure_message(exc),
+                    error_message=failure_policy.worker_failure_message(exc),
                     retryable=False,
                     updated_at=utc_now(),
                 )
@@ -1689,7 +1681,7 @@ class DocumentJobExecutionService:
                     current_job,
                     failed_stage="translating",
                     error_code="translation_failed",
-                    error_message=self._worker_failure_message(exc),
+                    error_message=failure_policy.worker_failure_message(exc),
                     trace_id=trace_id,
                 )
                 return None
@@ -2269,7 +2261,7 @@ class DocumentJobExecutionService:
                     job,
                     failed_stage="translation_validating",
                     error_code=error_code,
-                    error_message=self._worker_failure_message(exc),
+                    error_message=failure_policy.worker_failure_message(exc),
                     trace_id=trace_id,
                     duration_ms=int((time.perf_counter() - started_at) * 1000),
                 )
@@ -3318,8 +3310,8 @@ class DocumentJobExecutionService:
             except Exception as exc:
                 failed = self._mark_failed(
                     checking, failed_stage="quality_checking", error_code="render_failed",
-                    error_message=self._worker_failure_message(exc), trace_id=trace_id,
-                    failure_evidence=self._worker_failure_evidence(exc),
+                    error_message=failure_policy.worker_failure_message(exc), trace_id=trace_id,
+                    failure_evidence=failure_policy.worker_failure_evidence(exc),
                     duration_ms=int((time.perf_counter() - quality_started_at) * 1000),
                 )
                 if failed.status == "running" and failed.retry_count == checking.retry_count and failed.prepared_result is not None:
@@ -3382,20 +3374,14 @@ class DocumentJobExecutionService:
                 return self._finish_selected_or_current(uploading, trace_id=trace_id)
             return self._finish_prepared_result(prepared, trace_id=trace_id)
         except Exception as exc:
-            failed_stage, error_code = self._classify_worker_failure(exc, attempt)
-            if not isinstance(exc, (ApiError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile)):
-                error_code = "document_job_unexpected_error"
-                self.logger.exception("[trace_id=%s job_id=%s stage=%s status=unexpected_error]", trace_id, job.id, failed_stage)
-            if isinstance(exc, TableEvidenceError):
-                failed_stage, error_code = "quality_checking", "render_failed"
-            if validating_legacy:
-                failed_stage, error_code = "uploading", "oss_failed"
-                if (isinstance(exc, DocumentIntegrityError)
-                        and exc.evidence.get("renderer_content_contract_version") == "renderer-content/v2"):
-                    failed_stage, error_code = "quality_checking", "render_failed"
+            failed_stage, error_code, unexpected_log_stage = failure_policy.render_failure(
+                exc, attempt.stage, validating_legacy=validating_legacy,
+            )
+            if unexpected_log_stage is not None:
+                self.logger.exception("[trace_id=%s job_id=%s stage=%s status=unexpected_error]", trace_id, job.id, unexpected_log_stage)
             failed = self._mark_failed(attempt, failed_stage=failed_stage, error_code=error_code,
-                                       error_message=self._worker_failure_message(exc), trace_id=trace_id,
-                                       failure_evidence=self._worker_failure_evidence(exc))
+                                       error_message=failure_policy.worker_failure_message(exc), trace_id=trace_id,
+                                       failure_evidence=failure_policy.worker_failure_evidence(exc))
             if failed.status == "running" and failed.retry_count == attempt.retry_count and failed.prepared_result is not None:
                 return self._finish_prepared_result(failed, trace_id=trace_id)
             return failed
@@ -3408,7 +3394,7 @@ class DocumentJobExecutionService:
 
         返回 None 表示不满足降级前提，调用方按原错误失败；返回任务记录表示指针切换落败（已被并发推进）。
         """
-        context = self._worker_failure_evidence(error).get("failure_context")
+        context = failure_policy.worker_failure_evidence(error).get("failure_context")
         rasterizer = getattr(self.document_ir_service, "page_rasterizer", None)
         if (not isinstance(context, dict) or context.get("source_page_index") is None or rasterizer is None
                 or is_translation_document_job_mode(job.mode)
@@ -3530,7 +3516,7 @@ class DocumentJobExecutionService:
             return self._mark_failed(job,
                 failed_stage="quality_checking" if isinstance(exc, (TablePlaceholderError, DocumentIntegrityError, TableEvidenceError)) else "uploading",
                 error_code="render_failed" if isinstance(exc, (TablePlaceholderError, DocumentIntegrityError, TableEvidenceError)) else "oss_failed",
-                error_message=(self._worker_failure_message(exc) if isinstance(exc, (TablePlaceholderError, TableEvidenceError, DocumentIntegrityError)) or
+                error_message=(failure_policy.worker_failure_message(exc) if isinstance(exc, (TablePlaceholderError, TableEvidenceError, DocumentIntegrityError)) or
                     "table_placeholder_rendering" not in receipt.file.metadata else "表格占位结果文件读取或完整性校验失败。"),
                 trace_id=trace_id, expected_prepared_result_file_id=receipt.file.id)
         if completed is None:
@@ -3934,15 +3920,6 @@ class DocumentJobExecutionService:
         )
         return completed
 
-    def _failed_stage_for_current_job(self, job: DocumentJobRecord) -> DocumentJobStage:
-        if job.stage == "uploaded":
-            return "uploaded"
-        if job.stage in {"translating", "translation_validating", "rendering", "quality_checking", "uploading"}:
-            return job.stage
-        if job.stage == "ir_converting":
-            return "ir_converting"
-        return "parsing"
-
     def _mark_timed_out_if_needed(
         self,
         job: DocumentJobRecord,
@@ -3956,76 +3933,12 @@ class DocumentJobExecutionService:
     def _mark_timed_out(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         return self._mark_failed(
             job,
-            failed_stage=self._failed_stage_for_current_job(job),
+            failed_stage=failure_policy.failed_stage_for_current_stage(job.stage),
             error_code="document_job_timeout",
             allow_prepared_result=True,
             error_message=f"P0 文档任务超过 {self.settings.p0_document_job_timeout_seconds} 秒超时限制。",
             trace_id=trace_id,
         )
-
-    def _classify_worker_failure(
-        self,
-        exc: Exception,
-        job: DocumentJobRecord,
-    ) -> tuple[DocumentJobStage, str]:
-        failed_stage = self._failed_stage_for_current_job(job)
-        if isinstance(exc, (TablePlaceholderError, DocumentIntegrityError, TableEvidenceError)) and job.stage == "uploading":
-            return "quality_checking", "render_failed"
-        if isinstance(exc, MinerUError) or failed_stage == "parsing":
-            return failed_stage, "mineru_failed"
-        if isinstance(exc, (DocumentIRTranslationError, TranslationIntegrityError)):
-            return failed_stage, "translation_failed"
-        if isinstance(exc, zipfile.BadZipFile) or failed_stage == "ir_converting":
-            return failed_stage, "document_ir_failed"
-        if failed_stage in {"rendering", "quality_checking"}:
-            return failed_stage, "render_failed"
-        if failed_stage in {"translating", "translation_validating"}:
-            if isinstance(exc, (ApiError, FileNotFoundError, OSError)):
-                return failed_stage, "oss_failed"
-            return failed_stage, "translation_failed"
-        if failed_stage == "uploading" or isinstance(exc, (ApiError, FileNotFoundError, OSError)):
-            return failed_stage, "oss_failed"
-        return failed_stage, "document_job_worker_failed"
-
-    @staticmethod
-    def _worker_failure_message(error: Exception) -> str:
-        """Worker 失败消息唯一构造点：只保留由固定码/固定文本构造的消息，任意异常原文不进入任务、事件或日志。"""
-        if isinstance(error, DocumentIntegrityError):
-            return str(DocumentIntegrityError(error.boundary, build_renderer_event_summary(dict(error.evidence))))
-        if isinstance(error, MinerUError):
-            return "MinerU 外部调用失败。"
-        if isinstance(error, OSError):
-            return "Worker 文件或对象存储操作失败。"
-        if isinstance(error, SAFE_MESSAGE_ERRORS):
-            return str(error)
-        if isinstance(error, DocumentIRTranslationError):
-            # 该类型会包装上游 str(exc)，只公开机器码。
-            return f"翻译处理失败：{error.code}。"
-        return f"Worker 执行失败（{type(error).__name__}），详见事件 trace_id。"
-
-    @staticmethod
-    def _worker_failure_evidence(error: Exception) -> dict[str, Any]:
-        """提取原异常拥有的结构化报告，不读取可能已换代的任务状态。"""
-
-        evidence: dict[str, Any] = {}
-        if isinstance(error, MinerUArtifactValidationError):
-            evidence["mineru_validation"] = error.report.model_dump(mode="json")
-        elif isinstance(error, TablePlaceholderError) and getattr(error, "mineru_validation_report", None) is not None:
-            evidence["mineru_validation"] = error.mineru_validation_report.model_dump(mode="json")
-        elif isinstance(error, DocumentIntegrityError):
-            evidence = dict(error.evidence)
-        validation_input = getattr(error, "mineru_validation_input", None)
-        if validation_input is not None:
-            evidence["mineru_validation_input"] = validation_input
-        context = getattr(error, FAILURE_CONTEXT_ATTRIBUTE, None)
-        if isinstance(context, dict):
-            # 原因码优先取固定错误码，其次完整性阻断码，否则为异常类型名；均由白名单再次过滤。
-            flags = error.evidence.get("blocking_quality_flags") if isinstance(error, DocumentIntegrityError) else None
-            code = getattr(error, "code", None)
-            reason = (code if isinstance(code, str) else flags[0] if isinstance(flags, list) and flags
-                      and isinstance(flags[0], str) else type(error).__name__)
-            evidence["failure_context"] = {**context, "reason_code": reason}
-        return build_renderer_event_summary(evidence)
 
     def _fail_stage_attempt(
         self, job: DocumentJobRecord, error: Exception, *, trace_id: str | None,
@@ -4038,11 +3951,7 @@ class DocumentJobExecutionService:
                 trace_id, job.id, job.retry_count, job.stage,
             )
             return self._mark_timed_out(job, trace_id=trace_id)
-        failed_stage, error_code = self._classify_worker_failure(error, job)
-        error_message = self._worker_failure_message(error)
-        if not isinstance(error, (ApiError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile)):
-            error_code = "document_job_unexpected_error"
-            error_message = "Worker 执行发生未预期异常。"
+        failed_stage, error_code, error_message = failure_policy.stage_attempt_failure(error, job.stage)
         # CAS 落败也保留原调用的安全诊断；外端异常正文和异常链不进入普通日志。
         self.logger.error(
             "[trace_id=%s job_id=%s generation=%s stage=%s status=failure_observed error_code=%s error_type=%s]",
@@ -4053,7 +3962,7 @@ class DocumentJobExecutionService:
             error_message=error_message, trace_id=trace_id,
             integrity=error.evidence if isinstance(error, (DocumentIRTranslationError, TranslationIntegrityError)) else None,
             formula_protection=error.formula_protection if isinstance(error, DocumentIRTranslationError) else None,
-            failure_evidence=self._worker_failure_evidence(error),
+            failure_evidence=failure_policy.worker_failure_evidence(error),
         )
 
     def _mark_failed(
