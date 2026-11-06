@@ -1,0 +1,1917 @@
+{
+  "environment": {
+    "python": "3.11.15 (main, Jun  2 2026, 22:36:57) [Clang 22.1.3 ]",
+    "executable": "/Users/sc/PycharmProjects/md2word/.venv/bin/python",
+    "platform": "macOS-27.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "sqlite": "3.53.1",
+    "fixed_now": "2026-11-06T00:00:00+00:00",
+    "script_sha256": "1e8e535ae2b25ef3e668b34303012d2be194151dfd0026fd7a173ebbb4d32587"
+  },
+  "method": {
+    "warmups": 1,
+    "timing_repeats": 5,
+    "counter_runs": 1,
+    "memory_runs": 1,
+    "page": 1,
+    "page_size": 20,
+    "role": "admin",
+    "sqlite_progress_interval_ops": 1000,
+    "fixture": "每10任务: 成功4(已发布2/批准1/需修复1)、失败2、运行2、排队2；源文件10+成功IR4+成功DOCX4；事件210；发布2各保护3文件；失败source到期，其他文件未来到期。无正文对象、无预览资源配置。",
+    "limitations": "合成元数据；发布绕过完整发布流程播种；真实仓储读行为不替换。只测service，不测HTTP序列化；SQLite C分配不在tracemalloc内；RSS为进程累计峰值。",
+    "timing_connections": "旧轮包含额外query_only与authorizer；只供方法对照，不用于最终预算判断。10k在build_plan第3次采样时主动中断，仅保留120和1000完整checkpoint。"
+  },
+  "datasets": [
+    {
+      "jobs": 120,
+      "cardinalities": {
+        "document_jobs": 120,
+        "document_files": 216,
+        "document_job_publications": 24,
+        "job_events": 2520,
+        "document_job_review_records": 48
+      },
+      "database_bytes": 2375680,
+      "database_sha256_before": "56d556063d2ccbde22a17bdec051335c0b128f665122e5ad0d8953ab17eb1855",
+      "database_sha256_after": "56d556063d2ccbde22a17bdec051335c0b128f665122e5ad0d8953ab17eb1855",
+      "protection_checks": {
+        "published_source_protected": true,
+        "failed_source_protected": false,
+        "protected_ids_per_publication": 3,
+        "distinct_protected_file_ids": 72
+      },
+      "measurements": [
+        {
+          "path": "list_jobs",
+          "latency_ms_samples": [
+            9.093375,
+            9.16975,
+            9.022292,
+            9.021833,
+            8.96975
+          ],
+          "latency_ms_median": 9.022292,
+          "latency_ms_min": 8.96975,
+          "latency_ms_max": 9.16975,
+          "latency_ms_p95_nearest_rank": 9.16975,
+          "latency_ms_stdev": 0.0775835497673317,
+          "python_peak_bytes": 307803,
+          "python_current_bytes_at_return": 269032,
+          "process_cumulative_peak_rss_bytes": 134742016,
+          "body_read_calls": 0,
+          "result_signature": {
+            "total": 120,
+            "page_ids": [
+              "job-00119",
+              "job-00118",
+              "job-00117",
+              "job-00116",
+              "job-00115",
+              "job-00114",
+              "job-00113",
+              "job-00112",
+              "job-00111",
+              "job-00110",
+              "job-00109",
+              "job-00108",
+              "job-00107",
+              "job-00106",
+              "job-00105",
+              "job-00104",
+              "job-00103",
+              "job-00102",
+              "job-00101",
+              "job-00100"
+            ],
+            "summary": {
+              "failed": 24,
+              "queued": 24,
+              "running": 24,
+              "succeeded": 48
+            }
+          },
+          "counts": {
+            "sql": [
+              {
+                "sql": "BEGIN",
+                "sample_parameters": [],
+                "calls": 1,
+                "returned_rows": 0,
+                "plan": [],
+                "inferred_full_scan_visits": []
+              },
+              {
+                "sql": "SELECT COUNT(*) AS n FROM document_jobs WHERE (CASE WHEN JSON_VALID(list_query_json) THEN COALESCE((JSON_TYPE(list_query_json, '$.version') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.version') AS INTEGER) = 2 AND JSON_TYPE(list_query_json, '$.id') = 'text' AND JSON_TYPE(list_query_json, '$.tenant_id') = 'text' AND JSON_TYPE(list_query_json, '$.company_id') = 'text' AND JSON_TYPE(list_query_json, '$.created_by') = 'text' AND JSON_TYPE(list_query_json, '$.status') = 'text' AND JSON_TYPE(list_query_json, '$.mode') = 'text' AND JSON_TYPE(list_query_json, '$.review_status') = 'text' AND JSON_TYPE(list_query_json, '$.stage') = 'text' AND JSON_TYPE(list_query_json, '$.delivery_status') = 'text' AND JSON_TYPE(list_query_json, '$.result_id') = 'text' AND JSON_TYPE(list_query_json, '$.quality_error') = 'text' AND JSON_TYPE(list_query_json, '$.binding_error') = 'text' AND JSON_TYPE(list_query_json, '$.review_path') = 'text' AND JSON_TYPE(list_query_json, '$.binding_revision') = 'text' AND JSON_TYPE(list_query_json, '$.binding_checksum') = 'text' AND JSON_TYPE(list_query_json, '$.descriptor_key') = 'text' AND JSON_TYPE(list_query_json, '$.receipt_key') = 'text' AND JSON_TYPE(list_query_json, '$.effective_quality') = 'text' AND JSON_TYPE(list_query_json, '$.receipt_expiry_kind') = 'text' AND JSON_TYPE(list_query_json, '$.created_kind') = 'text' AND JSON_TYPE(list_query_json, '$.updated_kind') = 'text' AND JSON_TYPE(list_query_json, '$.table_snapshot_key') = 'text' AND (JSON_TYPE(list_query_json, '$.deleted') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.deleted') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.archived') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.archived') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.result_present') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.result_present') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.descriptor_key_comparable') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.descriptor_key_comparable') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.receipt_present') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.receipt_present') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.receipt_expiry_present') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.receipt_expiry_present') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.receipt_key_comparable') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.receipt_key_comparable') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.table_snapshot_key_comparable') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.table_snapshot_key_comparable') AS INTEGER) IN (0, 1)) AND JSON_TYPE(list_query_json, '$.created_us') IN ('integer') AND JSON_TYPE(list_query_json, '$.updated_us') IN ('integer') AND JSON_TYPE(list_query_json, '$.receipt_expiry_us') IN ('integer') AND JSON_TYPE(list_query_json, '$.search') = 'array' AND JSON_ARRAY_LENGTH(list_query_json, '$.search') <= 5 AND (JSON_ARRAY_LENGTH(list_query_json, '$.search') <= 0 OR JSON_TYPE(list_query_json, '$.search[0]') = 'text') AND (JSON_ARRAY_LENGTH(list_query_json, '$.search') <= 1 OR JSON_TYPE(list_query_json, '$.search[1]') = 'text') AND (JSON_ARRAY_LENGTH(list_query_json, '$.search') <= 2 OR JSON_TYPE(list_query_json, '$.search[2]') = 'text') AND (JSON_ARRAY_LENGTH(list_query_json, '$.search') <= 3 OR JSON_TYPE(list_query_json, '$.search[3]') = 'text') AND (JSON_ARRAY_LENGTH(list_query_json, '$.search') <= 4 OR JSON_TYPE(list_query_json, '$.search[4]') = 'text')), 0) ELSE 0 END) = 0",
+                "sample_parameters": [],
+                "calls": 1,
+                "returned_rows": 1,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN document_jobs"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 120,
+                    "visits": 120
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT COUNT(*) AS n FROM document_files WHERE (CASE WHEN JSON_VALID(review_query_json) THEN COALESCE((JSON_TYPE(review_query_json, '$.version') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.version') AS INTEGER) = 1 AND JSON_TYPE(review_query_json, '$.id') = 'text' AND JSON_TYPE(review_query_json, '$.tenant_id') = 'text' AND JSON_TYPE(review_query_json, '$.company_id') = 'text' AND JSON_TYPE(review_query_json, '$.file_type') = 'text' AND JSON_TYPE(review_query_json, '$.job_id') = 'text' AND (JSON_TYPE(review_query_json, '$.job_present') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.job_present') AS INTEGER) IN (0, 1)) AND ((JSON_EXTRACT(review_query_json, '$.file_type') COLLATE BINARY) <> 'generated_word' OR (JSON_TYPE(review_query_json, '$.status') = 'text' AND JSON_TYPE(review_query_json, '$.revision') = 'text' AND JSON_TYPE(review_query_json, '$.checksum') = 'text' AND JSON_TYPE(review_query_json, '$.expiry_kind') = 'text' AND JSON_TYPE(review_query_json, '$.descriptor_error') = 'text' AND JSON_TYPE(review_query_json, '$.descriptor_key') = 'text' AND JSON_TYPE(review_query_json, '$.receipt_key') = 'text' AND (JSON_TYPE(review_query_json, '$.deletion_claim') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.deletion_claim') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(review_query_json, '$.checksum_present') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.checksum_present') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(review_query_json, '$.expiry_present') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.expiry_present') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(review_query_json, '$.descriptor_key_comparable') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.descriptor_key_comparable') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(review_query_json, '$.receipt_key_comparable') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.receipt_key_comparable') AS INTEGER) IN (0, 1)) AND JSON_TYPE(review_query_json, '$.expiry_us') IN ('integer')))), 0) ELSE 0 END) = 0",
+                "sample_parameters": [],
+                "calls": 1,
+                "returned_rows": 1,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN document_files"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_files",
+                    "rows_per_execution": 216,
+                    "visits": 216
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT COUNT(*) AS n FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id IS NOT NULL AND (JSON_EXTRACT(f.review_query_json, '$.id') COLLATE BINARY) <> (JSON_EXTRACT(j.list_query_json, '$.result_id') COLLATE BINARY)",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 1,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 15,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 43,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 45,
+                    "parent": 0,
+                    "notused": 46,
+                    "detail": "SEARCH f USING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 120,
+                    "visits": 120
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT COUNT(*) AS n FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND (((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id IS NOT NULL AND (JSON_EXTRACT(f.review_query_json, '$.tenant_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.company_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) AND CAST(JSON_EXTRACT(f.review_query_json, '$.job_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.job_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.file_type') COLLATE BINARY) = 'generated_word' AND (JSON_EXTRACT(f.review_query_json, '$.status') COLLATE BINARY) = 'uploaded') AND CAST(JSON_EXTRACT(f.review_query_json, '$.deletion_claim') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.expiry_kind') COLLATE BINARY) <> 'aware'",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 1,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 15,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 43,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 45,
+                    "parent": 0,
+                    "notused": 46,
+                    "detail": "SEARCH f USING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 120,
+                    "visits": 120
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT (JSON_EXTRACT(j.list_query_json, '$.quality_error') COLLATE BINARY) AS error FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND (JSON_EXTRACT(j.list_query_json, '$.quality_error') COLLATE BINARY) <> '' LIMIT 1",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 0,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 13,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 34,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 120,
+                    "visits": 120
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT (JSON_EXTRACT(j.list_query_json, '$.binding_error') COLLATE BINARY) AS error FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND (JSON_EXTRACT(j.list_query_json, '$.binding_error') COLLATE BINARY) <> '' LIMIT 1",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 0,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 13,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 34,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 120,
+                    "visits": 120
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT (JSON_EXTRACT(f.review_query_json, '$.descriptor_error') COLLATE BINARY) AS error FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND ((JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'verified' AND (((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id IS NOT NULL AND (JSON_EXTRACT(f.review_query_json, '$.tenant_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.company_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) AND CAST(JSON_EXTRACT(f.review_query_json, '$.job_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.job_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.file_type') COLLATE BINARY) = 'generated_word' AND (JSON_EXTRACT(f.review_query_json, '$.status') COLLATE BINARY) = 'uploaded') AND (CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 0 OR CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_us') AS INTEGER) > clock.as_of)) AND (JSON_EXTRACT(f.review_query_json, '$.revision') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_revision') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.descriptor_error') COLLATE BINARY) <> '' LIMIT 1",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 0,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 15,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 46,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 48,
+                    "parent": 0,
+                    "notused": 46,
+                    "detail": "SEARCH f USING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 120,
+                    "visits": 120
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT COUNT(*) AS n FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND ((JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'verified' AND (((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id IS NOT NULL AND (JSON_EXTRACT(f.review_query_json, '$.tenant_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.company_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) AND CAST(JSON_EXTRACT(f.review_query_json, '$.job_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.job_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.file_type') COLLATE BINARY) = 'generated_word' AND (JSON_EXTRACT(f.review_query_json, '$.status') COLLATE BINARY) = 'uploaded') AND (CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 0 OR CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_us') AS INTEGER) > clock.as_of)) AND (JSON_EXTRACT(f.review_query_json, '$.revision') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_revision') COLLATE BINARY) AND (CAST(JSON_EXTRACT(f.review_query_json, '$.descriptor_key_comparable') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.descriptor_key_comparable') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.descriptor_key') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.descriptor_key') COLLATE BINARY)) AND (CAST(JSON_EXTRACT(f.review_query_json, '$.checksum_present') AS INTEGER) = 0 OR (JSON_EXTRACT(f.review_query_json, '$.checksum') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_checksum') COLLATE BINARY)) AND CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_present') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_expiry_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.expiry_kind') COLLATE BINARY) <> (JSON_EXTRACT(j.list_query_json, '$.receipt_expiry_kind') COLLATE BINARY)",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 1,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 15,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 58,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 60,
+                    "parent": 0,
+                    "notused": 46,
+                    "detail": "SEARCH f USING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 120,
+                    "visits": 120
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT (JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) AS value, COUNT(*) AS n FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 GROUP BY (JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY)",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 2,
+                "returned_rows": 8,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 17,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 35,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 37,
+                    "parent": 0,
+                    "notused": 44,
+                    "detail": "SEARCH f USING COVERING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  },
+                  {
+                    "id": 63,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "USE TEMP B-TREE FOR GROUP BY"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 120,
+                    "visits": 240
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT CASE WHEN (JSON_EXTRACT(j.list_query_json, '$.delivery_status') COLLATE BINARY) = 'published' OR (CASE WHEN (JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'unbound' THEN (JSON_EXTRACT(j.list_query_json, '$.review_status') COLLATE BINARY) <> 'approved' WHEN (JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'invalid' THEN 0 ELSE (((JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'verified' AND (((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id IS NOT NULL AND (JSON_EXTRACT(f.review_query_json, '$.tenant_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.company_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) AND CAST(JSON_EXTRACT(f.review_query_json, '$.job_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.job_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.file_type') COLLATE BINARY) = 'generated_word' AND (JSON_EXTRACT(f.review_query_json, '$.status') COLLATE BINARY) = 'uploaded') AND (CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 0 OR CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_us') AS INTEGER) > clock.as_of)) AND (JSON_EXTRACT(f.review_query_json, '$.revision') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_revision') COLLATE BINARY) AND (CAST(JSON_EXTRACT(f.review_query_json, '$.descriptor_key_comparable') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.descriptor_key_comparable') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.descriptor_key') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.descriptor_key') COLLATE BINARY)) AND (CAST(JSON_EXTRACT(f.review_query_json, '$.checksum_present') AS INTEGER) = 0 OR (JSON_EXTRACT(f.review_query_json, '$.checksum') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_checksum') COLLATE BINARY)) AND (CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_present') AS INTEGER) = 0 OR (CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_expiry_present') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_us') AS INTEGER) <= CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_expiry_us') AS INTEGER) AND CAST(JSON_EXTRACT(f.review_query_json, '$.receipt_key_comparable') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_key_comparable') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.receipt_key') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.receipt_key') COLLATE BINARY))) AND ((JSON_EXTRACT(j.list_query_json, '$.review_status') COLLATE BINARY) <> 'approved' OR (JSON_EXTRACT(j.list_query_json, '$.effective_quality') COLLATE BINARY) <> 'blocked')) END) THEN (JSON_EXTRACT(j.list_query_json, '$.review_status') COLLATE BINARY) ELSE 'unreviewed' END AS value, COUNT(*) AS n FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND (JSON_EXTRACT(j.list_query_json, '$.mode') COLLATE BINARY) IN (?, ?, ?, ?) GROUP BY CASE WHEN (JSON_EXTRACT(j.list_query_json, '$.delivery_status') COLLATE BINARY) = 'published' OR (CASE WHEN (JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'unbound' THEN (JSON_EXTRACT(j.list_query_json, '$.review_status') COLLATE BINARY) <> 'approved' WHEN (JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'invalid' THEN 0 ELSE (((JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'verified' AND (((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id IS NOT NULL AND (JSON_EXTRACT(f.review_query_json, '$.tenant_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.company_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) AND CAST(JSON_EXTRACT(f.review_query_json, '$.job_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.job_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.file_type') COLLATE BINARY) = 'generated_word' AND (JSON_EXTRACT(f.review_query_json, '$.status') COLLATE BINARY) = 'uploaded') AND (CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 0 OR CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_us') AS INTEGER) > clock.as_of)) AND (JSON_EXTRACT(f.review_query_json, '$.revision') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_revision') COLLATE BINARY) AND (CAST(JSON_EXTRACT(f.review_query_json, '$.descriptor_key_comparable') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.descriptor_key_comparable') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.descriptor_key') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.descriptor_key') COLLATE BINARY)) AND (CAST(JSON_EXTRACT(f.review_query_json, '$.checksum_present') AS INTEGER) = 0 OR (JSON_EXTRACT(f.review_query_json, '$.checksum') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_checksum') COLLATE BINARY)) AND (CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_present') AS INTEGER) = 0 OR (CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_expiry_present') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_us') AS INTEGER) <= CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_expiry_us') AS INTEGER) AND CAST(JSON_EXTRACT(f.review_query_json, '$.receipt_key_comparable') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_key_comparable') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.receipt_key') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.receipt_key') COLLATE BINARY))) AND ((JSON_EXTRACT(j.list_query_json, '$.review_status') COLLATE BINARY) <> 'approved' OR (JSON_EXTRACT(j.list_query_json, '$.effective_quality') COLLATE BINARY) <> 'blocked')) END) THEN (JSON_EXTRACT(j.list_query_json, '$.review_status') COLLATE BINARY) ELSE 'unreviewed' END",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C",
+                  "en2zh_pdf_to_word",
+                  "ru2zh_pdf_to_word",
+                  "zh2en_pdf_to_word",
+                  "zh2ru_pdf_to_word"
+                ],
+                "calls": 1,
+                "returned_rows": 3,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 18,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 59,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 61,
+                    "parent": 0,
+                    "notused": 46,
+                    "detail": "SEARCH f USING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  },
+                  {
+                    "id": 88,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "USE TEMP B-TREE FOR GROUP BY"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 120,
+                    "visits": 120
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT COUNT(DISTINCT (JSON_EXTRACT(j.list_query_json, '$.created_kind') COLLATE BINARY)) AS n FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 1,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 13,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "USE TEMP B-TREE FOR count(DISTINCT)"
+                  },
+                  {
+                    "id": 16,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 34,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 36,
+                    "parent": 0,
+                    "notused": 44,
+                    "detail": "SEARCH f USING COVERING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 120,
+                    "visits": 120
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT j.payload AS payload, f.payload AS observed_payload FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 ORDER BY CAST(JSON_EXTRACT(j.list_query_json, '$.created_us') AS INTEGER) DESC, (JSON_EXTRACT(j.list_query_json, '$.id') COLLATE BINARY) DESC LIMIT ? OFFSET ?",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C",
+                  20,
+                  0
+                ],
+                "calls": 1,
+                "returned_rows": 20,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 19,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 37,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 39,
+                    "parent": 0,
+                    "notused": 46,
+                    "detail": "SEARCH f USING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  },
+                  {
+                    "id": 86,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "USE TEMP B-TREE FOR ORDER BY"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 120,
+                    "visits": 120
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT payload FROM document_files WHERE file_id = ?",
+                "sample_parameters": [
+                  "job-00119-source_pdf"
+                ],
+                "calls": 20,
+                "returned_rows": 20,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 39,
+                    "detail": "SEARCH document_files USING INDEX sqlite_autoindex_document_files_1 (file_id=?)"
+                  }
+                ],
+                "inferred_full_scan_visits": []
+              }
+            ],
+            "repository_calls": {
+              "SqliteDocumentJobRepository.query_document_jobs": 1,
+              "SqliteDocumentFileRepository.get_document_file": 20
+            },
+            "model_decodes": {
+              "DocumentJobRecord.model_validate_json": 20,
+              "DocumentFileRecord.model_validate_json": 28
+            },
+            "protected_id_json_decodes": 0,
+            "sqlite_progress_steps": 134,
+            "connections": 21,
+            "sql_calls": 34,
+            "select_calls": 33,
+            "sql_returned_rows": 57,
+            "inferred_full_scan_visits": 1656,
+            "sqlite_vm_ops_lower_bound": 134000,
+            "scan_method": "EXPLAIN 中物理表 SCAN × 固定表基数 × 调用次数；非 rows_examined；不计索引 SEARCH、临时 B 树或 clock 常量扫描。当前数据前置 LIMIT 1 拒绝查询均返回0，分页使用排序后取页，完整扫描推导适用。"
+          }
+        },
+        {
+          "path": "list_incidents",
+          "latency_ms_samples": [
+            16.243917,
+            15.138292,
+            15.291083,
+            15.450166,
+            15.489959
+          ],
+          "latency_ms_median": 15.450166,
+          "latency_ms_min": 15.138292,
+          "latency_ms_max": 16.243917,
+          "latency_ms_p95_nearest_rank": 16.243917,
+          "latency_ms_stdev": 0.42658617508693353,
+          "python_peak_bytes": 1472983,
+          "python_current_bytes_at_return": 336910,
+          "process_cumulative_peak_rss_bytes": 135806976,
+          "body_read_calls": 0,
+          "result_signature": {
+            "total": 72,
+            "page_ids": [
+              "job-00119",
+              "job-00118",
+              "job-00117",
+              "job-00116",
+              "job-00115",
+              "job-00114",
+              "job-00109",
+              "job-00108",
+              "job-00107",
+              "job-00106",
+              "job-00105",
+              "job-00104",
+              "job-00099",
+              "job-00098",
+              "job-00097",
+              "job-00096",
+              "job-00095",
+              "job-00094",
+              "job-00089",
+              "job-00088"
+            ],
+            "summary": {
+              "total": 72,
+              "failed": 24,
+              "blocked": 0,
+              "stalled": 48,
+              "retryable": 24,
+              "non_retryable": 0,
+              "by_status": {
+                "queued": 24,
+                "running": 24,
+                "failed": 24
+              },
+              "by_failure_type": {
+                "conversion_failed": 0,
+                "translation_failed": 24,
+                "qa_unavailable": 0,
+                "artifact_missing": 0,
+                "timeout_or_stalled": 48,
+                "worker_or_dispatch_failed": 0,
+                "page_degraded": 0,
+                "unknown": 0
+              }
+            }
+          },
+          "counts": {
+            "sql": [
+              {
+                "sql": "SELECT payload FROM document_jobs ORDER BY created_at, job_id",
+                "sample_parameters": [],
+                "calls": 1,
+                "returned_rows": 120,
+                "plan": [
+                  {
+                    "id": 4,
+                    "parent": 0,
+                    "notused": 224,
+                    "detail": "SCAN document_jobs USING INDEX idx_document_jobs_created_at"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 120,
+                    "visits": 120
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT payload FROM document_files WHERE file_id = ?",
+                "sample_parameters": [
+                  "job-00000-generated_word"
+                ],
+                "calls": 116,
+                "returned_rows": 116,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 39,
+                    "detail": "SEARCH document_files USING INDEX sqlite_autoindex_document_files_1 (file_id=?)"
+                  }
+                ],
+                "inferred_full_scan_visits": []
+              }
+            ],
+            "repository_calls": {
+              "SqliteDocumentJobRepository.list_document_jobs": 1,
+              "SqliteDocumentFileRepository.get_document_file": 116
+            },
+            "model_decodes": {
+              "DocumentJobRecord.model_validate_json": 120,
+              "DocumentFileRecord.model_validate_json": 116
+            },
+            "protected_id_json_decodes": 0,
+            "sqlite_progress_steps": 0,
+            "connections": 117,
+            "sql_calls": 117,
+            "select_calls": 117,
+            "sql_returned_rows": 236,
+            "inferred_full_scan_visits": 120,
+            "sqlite_vm_ops_lower_bound": 0,
+            "scan_method": "EXPLAIN 中物理表 SCAN × 固定表基数 × 调用次数；非 rows_examined；不计索引 SEARCH、临时 B 树或 clock 常量扫描。当前数据前置 LIMIT 1 拒绝查询均返回0，分页使用排序后取页，完整扫描推导适用。"
+          }
+        },
+        {
+          "path": "is_document_file_protected",
+          "latency_ms_samples": [
+            0.298625,
+            0.2605,
+            0.247291,
+            0.248166,
+            0.24625
+          ],
+          "latency_ms_median": 0.248166,
+          "latency_ms_min": 0.24625,
+          "latency_ms_max": 0.298625,
+          "latency_ms_p95_nearest_rank": 0.298625,
+          "latency_ms_stdev": 0.02226334946273807,
+          "python_peak_bytes": 10677,
+          "python_current_bytes_at_return": 2440,
+          "process_cumulative_peak_rss_bytes": 135806976,
+          "body_read_calls": 0,
+          "result_signature": {
+            "protected": false
+          },
+          "counts": {
+            "sql": [
+              {
+                "sql": "SELECT protected_file_ids FROM document_job_publications",
+                "sample_parameters": [],
+                "calls": 1,
+                "returned_rows": 24,
+                "plan": [
+                  {
+                    "id": 2,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN document_job_publications"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_job_publications",
+                    "rows_per_execution": 24,
+                    "visits": 24
+                  }
+                ]
+              }
+            ],
+            "repository_calls": {
+              "SqliteDocumentFileRepository.is_document_file_protected": 1
+            },
+            "model_decodes": {},
+            "protected_id_json_decodes": 24,
+            "sqlite_progress_steps": 0,
+            "connections": 1,
+            "sql_calls": 1,
+            "select_calls": 1,
+            "sql_returned_rows": 24,
+            "inferred_full_scan_visits": 24,
+            "sqlite_vm_ops_lower_bound": 0,
+            "scan_method": "EXPLAIN 中物理表 SCAN × 固定表基数 × 调用次数；非 rows_examined；不计索引 SEARCH、临时 B 树或 clock 常量扫描。当前数据前置 LIMIT 1 拒绝查询均返回0，分页使用排序后取页，完整扫描推导适用。"
+          }
+        },
+        {
+          "path": "build_plan",
+          "latency_ms_samples": [
+            24.242917,
+            24.421291,
+            24.175333,
+            24.190708,
+            24.113334
+          ],
+          "latency_ms_median": 24.190708,
+          "latency_ms_min": 24.113334,
+          "latency_ms_max": 24.421291,
+          "latency_ms_p95_nearest_rank": 24.421291,
+          "latency_ms_stdev": 0.11714751139183506,
+          "python_peak_bytes": 918744,
+          "python_current_bytes_at_return": 30630,
+          "process_cumulative_peak_rss_bytes": 135954432,
+          "body_read_calls": 0,
+          "result_signature": {
+            "totals": {
+              "files_seen": 216,
+              "files_with_expires_at": 144,
+              "candidate_files": 24,
+              "candidate_local_files": 24,
+              "candidate_objects": 0,
+              "already_deleted_files": 0
+            },
+            "candidate_ids_sha256": "b7c8b5294a94ff32ea85474b155876ced55a23345981589f7de38dc6a9f0bc51"
+          },
+          "counts": {
+            "sql": [
+              {
+                "sql": "SELECT payload FROM document_files ORDER BY created_at, file_id",
+                "sample_parameters": [],
+                "calls": 1,
+                "returned_rows": 216,
+                "plan": [
+                  {
+                    "id": 4,
+                    "parent": 0,
+                    "notused": 225,
+                    "detail": "SCAN document_files USING INDEX idx_document_files_created_at"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_files",
+                    "rows_per_execution": 216,
+                    "visits": 216
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT protected_file_ids FROM document_job_publications",
+                "sample_parameters": [],
+                "calls": 216,
+                "returned_rows": 5184,
+                "plan": [
+                  {
+                    "id": 2,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN document_job_publications"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_job_publications",
+                    "rows_per_execution": 24,
+                    "visits": 5184
+                  }
+                ]
+              }
+            ],
+            "repository_calls": {
+              "SqliteDocumentFileRepository.list_document_files": 1,
+              "SqliteDocumentFileRepository.is_document_file_protected": 216
+            },
+            "model_decodes": {
+              "DocumentFileRecord.model_validate_json": 216
+            },
+            "protected_id_json_decodes": 4356,
+            "sqlite_progress_steps": 0,
+            "connections": 217,
+            "sql_calls": 217,
+            "select_calls": 217,
+            "sql_returned_rows": 5400,
+            "inferred_full_scan_visits": 5400,
+            "sqlite_vm_ops_lower_bound": 0,
+            "scan_method": "EXPLAIN 中物理表 SCAN × 固定表基数 × 调用次数；非 rows_examined；不计索引 SEARCH、临时 B 树或 clock 常量扫描。当前数据前置 LIMIT 1 拒绝查询均返回0，分页使用排序后取页，完整扫描推导适用。"
+          }
+        }
+      ]
+    },
+    {
+      "jobs": 1000,
+      "cardinalities": {
+        "document_jobs": 1000,
+        "document_files": 1800,
+        "document_job_publications": 200,
+        "job_events": 21000,
+        "document_job_review_records": 400
+      },
+      "database_bytes": 18001920,
+      "database_sha256_before": "9ce2c17fd94a83ec0c7a01fa271d7efd58af61ed11352829a666ed4f71d611f6",
+      "database_sha256_after": "9ce2c17fd94a83ec0c7a01fa271d7efd58af61ed11352829a666ed4f71d611f6",
+      "protection_checks": {
+        "published_source_protected": true,
+        "failed_source_protected": false,
+        "protected_ids_per_publication": 3,
+        "distinct_protected_file_ids": 600
+      },
+      "measurements": [
+        {
+          "path": "list_jobs",
+          "latency_ms_samples": [
+            58.929584,
+            58.626084,
+            58.341958,
+            68.46325,
+            59.877167
+          ],
+          "latency_ms_median": 58.929584,
+          "latency_ms_min": 58.341958,
+          "latency_ms_max": 68.46325,
+          "latency_ms_p95_nearest_rank": 68.46325,
+          "latency_ms_stdev": 4.296278205502271,
+          "python_peak_bytes": 309153,
+          "python_current_bytes_at_return": 270512,
+          "process_cumulative_peak_rss_bytes": 158695424,
+          "body_read_calls": 0,
+          "result_signature": {
+            "total": 1000,
+            "page_ids": [
+              "job-00999",
+              "job-00998",
+              "job-00997",
+              "job-00996",
+              "job-00995",
+              "job-00994",
+              "job-00993",
+              "job-00992",
+              "job-00991",
+              "job-00990",
+              "job-00989",
+              "job-00988",
+              "job-00987",
+              "job-00986",
+              "job-00985",
+              "job-00984",
+              "job-00983",
+              "job-00982",
+              "job-00981",
+              "job-00980"
+            ],
+            "summary": {
+              "failed": 200,
+              "queued": 200,
+              "running": 200,
+              "succeeded": 400
+            }
+          },
+          "counts": {
+            "sql": [
+              {
+                "sql": "BEGIN",
+                "sample_parameters": [],
+                "calls": 1,
+                "returned_rows": 0,
+                "plan": [],
+                "inferred_full_scan_visits": []
+              },
+              {
+                "sql": "SELECT COUNT(*) AS n FROM document_jobs WHERE (CASE WHEN JSON_VALID(list_query_json) THEN COALESCE((JSON_TYPE(list_query_json, '$.version') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.version') AS INTEGER) = 2 AND JSON_TYPE(list_query_json, '$.id') = 'text' AND JSON_TYPE(list_query_json, '$.tenant_id') = 'text' AND JSON_TYPE(list_query_json, '$.company_id') = 'text' AND JSON_TYPE(list_query_json, '$.created_by') = 'text' AND JSON_TYPE(list_query_json, '$.status') = 'text' AND JSON_TYPE(list_query_json, '$.mode') = 'text' AND JSON_TYPE(list_query_json, '$.review_status') = 'text' AND JSON_TYPE(list_query_json, '$.stage') = 'text' AND JSON_TYPE(list_query_json, '$.delivery_status') = 'text' AND JSON_TYPE(list_query_json, '$.result_id') = 'text' AND JSON_TYPE(list_query_json, '$.quality_error') = 'text' AND JSON_TYPE(list_query_json, '$.binding_error') = 'text' AND JSON_TYPE(list_query_json, '$.review_path') = 'text' AND JSON_TYPE(list_query_json, '$.binding_revision') = 'text' AND JSON_TYPE(list_query_json, '$.binding_checksum') = 'text' AND JSON_TYPE(list_query_json, '$.descriptor_key') = 'text' AND JSON_TYPE(list_query_json, '$.receipt_key') = 'text' AND JSON_TYPE(list_query_json, '$.effective_quality') = 'text' AND JSON_TYPE(list_query_json, '$.receipt_expiry_kind') = 'text' AND JSON_TYPE(list_query_json, '$.created_kind') = 'text' AND JSON_TYPE(list_query_json, '$.updated_kind') = 'text' AND JSON_TYPE(list_query_json, '$.table_snapshot_key') = 'text' AND (JSON_TYPE(list_query_json, '$.deleted') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.deleted') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.archived') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.archived') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.result_present') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.result_present') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.descriptor_key_comparable') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.descriptor_key_comparable') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.receipt_present') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.receipt_present') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.receipt_expiry_present') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.receipt_expiry_present') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.receipt_key_comparable') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.receipt_key_comparable') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(list_query_json, '$.table_snapshot_key_comparable') IN ('integer') AND CAST(JSON_EXTRACT(list_query_json, '$.table_snapshot_key_comparable') AS INTEGER) IN (0, 1)) AND JSON_TYPE(list_query_json, '$.created_us') IN ('integer') AND JSON_TYPE(list_query_json, '$.updated_us') IN ('integer') AND JSON_TYPE(list_query_json, '$.receipt_expiry_us') IN ('integer') AND JSON_TYPE(list_query_json, '$.search') = 'array' AND JSON_ARRAY_LENGTH(list_query_json, '$.search') <= 5 AND (JSON_ARRAY_LENGTH(list_query_json, '$.search') <= 0 OR JSON_TYPE(list_query_json, '$.search[0]') = 'text') AND (JSON_ARRAY_LENGTH(list_query_json, '$.search') <= 1 OR JSON_TYPE(list_query_json, '$.search[1]') = 'text') AND (JSON_ARRAY_LENGTH(list_query_json, '$.search') <= 2 OR JSON_TYPE(list_query_json, '$.search[2]') = 'text') AND (JSON_ARRAY_LENGTH(list_query_json, '$.search') <= 3 OR JSON_TYPE(list_query_json, '$.search[3]') = 'text') AND (JSON_ARRAY_LENGTH(list_query_json, '$.search') <= 4 OR JSON_TYPE(list_query_json, '$.search[4]') = 'text')), 0) ELSE 0 END) = 0",
+                "sample_parameters": [],
+                "calls": 1,
+                "returned_rows": 1,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN document_jobs"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 1000,
+                    "visits": 1000
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT COUNT(*) AS n FROM document_files WHERE (CASE WHEN JSON_VALID(review_query_json) THEN COALESCE((JSON_TYPE(review_query_json, '$.version') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.version') AS INTEGER) = 1 AND JSON_TYPE(review_query_json, '$.id') = 'text' AND JSON_TYPE(review_query_json, '$.tenant_id') = 'text' AND JSON_TYPE(review_query_json, '$.company_id') = 'text' AND JSON_TYPE(review_query_json, '$.file_type') = 'text' AND JSON_TYPE(review_query_json, '$.job_id') = 'text' AND (JSON_TYPE(review_query_json, '$.job_present') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.job_present') AS INTEGER) IN (0, 1)) AND ((JSON_EXTRACT(review_query_json, '$.file_type') COLLATE BINARY) <> 'generated_word' OR (JSON_TYPE(review_query_json, '$.status') = 'text' AND JSON_TYPE(review_query_json, '$.revision') = 'text' AND JSON_TYPE(review_query_json, '$.checksum') = 'text' AND JSON_TYPE(review_query_json, '$.expiry_kind') = 'text' AND JSON_TYPE(review_query_json, '$.descriptor_error') = 'text' AND JSON_TYPE(review_query_json, '$.descriptor_key') = 'text' AND JSON_TYPE(review_query_json, '$.receipt_key') = 'text' AND (JSON_TYPE(review_query_json, '$.deletion_claim') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.deletion_claim') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(review_query_json, '$.checksum_present') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.checksum_present') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(review_query_json, '$.expiry_present') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.expiry_present') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(review_query_json, '$.descriptor_key_comparable') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.descriptor_key_comparable') AS INTEGER) IN (0, 1)) AND (JSON_TYPE(review_query_json, '$.receipt_key_comparable') IN ('integer') AND CAST(JSON_EXTRACT(review_query_json, '$.receipt_key_comparable') AS INTEGER) IN (0, 1)) AND JSON_TYPE(review_query_json, '$.expiry_us') IN ('integer')))), 0) ELSE 0 END) = 0",
+                "sample_parameters": [],
+                "calls": 1,
+                "returned_rows": 1,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN document_files"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_files",
+                    "rows_per_execution": 1800,
+                    "visits": 1800
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT COUNT(*) AS n FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id IS NOT NULL AND (JSON_EXTRACT(f.review_query_json, '$.id') COLLATE BINARY) <> (JSON_EXTRACT(j.list_query_json, '$.result_id') COLLATE BINARY)",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 1,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 15,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 43,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 45,
+                    "parent": 0,
+                    "notused": 46,
+                    "detail": "SEARCH f USING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 1000,
+                    "visits": 1000
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT COUNT(*) AS n FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND (((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id IS NOT NULL AND (JSON_EXTRACT(f.review_query_json, '$.tenant_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.company_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) AND CAST(JSON_EXTRACT(f.review_query_json, '$.job_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.job_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.file_type') COLLATE BINARY) = 'generated_word' AND (JSON_EXTRACT(f.review_query_json, '$.status') COLLATE BINARY) = 'uploaded') AND CAST(JSON_EXTRACT(f.review_query_json, '$.deletion_claim') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.expiry_kind') COLLATE BINARY) <> 'aware'",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 1,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 15,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 43,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 45,
+                    "parent": 0,
+                    "notused": 46,
+                    "detail": "SEARCH f USING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 1000,
+                    "visits": 1000
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT (JSON_EXTRACT(j.list_query_json, '$.quality_error') COLLATE BINARY) AS error FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND (JSON_EXTRACT(j.list_query_json, '$.quality_error') COLLATE BINARY) <> '' LIMIT 1",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 0,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 13,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 34,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 1000,
+                    "visits": 1000
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT (JSON_EXTRACT(j.list_query_json, '$.binding_error') COLLATE BINARY) AS error FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND (JSON_EXTRACT(j.list_query_json, '$.binding_error') COLLATE BINARY) <> '' LIMIT 1",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 0,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 13,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 34,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 1000,
+                    "visits": 1000
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT (JSON_EXTRACT(f.review_query_json, '$.descriptor_error') COLLATE BINARY) AS error FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND ((JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'verified' AND (((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id IS NOT NULL AND (JSON_EXTRACT(f.review_query_json, '$.tenant_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.company_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) AND CAST(JSON_EXTRACT(f.review_query_json, '$.job_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.job_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.file_type') COLLATE BINARY) = 'generated_word' AND (JSON_EXTRACT(f.review_query_json, '$.status') COLLATE BINARY) = 'uploaded') AND (CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 0 OR CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_us') AS INTEGER) > clock.as_of)) AND (JSON_EXTRACT(f.review_query_json, '$.revision') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_revision') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.descriptor_error') COLLATE BINARY) <> '' LIMIT 1",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 0,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 15,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 46,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 48,
+                    "parent": 0,
+                    "notused": 46,
+                    "detail": "SEARCH f USING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 1000,
+                    "visits": 1000
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT COUNT(*) AS n FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND ((JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'verified' AND (((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id IS NOT NULL AND (JSON_EXTRACT(f.review_query_json, '$.tenant_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.company_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) AND CAST(JSON_EXTRACT(f.review_query_json, '$.job_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.job_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.file_type') COLLATE BINARY) = 'generated_word' AND (JSON_EXTRACT(f.review_query_json, '$.status') COLLATE BINARY) = 'uploaded') AND (CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 0 OR CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_us') AS INTEGER) > clock.as_of)) AND (JSON_EXTRACT(f.review_query_json, '$.revision') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_revision') COLLATE BINARY) AND (CAST(JSON_EXTRACT(f.review_query_json, '$.descriptor_key_comparable') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.descriptor_key_comparable') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.descriptor_key') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.descriptor_key') COLLATE BINARY)) AND (CAST(JSON_EXTRACT(f.review_query_json, '$.checksum_present') AS INTEGER) = 0 OR (JSON_EXTRACT(f.review_query_json, '$.checksum') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_checksum') COLLATE BINARY)) AND CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_present') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_expiry_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.expiry_kind') COLLATE BINARY) <> (JSON_EXTRACT(j.list_query_json, '$.receipt_expiry_kind') COLLATE BINARY)",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 1,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 15,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 58,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 60,
+                    "parent": 0,
+                    "notused": 46,
+                    "detail": "SEARCH f USING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 1000,
+                    "visits": 1000
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT (JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) AS value, COUNT(*) AS n FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 GROUP BY (JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY)",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 2,
+                "returned_rows": 8,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 17,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 35,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 37,
+                    "parent": 0,
+                    "notused": 44,
+                    "detail": "SEARCH f USING COVERING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  },
+                  {
+                    "id": 63,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "USE TEMP B-TREE FOR GROUP BY"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 1000,
+                    "visits": 2000
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT CASE WHEN (JSON_EXTRACT(j.list_query_json, '$.delivery_status') COLLATE BINARY) = 'published' OR (CASE WHEN (JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'unbound' THEN (JSON_EXTRACT(j.list_query_json, '$.review_status') COLLATE BINARY) <> 'approved' WHEN (JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'invalid' THEN 0 ELSE (((JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'verified' AND (((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id IS NOT NULL AND (JSON_EXTRACT(f.review_query_json, '$.tenant_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.company_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) AND CAST(JSON_EXTRACT(f.review_query_json, '$.job_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.job_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.file_type') COLLATE BINARY) = 'generated_word' AND (JSON_EXTRACT(f.review_query_json, '$.status') COLLATE BINARY) = 'uploaded') AND (CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 0 OR CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_us') AS INTEGER) > clock.as_of)) AND (JSON_EXTRACT(f.review_query_json, '$.revision') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_revision') COLLATE BINARY) AND (CAST(JSON_EXTRACT(f.review_query_json, '$.descriptor_key_comparable') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.descriptor_key_comparable') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.descriptor_key') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.descriptor_key') COLLATE BINARY)) AND (CAST(JSON_EXTRACT(f.review_query_json, '$.checksum_present') AS INTEGER) = 0 OR (JSON_EXTRACT(f.review_query_json, '$.checksum') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_checksum') COLLATE BINARY)) AND (CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_present') AS INTEGER) = 0 OR (CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_expiry_present') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_us') AS INTEGER) <= CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_expiry_us') AS INTEGER) AND CAST(JSON_EXTRACT(f.review_query_json, '$.receipt_key_comparable') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_key_comparable') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.receipt_key') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.receipt_key') COLLATE BINARY))) AND ((JSON_EXTRACT(j.list_query_json, '$.review_status') COLLATE BINARY) <> 'approved' OR (JSON_EXTRACT(j.list_query_json, '$.effective_quality') COLLATE BINARY) <> 'blocked')) END) THEN (JSON_EXTRACT(j.list_query_json, '$.review_status') COLLATE BINARY) ELSE 'unreviewed' END AS value, COUNT(*) AS n FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 AND (JSON_EXTRACT(j.list_query_json, '$.mode') COLLATE BINARY) IN (?, ?, ?, ?) GROUP BY CASE WHEN (JSON_EXTRACT(j.list_query_json, '$.delivery_status') COLLATE BINARY) = 'published' OR (CASE WHEN (JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'unbound' THEN (JSON_EXTRACT(j.list_query_json, '$.review_status') COLLATE BINARY) <> 'approved' WHEN (JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'invalid' THEN 0 ELSE (((JSON_EXTRACT(j.list_query_json, '$.review_path') COLLATE BINARY) = 'verified' AND (((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id IS NOT NULL AND (JSON_EXTRACT(f.review_query_json, '$.tenant_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.company_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) AND CAST(JSON_EXTRACT(f.review_query_json, '$.job_present') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.job_id') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.id') COLLATE BINARY) AND (JSON_EXTRACT(f.review_query_json, '$.file_type') COLLATE BINARY) = 'generated_word' AND (JSON_EXTRACT(f.review_query_json, '$.status') COLLATE BINARY) = 'uploaded') AND (CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 0 OR CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_us') AS INTEGER) > clock.as_of)) AND (JSON_EXTRACT(f.review_query_json, '$.revision') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_revision') COLLATE BINARY) AND (CAST(JSON_EXTRACT(f.review_query_json, '$.descriptor_key_comparable') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.descriptor_key_comparable') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.descriptor_key') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.descriptor_key') COLLATE BINARY)) AND (CAST(JSON_EXTRACT(f.review_query_json, '$.checksum_present') AS INTEGER) = 0 OR (JSON_EXTRACT(f.review_query_json, '$.checksum') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.binding_checksum') COLLATE BINARY)) AND (CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_present') AS INTEGER) = 0 OR (CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_present') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_expiry_present') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(f.review_query_json, '$.expiry_us') AS INTEGER) <= CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_expiry_us') AS INTEGER) AND CAST(JSON_EXTRACT(f.review_query_json, '$.receipt_key_comparable') AS INTEGER) = 1 AND CAST(JSON_EXTRACT(j.list_query_json, '$.receipt_key_comparable') AS INTEGER) = 1 AND (JSON_EXTRACT(f.review_query_json, '$.receipt_key') COLLATE BINARY) = (JSON_EXTRACT(j.list_query_json, '$.receipt_key') COLLATE BINARY))) AND ((JSON_EXTRACT(j.list_query_json, '$.review_status') COLLATE BINARY) <> 'approved' OR (JSON_EXTRACT(j.list_query_json, '$.effective_quality') COLLATE BINARY) <> 'blocked')) END) THEN (JSON_EXTRACT(j.list_query_json, '$.review_status') COLLATE BINARY) ELSE 'unreviewed' END",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C",
+                  "en2zh_pdf_to_word",
+                  "ru2zh_pdf_to_word",
+                  "zh2en_pdf_to_word",
+                  "zh2ru_pdf_to_word"
+                ],
+                "calls": 1,
+                "returned_rows": 3,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 18,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 59,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 61,
+                    "parent": 0,
+                    "notused": 46,
+                    "detail": "SEARCH f USING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  },
+                  {
+                    "id": 88,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "USE TEMP B-TREE FOR GROUP BY"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 1000,
+                    "visits": 1000
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT COUNT(DISTINCT (JSON_EXTRACT(j.list_query_json, '$.created_kind') COLLATE BINARY)) AS n FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C"
+                ],
+                "calls": 1,
+                "returned_rows": 1,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 13,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "USE TEMP B-TREE FOR count(DISTINCT)"
+                  },
+                  {
+                    "id": 16,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 34,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 36,
+                    "parent": 0,
+                    "notused": 44,
+                    "detail": "SEARCH f USING COVERING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 1000,
+                    "visits": 1000
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT j.payload AS payload, f.payload AS observed_payload FROM document_jobs j CROSS JOIN (SELECT ? AS as_of) clock LEFT JOIN document_files f ON ((JSON_EXTRACT(j.list_query_json, '$.status') COLLATE BINARY) = 'succeeded' AND (JSON_EXTRACT(j.list_query_json, '$.stage') COLLATE BINARY) = 'completed' AND CAST(JSON_EXTRACT(j.list_query_json, '$.result_present') AS INTEGER) = 1) AND f.file_id = JSON_EXTRACT(j.list_query_json, '$.result_id') WHERE (JSON_EXTRACT(j.list_query_json, '$.tenant_id') COLLATE BINARY) = ? AND (JSON_EXTRACT(j.list_query_json, '$.company_id') COLLATE BINARY) = ? AND CAST(JSON_EXTRACT(j.list_query_json, '$.deleted') AS INTEGER) = 0 AND CAST(JSON_EXTRACT(j.list_query_json, '$.archived') AS INTEGER) = 0 ORDER BY CAST(JSON_EXTRACT(j.list_query_json, '$.created_us') AS INTEGER) DESC, (JSON_EXTRACT(j.list_query_json, '$.id') COLLATE BINARY) DESC LIMIT ? OFFSET ?",
+                "sample_parameters": [
+                  1793923200000000,
+                  "T",
+                  "C",
+                  20,
+                  0
+                ],
+                "calls": 1,
+                "returned_rows": 20,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "MATERIALIZE clock"
+                  },
+                  {
+                    "id": 5,
+                    "parent": 3,
+                    "notused": 0,
+                    "detail": "SCAN CONSTANT ROW"
+                  },
+                  {
+                    "id": 19,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN j"
+                  },
+                  {
+                    "id": 37,
+                    "parent": 0,
+                    "notused": 16,
+                    "detail": "SCAN clock"
+                  },
+                  {
+                    "id": 39,
+                    "parent": 0,
+                    "notused": 46,
+                    "detail": "SEARCH f USING INDEX sqlite_autoindex_document_files_1 (file_id=?) LEFT-JOIN"
+                  },
+                  {
+                    "id": 86,
+                    "parent": 0,
+                    "notused": 0,
+                    "detail": "USE TEMP B-TREE FOR ORDER BY"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 1000,
+                    "visits": 1000
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT payload FROM document_files WHERE file_id = ?",
+                "sample_parameters": [
+                  "job-00999-source_pdf"
+                ],
+                "calls": 20,
+                "returned_rows": 20,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 39,
+                    "detail": "SEARCH document_files USING INDEX sqlite_autoindex_document_files_1 (file_id=?)"
+                  }
+                ],
+                "inferred_full_scan_visits": []
+              }
+            ],
+            "repository_calls": {
+              "SqliteDocumentJobRepository.query_document_jobs": 1,
+              "SqliteDocumentFileRepository.get_document_file": 20
+            },
+            "model_decodes": {
+              "DocumentJobRecord.model_validate_json": 20,
+              "DocumentFileRecord.model_validate_json": 28
+            },
+            "protected_id_json_decodes": 0,
+            "sqlite_progress_steps": 1155,
+            "connections": 21,
+            "sql_calls": 34,
+            "select_calls": 33,
+            "sql_returned_rows": 57,
+            "inferred_full_scan_visits": 13800,
+            "sqlite_vm_ops_lower_bound": 1155000,
+            "scan_method": "EXPLAIN 中物理表 SCAN × 固定表基数 × 调用次数；非 rows_examined；不计索引 SEARCH、临时 B 树或 clock 常量扫描。当前数据前置 LIMIT 1 拒绝查询均返回0，分页使用排序后取页，完整扫描推导适用。"
+          }
+        },
+        {
+          "path": "list_incidents",
+          "latency_ms_samples": [
+            107.272666,
+            107.2895,
+            107.890542,
+            107.356958,
+            107.493917
+          ],
+          "latency_ms_median": 107.356958,
+          "latency_ms_min": 107.272666,
+          "latency_ms_max": 107.890542,
+          "latency_ms_p95_nearest_rank": 107.890542,
+          "latency_ms_stdev": 0.2555856707618767,
+          "python_peak_bytes": 10176739,
+          "python_current_bytes_at_return": 496606,
+          "process_cumulative_peak_rss_bytes": 169476096,
+          "body_read_calls": 0,
+          "result_signature": {
+            "total": 600,
+            "page_ids": [
+              "job-00999",
+              "job-00998",
+              "job-00997",
+              "job-00996",
+              "job-00995",
+              "job-00994",
+              "job-00989",
+              "job-00988",
+              "job-00987",
+              "job-00986",
+              "job-00985",
+              "job-00984",
+              "job-00979",
+              "job-00978",
+              "job-00977",
+              "job-00976",
+              "job-00975",
+              "job-00974",
+              "job-00969",
+              "job-00968"
+            ],
+            "summary": {
+              "total": 600,
+              "failed": 200,
+              "blocked": 0,
+              "stalled": 400,
+              "retryable": 200,
+              "non_retryable": 0,
+              "by_status": {
+                "queued": 200,
+                "running": 200,
+                "failed": 200
+              },
+              "by_failure_type": {
+                "conversion_failed": 0,
+                "translation_failed": 200,
+                "qa_unavailable": 0,
+                "artifact_missing": 0,
+                "timeout_or_stalled": 400,
+                "worker_or_dispatch_failed": 0,
+                "page_degraded": 0,
+                "unknown": 0
+              }
+            }
+          },
+          "counts": {
+            "sql": [
+              {
+                "sql": "SELECT payload FROM document_jobs ORDER BY created_at, job_id",
+                "sample_parameters": [],
+                "calls": 1,
+                "returned_rows": 1000,
+                "plan": [
+                  {
+                    "id": 4,
+                    "parent": 0,
+                    "notused": 224,
+                    "detail": "SCAN document_jobs USING INDEX idx_document_jobs_created_at"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_jobs",
+                    "rows_per_execution": 1000,
+                    "visits": 1000
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT payload FROM document_files WHERE file_id = ?",
+                "sample_parameters": [
+                  "job-00000-generated_word"
+                ],
+                "calls": 820,
+                "returned_rows": 820,
+                "plan": [
+                  {
+                    "id": 3,
+                    "parent": 0,
+                    "notused": 39,
+                    "detail": "SEARCH document_files USING INDEX sqlite_autoindex_document_files_1 (file_id=?)"
+                  }
+                ],
+                "inferred_full_scan_visits": []
+              }
+            ],
+            "repository_calls": {
+              "SqliteDocumentJobRepository.list_document_jobs": 1,
+              "SqliteDocumentFileRepository.get_document_file": 820
+            },
+            "model_decodes": {
+              "DocumentJobRecord.model_validate_json": 1000,
+              "DocumentFileRecord.model_validate_json": 820
+            },
+            "protected_id_json_decodes": 0,
+            "sqlite_progress_steps": 4,
+            "connections": 821,
+            "sql_calls": 821,
+            "select_calls": 821,
+            "sql_returned_rows": 1820,
+            "inferred_full_scan_visits": 1000,
+            "sqlite_vm_ops_lower_bound": 4000,
+            "scan_method": "EXPLAIN 中物理表 SCAN × 固定表基数 × 调用次数；非 rows_examined；不计索引 SEARCH、临时 B 树或 clock 常量扫描。当前数据前置 LIMIT 1 拒绝查询均返回0，分页使用排序后取页，完整扫描推导适用。"
+          }
+        },
+        {
+          "path": "is_document_file_protected",
+          "latency_ms_samples": [
+            0.340666,
+            0.360083,
+            0.350542,
+            0.345959,
+            0.352
+          ],
+          "latency_ms_median": 0.350542,
+          "latency_ms_min": 0.340666,
+          "latency_ms_max": 0.360083,
+          "latency_ms_p95_nearest_rank": 0.360083,
+          "latency_ms_stdev": 0.007233626165347486,
+          "python_peak_bytes": 51157,
+          "python_current_bytes_at_return": 10888,
+          "process_cumulative_peak_rss_bytes": 169476096,
+          "body_read_calls": 0,
+          "result_signature": {
+            "protected": false
+          },
+          "counts": {
+            "sql": [
+              {
+                "sql": "SELECT protected_file_ids FROM document_job_publications",
+                "sample_parameters": [],
+                "calls": 1,
+                "returned_rows": 200,
+                "plan": [
+                  {
+                    "id": 2,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN document_job_publications"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_job_publications",
+                    "rows_per_execution": 200,
+                    "visits": 200
+                  }
+                ]
+              }
+            ],
+            "repository_calls": {
+              "SqliteDocumentFileRepository.is_document_file_protected": 1
+            },
+            "model_decodes": {},
+            "protected_id_json_decodes": 200,
+            "sqlite_progress_steps": 0,
+            "connections": 1,
+            "sql_calls": 1,
+            "select_calls": 1,
+            "sql_returned_rows": 200,
+            "inferred_full_scan_visits": 200,
+            "sqlite_vm_ops_lower_bound": 0,
+            "scan_method": "EXPLAIN 中物理表 SCAN × 固定表基数 × 调用次数；非 rows_examined；不计索引 SEARCH、临时 B 树或 clock 常量扫描。当前数据前置 LIMIT 1 拒绝查询均返回0，分页使用排序后取页，完整扫描推导适用。"
+          }
+        },
+        {
+          "path": "build_plan",
+          "latency_ms_samples": [
+            364.100125,
+            364.318666,
+            363.430542,
+            369.2675,
+            364.724666
+          ],
+          "latency_ms_median": 364.318666,
+          "latency_ms_min": 363.430542,
+          "latency_ms_max": 369.2675,
+          "latency_ms_p95_nearest_rank": 369.2675,
+          "latency_ms_stdev": 2.338959725877118,
+          "python_peak_bytes": 7640744,
+          "python_current_bytes_at_return": 188522,
+          "process_cumulative_peak_rss_bytes": 170311680,
+          "body_read_calls": 0,
+          "result_signature": {
+            "totals": {
+              "files_seen": 1800,
+              "files_with_expires_at": 1200,
+              "candidate_files": 200,
+              "candidate_local_files": 200,
+              "candidate_objects": 0,
+              "already_deleted_files": 0
+            },
+            "candidate_ids_sha256": "279ea8ae8ccb84891dce93a3dac348d68a66d932b2ce05a2a5c7c8c8148ad853"
+          },
+          "counts": {
+            "sql": [
+              {
+                "sql": "SELECT payload FROM document_files ORDER BY created_at, file_id",
+                "sample_parameters": [],
+                "calls": 1,
+                "returned_rows": 1800,
+                "plan": [
+                  {
+                    "id": 4,
+                    "parent": 0,
+                    "notused": 225,
+                    "detail": "SCAN document_files USING INDEX idx_document_files_created_at"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_files",
+                    "rows_per_execution": 1800,
+                    "visits": 1800
+                  }
+                ]
+              },
+              {
+                "sql": "SELECT protected_file_ids FROM document_job_publications",
+                "sample_parameters": [],
+                "calls": 1800,
+                "returned_rows": 360000,
+                "plan": [
+                  {
+                    "id": 2,
+                    "parent": 0,
+                    "notused": 216,
+                    "detail": "SCAN document_job_publications"
+                  }
+                ],
+                "inferred_full_scan_visits": [
+                  {
+                    "table": "document_job_publications",
+                    "rows_per_execution": 200,
+                    "visits": 360000
+                  }
+                ]
+              }
+            ],
+            "repository_calls": {
+              "SqliteDocumentFileRepository.list_document_files": 1,
+              "SqliteDocumentFileRepository.is_document_file_protected": 1800
+            },
+            "model_decodes": {
+              "DocumentFileRecord.model_validate_json": 1800
+            },
+            "protected_id_json_decodes": 300300,
+            "sqlite_progress_steps": 7,
+            "connections": 1801,
+            "sql_calls": 1801,
+            "select_calls": 1801,
+            "sql_returned_rows": 361800,
+            "inferred_full_scan_visits": 361800,
+            "sqlite_vm_ops_lower_bound": 7000,
+            "scan_method": "EXPLAIN 中物理表 SCAN × 固定表基数 × 调用次数；非 rows_examined；不计索引 SEARCH、临时 B 树或 clock 常量扫描。当前数据前置 LIMIT 1 拒绝查询均返回0，分页使用排序后取页，完整扫描推导适用。"
+          }
+        }
+      ]
+    }
+  ],
+  "run_status": "interrupted_method_correction"
+}

@@ -1,0 +1,66 @@
+{
+  "status": "passed",
+  "checks": [
+    {
+      "jobs": 120,
+      "path": "list_jobs",
+      "status": "passed"
+    },
+    {
+      "jobs": 120,
+      "path": "list_incidents",
+      "status": "passed"
+    },
+    {
+      "jobs": 120,
+      "path": "is_document_file_protected",
+      "status": "passed"
+    },
+    {
+      "jobs": 120,
+      "path": "build_plan",
+      "status": "passed"
+    },
+    {
+      "jobs": 1000,
+      "path": "list_jobs",
+      "status": "passed"
+    },
+    {
+      "jobs": 1000,
+      "path": "list_incidents",
+      "status": "passed"
+    },
+    {
+      "jobs": 1000,
+      "path": "is_document_file_protected",
+      "status": "passed"
+    },
+    {
+      "jobs": 1000,
+      "path": "build_plan",
+      "status": "passed"
+    },
+    {
+      "jobs": 10000,
+      "path": "list_jobs",
+      "status": "passed"
+    },
+    {
+      "jobs": 10000,
+      "path": "list_incidents",
+      "status": "passed"
+    },
+    {
+      "jobs": 10000,
+      "path": "is_document_file_protected",
+      "status": "passed"
+    },
+    {
+      "jobs": 10000,
+      "path": "build_plan",
+      "status": "passed"
+    }
+  ],
+  "note": "12组证据覆盖完整；CSV中位数和返回行字段一致；脚本摘要、固定样本计数、正文零读取、数据库前后SHA及临时库清理通过。"
+}
