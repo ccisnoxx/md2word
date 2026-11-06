@@ -1374,7 +1374,8 @@ class DocumentJobService:
             result = self.job_repository.query_document_jobs(query)
             # 明确的 None 也属于本次观察，不能在页面动作阶段重读成另一个结果。
             items = [self.build_job_read_view(job, user=user,
-                observed_result=result.observed_results[job.id], as_of=query.as_of) for job in result.items]
+                observed_result=result.observed_results[job.id], as_of=query.as_of,
+                check_publication_evidence=False) for job in result.items]
         except DocumentJobListProjectionUnavailable as error:
             raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable",
                 "任务列表查询事实尚未就绪，请完成校准后重试。") from error
@@ -1474,25 +1475,33 @@ class DocumentJobService:
         user: AuthenticatedUser,
         observed_result: DocumentFileRecord | None | object = _UNREAD_RESULT,
         as_of: datetime | None = None,
+        check_publication_evidence: bool = True,
+        observed_result_view: tuple[DocumentJobRecord, DocumentJobAvailableActionResponse] | None = None,
     ) -> tuple[DocumentJobRecord, dict[str, DocumentJobAvailableActionResponse]]:
-        """保留公共二元组合同，内部观察同时拥有发布检查。"""
-        view, actions, _ = self._build_job_read_observation(job, user=user, observed_result=observed_result, as_of=as_of)
+        """保留公共二元组合同；列表可仅判断发布状态，其他调用默认核验证据。"""
+        view, actions, _ = self._build_job_read_observation(job, user=user, observed_result=observed_result,
+            as_of=as_of, check_publication_evidence=check_publication_evidence,
+            observed_result_view=observed_result_view)
         return view, actions
 
     def _build_job_read_observation(
         self, job: DocumentJobRecord, *, user: AuthenticatedUser,
         observed_result: DocumentFileRecord | None | object = _UNREAD_RESULT,
         as_of: datetime | None = None,
+        check_publication_evidence: bool = True,
+        observed_result_view: tuple[DocumentJobRecord, DocumentJobAvailableActionResponse] | None = None,
     ):
-        """同次来源和唯一深度检查同时产出状态、动作及前置检查。"""
+        """同次来源及显式证据核验策略同时产出状态、动作及前置检查。"""
 
 
-        job, download = self._build_result_read_view(job, observed_result=observed_result, as_of=as_of)
-        retry_disabled_reason = self._retry_disabled_reason(job)
-        publish, checks = self._build_publish_action(job, user=user, download=download)
+        # 异常列表复用本次分类的主件观察，避免分页后换件或到期使条目与统计分离。
+        job, download = (observed_result_view if observed_result_view is not None else
+            self._build_result_read_view(job, observed_result=observed_result, as_of=as_of))
+        publish, checks = self._build_publish_action(job, user=user, download=download,
+            check_publication_evidence=check_publication_evidence)
         actions = {
             "download": download,
-            "retry": self._available_action(retry_disabled_reason, retryable=retry_disabled_reason is None),
+            "retry": self._build_retry_action(job),
             "cancel": self._available_action(self._cancel_disabled_reason(job)),
             "archive": self._available_action(self._archive_disabled_reason(job)),
             "unarchive": self._available_action(self._unarchive_disabled_reason(job)),
@@ -1504,6 +1513,17 @@ class DocumentJobService:
         if actions["publish"].enabled and job.delivery_status != "published":
             job = job.model_copy(update={"delivery_status": "ready_to_publish"})
         return job, actions, checks
+
+    def build_incident_classification_view(
+        self, job: DocumentJobRecord,
+    ) -> tuple[DocumentJobRecord, DocumentJobAvailableActionResponse, DocumentJobAvailableActionResponse]:
+        """分类复用完整读视图的主件门控和重试判断，不构建无关动作。"""
+        job, download = self._build_result_read_view(job)
+        return job, self._build_retry_action(job), download
+
+    def _build_retry_action(self, job: DocumentJobRecord) -> DocumentJobAvailableActionResponse:
+        reason = self._retry_disabled_reason(job)
+        return self._available_action(reason, retryable=reason is None)
 
     def _build_new_generation_action(self, job: DocumentJobRecord, *, user: AuthenticatedUser):
         """后端给出可执行资格；POST 仍独立认证实物并在接受锁内重核。"""
@@ -3179,6 +3199,7 @@ class DocumentJobService:
 
     def _build_publish_action(self, job: DocumentJobRecord, *, user: AuthenticatedUser,
         download: DocumentJobAvailableActionResponse,
+        check_publication_evidence: bool = True,
     ) -> tuple[DocumentJobAvailableActionResponse, list[dict[str, Any]]]:
         """核心资格保持原语义；未执行的实物/预览/快照组合检查不能冒充通过。"""
         reasons = []
@@ -3206,7 +3227,7 @@ class DocumentJobService:
                 "publication_state_conflict", "归档或删除任务不能发布。")
         evidence_check = {"code": "publication_evidence", "status": "not_checked", "reason_code": None,
             "message": "尚未核验预览、实物完整性、执行快照及保留能力；提交时由后端完整核验。"}
-        if not reasons:
+        if not reasons and check_publication_evidence:
             try:
                 evidence = prepare_publication_evidence(job, file_repository=self.file_repository,
                     file_service=self.file_upload_service, job_repository=self.job_repository)

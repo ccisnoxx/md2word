@@ -72,7 +72,7 @@ class DocumentJobIncidentService:
         q: str | None,
         sort: str,
     ) -> DocumentJobIncidentListResponse:
-        """Return filtered, priority-sorted incident projections for visible document_jobs."""
+        """先按状态和元数据筛选汇总，仅为当前页构建完整动作。"""
 
         self._validate_list_filters(
             status_filter=status_filter,
@@ -83,12 +83,16 @@ class DocumentJobIncidentService:
         )
         now = utc_now()
         normalized_q = self._normalize_optional_text(q)
-        candidates = [
-            item
-            for job in self.document_job_service.list_visible_jobs(user=user)
-            for item in [self._build_item(job, user=user, now=now)]
-            if item.is_incident
-        ]
+        # 保留原始记录；公开响应不含完整内部字段，不能反向恢复动作输入。
+        jobs = {job.id: job for job in self.document_job_service.list_visible_jobs(user=user)}
+        result_views: dict[str, tuple[DocumentJobRecord, DocumentJobAvailableActionResponse]] = {}
+        candidates = []
+        for job in jobs.values():
+            view, retry_action, download = self.document_job_service.build_incident_classification_view(job)
+            result_views[job.id] = (view, download)
+            item = self._project_item(view, {"retry": retry_action}, now=now)
+            if item.is_incident:
+                candidates.append(item)
         filtered = [
             item
             for item in candidates
@@ -102,8 +106,15 @@ class DocumentJobIncidentService:
         ]
         filtered.sort(key=lambda item: self._sort_key(item, sort), reverse=self._sort_reverse(sort))
         start = (page - 1) * page_size
+        items = [
+            self._project_item(*self.document_job_service.build_job_read_view(
+                jobs[item.job.id], user=user, check_publication_evidence=False,
+                observed_result_view=result_views[item.job.id],
+            ), now=now)
+            for item in filtered[start:start + page_size]
+        ]
         return DocumentJobIncidentListResponse(
-            items=filtered[start:start + page_size],
+            items=items,
             page=page,
             page_size=page_size,
             total=len(filtered),
@@ -215,6 +226,16 @@ class DocumentJobIncidentService:
         now: datetime,
     ) -> DocumentJobIncidentQueueItemResponse:
         job, actions = self.document_job_service.build_job_read_view(job, user=user)
+        return self._project_item(job, actions, now=now)
+
+    def _project_item(
+        self,
+        job: DocumentJobRecord,
+        actions: dict[str, DocumentJobAvailableActionResponse],
+        *,
+        now: datetime,
+    ) -> DocumentJobIncidentQueueItemResponse:
+        """分类只依赖有效任务状态及重试动作，供列表和完整诊断共用。"""
         retry_action = actions.get("retry")
         retryable = bool(retry_action and retry_action.enabled and retry_action.retryable)
         retry_disabled_reason = retry_action.disabled_reason if retry_action else "后端未返回重试动作。"
