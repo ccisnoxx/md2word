@@ -1,5 +1,5 @@
-# File: app/main.py
-# Purpose: 组装 FastAPI 应用及当前进程的运行时依赖。
+# 文件： app/main.py
+# 用途： 组装 FastAPI 应用及当前进程的运行时依赖。
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_api_error_handlers
 from app.api.v1.router import router as api_v1_router
-from app.conversion.entrypoint import create_conversion_entrypoint
 from app.domains.document_jobs.preview import DocumentJobPreviewService
 from app.services.preview.sandbox_adapter import SandboxWordPreviewProvider
 from app.core.config import Settings
@@ -41,15 +40,7 @@ from app.domains.files import FileRetentionPolicyService, FileUploadService
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.page_degradation import PageDegradationPolicy
 from app.infrastructure.pdf_crop import PopplerPdfPageRasterizer, PopplerPdfTableCropProvider
-from app.domains.jobs.artifact_storage import LocalArtifactStorageAdapter
-from app.domains.jobs.artifacts import JobArtifactService
-from app.domains.jobs.command import JobCommandService
-from app.domains.jobs.dispatch import ExternalWorkerStageDispatcher, InProcessStageDispatcher
-from app.domains.jobs.lifecycle import JobLifecycleService
-from app.domains.jobs.object_artifact_storage import ObjectArtifactStorageAdapter, S3ArtifactStorageAdapter
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
-from app.domains.jobs.query import JobQueryService
-from app.domains.jobs.stage import JobStageService
 from app.domains.mineru.config import MinerUConfigService
 from app.domains.ops.real_alert_delivery import EnvironmentSecretResolver, SlackWebhookAlertDeliveryProvider
 from app.services.renderer import DocumentIRWordRenderer
@@ -73,38 +64,6 @@ from app.domains.translation.provider import build_translation_provider
 from app.domains.translation.term_set_version_service import TranslationTermSetVersionService
 from app.domains.translation.term_version_service import TermVersionService
 from app.domains.users.service import InternalUserManagementService
-
-
-def _build_artifact_storage(settings: Settings, artifact_service: JobArtifactService):
-    """按配置选择 artifact storage adapter；默认仍保持 local file backend。"""
-
-    if settings.jobs_artifact_storage_backend == "local_object":
-        return ObjectArtifactStorageAdapter(
-            artifact_service,
-            settings.jobs_artifact_object_store_dir,
-        ), "local_object"
-    if settings.jobs_artifact_storage_backend == "s3":
-        return S3ArtifactStorageAdapter(
-            artifact_service,
-            bucket=settings.jobs_artifact_s3_bucket,
-            endpoint_url=settings.jobs_artifact_s3_endpoint_url or None,
-            region_name=settings.jobs_artifact_s3_region or None,
-            access_key_id=settings.jobs_artifact_s3_access_key_id or None,
-            secret_access_key=settings.jobs_artifact_s3_secret_access_key or None,
-            key_prefix=settings.jobs_artifact_s3_key_prefix,
-            public_base_url=settings.jobs_artifact_s3_public_base_url,
-            download_mode=settings.jobs_artifact_s3_download_mode,
-            presign_expires_seconds=settings.jobs_artifact_s3_presign_expires_seconds,
-        ), "s3"
-    return LocalArtifactStorageAdapter(artifact_service), "local_file"
-
-
-def _build_stage_dispatcher(settings: Settings, stage_service: JobStageService):
-    """按 worker 模式选择 API 请求进程的 stage 调度端口。"""
-
-    if settings.jobs_worker_mode == "external":
-        return ExternalWorkerStageDispatcher(), "external_worker"
-    return InProcessStageDispatcher(stage_service), "background_tasks"
 
 
 def _build_document_job_task_queue(
@@ -151,8 +110,6 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     configure_logging(resolved_settings.app_env, resolved_settings.log_format)
     persistence_adapters = build_persistence_adapters(resolved_settings)
     repository_backend = persistence_adapters.backend_name
-    job_repository = persistence_adapters.job_repository
-    job_file_repository = persistence_adapters.job_file_repository
     job_event_repository = persistence_adapters.job_event_repository
     audit_event_repository = persistence_adapters.audit_event_repository
     acceptance_run_repository = persistence_adapters.acceptance_run_repository
@@ -167,7 +124,6 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     internal_user_repository = persistence_adapters.internal_user_repository
     saved_view_repository = persistence_adapters.saved_view_repository
     terminology_release_repository = persistence_adapters.terminology_release_repository
-    stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
     acceptance_run_service = AcceptanceRunService(acceptance_run_repository)
     acceptance_run_service.bootstrap_default_runs_if_empty()
@@ -367,42 +323,10 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         translation_profile_service.bootstrap_default_profiles_if_missing()
     template_read_service.get_default_template_id()
     template_read_service.bootstrap_manifest_versions()
-    artifact_service = JobArtifactService()
-    artifact_storage, artifact_storage_backend = _build_artifact_storage(resolved_settings, artifact_service)
-    conversion_entrypoint = create_conversion_entrypoint()
-    stage_service = JobStageService(
-        resolved_settings,
-        job_repository,
-        job_file_repository,
-        job_event_repository,
-        conversion_entrypoint,
-        artifact_storage,
-        stage_message_store=stage_message_store,
-        mineru_config_resolver=mineru_config_service.get_effective_config,
-        stage_worker_id=(
-            resolved_settings.jobs_worker_id
-            if resolved_settings.jobs_worker_mode == "external"
-            else "in_process"
-        ),
-        resolve_template_path=template_read_service.resolve_job_template_path,
-        resolve_layout_config_path=template_read_service.resolve_job_layout_config_path,
-        resolve_subscript_config_path=lambda: resolved_settings.subscript_config_path,
-        resolve_translation_profile_snapshot=(
-            translation_profile_service.resolve_default_snapshot
-            if translation_profile_service is not None
-            else None
-        ),
-        resource_snapshot_service=job_resource_snapshot_service,
-    )
-    stage_dispatcher, stage_dispatcher_backend = _build_stage_dispatcher(resolved_settings, stage_service)
     health_service = HealthService(
         resolved_settings,
-        stage_message_store,
         effective_repository_backend=repository_backend,
-        stage_message_store_backend=repository_backend,
-        artifact_storage_backend=artifact_storage_backend,
-        stage_dispatcher_backend=stage_dispatcher_backend,
-        job_repository=job_repository,
+        artifact_storage_backend=resolved_settings.jobs_artifact_storage_backend,
         document_job_repository=document_job_repository,
         document_job_callback_message_store=document_job_callback_message_store,
         internal_user_repository=internal_user_repository,
@@ -412,34 +336,11 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         ai_provider_config_service=ai_provider_config_service,
         mineru_config_service=mineru_config_service,
     )
-    command_service = JobCommandService(
-        resolved_settings,
-        job_repository,
-        job_file_repository,
-        job_event_repository,
-        stage_service,
-        artifact_storage,
-        job_resource_snapshot_service,
-    )
-    lifecycle_service = JobLifecycleService(
-        job_repository=job_repository,
-        job_file_repository=job_file_repository,
-        job_event_repository=job_event_repository,
-        audit_service=audit_service,
-        stage_message_store=stage_message_store,
-        stage_service=stage_service,
-        artifact_service=artifact_service,
-        artifact_storage=artifact_storage,
-        resource_snapshot_service=job_resource_snapshot_service,
-    )
-    query_service = JobQueryService(job_repository, job_file_repository, job_event_repository)
     alert_delivery_provider = SlackWebhookAlertDeliveryProvider()
     secret_resolver = EnvironmentSecretResolver()
     return AppRuntime(
         settings=resolved_settings,
         persistence_adapters=persistence_adapters,
-        job_repository=job_repository,
-        job_file_repository=job_file_repository,
         job_event_repository=job_event_repository,
         audit_event_repository=audit_event_repository,
         acceptance_run_repository=acceptance_run_repository,
@@ -489,14 +390,6 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         translation_profile_service=translation_profile_service,
         resource_version_service=resource_version_service,
         job_resource_snapshot_service=job_resource_snapshot_service,
-        artifact_service=artifact_service,
-        artifact_storage=artifact_storage,
-        command_service=command_service,
-        lifecycle_service=lifecycle_service,
-        query_service=query_service,
-        stage_service=stage_service,
-        stage_dispatcher=stage_dispatcher,
-        stage_message_store=stage_message_store,
         alert_delivery_provider=alert_delivery_provider,
         secret_resolver=secret_resolver,
     )
@@ -509,21 +402,17 @@ def create_app(runtime: AppRuntime | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        replay_tasks = [
-            asyncio.create_task(asyncio.to_thread(app.state.runtime.stage_dispatcher.replay_pending)),
-            asyncio.create_task(
-                asyncio.to_thread(
-                    app.state.runtime.document_job_recovery_service.run_startup_recovery,
-                    trace_id="startup",
-                )
-            ),
-        ]
+        recovery_task = asyncio.create_task(
+            asyncio.to_thread(
+                app.state.runtime.document_job_recovery_service.run_startup_recovery,
+                trace_id="startup",
+            )
+        )
         try:
             yield
         finally:
-            for replay_task in replay_tasks:
-                if not replay_task.done():
-                    replay_task.cancel()
+            if not recovery_task.done():
+                recovery_task.cancel()
 
     app = FastAPI(title=app_runtime.settings.app_name, lifespan=lifespan)
     app.state.runtime = app_runtime

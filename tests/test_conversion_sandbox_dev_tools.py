@@ -13,7 +13,6 @@ import zipfile
 
 from docx import Document
 
-from app.conversion import runtime_facade
 from app.services.document_ir.integrity import DocumentIntegrityError
 from scripts.dev import (
     audit_conversion_sandbox,
@@ -726,33 +725,6 @@ class Md2wordMainMigrationTests(TestCase):
             self.assertIn("已废弃", entrypoint)
             self.assertIn("run_local_mineru_debug_config.py", entrypoint)
             self.assertNotIn("run_local_mineru_conversion", entrypoint)
-
-
-class OfficialConversionRuntimeBindingTests(TestCase):
-    def test_runtime_facade_load_pages_binds_model_classes(self) -> None:
-        with TemporaryDirectory() as tmp_dir:
-            package_root = Path(tmp_dir)
-            payload = [
-                [
-                    {
-                        "type": "title",
-                        "bbox": [0, 0, 10, 10],
-                        "content": {
-                            "title_content": [{"type": "text", "content": "Title"}],
-                            "level": 1,
-                        },
-                    }
-                ]
-            ]
-            payload_path = package_root / "sample_content_list_v2.json"
-            payload_path.write_text(json.dumps(payload), encoding="utf-8")
-
-            pages, source_path = runtime_facade.load_pages(package_root)
-
-        self.assertEqual(source_path, payload_path)
-        self.assertEqual(len(pages), 1)
-        self.assertEqual(pages[0].blocks[0].text, "Title")
-
 
 class LocalTranslationIntegrityTests(TestCase):
     """本地工具导出、严格响应和同步零回填边界。"""

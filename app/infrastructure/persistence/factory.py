@@ -19,12 +19,7 @@ from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.files.cleanup_lock import FileRetentionCleanupLockRepositoryProtocol
 from app.domains.files.cleanup_history import FileRetentionCleanupRunHistoryRepositoryProtocol
 from app.domains.files.retention_policy import FileRetentionPolicyRepositoryProtocol
-from app.domains.jobs.repository import (
-    JobEventRepositoryProtocol,
-    JobFileRepositoryProtocol,
-    JobSnapshotRepositoryProtocol,
-    StageMessageStoreProtocol,
-)
+from app.domains.jobs.repository import JobEventRepositoryProtocol
 from app.domains.resources.repository import ResourceVersionRepositoryProtocol
 from app.domains.saved_views.repository import SavedViewRepositoryProtocol
 from app.domains.term_rules.repository import (
@@ -45,14 +40,11 @@ from app.infrastructure.persistence.file import (
     FileDocumentJobTranslationBatchRepository,
     FileInternalUserRepository,
     FileJobEventRepository,
-    FileJobFileRepository,
-    FileJobSnapshotRepository,
     FilePersistenceBackend,
     FileRetentionCleanupLockRepository,
     FileRetentionCleanupRunHistoryRepository,
     FileRetentionPolicyRepository,
     FileSavedViewRepository,
-    FileStageMessageStore,
     FileTerminologyReleaseRepository,
 )
 from app.infrastructure.persistence.mysql import (
@@ -66,8 +58,6 @@ from app.infrastructure.persistence.mysql import (
     MysqlDocumentJobTranslationBatchRepository,
     MysqlInternalUserRepository,
     MysqlJobEventRepository,
-    MysqlJobFileRepository,
-    MysqlJobSnapshotRepository,
     MysqlPersistenceBackend,
     MysqlPersistenceConfig,
     MysqlRetentionCleanupLockRepository,
@@ -75,7 +65,6 @@ from app.infrastructure.persistence.mysql import (
     MysqlRetentionPolicyRepository,
     MysqlResourceVersionRepository,
     MysqlSavedViewRepository,
-    MysqlStageMessageStore,
     MysqlTermRuleAssetRepository,
     MysqlTermRuleProposalRepository,
     MysqlTermRuleReviewRepository,
@@ -92,14 +81,11 @@ from app.infrastructure.persistence.sqlite import (
     SqliteDocumentJobTranslationBatchRepository,
     SqliteInternalUserRepository,
     SqliteJobEventRepository,
-    SqliteJobFileRepository,
-    SqliteJobSnapshotRepository,
     SqlitePersistenceBackend,
     SqliteRetentionCleanupLockRepository,
     SqliteRetentionCleanupRunHistoryRepository,
     SqliteRetentionPolicyRepository,
     SqliteSavedViewRepository,
-    SqliteStageMessageStore,
     SqliteTerminologyReleaseRepository,
 )
 
@@ -109,8 +95,6 @@ class PersistenceAdapters:
     """运行时显式持有的 metadata persistence 端口集合。"""
 
     backend_name: str
-    job_repository: JobSnapshotRepositoryProtocol
-    job_file_repository: JobFileRepositoryProtocol
     job_event_repository: JobEventRepositoryProtocol
     audit_event_repository: AuditEventRepositoryProtocol
     acceptance_run_repository: AcceptanceRunRepositoryProtocol
@@ -124,7 +108,6 @@ class PersistenceAdapters:
     document_job_translation_batch_repository: DocumentJobTranslationBatchRepositoryProtocol
     internal_user_repository: InternalUserRepositoryProtocol
     saved_view_repository: SavedViewRepositoryProtocol
-    stage_message_store: StageMessageStoreProtocol
     terminology_release_repository: TerminologyReleaseRepositoryProtocol
     resource_version_repository: ResourceVersionRepositoryProtocol | None = None
     term_rule_proposal_repository: TermRuleProposalRepositoryProtocol | None = None
@@ -139,8 +122,6 @@ def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
     backend = FilePersistenceBackend(data_dir)
     return PersistenceAdapters(
         backend_name="file",
-        job_repository=FileJobSnapshotRepository(backend),
-        job_file_repository=FileJobFileRepository(backend),
         job_event_repository=FileJobEventRepository(backend),
         audit_event_repository=FileAuditEventRepository(backend),
         acceptance_run_repository=FileAcceptanceRunRepository(backend),
@@ -154,7 +135,6 @@ def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
         document_job_translation_batch_repository=FileDocumentJobTranslationBatchRepository(backend),
         internal_user_repository=FileInternalUserRepository(backend),
         saved_view_repository=FileSavedViewRepository(backend),
-        stage_message_store=FileStageMessageStore(backend),
         terminology_release_repository=FileTerminologyReleaseRepository(backend),
         resource_version_repository=None,
         term_rule_proposal_repository=None,
@@ -170,8 +150,6 @@ def build_sqlite_persistence_adapters(database_path: Path) -> PersistenceAdapter
     backend = SqlitePersistenceBackend(database_path)
     return PersistenceAdapters(
         backend_name="database",
-        job_repository=SqliteJobSnapshotRepository(backend),
-        job_file_repository=SqliteJobFileRepository(backend),
         job_event_repository=SqliteJobEventRepository(backend),
         audit_event_repository=SqliteAuditEventRepository(backend),
         acceptance_run_repository=SqliteAcceptanceRunRepository(backend),
@@ -185,7 +163,6 @@ def build_sqlite_persistence_adapters(database_path: Path) -> PersistenceAdapter
         document_job_translation_batch_repository=SqliteDocumentJobTranslationBatchRepository(backend),
         internal_user_repository=SqliteInternalUserRepository(backend),
         saved_view_repository=SqliteSavedViewRepository(backend),
-        stage_message_store=SqliteStageMessageStore(backend),
         terminology_release_repository=SqliteTerminologyReleaseRepository(backend),
         resource_version_repository=None,
         term_rule_proposal_repository=None,
@@ -205,8 +182,6 @@ def build_mysql_persistence_adapters(
     backend = MysqlPersistenceBackend(config, connect_factory=connect_factory)
     return PersistenceAdapters(
         backend_name="mysql",
-        job_repository=MysqlJobSnapshotRepository(backend),
-        job_file_repository=MysqlJobFileRepository(backend),
         job_event_repository=MysqlJobEventRepository(backend),
         audit_event_repository=MysqlAuditEventRepository(backend),
         acceptance_run_repository=MysqlAcceptanceRunRepository(backend),
@@ -220,7 +195,6 @@ def build_mysql_persistence_adapters(
         document_job_translation_batch_repository=MysqlDocumentJobTranslationBatchRepository(backend),
         internal_user_repository=MysqlInternalUserRepository(backend),
         saved_view_repository=MysqlSavedViewRepository(backend),
-        stage_message_store=MysqlStageMessageStore(backend),
         terminology_release_repository=MysqlTerminologyReleaseRepository(backend),
         resource_version_repository=MysqlResourceVersionRepository(backend),
         term_rule_proposal_repository=MysqlTermRuleProposalRepository(backend),

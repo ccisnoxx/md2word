@@ -1,0 +1,18 @@
+test_document_file_retention_plan_marks_expired_without_deleting_objects (tests.test_artifact_retention.DocumentFileRetentionTests.test_document_file_retention_plan_marks_expired_without_deleting_objects) ... ERROR
+
+======================================================================
+ERROR: test_document_file_retention_plan_marks_expired_without_deleting_objects (tests.test_artifact_retention.DocumentFileRetentionTests.test_document_file_retention_plan_marks_expired_without_deleting_objects)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/.trellis/tasks/11-06-b05-34-remove-legacy/baseline-uepn3jaj/tests/test_artifact_retention.py", line 146, in test_document_file_retention_plan_marks_expired_without_deleting_objects
+    adapters.document_file_repository.create_document_file(old_file)
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/.trellis/tasks/11-06-b05-34-remove-legacy/baseline-uepn3jaj/app/infrastructure/persistence/file/files.py", line 67, in create_document_file
+    ensure_new_file_identity(record)
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/.trellis/tasks/11-06-b05-34-remove-legacy/baseline-uepn3jaj/app/domains/files/result_registration.py", line 149, in ensure_new_file_identity
+    raise ValueError("新文件对象路径缺少固定位置的独立 file_id。")
+ValueError: 新文件对象路径缺少固定位置的独立 file_id。
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (errors=1)

@@ -25,7 +25,7 @@
 - 写入使用同目录临时文件和原子替换，目标文件在支持 POSIX 权限的平台上为 `0600`，不保留备份或旧绑定。
 - GET/PUT 响应只含 `api_token_configured`、`uid_configured`、`source`、`updated_at`、`updated_by`，不得返回 UID、密钥、脱敏片段、长度、指纹或请求体。
 - 更新审计固定为 `action=mineru_config.update`、`target_type=mineru_config`、`target_id=default`，详情只含 `{"api_token_configured": true, "uid_configured": true}`；actor、时间和 `trace_id` 由审计记录承载。
-- `JobStageService` 与 `DocumentJobExecutionService` 在每次创建新 `MinerUClient` 时调用同一个 resolver，并同时传入 `api_token` 与 `uid`；已经创建的客户端保持原绑定。
+- `DocumentJobExecutionService` 在每次创建新 `MinerUClient` 时调用同一个 resolver，并同时传入 `api_token` 与 `uid`；已经创建的客户端保持原绑定。
 - callback checksum 每次先通过同一个 resolver 确认运行时绑定可读；payload 未携带 UID 时读取配置 UID，payload 自带 UID 时沿用官方 callback 合同，但损坏文件仍优先明确失败。
 
 ### 4. Validation & Error Matrix
@@ -39,14 +39,14 @@
 
 ### 5. Good/Base/Bad Cases
 
-- Good：管理员覆盖完整绑定后，后续 API、Stage Worker 和 Celery Worker 新建的客户端无需重启即读取新 UID 与密钥，callback fallback、健康和业务门禁使用同一结论。
+- Good：管理员覆盖完整绑定后，后续 API 和 Celery Worker 新建的客户端无需重启即读取新 UID 与密钥，callback fallback、健康和业务门禁使用同一结论。
 - Base：从未通过配置中心保存时，现有部署继续共同读取 `MINERU_API_TOKEN` 与 `MINERU_UID`，响应只显示 `source=settings` 和两项配置状态。
 - Bad：只更新密钥或 UID；捕获运行时文件解析异常后混用环境变量；在响应、日志或审计中写入 UID/密钥片段；保存时发送 MinerU 测试请求；为轮换保留旧绑定副本。
 
 ### 6. Tests Required
 
 - `tests.test_mineru_config`：断言两项环境变量 fallback、完整文件优先、任一空白拒绝、缺 UID 不混用、严格解析、损坏符号链接不回退、原子覆盖、无备份和 `0600`。
-- `tests.test_fastapi_jobs_backend`：断言 admin 权限、响应/422/审计不泄露 UID 或密钥、健康与门禁一致、callback fallback、两条客户端工厂即时读取完整绑定、旧客户端不变、损坏文件和审计失败语义。
+- `tests.test_fastapi_jobs_backend`：断言 admin 权限、响应/422/审计不泄露 UID 或密钥、健康与门禁一致、callback fallback、正式客户端工厂即时读取完整绑定、旧客户端不变、损坏文件和审计失败语义。
 - `tests.test_openapi_export`：断言 `/api/v1/mineru-config` 及安全响应字段，并保持 `docs/api/openapi.json` 最新。
 - 前端单测：断言 API method/path、两个字段必须绑定提交、独立页面不提供回显/清空/测试、保存成功清空两个输入、导航和诊断路由指向 `/settings/mineru`。
 - 发布前运行 `.venv/bin/python scripts/ops/check_release.py` 和 `npm --prefix frontend run build`。

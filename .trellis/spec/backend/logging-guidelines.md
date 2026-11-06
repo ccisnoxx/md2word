@@ -6,8 +6,8 @@ Evidence:
 
 - `app/core/logging.py`
 - `app/main.py`
-- `app/domains/jobs/stage.py`
-- `app/workers/stage_worker.py`
+- `app/domains/document_jobs/execution.py`
+- `app/workers/document_tasks.py`
 - `app/clients/mineru_client.py`
 - `docs/dev/runtime-observability-and-health.md`
 - `docs/runbooks/backend.md`
@@ -63,7 +63,7 @@ Business stage logs should include the durable workflow identifiers available on
 - `status`
 - `reason` or error summary when relevant
 
-`JobStageService._log_stage_failure()` and `_delete_if_stage_already_applied()` are the local examples. `StageWorker.run_forever()` logs `worker_id`, mode, and processed count.
+正式任务执行、回调与启动恢复日志由 `DocumentJobExecutionService` 和 `DocumentJobRecoveryService` 负责。旧 stage dispatcher/worker 已删除，不再产生旧 spool 日志或健康计数。
 
 ## What To Log
 

@@ -1,0 +1,240 @@
+# 删除清单
+
+{"files_deleted": 59, "deleted_file_lines": 15512, "diff_added_lines": 307, "diff_deleted_lines": 19606, "removed_test_methods": 170}
+
+测试方法计数包含一项仅去掉旧断言后重命名的方法，正式断言保留。
+
+## 已删除文件
+
+- `app/conversion/contracts.py`：66 行。
+- `app/conversion/entrypoint.py`：79 行。
+- `app/conversion/runtime/input_adapter_runtime.py`：1095 行。
+- `app/conversion/runtime/llm_client.py`：162 行。
+- `app/conversion/runtime/page_flow_runtime.py`：359 行。
+- `app/conversion/runtime/page_layout_runtime.py`：1144 行。
+- `app/conversion/runtime/page_repair_runtime.py`：179 行。
+- `app/conversion/runtime/render_config_runtime.py`：214 行。
+- `app/conversion/runtime/table_long_renderer.py`：362 行。
+- `app/conversion/runtime/table_render_runtime.py`：367 行。
+- `app/conversion/runtime/text_rendering.py`：713 行。
+- `app/conversion/runtime/translation_runtime.py`：690 行。
+- `app/conversion/runtime_config.py`：11 行。
+- `app/conversion/runtime_facade.py`：28 行。
+- `app/conversion/runtime_helpers.py`：207 行。
+- `app/conversion/runtime_models.py`：122 行。
+- `app/conversion/runtime_rendering_api.py`：361 行。
+- `app/conversion/runtime_runner.py`：274 行。
+- `app/conversion/service.py`：113 行。
+- `app/domains/jobs/artifact_integrity.py`：71 行。
+- `app/domains/jobs/artifact_retention.py`：166 行。
+- `app/domains/jobs/artifact_storage.py`：80 行。
+- `app/domains/jobs/artifacts.py`：112 行。
+- `app/domains/jobs/command.py`：175 行。
+- `app/domains/jobs/dispatch.py`：49 行。
+- `app/domains/jobs/ingest_router.py`：342 行。
+- `app/domains/jobs/lifecycle.py`：295 行。
+- `app/domains/jobs/object_artifact_storage.py`：277 行。
+- `app/domains/jobs/ops_router.py`：192 行。
+- `app/domains/jobs/presenters.py`：118 行。
+- `app/domains/jobs/query.py`：91 行。
+- `app/domains/jobs/query_router.py`：198 行。
+- `app/domains/jobs/router.py`：14 行。
+- `app/domains/jobs/schemas.py`：165 行。
+- `app/domains/jobs/stage.py`：897 行。
+- `app/domains/jobs/workflow.py`：525 行。
+- `app/domains/jobs/workflow_events.py`：80 行。
+- `app/infrastructure/persistence/file/stage_messages.py`：62 行。
+- `app/infrastructure/persistence/mysql/stage_messages.py`：123 行。
+- `app/infrastructure/persistence/sqlite/stage_messages.py`：112 行。
+- `app/workers/stage_worker.py`：47 行。
+- `scripts/dev/run_stage_worker.py`：37 行。
+- `scripts/ops/check_local_file_storage_integrity.py`：407 行。
+- `scripts/ops/shadow_copy_metadata_to_database.py`：352 行。
+- `scripts/ops/shadow_copy_metadata_to_mysql.py`：213 行。
+- `scripts/ops/shadow_upload_artifacts_to_object_storage.py`：213 行。
+- `tests/runtime_direct_loaders.py`：797 行。
+- `tests/test_artifact_shadow_upload.py`：91 行。
+- `tests/test_job_artifact_contract.py`：138 行。
+- `tests/test_llm_client_characterization.py`：113 行。
+- `tests/test_local_file_storage_integrity_check.py`：160 行。
+- `tests/test_metadata_shadow_copy.py`：210 行。
+- `tests/test_page_flow_characterization.py`：74 行。
+- `tests/test_page_layout_characterization.py`：635 行。
+- `tests/test_page_repair_characterization.py`：131 行。
+- `tests/test_render_table_from_html_characterization.py`：701 行。
+- `tests/test_runtime_direct_loaders.py`：130 行。
+- `tests/test_s3_artifact_storage.py`：108 行。
+- `tests/test_translation_runtime_characterization.py`：265 行。
+
+## 已移除测试及范围
+
+- `tests/test_artifact_retention.py::ArtifactRetentionTests.test_retention_dry_run_selects_local_and_object_artifacts_by_status_and_age`：仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。
+- `tests/test_artifact_shadow_upload.py::ArtifactShadowUploadTests.test_object_adapter_download_prefers_object_and_keeps_local_fallback`：仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。
+- `tests/test_artifact_shadow_upload.py::ArtifactShadowUploadTests.test_shadow_upload_updates_job_files_and_is_idempotent`：仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。
+- `tests/test_conversion_sandbox_dev_tools.py::OfficialConversionRuntimeBindingTests.test_runtime_facade_load_pages_binds_model_classes`：仅检查旧运行时动态绑定；正式本地 adapter 测试保留。
+- `tests/test_database_job_repository.py::PersistenceAdapterTests.test_replay_pending_flow_uses_database_repository`：仅覆盖旧 stage 启动重放与仓储；正式仓储及事件测试保留。
+- `tests/test_fastapi_jobs_backend.py::FastAPIJobsBackendTests.test_api_error_handlers_map_domain_exceptions`：仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。
+- `tests/test_fastapi_jobs_backend.py::FastAPIJobsBackendTests.test_callback_rejects_non_parsing_job_status`：仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。
+- `tests/test_fastapi_jobs_backend.py::FastAPIJobsBackendTests.test_convert_parsed_result_fails_when_result_zip_download_fails`：仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。
+- `tests/test_fastapi_jobs_backend.py::FastAPIJobsBackendTests.test_dispatch_skips_completed_conversion_message_without_rerunning_conversion`：仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。
+- `tests/test_fastapi_jobs_backend.py::FastAPIJobsBackendTests.test_dispatch_skips_duplicate_callback_after_job_completed`：仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。
+- `tests/test_fastapi_jobs_backend.py::FastAPIJobsBackendTests.test_dispatch_skips_replayed_mineru_submit_after_batch_recorded`：仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。
+- `tests/test_fastapi_jobs_backend.py::FastAPIJobsBackendTests.test_enqueue_parsed_result_conversion_downloads_zip_and_completes_docx`：仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。
+- `tests/test_fastapi_jobs_backend.py::FastAPIJobsBackendTests.test_find_job_for_callback_reads_nested_source_pdf_context`：仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。
+- `tests/test_fastapi_jobs_backend.py::FastAPIJobsBackendTests.test_health_ready_reports_stage_spool_status_counts`：仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。
+- `tests/test_fastapi_jobs_backend.py::FastAPIJobsBackendTests.test_replay_pending_replays_pending_and_running_stage_messages_only`：仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。
+- `tests/test_formal_conversion_configuration.py::FormalConversionConfigurationTests.test_legacy_exports_and_generated_config_share_formal_objects`：仅移除旧配置导出断言；正式生成配置与默认值断言在重命名方法中保留。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_collect_middle_visual_blocks_collects_and_deduplicates_visuals`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_load_content_pages_error_points_to_nearby_mineru_output_directory`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_load_content_pages_falls_back_to_legacy`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_load_content_pages_prefers_v2_when_both_exist`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_load_content_pages_reuses_final_promotional_page_rule_for_legacy`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_load_content_pages_reuses_shared_final_promotional_page_rule`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_load_middle_pages_reads_layout_json_page_sizes`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_load_middle_pages_returns_empty_without_middle_json`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_materialize_input_extracts_zip_to_temp_directory`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_materialize_input_rejects_unsupported_path`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_materialize_input_rejects_zip_path_traversal`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_materialize_input_yields_directory_as_is`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_parse_legacy_block_maps_text_and_list`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_parse_v2_block_keeps_spacing_around_inline_equation_fragments`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_parse_v2_block_maps_page_decorations_and_equation`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_parse_v2_block_maps_title_paragraph_and_list`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_parse_v2_block_preserves_html_scripts_and_semantic_formula_sources`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_parse_v2_block_preserves_inline_equation_sources_inside_paragraph`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_parse_v2_block_removes_details_from_content_list_paragraph_text`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_parse_v2_block_splits_toc_like_multiline_paragraph`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_parse_visual_block_maps_visual_metadata`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_parse_visual_block_merges_numbered_footnote_fragments`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_parse_visual_block_returns_table_placeholder_for_images_directory`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_resolve_asset_path_returns_real_image_file_from_images_directory`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_input_adapter_characterization.py::InputAdapterCharacterizationTests.test_resolve_local_run_options_falls_back_to_configured_input_for_project_root`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_job_artifact_contract.py::JobArtifactContractTests.test_artifact_alias_file_type_media_type_and_paths_are_stable`：仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。
+- `tests/test_job_artifact_contract.py::JobArtifactContractTests.test_download_artifact_contract_supports_stream_and_redirect_shapes`：仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。
+- `tests/test_job_artifact_contract.py::JobArtifactContractTests.test_legacy_job_file_without_fingerprint_remains_valid`：仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。
+- `tests/test_job_artifact_contract.py::JobArtifactContractTests.test_parsed_result_package_contract_is_stable`：仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_cancel_transition_rejects_converting_job`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_cleanup_transition_requires_completed_job`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_conversion_started_transition_marks_converting_and_clears_error`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_conversion_transitions_cover_failed_and_completed_paths`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_mineru_callback_done_transition_marks_job_parsed`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_mineru_callback_failed_transition_marks_job_failed`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_mineru_callback_transition_rejects_completed_job`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_mineru_submit_failed_transition_marks_job_failed`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_mineru_submit_transitions_reject_non_pdf_jobs`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_mineru_submit_transitions_update_pdf_job_context`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_parsed_result_stage_requires_parsed_idle_pdf_job`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_retry_pdf_transition_resets_mineru_context`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_stage_enqueue_transition_marks_job_queued`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_job_workflow_policy.py::JobWorkflowPolicyTests.test_stage_enqueue_transition_rejects_wrong_stage_owner`：仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。
+- `tests/test_llm_client_characterization.py::LLMClientCharacterizationTests.test_build_client_requires_api_key`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_llm_client_characterization.py::LLMClientCharacterizationTests.test_build_client_requires_sdk`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_llm_client_characterization.py::LLMClientCharacterizationTests.test_build_system_prompt_reads_template_file`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_llm_client_characterization.py::LLMClientCharacterizationTests.test_build_system_prompt_selects_ru2zh_template`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_llm_client_characterization.py::LLMClientCharacterizationTests.test_parse_json_response_accepts_code_fence`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_llm_client_characterization.py::LLMClientCharacterizationTests.test_translate_payload_uses_chat_completion_items`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_local_file_storage_integrity_check.py::LocalFileStorageIntegrityCheckTests.test_empty_data_dir_does_not_create_files`：仅覆盖已删除旧 jobs/stage 元数据运维脚本。
+- `tests/test_local_file_storage_integrity_check.py::LocalFileStorageIntegrityCheckTests.test_reports_counts_missing_artifacts_and_non_migratable_items`：仅覆盖已删除旧 jobs/stage 元数据运维脚本。
+- `tests/test_local_file_storage_integrity_check.py::LocalFileStorageIntegrityCheckTests.test_reports_fingerprint_mismatches_and_legacy_warning`：仅覆盖已删除旧 jobs/stage 元数据运维脚本。
+- `tests/test_metadata_shadow_copy.py::MetadataShadowCopyTests.test_shadow_copy_is_idempotent_and_does_not_duplicate_metadata`：仅覆盖已删除旧 jobs/stage 元数据运维脚本。
+- `tests/test_metadata_shadow_copy.py::MetadataShadowCopyTests.test_shadow_copy_to_mysql_refuses_non_empty_target_by_default`：仅覆盖已删除旧 jobs/stage 元数据运维脚本。
+- `tests/test_metadata_shadow_copy.py::MetadataShadowCopyTests.test_shadow_copy_writes_database_and_validates_all_metadata`：仅覆盖已删除旧 jobs/stage 元数据运维脚本。
+- `tests/test_metadata_shadow_copy.py::MetadataShadowCopyTests.test_shadow_copy_writes_mysql_and_validates_all_metadata`：仅覆盖已删除旧 jobs/stage 元数据运维脚本。
+- `tests/test_metadata_shadow_copy.py::MetadataShadowCopyTests.test_validate_reports_mismatched_database_metadata`：仅覆盖已删除旧 jobs/stage 元数据运维脚本。
+- `tests/test_mineru_download_boundary.py::MinerUDownloadBoundaryTests.test_legacy_saved_result_recovery_uses_real_downloader`：仅覆盖旧 stage 结果恢复；正式轮询与回调下载边界保留。
+- `tests/test_page_flow_characterization.py::PageFlowCharacterizationTests.test_plan_page_breaks_before_unit_when_anchor_would_be_orphaned`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_flow_characterization.py::PageFlowCharacterizationTests.test_table_anchor_includes_caption_and_visible_rows`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_build_document_reuses_single_section_for_same_orientation_flow_pages`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_build_document_skips_empty_page_and_keeps_toc_continuation_mode`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_build_regions_detects_two_col_band_then_one_col_region`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_build_regions_keeps_separated_source_columns_in_one_two_col_region`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_configure_section_prefers_yaml_page_size_over_source_pdf_page_size`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_configure_section_uses_default_word_page_size_not_source_pdf_page_size`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_is_toc_continuation_page_true_for_toc_like_list_page`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_is_toc_page_true_for_english_contents_title`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_is_toc_page_true_for_explicit_directory_title`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_render_block_into_container_disables_keep_with_next_before_visual_block`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_render_block_into_container_promotes_bullet_like_paragraph_to_list`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_render_document_page_body_renders_mixed_toc_remainder_as_body`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_render_page_body_applies_flow_plan_break_before_region`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_render_page_body_skips_primary_product_title_when_requested`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_should_start_new_section_false_for_appendix_entry_inside_toc_continuation`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_should_start_new_section_false_for_consecutive_normal_pages`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_should_start_new_section_false_for_top_level_title_after_short_visual_page`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_should_start_new_section_false_when_previous_visual_page_already_overflows`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_should_start_new_section_ignores_source_orientation_when_word_page_size_is_configured`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_should_start_new_section_true_for_appendix_title_page`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_should_start_new_section_true_for_english_appendix_title_page`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_should_start_new_section_true_for_top_level_title_after_dense_visual_page`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_should_start_new_section_true_when_leaving_toc`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_split_page_blocks_separates_header_footer_page_number_and_body`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_split_toc_column_blocks_rejects_single_column_toc`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_split_toc_column_blocks_uses_source_left_and_right_toc_columns`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_layout_characterization.py::PageLayoutCharacterizationTests.test_split_toc_page_blocks_separates_later_body_title`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_repair_characterization.py::PageRepairCharacterizationTests.test_attach_table_continuations_moves_placeholder_heights_to_last_real_table`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_repair_characterization.py::PageRepairCharacterizationTests.test_bbox_distance_sums_coordinate_deltas`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_repair_characterization.py::PageRepairCharacterizationTests.test_find_best_visual_match_picks_closest_same_type_under_threshold`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_repair_characterization.py::PageRepairCharacterizationTests.test_find_best_visual_match_returns_none_when_distance_too_large`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_repair_characterization.py::PageRepairCharacterizationTests.test_load_pages_merges_middle_sorts_blocks_and_attaches_continuations`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_page_repair_characterization.py::PageRepairCharacterizationTests.test_merge_page_with_middle_backfills_header_and_visual_metadata`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_config_characterization.py::RenderConfigCharacterizationTests.test_apply_document_language_overrides_keeps_non_english_config_unchanged`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_config_characterization.py::RenderConfigCharacterizationTests.test_apply_document_language_overrides_preserves_explicit_new_font_fields`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_config_characterization.py::RenderConfigCharacterizationTests.test_apply_document_language_overrides_uses_english_font_without_changing_config_sizes`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_config_characterization.py::RenderConfigCharacterizationTests.test_load_paragraph_styles_maps_yaml_keys_to_word_styles`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_config_characterization.py::RenderConfigCharacterizationTests.test_load_render_config_keeps_non_empty_terminology`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_config_characterization.py::RenderConfigCharacterizationTests.test_load_render_config_omits_empty_terminology`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_config_characterization.py::RenderConfigCharacterizationTests.test_load_section_layout_falls_back_to_default_layout_without_template_or_config`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_config_characterization.py::RenderConfigCharacterizationTests.test_load_section_layout_uses_template_base_and_yaml_overrides_selected_fields`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_config_characterization.py::RenderConfigCharacterizationTests.test_load_table_style_maps_header_bold_flag`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_config_characterization.py::RenderConfigCharacterizationTests.test_resolve_document_language_detects_english_from_page_content`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_config_characterization.py::RenderConfigCharacterizationTests.test_resolve_document_language_honors_explicit_override`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_estimate_long_table_page_capacity_subtracts_caption_height`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_estimated_table_under_long_threshold_does_not_use_large_table_path`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_fill_table_cell_applies_configured_header_fill`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_fill_table_cell_keeps_header_cell_plain`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_five_column_datasheet_table_uses_wide_description_column`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_large_complex_table_uses_fallback_renderer`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_large_simple_table_uses_chunk_renderer`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_later_th_cells_are_treated_as_table_headers`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_numbered_section_table_caption_uses_heading_style`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_remove_table_borders_applies_printable_grid`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_remove_table_borders_uses_configured_border_color`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_render_long_simple_table_uses_single_continuous_table_with_repeating_header`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_render_normalized_text_fragment_falls_back_for_unknown_markup`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_render_normalized_text_fragment_handles_sub_sup_without_beautifulsoup`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_returns_false_when_html_table_cannot_be_parsed`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_small_table_renders_standard_table_and_appends_caption_and_footnote`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_split_long_simple_table_rows_uses_word_capacity_without_source_page_scaling`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_split_long_simple_table_rows_without_source_pages_keeps_default_packing`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_standard_table_marks_rows_for_word_pagination`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_render_table_from_html_characterization.py::RenderTableFromHtmlCharacterizationTests.test_terminology_replacement_runs_before_table_parsing`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_runtime_direct_loaders.py::RuntimeDirectLoaderIsolationTests.test_loaders_do_not_leak_missing_modules_or_parent_attributes`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_runtime_direct_loaders.py::RuntimeDirectLoaderIsolationTests.test_loaders_restore_loaded_modules_and_parent_packages`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_runtime_direct_loaders.py::RuntimeDirectLoaderIsolationTests.test_loaders_restore_partially_loaded_services_package`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_runtime_direct_loaders.py::RuntimeDirectLoaderIsolationTests.test_text_loader_does_not_bind_stub_font_rules_to_real_docx`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_s3_artifact_storage.py::S3ArtifactStorageTests.test_s3_adapter_streams_object_body_when_configured`：仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。
+- `tests/test_s3_artifact_storage.py::S3ArtifactStorageTests.test_s3_adapter_uploads_local_artifact_and_returns_presigned_redirect`：仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_apply_named_style_config_updates_paragraph_format`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_apply_run_defaults_keeps_legacy_single_font_behavior`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_apply_run_defaults_preserves_explicit_empty_font_inheritance`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_apply_run_defaults_writes_independent_font_slots`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_fill_body_paragraph_applies_normal_style_and_prepared_text`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_fill_list_paragraph_uses_word_numbering_without_manual_marker`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_fill_title_paragraph_allows_disabling_keep_with_next`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_fill_title_paragraph_uses_cover_title_style_on_first_page`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_fill_title_paragraph_uses_heading_style_for_numbered_title`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_fill_toc_entry_paragraph_uses_dot_leader_tab_for_page_number`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_fill_toc_entry_paragraph_uses_supplied_usable_width_for_tab_stop`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_is_cover_title_rejects_english_contents_heading`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_prepare_text_applies_terminology_after_formula_normalization`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_text_render_characterization.py::TextRenderCharacterizationTests.test_render_inline_html_into_paragraph_fallback_applies_requested_flags`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_translation_runtime_characterization.py::TranslationRuntimeCharacterizationTests.test_apply_translation_responses_restores_placeholders_and_rewrites_html_cells`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_translation_runtime_characterization.py::TranslationRuntimeCharacterizationTests.test_batching_extends_to_complete_section_when_page_boundary_splits_it`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_translation_runtime_characterization.py::TranslationRuntimeCharacterizationTests.test_batching_splits_oversized_section_by_page_and_marks_continuation`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_translation_runtime_characterization.py::TranslationRuntimeCharacterizationTests.test_build_translation_trace_payload_records_ai_and_final_text`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_translation_runtime_characterization.py::TranslationRuntimeCharacterizationTests.test_extract_translation_items_includes_cyrillic_text_for_ru2zh`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_translation_runtime_characterization.py::TranslationRuntimeCharacterizationTests.test_extract_translation_items_skips_page_decorations`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_translation_runtime_characterization.py::TranslationRuntimeCharacterizationTests.test_extract_translation_items_uses_stable_minimal_ids`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_translation_runtime_characterization.py::TranslationRuntimeCharacterizationTests.test_load_translation_response_file_accepts_batch_payload`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_translation_runtime_characterization.py::TranslationRuntimeCharacterizationTests.test_request_payload_keeps_llm_items_minimal`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。
+- `tests/test_translation_runtime_characterization.py::TranslationRuntimeCharacterizationTests.test_validate_translation_responses_rejects_placeholder_mismatch`：仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。

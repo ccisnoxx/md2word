@@ -13273,10 +13273,6 @@
             "title": "Resources",
             "type": "object"
           },
-          "stage_dispatcher": {
-            "title": "Stage Dispatcher",
-            "type": "string"
-          },
           "stage_messages": {
             "additionalProperties": {
               "type": "integer"
@@ -13301,7 +13297,6 @@
           "metadata_store",
           "artifact_storage",
           "worker_mode",
-          "stage_dispatcher",
           "jobs",
           "stage_messages",
           "resources",
@@ -13338,7 +13333,6 @@
           "source": {
             "enum": [
               "readiness",
-              "stage_spool",
               "jobs",
               "document_job_callbacks"
             ],
@@ -13449,26 +13443,6 @@
             "title": "Running Jobs",
             "type": "integer"
           },
-          "stage_dispatcher": {
-            "title": "Stage Dispatcher",
-            "type": "string"
-          },
-          "stage_failed_messages": {
-            "title": "Stage Failed Messages",
-            "type": "integer"
-          },
-          "stage_message_store": {
-            "title": "Stage Message Store",
-            "type": "string"
-          },
-          "stage_replayable_messages": {
-            "title": "Stage Replayable Messages",
-            "type": "integer"
-          },
-          "stage_stale_running_messages": {
-            "title": "Stage Stale Running Messages",
-            "type": "integer"
-          },
           "worker_mode": {
             "title": "Worker Mode",
             "type": "string"
@@ -13477,17 +13451,12 @@
         "required": [
           "readiness_blockers",
           "readiness_warnings",
-          "stage_failed_messages",
-          "stage_stale_running_messages",
-          "stage_replayable_messages",
           "callback_failed_messages",
           "callback_replayable_messages",
           "callback_oldest_replayable_age_seconds",
           "failed_jobs",
           "running_jobs",
           "worker_mode",
-          "stage_dispatcher",
-          "stage_message_store",
           "artifact_storage"
         ],
         "title": "HealthOpsAlertSummary",

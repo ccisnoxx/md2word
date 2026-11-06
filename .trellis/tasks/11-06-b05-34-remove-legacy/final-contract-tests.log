@@ -1,0 +1,45 @@
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+test_export_openapi_writes_snapshot_and_check_passes (tests.test_openapi_export.OpenAPIExportTests.test_export_openapi_writes_snapshot_and_check_passes) ... ok
+test_legacy_jobs_api_paths_are_removed (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_legacy_jobs_api_paths_are_removed) ... 2026-11-06 16:11:45,739 | business | WARNING | [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+2026-11-06 16:11:45,740 | access | INFO | [trace_id=7161b3ac7a7d4b41a9fe970506a8b3a6 method=GET path=/api/v1/jobs status_code=404 duration_ms=0.3]
+2026-11-06 16:11:45,740 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/jobs "HTTP/1.1 404 Not Found"
+2026-11-06 16:11:45,741 | access | INFO | [trace_id=4dcf5b7c7a6f40ec847e8327ad837d89 method=POST path=/api/v1/jobs status_code=404 duration_ms=0.2]
+2026-11-06 16:11:45,741 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/jobs "HTTP/1.1 404 Not Found"
+2026-11-06 16:11:45,741 | access | INFO | [trace_id=02e310fa545b4bfdbbc8bf326a4f8491 method=POST path=/api/v1/jobs/pdf status_code=404 duration_ms=0.2]
+2026-11-06 16:11:45,742 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/jobs/pdf "HTTP/1.1 404 Not Found"
+2026-11-06 16:11:45,742 | access | INFO | [trace_id=3b57a249080c4485a5a53e2a58ae11f5 method=GET path=/api/v1/jobs/job_removed status_code=404 duration_ms=0.2]
+2026-11-06 16:11:45,742 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/jobs/job_removed "HTTP/1.1 404 Not Found"
+2026-11-06 16:11:45,743 | access | INFO | [trace_id=016589190d4c4d37b2ab80208ebf774e method=GET path=/api/v1/jobs/job_removed/files status_code=404 duration_ms=0.2]
+2026-11-06 16:11:45,743 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/jobs/job_removed/files "HTTP/1.1 404 Not Found"
+2026-11-06 16:11:45,743 | access | INFO | [trace_id=024d1ffeacbd410a839eaca1a0a2d3bf method=GET path=/api/v1/jobs/job_removed/events status_code=404 duration_ms=0.3]
+2026-11-06 16:11:45,743 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/jobs/job_removed/events "HTTP/1.1 404 Not Found"
+2026-11-06 16:11:45,744 | access | INFO | [trace_id=5a52d1a3351a4320a16e21b453336d0b method=GET path=/api/v1/jobs/job_removed/result status_code=404 duration_ms=0.2]
+2026-11-06 16:11:45,744 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/jobs/job_removed/result "HTTP/1.1 404 Not Found"
+2026-11-06 16:11:45,744 | access | INFO | [trace_id=143889b8f4da458e8ae53c1921099675 method=GET path=/api/v1/jobs/job_removed/download/result status_code=404 duration_ms=0.2]
+2026-11-06 16:11:45,744 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/jobs/job_removed/download/result "HTTP/1.1 404 Not Found"
+2026-11-06 16:11:45,745 | access | INFO | [trace_id=658f272bd4df468e9df72451a42f1acc method=POST path=/api/v1/jobs/job_removed/retry status_code=404 duration_ms=0.2]
+2026-11-06 16:11:45,745 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/jobs/job_removed/retry "HTTP/1.1 404 Not Found"
+2026-11-06 16:11:45,745 | access | INFO | [trace_id=cb0f8f3091c04a7f87753ca4e4b7da45 method=POST path=/api/v1/jobs/job_removed/cancel status_code=404 duration_ms=0.2]
+2026-11-06 16:11:45,745 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/jobs/job_removed/cancel "HTTP/1.1 404 Not Found"
+2026-11-06 16:11:45,746 | access | INFO | [trace_id=b3e58d5ac753497ab2563fcdc2ea6aab method=POST path=/api/v1/jobs/job_removed/recover-mineru-result status_code=404 duration_ms=0.2]
+2026-11-06 16:11:45,746 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/jobs/job_removed/recover-mineru-result "HTTP/1.1 404 Not Found"
+2026-11-06 16:11:45,746 | access | INFO | [trace_id=38fb7a76a4384d72a7103131e5d9bc20 method=POST path=/api/v1/jobs/job_removed/cleanup-local-files status_code=404 duration_ms=0.2]
+2026-11-06 16:11:45,746 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/jobs/job_removed/cleanup-local-files "HTTP/1.1 404 Not Found"
+ok
+test_render_to_bytes_preserves_html_table_spans_and_annotations (tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations) ... ok
+DocumentIRMinerUConverterLayoutTests (unittest.loader._FailedTest.DocumentIRMinerUConverterLayoutTests) ... ERROR
+
+======================================================================
+ERROR: DocumentIRMinerUConverterLayoutTests (unittest.loader._FailedTest.DocumentIRMinerUConverterLayoutTests)
+----------------------------------------------------------------------
+AttributeError: module 'tests.test_document_ir_mineru_converter_layout' has no attribute 'DocumentIRMinerUConverterLayoutTests'
+
+----------------------------------------------------------------------
+Ran 4 tests in 1.489s
+
+FAILED (errors=1)

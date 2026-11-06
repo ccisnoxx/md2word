@@ -1,0 +1,53 @@
+/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+2026-11-06 16:07:39,536 | celery.utils.functional | DEBUG | 
+def run_document_translation_batch(_task, batch_id, *, trace_id="0"):
+    return 1
+
+2026-11-06 16:07:39,536 | celery.utils.functional | DEBUG | 
+def chain(*args, **kwargs):
+    return 1
+
+2026-11-06 16:07:39,536 | celery.utils.functional | DEBUG | 
+def xstarmap(task, it):
+    return 1
+
+2026-11-06 16:07:39,536 | celery.utils.functional | DEBUG | 
+def accumulate(self, *args, **kwargs):
+    return 1
+
+2026-11-06 16:07:39,536 | celery.utils.functional | DEBUG | 
+def run_document_job(_task, job_id, *, trace_id="0"):
+    return 1
+
+2026-11-06 16:07:39,537 | celery.utils.functional | DEBUG | 
+def chord(self, header, body, partial_args=0, interval=1, countdown=2, max_retries=3, eager=4, **kwargs):
+    return 1
+
+2026-11-06 16:07:39,537 | celery.utils.functional | DEBUG | 
+def chunks(task, it, n):
+    return 1
+
+2026-11-06 16:07:39,538 | celery.utils.functional | DEBUG | 
+def unlock_chord(self, group_id, callback, interval=0, max_retries=1, result=2, Result=3, GroupResult=4, result_from_tuple=5, **kwargs):
+    return 1
+
+2026-11-06 16:07:39,538 | celery.utils.functional | DEBUG | 
+def ping():
+    return 1
+
+2026-11-06 16:07:39,538 | celery.utils.functional | DEBUG | 
+def group(self, tasks, result, group_id, partial_args, add_to_parent=0):
+    return 1
+
+2026-11-06 16:07:39,538 | celery.utils.functional | DEBUG | 
+def xmap(task, it):
+    return 1
+
+2026-11-06 16:07:39,538 | celery.utils.functional | DEBUG | 
+def backend_cleanup():
+    return 1
+
+build_runtime: passed; Celery default module imports and both formal tasks: passed

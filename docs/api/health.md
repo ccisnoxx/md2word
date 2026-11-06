@@ -63,20 +63,11 @@ Health API 当前有五条入口：
     "document_jobs_worker_backend": "celery",
     "document_jobs_celery_queue": "document-jobs",
     "document_jobs_translation_batch_celery_queue": "document-translation-batches",
-    "stage_dispatcher": "background_tasks",
-    "stage_message_store": "file",
     "artifact_storage": "local_file",
     "jobs_dir_exists": true,
     "jobs_dir_writable": true,
     "artifact_root_writable": true,
     "artifact_disk_free_bytes": 1000000000,
-    "stage_spool_dir_exists": true,
-    "stage_spool_pending_messages": 0,
-    "stage_spool_running_messages": 0,
-    "stage_spool_failed_messages": 0,
-    "stage_spool_running_stale_messages": 0,
-    "stage_spool_oldest_running_age_seconds": 0,
-    "stage_spool_needs_attention": false,
     "tmp_dir_exists": true,
     "template_docx_exists": true,
     "layout_config_exists": true,
@@ -120,18 +111,10 @@ Health API 当前有五条入口：
     "started_at": "2026-06-17T00:00:00+00:00"
   },
   "metadata_store": "mysql",
+  "jobs": {},
+  "stage_messages": {},
   "artifact_storage": "local_file",
   "worker_mode": "in_process",
-  "stage_dispatcher": "background_tasks",
-  "jobs": {
-    "completed": 12,
-    "failed": 1
-  },
-  "stage_messages": {
-    "pending": 0,
-    "running": 0,
-    "failed": 1
-  },
   "resources": {
     "template_versions": 2,
     "term_rule_set_versions": 3,
@@ -142,6 +125,15 @@ Health API 当前有五条入口：
   },
   "audit_events": {
     "total": 24
+  },
+  "document_jobs": {
+    "succeeded": 12,
+    "failed": 1
+  },
+  "document_job_callback_messages": {
+    "pending": 0,
+    "running": 0,
+    "failed": 1
   }
 }
 ```
@@ -161,26 +153,24 @@ Health API 当前有五条入口：
   "summary": {
     "readiness_blockers": 0,
     "readiness_warnings": 2,
-    "stage_failed_messages": 1,
-    "stage_stale_running_messages": 1,
-    "stage_replayable_messages": 2,
     "failed_jobs": 1,
     "running_jobs": 1,
     "worker_mode": "in_process",
-    "stage_dispatcher": "background_tasks",
-    "stage_message_store": "file",
-    "artifact_storage": "local_file"
+    "artifact_storage": "local_file",
+    "callback_failed_messages": 1,
+    "callback_replayable_messages": 0,
+    "callback_oldest_replayable_age_seconds": 0
   },
   "alerts": [
     {
-      "code": "stage_spool_failed_messages_present",
+      "code": "document_job_callback_failed_messages_present",
       "severity": "critical",
-      "source": "stage_spool",
-      "title": "存在失败的阶段消息",
-      "description": "失败的阶段消息不会自动重放，需要结合任务详情和事件流判断下一步。",
+      "source": "document_job_callbacks",
+      "title": "存在失败的 callback message",
+      "description": "失败的 document_jobs callback message 需要结合任务详情和事件流判断是否可恢复。",
       "count": 1,
-      "suggested_route": "/jobs?status=failed&sort=updated_at_desc",
-      "suggested_action": "查看失败任务和事件；如需重试，使用既有任务流程手动处理。"
+      "suggested_route": "/jobs?status=running&sort=updated_at_desc",
+      "suggested_action": "查看任务详情中的 callback 摘要；必要时使用 Ops replay action 重新投递任务。"
     }
   ],
   "safety": {
@@ -206,24 +196,15 @@ Health API 当前有五条入口：
 | `deployment.started_at` | 当前 API 进程启动时间 |
 | `configured_repository_backend` | 当前配置期望的 jobs metadata 后端；默认 `file`，可配置为 `database` 或 `mysql` |
 | `effective_repository_backend` | 当前真实接入的 jobs metadata 后端；应与运行时实际 repository adapter 一致 |
-| `worker_mode` | 当前 worker 模式；`in_process` 表示 API 同进程执行，`external` 表示独立 worker 消费 stage message |
+| `worker_mode` | 保留的 `JOBS_WORKER_MODE` 配置回显，不再控制旧 stage；正式执行模式见 `document_jobs_worker_backend` |
 | `document_jobs_worker_backend` | Document Jobs 自动执行 backend；生产基线为 `celery` |
 | `document_jobs_celery_queue` | `document_jobs.run` 投递的 Celery 主任务队列；生产默认 `document-jobs` |
 | `document_jobs_translation_batch_celery_queue` | `document_jobs.translate_batch` 投递的翻译批次队列；生产默认 `document-translation-batches`，worker 必须订阅该队列 |
-| `stage_dispatcher` | 当前后台 stage 调度 adapter；`background_tasks` 或 `external_worker` |
-| `stage_message_store` | 当前 stage message store adapter；随 jobs metadata backend 为 `file`、`database` 或 `mysql` |
 | `artifact_storage` | 当前 artifact storage adapter；默认 `local_file`，可切换为 `local_object` 或 `s3` |
 | `jobs_dir_exists` | `var/jobs/` 是否存在 |
 | `jobs_dir_writable` | 运行态根目录是否可写 |
 | `artifact_root_writable` | 当前 artifact 本地根目录是否可写；`local_file` 检查 jobs 目录，`local_object` 检查对象目录 |
 | `artifact_disk_free_bytes` | 当前 artifact 本地根所在磁盘剩余字节数；这是运行时 readiness 上下文，不是 `document_files` 已用空间统计。文件 metadata 使用量和可回收空间估算见 `GET /api/v1/files/storage/usage` |
-| `stage_spool_dir_exists` | stage spool 是否可用；file 模式检查 `var/stage_messages/`，database/mysql 模式表示数据库内 store 可用 |
-| `stage_spool_pending_messages` | 当前 pending 的 stage message 数量；启动 replay 会尝试恢复 |
-| `stage_spool_running_messages` | 当前 running 的 stage message 数量；启动 replay 会尝试恢复 |
-| `stage_spool_failed_messages` | 当前 failed 的 stage message 数量；不会被启动 replay 自动恢复 |
-| `stage_spool_running_stale_messages` | 当前 running 且 lease 已过期的 stage message 数量 |
-| `stage_spool_oldest_running_age_seconds` | 最老 running stage message 距离最后更新时间的秒数 |
-| `stage_spool_needs_attention` | 是否存在 failed 或 stale running stage message，需要人工关注 |
 | `tmp_dir_exists` | `var/tmp/` 是否存在 |
 | `template_docx_exists` | 默认 Word 模板是否可读 |
 | `layout_config_exists` | 页面布局 YAML 是否可读 |
@@ -252,7 +233,7 @@ Health API 当前有五条入口：
 | `deployment_init_ready` | 当前实例是否已满足最小运行条件 |
 | `deployment_init_missing_steps` | 若未 ready，缺少哪些步骤 |
 | `status` | `/ops-alerts` 的整体状态；`needs_attention` 表示存在 critical 告警，`watch` 表示存在 warning/info 告警，`ok` 表示当前无告警 |
-| `summary` | `/ops-alerts` 的稳定摘要，汇总 readiness、stage spool 和未归档 document_jobs 状态计数 |
+| `summary` | `/ops-alerts` 的稳定摘要，汇总 readiness、正式回调消息和未归档 document_jobs 状态计数 |
 | `alerts[]` | `/ops-alerts` 的告警列表；每项包含 `severity`、`source`、`code`、`count`、说明、建议路由和建议动作文本 |
 | `safety` | `/ops-alerts` 的安全声明；当前合同必须保持只读且不执行恢复、写入、provider 或通知动作 |
 
@@ -261,7 +242,7 @@ Health API 当前有五条入口：
 - `jobs_dir_writable=false`
   - 说明当前进程没有权限写运行态目录，上传和转换都会失败。
 - `artifact_root_writable=false`
-  - 说明当前 artifact 本地根不可写，新上传或对象 adapter shadow upload 可能失败。
+  - 说明当前 artifact 本地根不可写，正式文件写入可能失败。
 - `template_docx_exists=false`
   - 说明默认模板缺失，`direct` 和 `en2zh` 都无法成功生成 DOCX。
 - `translation_available=false`
@@ -276,9 +257,9 @@ Health API 当前有五条入口：
   - 说明已配置 MinerU token 但未配置异步回调 URL，document_jobs 可能停在 `running/parsing` 等待重投递或人工恢复。
 - `mineru_uid_missing`
   - 说明已启用 MinerU callback，但实例缺少 `MINERU_UID`，无法按官方 `uid + seed + content` 规则验签。
-- `stage_spool_pending_messages>0`
-  - 说明有上次未完成的后台 stage；应用启动时会尝试 replay。
-- `stage_spool_failed_messages>0`
-  - 说明存在失败的后台 stage message；需要结合 job 详情和 events 判断是否 retry。
-- `stage_spool_running_stale_messages>0`
-  - 说明存在超过 lease 的 running stage message；`in_process` 可先重启服务触发 replay，`external` 应检查 `scripts/dev/run_stage_worker.py` 进程是否仍在运行。
+- `document_job_callback_replayable_messages>0`
+  - 正式 callback 仍有 pending/running 消息；结合任务事件、Worker 状态和正式恢复流程排查。
+- `document_job_callback_failed_messages>0`
+  - 查看任务 callback 摘要与事件，按现有 Ops preview/execute 合同决定恢复动作。
+
+B05 第 3、4 步已移除旧 stage spool 观察字段、告警与旧 jobs 读取；metrics 的 `jobs={}`、`stage_messages={}` 只为既有消费者保留空字段，不读取旧仓储；正式回调、P0、翻译、Poppler、资源、磁盘、审计和运行中任务检查保持。

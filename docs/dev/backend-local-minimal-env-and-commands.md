@@ -123,7 +123,7 @@ TEMPLATE_STATE_PATH=data/config/template_state.json
   - 需要安装 `PyMySQL`，并配置 `JOBS_MYSQL_HOST/PORT/USER/PASSWORD/DATABASE`
   - artifact 二进制文件仍由 `JOBS_ARTIFACT_STORAGE_BACKEND` 控制，默认继续保存在本地 jobs 目录
   - 启动后 `/health/ready` 预期显示 `configured_repository_backend=mysql`、`effective_repository_backend=mysql`、`stage_message_store=mysql`
-  - 从 file metadata 切 MySQL 前，可用 `scripts/ops/shadow_copy_metadata_to_mysql.py` 做空目标 shadow copy 和 `--validate-only` 复核
+  - 旧 file metadata 到 MySQL 的 shadow copy 运维脚本已随 B05 移除。
 - `JOBS_ARTIFACT_STORAGE_BACKEND=local_file`
   - 是代码默认值，保留 artifact 二进制在 `data/jobs/{job_id}/`
   - 可显式切到 `local_object` 或 `s3`

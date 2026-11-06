@@ -1,0 +1,34 @@
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default)
+验证 real-send preview 默认 blocked，且不解析 secret、不调用 provider、不写 audit。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_real_alert_delivery_rejects_non_pilot_targets_and_bad_confirmation (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_rejects_non_pilot_targets_and_bad_confirmation)
+验证 real-send 只接受固定 pilot destination、alert code 和 confirmation。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_real_alert_delivery_kill_switch_blocks_before_secret_and_provider (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_kill_switch_blocks_before_secret_and_provider)
+验证 kill switch 在解析 secret 和调用 provider 前阻断，并写入脱敏 audit。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_real_alert_delivery_success_uses_injected_provider_and_dedupes (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_success_uses_injected_provider_and_dedupes)
+验证 real-send 成功路径使用注入 provider，重复请求 dedupe 且不泄露 secret。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_real_alert_delivery_rate_limits_failed_provider_attempts (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_rate_limits_failed_provider_attempts)
+验证 provider 失败尝试达到 Phase 7 rate limit 后不再调用 provider。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_integration_capabilities_report_enabled_quota_without_external_side_effects (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_integration_capabilities_report_enabled_quota_without_external_side_effects)
+验证 control plane 可报告 ready quota，同时其他真实外部能力仍保持 blocked。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_ops_integration_capabilities_report_phase7_slack_pilot_ready_without_side_effects (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_integration_capabilities_report_phase7_slack_pilot_ready_without_side_effects)
+验证 control plane 可报告 Phase 7 Slack pilot ready，但不解析 secret 或调用 provider。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_health_metrics_reports_runtime_counters (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_metrics_reports_runtime_counters) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 1.177s
+
+OK

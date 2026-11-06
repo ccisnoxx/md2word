@@ -21,7 +21,6 @@ Evidence:
 - `app/domains/document_jobs/service.py`
 - `app/domains/document_jobs/router.py`
 - `app/domains/files/service.py`
-- `app/domains/jobs/workflow.py`
 - `tests/test_internal_user_management.py`
 - `tests/test_fastapi_jobs_backend.py`
 
@@ -61,34 +60,27 @@ When introducing a new stable API error code, add it to the `ApiErrorCode` liter
 Current dominant convention for new application code is `ApiError`, but `HTTPException` still exists in the codebase:
 
 - `app/api/errors.py` wraps `HTTPException` into the unified error shape.
-- Helper functions such as `not_found_http_exception()`, `bad_request_http_exception()`, and `artifact_download_http_exception()` map lower-level exceptions.
+- `not_found_http_exception()` 和 `bad_request_http_exception()` 将底层异常映射为 HTTP 错误。
 - Some existing routers, such as parts of `app/domains/term_rules/proposals_router.py` and `app/domains/config_workbench/router.py`, still raise `HTTPException` directly.
 
 当前未建立此约定：the repository has not fully eliminated direct `HTTPException`. Prefer `ApiError` for new domain/service behavior and use direct `HTTPException` only when matching an existing local router helper or FastAPI boundary pattern.
 
-## Workflow And Conversion Errors
+## 正式任务与资源快照错误
 
-Workflow policy errors are centralized in `app/domains/jobs/workflow.py`:
+正式任务状态规则由 `document_jobs` 领域维护，API 使用 `ApiError` 统一错误合同。旧 workflow/conversion 专属异常和 HTTP 映射已删除。
 
-- `JobWorkflowViolation` represents illegal job state/variant transitions.
-- `app/api/errors.py` maps it to HTTP 409 with `error_code="job_state_conflict"`.
-
-Conversion failures use `ConversionFailure` from `app/conversion/contracts.py`, mapped to HTTP 503 with `error_code="conversion_failed"`.
-
-Resource snapshot failures use `JobResourceSnapshotError`, mapped through its own status code and `error_code="resource_snapshot_error"`.
-
-Do not duplicate workflow state checks in routers when the rule already belongs in `workflow.py` or the owning service. Existing `JobStageService` applies transitions from `app/domains/jobs/workflow.py` instead of hand-building status patches in each stage branch.
+`JobResourceSnapshotError` 仍由正式任务资源绑定使用，按自身状态码映射为 `resource_snapshot_error`；不能随旧 Jobs 实现删除。
 
 ## MinerU 结果下载边界
 
 ### 1. 范围与触发
 
-修改结果 ZIP 下载、callback URL guard 或两条客户端工厂时应用此合同。供应商 API 返回值、已入队消息和持久化结果 URL 均须在实际下载边界检查；入队时已验证不能代替发送前校验。
+修改结果 ZIP 下载、callback URL guard 或正式客户端工厂时应用此合同。供应商 API 返回值、已入队消息和持久化结果 URL 均须在实际下载边界检查；入队时已验证不能代替发送前校验。
 
 ### 2. 签名与 owner
 
 - 唯一策略：`app/clients/mineru_result_url.py::validate_mineru_result_url(full_zip_url: str, allowed_hosts: Sequence[str]) -> None`，非法时抛安全 `ValueError`。
-- `MinerUClient(*, api_token, result_host_allowlist, model_version="vlm", user_token="")`：结果名单为必传参数，由正式与 legacy 两个工厂从 `Settings.allowed_mineru_result_hosts` 注入。
+- `MinerUClient(*, api_token, result_host_allowlist, model_version="vlm", user_token="")`：结果名单为必传参数，由正式 `DocumentJobExecutionService` 客户端工厂从 `Settings.allowed_mineru_result_hosts` 注入。
 - `download_result_zip(result_url: str, output_path: Path) -> Path`：先检查初始 URL，再由下载专用 Session 在公开 `send` 边界检查每个实际请求。
 
 ### 3. 合同
@@ -107,7 +99,6 @@ Do not duplicate workflow state checks in routers when the rule already belongs 
 | 下载策略、Requests 传输/解析/流读取或跳转上限失败 | 安全 MinerUError，抑制原始异常链；违规目标零请求。 |
 | 最终非 200 | MinerUError，可保留状态码，不含完整 URL/上游异常。 |
 | 正式 Worker 下载失败 | parsing/mineru_failed；不登记成功原始 ZIP。 |
-| legacy parsed 恢复失败 | 保持 parsed_result_download_failed。 |
 | 本地文件 OSError | 保持原错误类别，不包装为供应商错误。 |
 
 应用主动记录的下载日志、外抛错误及格式化异常链不得包含原始 URL、Location、query、userinfo 或上游异常 repr。此合同不声明依赖库 DEBUG/代理日志已全面脱敏。
@@ -120,7 +111,7 @@ Do not duplicate workflow state checks in routers when the rule already belongs 
 
 ### 6. 定向验证
 
-`tests.test_mineru_download_boundary` 保留真实客户端和 Requests 重定向流程，只替换网络发送端；检查请求目标、字节、资源关闭、错误/日志脱敏、两个工厂及正式轮询/回调/legacy 三入口。既有 callback checksum、入队、去重、取消和 legacy 下载失败按 B03 implement.md 中指定的 5 个方法执行；不运行整个大型 backend 测试模块或发布聚合脚本。
+`tests.test_mineru_download_boundary` 保留真实客户端和 Requests 重定向流程，只替换网络发送端；检查请求目标、字节、资源关闭、错误/日志脱敏、正式客户端工厂及轮询/回调入口。保留既有 callback checksum、入队、去重与取消回归；不运行整个大型 backend 测试模块或发布聚合脚本。
 
 ### 7. 错误与正确做法
 
@@ -215,7 +206,7 @@ Only use this pattern when the API response schema explicitly represents per-ite
 
 ## Unexpected Exceptions
 
-The HTTP middleware in `app/main.py` logs unexpected exceptions on the `system` logger with trace, method, path, and duration, then re-raises. Stage execution uses `JobStageService._handle_stage_failure()` to update job/stage state, append events, and log business failures.
+The HTTP middleware in `app/main.py` logs unexpected exceptions on the `system` logger with trace, method, path, and duration, then re-raises. 正式阶段失败由 `document_jobs` execution 与 `_failure_policy.py` 更新任务、追加事件并记录脱敏业务错误。
 
 Do not add broad silent `except Exception` blocks that hide errors. If an exception is caught, either convert it to a stable `ApiError`/workflow transition or preserve it in stage/job diagnostic state.
 

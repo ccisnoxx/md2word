@@ -18,13 +18,12 @@ from app.infrastructure.persistence.mysql.document_jobs import (
     MysqlDocumentJobRepository,
     MysqlDocumentJobTranslationBatchRepository,
 )
-from app.infrastructure.persistence.mysql.files import MysqlDocumentFileRepository, MysqlJobFileRepository
+from app.infrastructure.persistence.mysql.files import MysqlDocumentFileRepository
 from app.infrastructure.persistence.mysql.internal_users import MysqlInternalUserRepository
-from app.infrastructure.persistence.mysql.jobs import MysqlJobEventRepository, MysqlJobSnapshotRepository
+from app.infrastructure.persistence.mysql.jobs import MysqlJobEventRepository
 from app.infrastructure.persistence.mysql.retention_policies import MysqlRetentionPolicyRepository
 from app.infrastructure.persistence.mysql.resources import MysqlResourceVersionRepository
 from app.infrastructure.persistence.mysql.saved_views import MysqlSavedViewRepository
-from app.infrastructure.persistence.mysql.stage_messages import MysqlStageMessageStore
 from app.infrastructure.persistence.mysql.term_assets import MysqlTermRuleAssetRepository, MysqlTranslationTermRepository
 from app.infrastructure.persistence.mysql.term_rule_proposals import MysqlTermRuleProposalRepository
 from app.infrastructure.persistence.mysql.term_rule_review import MysqlTermRuleReviewRepository
@@ -41,8 +40,6 @@ __all__ = [
     "MysqlDocumentJobTranslationBatchRepository",
     "MysqlInternalUserRepository",
     "MysqlJobEventRepository",
-    "MysqlJobFileRepository",
-    "MysqlJobSnapshotRepository",
     "MysqlPersistenceBackend",
     "MysqlPersistenceConfig",
     "MysqlRetentionCleanupLockRepository",
@@ -50,7 +47,6 @@ __all__ = [
     "MysqlRetentionPolicyRepository",
     "MysqlResourceVersionRepository",
     "MysqlSavedViewRepository",
-    "MysqlStageMessageStore",
     "MysqlTermRuleAssetRepository",
     "MysqlTermRuleProposalRepository",
     "MysqlTermRuleReviewRepository",

@@ -57,15 +57,9 @@ Questions to answer:
 - `DocumentJobActionId`、前端动作类型与 `check_release.py` 的静态契约检查应同步维护。`publish` 和 `new_generation` 在兼容旧响应时保持可选，缺失动作不能被前端默认启用，也不能由前端推算后端权限。
 - 门禁回归需同时覆盖有效契约通过、过时快照失败、动作枚举遗漏失败，以及新增动作可选性丢失失败。同步类型不意味着增加可见操作入口。
 
-### characterization 测试替身隔离
+### 共享解析与渲染测试
 
-- `tests/runtime_direct_loaders.py` 的依赖替身只在直接加载期间生效，结束后恢复原有模块表及已有项目父包属性；返回的测试模块可以保留自己的局部替身绑定。
-- 保留“先运行文本 characterization，再运行真实布局完整性校验”的顺序回归。后续校验必须读取真实 `docx.Document`，不能用调整测试顺序、重导入依赖或放松完整性断言掩盖全局替身泄漏。
-
-### characterization 数学与配置夹具
-
-- 输入适配器按共享 `mineru_content` 的当前合同保留 LaTeX 数学源，核对周围正文、题注分组与编号表注守恒；原生公式生成由正式 renderer 验证。不能为满足旧 HTML 断言恢复有损拍平，真实 HTML sub/sup 输入应单独保留语义回归。
-- 共享 `TerminologyReplacer` 的加载测试使用真实临时 YAML 文件，实际验证优先级、作用域和大小写规则；不能用测试自身的 Python 文件加局部 `safe_load` 替身代替真实加载。无效 YAML 的解析拒绝必须保留，不能转成空规则成功。
+旧转换运行时专属 characterization 与直接加载替身已随实现删除。共享 `docx_rules`、表格解析和正式 DocumentIR/renderer 的必要回归继续保留；不能以旧实现测试替代正式输出合同。真实 DOCX 校验应读取实际 `docx.Document`，不得使用污染全局模块表的替身掩盖失败。
 
 ### 复核状态与成功渲染夹具
 

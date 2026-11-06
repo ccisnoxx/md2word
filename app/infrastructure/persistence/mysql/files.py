@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# app/infrastructure/persistence/mysql/files.py: MySQL backend 的 job files 和 document files adapter。
+# app/infrastructure/persistence/mysql/files.py: MySQL backend的正式文档文件仓储。
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -8,7 +8,6 @@ from datetime import datetime
 import json
 from typing import Any
 
-from app.domains.jobs.models import JobFile
 from app.domains.files.models import DocumentFileRecord
 from app.domains.document_jobs.list_query import document_file_review_projection_from_raw
 from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend
@@ -16,37 +15,6 @@ from app.domains.files.result_registration import (
     expired_file, materialized_file, patched_file, ensure_file_mutation_allowed,
     reserved_file_deletion, finished_file_deletion, ensure_new_file_identity, ensure_result_descriptor_matches,
 )
-
-
-class MysqlJobFileRepository:
-    """用 MySQL backend 读写 JobFile artifact metadata。"""
-
-    def __init__(self, backend: MysqlPersistenceBackend) -> None:
-        self.backend = backend
-
-    def upsert_file(self, job_id: str, file: JobFile) -> None:
-        with self.backend.connect() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO job_files (job_id, file_type, payload, created_at)
-                    VALUES (%s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                        payload = VALUES(payload),
-                        created_at = VALUES(created_at)
-                    """,
-                    (job_id, file.file_type, self.backend.dump_payload(file), file.created_at.isoformat()),
-                )
-
-    def list_files(self, job_id: str) -> list[JobFile]:
-        with self.backend.connect() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT payload FROM job_files WHERE job_id = %s ORDER BY created_at, file_type",
-                    (job_id,),
-                )
-                rows = cursor.fetchall()
-        return [JobFile.model_validate_json(row["payload"]) for row in rows]
 
 
 class MysqlDocumentFileRepository:
