@@ -1,0 +1,28 @@
+{
+  "id": "b07-frontend-routes",
+  "name": "b07-frontend-routes",
+  "title": "B07 前端路由按需加载与任务详情职责拆分",
+  "description": "B07 动态路由与 JobDetail 职责拆分；用户已确认三件套后直接实施",
+  "status": "completed",
+  "dev_type": "frontend",
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-06",
+  "completedAt": "2026-11-06",
+  "branch": "codex/b07-frontend-routes",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "本地实施与定向验证完成；103 项定向测试、前后构建及 32 组 mock 浏览器对照通过。未提交/推送/发布/归档，不代表 Claude 已验收。",
+  "meta": {
+    "acceptance": "pending_external_review"
+  }
+}

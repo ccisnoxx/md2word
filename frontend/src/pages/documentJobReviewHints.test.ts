@@ -1,27 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, effectScope, ref, watch, type ComputedRef, type Ref } from "vue";
+import { computed, effectScope, reactive } from "vue";
 
 import { apiRequest } from "@/api/client";
 import { documentJobsApi } from "@/api/documentJobs";
 import type {
-  DocumentJobActionId,
   DocumentJobResponse,
   DocumentReviewBlockItemResponse,
   DocumentReviewBlocksResponse,
   DocumentReviewSourceSpanResponse,
 } from "@/api/types";
-import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import {
-  documentJobActionDisabledReason,
-  documentJobModeRequiresTranslationResources,
-  documentJobModeSupportsTranslationQa,
   documentReviewFlagSuggestion,
   documentReviewSourcePagesText,
-  isDocumentJobActionEnabled,
-  shouldShowDocumentJobAction,
 } from "@/utils/format";
 import JobDetailPage from "./JobDetailPage.vue";
-import { deferred, executePageRequests } from "./pageRequestTestSupport";
+import { deferred } from "./pageRequestTestSupport";
+import { useJobDetailData } from "@/features/job-detail/useJobDetailData";
+import { useJobDetailReviewHints } from "@/features/job-detail/useJobDetailReviewHints";
+import { useJobDetailResources } from "@/features/job-detail/useJobDetailResources";
+import { useJobDetailBatches } from "@/features/job-detail/useJobDetailBatches";
+import { useJobDetailDiagnostics } from "@/features/job-detail/useJobDetailDiagnostics";
+
+const lifecycle = vi.hoisted(() => ({ unmount: undefined as (() => void) | undefined }));
+vi.mock("vue", async (importOriginal) => ({
+  ...await importOriginal<typeof import("vue")>(),
+  onMounted: vi.fn(),
+  onBeforeUnmount: (callback: () => void) => { lifecycle.unmount = callback; },
+}));
 
 vi.mock("@/api/client", () => ({ apiRequest: vi.fn() }));
 
@@ -127,58 +132,29 @@ const snapshotBindings = [
   },
 ] as const;
 
-type PageCore = {
-  job: Ref<DocumentJobResponse | null>;
-  reviewBlocks: Ref<DocumentReviewBlocksResponse | null>;
-  reviewBlocksLoading: Ref<boolean>;
-  reviewBlocksError: Ref<ApiClientError | null>;
-  reviewBlocksConflict: Ref<boolean>;
-  reviewHintsAvailable: ComputedRef<boolean>;
-  reviewHintItems: ComputedRef<DocumentReviewBlockItemResponse[]>;
-  reviewHintCounts: ComputedRef<{ blocker: number; warning: number; info: number }>;
-  reviewHintSummary: ComputedRef<string>;
-  reviewHintNotice: ComputedRef<string>;
-  reviewHintsHaveWarnings: ComputedRef<boolean>;
-  dispositionAlertType: ComputedRef<string>;
-  dispositionTitle: ComputedRef<string>;
-  dispositionDescription: ComputedRef<string>;
-  downloadHint: ComputedRef<string>;
-  actionSummaries: ComputedRef<Array<{ key: DocumentJobActionId; enabled: boolean; reason: string }>>;
-  loadReviewBlocks: (append?: boolean, targetJobId?: string) => Promise<void>;
-  loadAll: (options?: { secondary?: "all" | "smart" }) => Promise<void>;
-  resetPageStateForRouteChange: () => void;
-};
-
 const disposers: Array<() => void> = [];
 
 function setupPage() {
-  const jobId = ref("job-a");
+  const route = reactive({ params: { jobId: "job-a" }, query: {}, fullPath: "/jobs/job-a" });
+  const jobId = computed({ get: () => route.params.jobId, set: (value) => { route.params.jobId = value; } });
   const scope = effectScope();
-  let unmount: (() => void) | undefined;
-  // 执行页面真实请求、computed 和绑定 watch；其他诊断请求不参与本模块。
-  const page = scope.run(() => executePageRequests<PageCore>(new URL("./JobDetailPage.vue", import.meta.url), [
-    "job", "events", "files", "callbackSummary", "translationBatches", "translationBatchGeneration", "translationBatchExecution",
-    "loading", "eventsLoading", "filesLoading", "callbackSummaryLoading", "translationBatchesLoading",
-    "error", "eventsError", "filesError", "callbackSummaryError", "translationBatchesError", "configError", "lastDownloadLink",
-    "retryDialogVisible", "cloneDialogVisible", "eventLevelFilter", "eventStageFilter", "activeTab",
-    "reviewBlocks", "reviewBlocksLoading", "reviewBlocksError", "reviewBlocksConflict", "requestRounds", "disposed", "routeEpoch",
-    "reviewContentBinding", "reviewSourceKey", "resetReviewBlocks", "loadReviewBlocks", "isCurrentRequest", "invalidateRequests",
-    "loadJob", "loadAll", "supportsJobTranslationQa", "usesTranslationResources", "resetPageStateForRouteChange",
-    "reviewHintsAvailable", "reviewHintItems", "reviewHintCounts", "reviewHintSummary", "reviewHintNotice", "reviewHintsHaveWarnings",
-    "downloadHint", "dispositionAlertType", "dispositionTitle", "dispositionDescription", "taskActionOrder", "actionSummaries",
-  ], {
-    ref, computed, watch, jobId, documentJobsApi, normalizeApiError,
-    documentJobActionDisabledReason, isDocumentJobActionEnabled, shouldShowDocumentJobAction,
-    documentJobModeRequiresTranslationResources, documentJobModeSupportsTranslationQa,
-    isJobStale: ref(false), failureHelpText: ref("失败详情"),
-    loadEvents: vi.fn().mockResolvedValue(undefined), loadFiles: vi.fn().mockResolvedValue(undefined),
-    loadCallbackSummary: vi.fn().mockResolvedValue(undefined), loadTranslationBatches: vi.fn().mockResolvedValue(undefined),
-    shouldRefreshSecondaryDuringPoll: () => false, syncPolling: vi.fn(), stopPolling: vi.fn(),
-    route: { query: {} }, openRetryDialog: vi.fn(), handleVisibilityChange: vi.fn(),
-    document: { removeEventListener: vi.fn() },
-    onBeforeUnmount: (callback: () => void) => { unmount = callback; },
-  }, ["onBeforeUnmount", "watch"]))!;
+  vi.stubGlobal("window", { setInterval: vi.fn(), clearInterval: vi.fn() });
+  vi.stubGlobal("document", { hidden: false, addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  vi.spyOn(documentJobsApi, "listEvents").mockResolvedValue({ items: [] } as never);
+  vi.spyOn(documentJobsApi, "listFiles").mockResolvedValue({ files: [] } as never);
+  vi.spyOn(documentJobsApi, "getCallbackMessageSummary").mockResolvedValue({ status_counts: {}, recent_problem_messages: [] } as never);
+  vi.spyOn(documentJobsApi, "listTranslationBatches").mockResolvedValue({ generation: 0, items: [] } as never);
+  // 直接组合生产 composable，保留真实的同步复核绑定 watch。
+  const page = scope.run(() => {
+    const data = useJobDetailData(route, { onRetryRequested: vi.fn(), onRouteReset: vi.fn() });
+    const resources = useJobDetailResources(data);
+    const review = useJobDetailReviewHints(data);
+    const batches = useJobDetailBatches(data);
+    const diagnostics = useJobDetailDiagnostics(data, review, resources, batches);
+    return { ...data, ...review, ...diagnostics };
+  })!;
   page.job.value = makeJob();
+  const unmount = lifecycle.unmount;
   const dispose = () => { unmount?.(); scope.stop(); };
   disposers.push(dispose);
   return { ...page, jobId, dispose };
@@ -190,6 +166,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   disposers.splice(0).forEach((dispose) => dispose());
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("只读复核提示的 API 与展示投影", () => {

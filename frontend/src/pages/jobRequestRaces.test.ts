@@ -1,8 +1,28 @@
-import { reactive, ref } from "vue";
-import { describe, expect, it, vi } from "vitest";
+import { computed, reactive, ref } from "vue";
+import { documentJobsApi } from "@/api/documentJobs";
+import { useJobDetailData } from "@/features/job-detail/useJobDetailData";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { normalizeApiError } from "@/utils/errors";
 import { deferred, executePageRequests } from "./pageRequestTestSupport";
+
+const hooks = vi.hoisted(() => ({
+  mounted: [] as Array<() => Promise<void>>,
+  unmount: [] as Array<() => void>,
+  watches: [] as Array<(...args: any[]) => any>,
+}));
+vi.mock("vue", async (importOriginal) => ({
+  ...await importOriginal<typeof import("vue")>(),
+  onMounted: (callback: () => Promise<void>) => hooks.mounted.push(callback),
+  onBeforeUnmount: (callback: () => void) => hooks.unmount.push(callback),
+  watch: (_source: unknown, callback: (...args: any[]) => any) => hooks.watches.push(callback),
+}));
+vi.mock("@/api/documentJobs", () => ({ documentJobsApi: {
+  get: vi.fn(), listEvents: vi.fn(), listFiles: vi.fn(), getCallbackMessageSummary: vi.fn(),
+  listTranslationBatches: vi.fn(), listReviewBlocks: vi.fn(),
+} }));
+
+afterEach(() => vi.unstubAllGlobals());
 
 type Request = (...args: any[]) => Promise<any>;
 
@@ -95,55 +115,42 @@ describe("JobsPage 请求轮次", () => {
 });
 
 const detailLoaders = [
-  { loader: "loadJob", api: "get", data: "job", loading: "loading", error: "error", response: (id: string) => ({ id, mode: "translate", status: "running", retry_count: 0 }) },
+  { loader: "loadJob", api: "get", data: "job", loading: "loading", error: "error", response: (id: string) => ({ id, mode: "en2zh_pdf_to_word", status: "running", retry_count: 0 }) },
   { loader: "loadEvents", api: "listEvents", data: "events", loading: "eventsLoading", error: "eventsError", response: (id: string) => ({ items: [id] }) },
   { loader: "loadFiles", api: "listFiles", data: "files", loading: "filesLoading", error: "filesError", response: (id: string) => ({ files: [id] }) },
   { loader: "loadCallbackSummary", api: "getCallbackMessageSummary", data: "callbackSummary", loading: "callbackSummaryLoading", error: "callbackSummaryError", response: (id: string) => ({ id }) },
   { loader: "loadTranslationBatches", api: "listTranslationBatches", data: "translationBatches", loading: "translationBatchesLoading", error: "translationBatchesError", response: (id: string) => ({ items: [id], generation: 0, execution: { outcome: id } }) },
 ] as const;
 
-function setupDetail(includeLifecycle = false) {
-  const state: Record<string, any> = {
-    jobId: ref("job-a"), job: ref(detailLoaders[0].response("job-a")), events: ref([]), files: ref([]),
-    callbackSummary: ref(null), translationBatches: ref([]), translationBatchGeneration: ref(null),
-    translationBatchExecution: ref(undefined), activeTab: ref("overview"),
-  };
-  for (const name of ["loading", "eventsLoading", "filesLoading", "callbackSummaryLoading", "translationBatchesLoading", "retryDialogVisible", "cloneDialogVisible"]) state[name] = ref(false);
-  for (const name of ["error", "eventsError", "filesError", "callbackSummaryError", "translationBatchesError", "configError", "lastDownloadLink"]) state[name] = ref(null);
-  state.eventLevelFilter = ref("");
-  state.eventStageFilter = ref("");
-  const api = Object.fromEntries(detailLoaders.map((item) => [item.api, vi.fn<Request>().mockResolvedValue(item.response("default"))]));
-  const mounted: Array<() => Promise<void>> = [];
-  let unmount!: () => void;
-  const watchCallbacks: Array<(...args: any[]) => any> = [];
+function setupDetail(_includeLifecycle = false) {
+  hooks.mounted.length = 0;
+  hooks.unmount.length = 0;
+  hooks.watches.length = 0;
+  const api = vi.mocked(documentJobsApi) as unknown as Record<string, ReturnType<typeof vi.fn<Request>>>;
+  for (const item of detailLoaders) {
+    api[item.api].mockReset().mockResolvedValue(item.response("default") as never);
+  }
+  api.listReviewBlocks.mockReset().mockResolvedValue({} as never);
   const ticks: Array<() => void> = [];
   const browser = {
     setInterval: vi.fn((callback: () => void) => { ticks.push(callback); return ticks.length; }),
     clearInterval: vi.fn(),
   };
-  const route = reactive({ query: { retry: "" } });
+  vi.stubGlobal("window", browser);
+  vi.stubGlobal("document", { hidden: false, addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  const route = reactive({ params: { jobId: "job-a" }, query: { retry: "" }, fullPath: "/jobs/job-a" });
   const openRetryDialog = vi.fn();
-  const functions = executePageRequests<Record<string, Request>>(
-    new URL("./JobDetailPage.vue", import.meta.url),
-    [
-      ...detailLoaders.map((item) => item.loader), "loadAll", "isCurrentRequest", "invalidateRequests",
-      "requestRounds", "disposed", "routeEpoch", "translationBatchRequestRound", "pollTimer", "pollRefreshCount",
-      "stopPolling", "syncPolling", "shouldRefreshSecondaryDuringPoll", "resetPageStateForRouteChange",
-      "handleVisibilityChange",
-    ],
-    {
-      ...state, route, documentJobsApi: api, normalizeApiError,
-      supportsJobTranslationQa: (job: { mode?: string } | null) => job?.mode === "translate",
-      isActiveJobStatus: (status: string) => status === "running",
-      onBeforeUnmount: (callback: () => void) => { unmount = callback; },
-      onMounted: (callback: () => Promise<void>) => mounted.push(callback),
-      watch: (_source: unknown, callback: (...args: any[]) => any) => watchCallbacks.push(callback),
-      openRetryDialog, window: browser,
-      document: { hidden: false, addEventListener: vi.fn(), removeEventListener: vi.fn() },
-    },
-    includeLifecycle ? ["onBeforeUnmount", "onMounted", "watch"] : ["onBeforeUnmount"],
-  );
-  return { state, route, functions, api, browser, ticks, mounted, watchCallbacks, openRetryDialog, unmount: () => unmount() };
+  const data = useJobDetailData(route, { onRetryRequested: openRetryDialog, onRouteReset: vi.fn() });
+  data.job.value = detailLoaders[0].response("job-a") as never;
+  const state: Record<string, any> = {
+    ...data,
+    jobId: computed({ get: () => route.params.jobId, set: (value) => { route.params.jobId = value; } }),
+  };
+  return {
+    state, route, functions: data, api, browser, ticks,
+    mounted: [...hooks.mounted], watchCallbacks: [...hooks.watches], openRetryDialog,
+    unmount: () => hooks.unmount.forEach((callback) => callback()),
+  };
 }
 
 describe("JobDetailPage 请求轮次", () => {
@@ -263,12 +270,12 @@ describe("JobDetailPage 请求轮次", () => {
     const enteredEvents = deferred<void>();
     const failedJob = { ...detailLoaders[0].response("job-a"), status: "failed" };
     page.route.query.retry = "1";
-    page.api.get.mockResolvedValue(failedJob);
+    page.api.get.mockResolvedValue(failedJob as never);
     page.api.listEvents.mockImplementationOnce(() => {
       enteredEvents.resolve(undefined);
       return pendingEvents.promise;
     });
-    const initial = entry === "mounted" ? page.mounted[0]() : page.watchCallbacks[1]("job-a", "old");
+    const initial = entry === "mounted" ? page.mounted[0]() : page.watchCallbacks[2]("job-a", "old");
     await enteredEvents.promise;
     await page.functions.loadAll();
     pendingEvents.resolve({ items: ["old"] });
@@ -284,12 +291,12 @@ describe("JobDetailPage 请求轮次", () => {
     const pendingEvents = deferred<unknown>();
     const enteredEvents = deferred<void>();
     page.route.query.retry = "1";
-    page.api.get.mockResolvedValue({ ...detailLoaders[0].response("job-a"), status: "failed" });
+    page.api.get.mockResolvedValue({ ...detailLoaders[0].response("job-a"), status: "failed" } as never);
     page.api.listEvents.mockImplementationOnce(() => {
       enteredEvents.resolve(undefined);
       return pendingEvents.promise;
     });
-    const initial = entry === "mounted" ? page.mounted[0]() : page.watchCallbacks[1]("job-a", "old");
+    const initial = entry === "mounted" ? page.mounted[0]() : page.watchCallbacks[2]("job-a", "old");
     await enteredEvents.promise;
     page.state.jobId.value = "job-b";
     page.functions.resetPageStateForRouteChange();
@@ -307,7 +314,7 @@ describe("JobDetailPage 请求轮次", () => {
     const pending = deferred<unknown>();
     page.api.get.mockReturnValueOnce(pending.promise);
     page.route.query.retry = "1";
-    const request = entry === "mounted" ? page.mounted[0]() : page.watchCallbacks[1]("job-a", "old");
+    const request = entry === "mounted" ? page.mounted[0]() : page.watchCallbacks[2]("job-a", "old");
     page.state.job.value = { ...detailLoaders[0].response("job-a"), status: "failed" };
     page.unmount();
     pending.resolve(detailLoaders[0].response("job-a"));
