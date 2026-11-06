@@ -1,0 +1,150 @@
+{
+  "assertions": [
+    {
+      "method": "test_document_job_invalid_callback_checksum_leaves_no_callback_message",
+      "line": 9537,
+      "assertion_count_before": 6,
+      "assertion_count_after": 6,
+      "assertions_identical": true
+    },
+    {
+      "method": "test_document_job_mineru_callback_queues_before_worker_completes_parse",
+      "line": 9282,
+      "assertion_count_before": 28,
+      "assertion_count_after": 28,
+      "assertions_identical": true
+    },
+    {
+      "method": "test_document_job_mineru_callback_dedupes_duplicate_delivery_before_worker",
+      "line": 9370,
+      "assertion_count_before": 11,
+      "assertion_count_after": 11,
+      "assertions_identical": true
+    },
+    {
+      "method": "test_document_job_worker_ignores_queued_callback_after_cancel",
+      "line": 9429,
+      "assertion_count_before": 10,
+      "assertion_count_after": 10,
+      "assertions_identical": true
+    }
+  ],
+  "baseline_preservation": [
+    {
+      "path": ".trellis/spec/backend/error-handling.md",
+      "unchanged": true
+    },
+    {
+      "path": "app/api/mineru_callback_guards.py",
+      "unchanged": true
+    },
+    {
+      "path": "app/clients/mineru_client.py",
+      "unchanged": true
+    },
+    {
+      "path": "app/domains/document_jobs/execution.py",
+      "unchanged": true
+    },
+    {
+      "path": "app/domains/jobs/mineru_callback.py",
+      "unchanged": true
+    },
+    {
+      "path": "app/domains/jobs/stage.py",
+      "unchanged": true
+    },
+    {
+      "path": "docs/api/mineru-callbacks.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-mineru-download-boundary/check.jsonl",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-mineru-download-boundary/design.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-mineru-download-boundary/implement.jsonl",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-mineru-download-boundary/implement.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-mineru-download-boundary/implementation-validation.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-mineru-download-boundary/planning-validation.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-mineru-download-boundary/prd.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-mineru-download-boundary/research/current-state.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-mineru-download-boundary/research/upstream.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-mineru-download-boundary/task.json",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-mineru-download-boundary/validation/baseline-targeted-tests.log",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-source-audit-remediation-plan/check.jsonl",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-source-audit-remediation-plan/design.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-source-audit-remediation-plan/implement.jsonl",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-source-audit-remediation-plan/implement.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-source-audit-remediation-plan/planning-validation.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-source-audit-remediation-plan/prd.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-source-audit-remediation-plan/research/audit-matrix.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-source-audit-remediation-plan/research/existing-work.md",
+      "unchanged": true
+    },
+    {
+      "path": ".trellis/tasks/11-06-source-audit-remediation-plan/task.json",
+      "unchanged": true
+    },
+    {
+      "path": "app/clients/mineru_result_url.py",
+      "unchanged": true
+    },
+    {
+      "path": "tests/test_mineru_download_boundary.py",
+      "unchanged": true
+    }
+  ]
+}

@@ -9287,7 +9287,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
-                public_deployment_mode="single_tenant_public",
+                public_deployment_mode="internal",
                 mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
@@ -9304,6 +9304,7 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=headers,
                     json={"source_file_id": source_file["id"]},
                 )
+                self.assertEqual(create_response.status_code, 201)
                 job_id = create_response.json()["job_id"]
                 waiting_job = runtime.document_job_repository.get_document_job(job_id)
                 payload, content = build_callback_payload(
@@ -9335,7 +9336,6 @@ class FastAPIJobsBackendTests(TestCase):
                 processed_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
                 fake_client = runtime.document_job_execution_service.fake_mineru_client
 
-        self.assertEqual(create_response.status_code, 201)
         self.assertEqual(create_response.json()["status"], "running")
         self.assertEqual(create_response.json()["stage"], "parsing")
         self.assertIsNotNone(waiting_job)
@@ -9375,7 +9375,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
-                public_deployment_mode="single_tenant_public",
+                public_deployment_mode="internal",
                 mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
@@ -9392,6 +9392,7 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=headers,
                     json={"source_file_id": source_file["id"]},
                 )
+                self.assertEqual(create_response.status_code, 201)
                 job_id = create_response.json()["job_id"]
                 waiting_job = runtime.document_job_repository.get_document_job(job_id)
                 payload, content = build_callback_payload(
@@ -9414,7 +9415,6 @@ class FastAPIJobsBackendTests(TestCase):
                 processed_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
                 fake_client = runtime.document_job_execution_service.fake_mineru_client
 
-        self.assertEqual(create_response.status_code, 201)
         self.assertEqual(first_callback_response.status_code, 200)
         self.assertEqual(second_callback_response.status_code, 200)
         self.assertEqual(queued_counts["pending"], 1)
@@ -9434,7 +9434,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
-                public_deployment_mode="single_tenant_public",
+                public_deployment_mode="internal",
                 mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
@@ -9451,6 +9451,7 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=headers,
                     json={"source_file_id": source_file["id"]},
                 )
+                self.assertEqual(create_response.status_code, 201)
                 job_id = create_response.json()["job_id"]
                 waiting_job = runtime.document_job_repository.get_document_job(job_id)
                 payload, content = build_callback_payload(
@@ -9471,7 +9472,6 @@ class FastAPIJobsBackendTests(TestCase):
                 final_job = runtime.document_job_repository.get_document_job(job_id)
                 fake_client = runtime.document_job_execution_service.fake_mineru_client
 
-        self.assertEqual(create_response.status_code, 201)
         self.assertEqual(callback_response.status_code, 200)
         self.assertEqual(cancel_response.status_code, 200)
         self.assertIsNotNone(worker_result)
@@ -9541,7 +9541,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
-                public_deployment_mode="single_tenant_public",
+                public_deployment_mode="internal",
                 mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
@@ -9558,6 +9558,7 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=headers,
                     json={"source_file_id": source_file["id"]},
                 )
+                self.assertEqual(create_response.status_code, 201)
                 job_id = create_response.json()["job_id"]
                 waiting_job = runtime.document_job_repository.get_document_job(job_id)
                 payload, _content = build_callback_payload(
@@ -9571,7 +9572,6 @@ class FastAPIJobsBackendTests(TestCase):
                 counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
                 final_job = runtime.document_job_repository.get_document_job(job_id)
 
-        self.assertEqual(create_response.status_code, 201)
         self.assertEqual(callback_response.status_code, 403)
         self.assertEqual(sum(counts.values()), 0)
         self.assertIsNotNone(final_job)

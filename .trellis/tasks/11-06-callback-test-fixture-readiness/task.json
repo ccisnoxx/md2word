@@ -1,0 +1,43 @@
+{
+  "id": "callback-test-fixture-readiness",
+  "name": "callback-test-fixture-readiness",
+  "title": "MinerU 回调测试夹具修复（4 个既有用例）",
+  "description": "定位四个既有回调测试创建任务失败的夹具原因，先制定最小修复与定向验收计划，用户确认后实施；不引入CI、不全量测试、不提交推送。",
+  "status": "completed",
+  "dev_type": "backend",
+  "scope": "tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-11-06",
+  "completedAt": "2026-11-06",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "tests/test_fastapi_jobs_backend.py"
+  ],
+  "notes": "四例最小夹具修复及独立检查完成；4/4通过、55条原断言保留。证据已回填B03。本轮只整理记录，不再测试；未提交/推送/归档。",
+  "meta": {
+    "implementation_authorized": true,
+    "planning_gate": "approved",
+    "related_task": ".trellis/tasks/11-06-mineru-download-boundary",
+    "validation_scope": "仅四个指定回调用例；无CI、全量测试、提交或推送",
+    "implementation_approval": "用户确认最小方案：四例改为 internal，前移创建成功断言，保留行为断言；只运行四例，无共享夹具/业务修改、CI、全量测试、提交或推送。",
+    "implementation_complete": true,
+    "targeted_acceptance": "4/4 PASS，1.021s，exit 0；仅运行计划四例一次",
+    "review_result": "实施验收时无候选范围内问题，29个既有路径保持不变；随后仅按用户授权同步三个任务记录。",
+    "completion_scope": "local_implementation_and_approved_targeted_acceptance",
+    "evidence_reconciled_at": "2026-11-06",
+    "reconciliation_report": ".trellis/tasks/11-06-mineru-download-boundary/acceptance-reconciliation.md",
+    "commit_authorized": false,
+    "push_authorized": false,
+    "archived": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "unittest",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_invalid_callback_checksum_leaves_no_callback_message",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_mineru_callback_queues_before_worker_completes_parse",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_mineru_callback_dedupes_duplicate_delivery_before_worker",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_worker_ignores_queued_callback_after_cancel"
+  ],
+  "cwd": "/Users/sc/PycharmProjects/md2word",
+  "started_at": "2026-11-06T04:16:11.665599+00:00",
+  "finished_at": "2026-11-06T04:16:13.620469+00:00",
+  "exit_code": 0,
+  "test_source_sha256": "e512efc3739c2a07f465869c23423e65081f820aa8cbd8bad7cbf848ff8c819c"
+}

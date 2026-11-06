@@ -1,0 +1,34 @@
+{
+  "diagnostic": "只观察未修改测试的创建任务响应，不替换配置、返回值或业务行为",
+  "test_selectors": [
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_invalid_callback_checksum_leaves_no_callback_message",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_mineru_callback_queues_before_worker_completes_parse",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_mineru_callback_dedupes_duplicate_delivery_before_worker",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_worker_ignores_queued_callback_after_cancel"
+  ],
+  "creation_responses": [
+    {
+      "status_code": 503,
+      "error_code": "document_jobs_not_ready",
+      "detail": "P0 文档任务执行链路未就绪，暂不能创建新任务。 阻断项: document_jobs_worker_backend_eager_in_production, document_jobs_metadata_store_not_mysql"
+    },
+    {
+      "status_code": 503,
+      "error_code": "document_jobs_not_ready",
+      "detail": "P0 文档任务执行链路未就绪，暂不能创建新任务。 阻断项: document_jobs_worker_backend_eager_in_production, document_jobs_metadata_store_not_mysql"
+    },
+    {
+      "status_code": 503,
+      "error_code": "document_jobs_not_ready",
+      "detail": "P0 文档任务执行链路未就绪，暂不能创建新任务。 阻断项: document_jobs_worker_backend_eager_in_production, document_jobs_metadata_store_not_mysql"
+    },
+    {
+      "status_code": 503,
+      "error_code": "document_jobs_not_ready",
+      "detail": "P0 文档任务执行链路未就绪，暂不能创建新任务。 阻断项: document_jobs_worker_backend_eager_in_production, document_jobs_metadata_store_not_mysql"
+    }
+  ],
+  "tests_run": 4,
+  "errors": 4,
+  "failures": 0
+}
