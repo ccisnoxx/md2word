@@ -1,38 +1,9 @@
-// File: frontend/src/router/index.ts
-// Purpose: 定义内部门户静态路由与认证守卫。
+// 定义内部门户按需加载的页面路由与认证守卫。
+import { ElMessage } from "element-plus";
 import { createRouter, createWebHistory, type RouteLocationNormalized } from "vue-router";
 
 import { setUnauthorizedHandler } from "@/api/client";
 import AppLayout from "@/layouts/AppLayout.vue";
-import AcceptanceCenterPage from "@/pages/AcceptanceCenterPage.vue";
-import AiProviderConfigPage from "@/pages/AiProviderConfigPage.vue";
-import AuditLogPage from "@/pages/AuditLogPage.vue";
-import FileRetentionPage from "@/pages/FileRetentionPage.vue";
-import ForbiddenPage from "@/pages/ForbiddenPage.vue";
-import IncidentTriagePage from "@/pages/IncidentTriagePage.vue";
-import JobCreatePage from "@/pages/JobCreatePage.vue";
-import JobDetailPage from "@/pages/JobDetailPage.vue";
-import JobsPage from "@/pages/JobsPage.vue";
-import LoginPage from "@/pages/LoginPage.vue";
-import MinerUConfigPage from "@/pages/MinerUConfigPage.vue";
-import OpsDashboardPage from "@/pages/OpsDashboardPage.vue";
-import OperationsCockpitPage from "@/pages/OperationsCockpitPage.vue";
-import SettingsHomePage from "@/pages/SettingsHomePage.vue";
-import SystemStatusPage from "@/pages/SystemStatusPage.vue";
-import TemplateDetailPage from "@/pages/TemplateDetailPage.vue";
-import TemplateListPage from "@/pages/TemplateListPage.vue";
-import TermRuleWorkbenchPage from "@/pages/TermRuleWorkbenchPage.vue";
-import TermRuleReviewFlowPage from "@/pages/TermRuleReviewFlowPage.vue";
-import TermRuleSetPage from "@/pages/TermRuleSetPage.vue";
-import TermProposalsPage from "@/pages/TermProposalsPage.vue";
-import TerminologyReleasesPage from "@/pages/TerminologyReleasesPage.vue";
-import TranslationProfilesPage from "@/pages/TranslationProfilesPage.vue";
-import TranslationQaQueuePage from "@/pages/TranslationQaQueuePage.vue";
-import TranslationResultQaPage from "@/pages/TranslationResultQaPage.vue";
-import TranslationTermSetPage from "@/pages/TranslationTermSetPage.vue";
-import UserManagementPage from "@/pages/UserManagementPage.vue";
-import WordPageStyleDetailPage from "@/pages/WordPageStyleDetailPage.vue";
-import WordPageStyleListPage from "@/pages/WordPageStyleListPage.vue";
 import { getDefaultProtectedRoute, type AppAccessContext } from "@/navigation/appShell";
 import { pinia } from "@/stores";
 import { useAuthStore } from "@/stores/auth";
@@ -43,7 +14,7 @@ const router = createRouter({
     {
       path: "/login",
       name: "login",
-      component: LoginPage,
+      component: () => import("@/pages/LoginPage.vue"),
       meta: { public: true },
     },
     {
@@ -51,121 +22,121 @@ const router = createRouter({
       component: AppLayout,
       meta: { requiresAuth: true },
       children: [
-        { path: "", name: "protected-root", component: OperationsCockpitPage },
-        { path: "cockpit", name: "cockpit", component: OperationsCockpitPage },
-        { path: "forbidden", name: "forbidden", component: ForbiddenPage },
-        { path: "jobs", name: "jobs", component: JobsPage, meta: { permissions: ["document_jobs:read"] } },
-        { path: "incidents", name: "incidents", component: IncidentTriagePage, meta: { permissions: ["document_jobs:read"] } },
-        { path: "jobs/new", name: "job-create", component: JobCreatePage, meta: { permissions: ["document_jobs:create"] } },
-        { path: "jobs/:jobId", name: "job-detail", component: JobDetailPage, props: true, meta: { permissions: ["document_jobs:read"] } },
+        { path: "", name: "protected-root", component: () => import("@/pages/OperationsCockpitPage.vue") },
+        { path: "cockpit", name: "cockpit", component: () => import("@/pages/OperationsCockpitPage.vue") },
+        { path: "forbidden", name: "forbidden", component: () => import("@/pages/ForbiddenPage.vue") },
+        { path: "jobs", name: "jobs", component: () => import("@/pages/JobsPage.vue"), meta: { permissions: ["document_jobs:read"] } },
+        { path: "incidents", name: "incidents", component: () => import("@/pages/IncidentTriagePage.vue"), meta: { permissions: ["document_jobs:read"] } },
+        { path: "jobs/new", name: "job-create", component: () => import("@/pages/JobCreatePage.vue"), meta: { permissions: ["document_jobs:create"] } },
+        { path: "jobs/:jobId", name: "job-detail", component: () => import("@/pages/JobDetailPage.vue"), props: true, meta: { permissions: ["document_jobs:read"] } },
         {
           path: "jobs/:jobId/translation-qa",
           name: "job-translation-qa",
-          component: TranslationResultQaPage,
+          component: () => import("@/pages/TranslationResultQaPage.vue"),
           props: true,
           meta: { permissions: ["translation_qa:read"] },
         },
-        { path: "translation-qa", name: "translation-qa", component: TranslationQaQueuePage, meta: { permissions: ["translation_qa:read"] } },
-        { path: "settings", name: "settings", component: SettingsHomePage, meta: { permissions: ["settings:read"] } },
-        { path: "settings/templates", name: "settings-templates", component: TemplateListPage, meta: { roles: ["admin"], permissions: ["settings:read"] } },
+        { path: "translation-qa", name: "translation-qa", component: () => import("@/pages/TranslationQaQueuePage.vue"), meta: { permissions: ["translation_qa:read"] } },
+        { path: "settings", name: "settings", component: () => import("@/pages/SettingsHomePage.vue"), meta: { permissions: ["settings:read"] } },
+        { path: "settings/templates", name: "settings-templates", component: () => import("@/pages/TemplateListPage.vue"), meta: { roles: ["admin"], permissions: ["settings:read"] } },
         {
           path: "settings/word-page-styles",
           name: "settings-word-page-styles",
-          component: WordPageStyleListPage,
+          component: () => import("@/pages/WordPageStyleListPage.vue"),
           meta: { roles: ["admin"], permissions: ["settings:read"] },
         },
         {
           path: "settings/word-page-styles/:templateId",
           name: "settings-word-page-style-detail",
-          component: WordPageStyleDetailPage,
+          component: () => import("@/pages/WordPageStyleDetailPage.vue"),
           props: true,
           meta: { roles: ["admin"], permissions: ["settings:read"] },
         },
         {
           path: "settings/term-rule-sets",
           name: "settings-term-rule-sets",
-          component: TermRuleSetPage,
+          component: () => import("@/pages/TermRuleSetPage.vue"),
           meta: { permissions: ["settings:read"] },
         },
         {
           path: "settings/terminology-releases",
           name: "settings-terminology-releases",
-          component: TerminologyReleasesPage,
+          component: () => import("@/pages/TerminologyReleasesPage.vue"),
           meta: { permissions: ["settings:read"] },
         },
         {
           path: "settings/term-rules",
           name: "settings-term-rules",
-          component: TermRuleWorkbenchPage,
+          component: () => import("@/pages/TermRuleWorkbenchPage.vue"),
           meta: { permissions: ["term_proposals:read"] },
         },
         {
           path: "settings/translation-profiles",
           name: "settings-translation-profiles",
-          component: TranslationProfilesPage,
+          component: () => import("@/pages/TranslationProfilesPage.vue"),
           meta: { permissions: ["settings:read"] },
         },
         {
           path: "settings/ai-provider",
           name: "settings-ai-provider",
-          component: AiProviderConfigPage,
+          component: () => import("@/pages/AiProviderConfigPage.vue"),
           meta: { roles: ["admin"], permissions: ["settings:write"] },
         },
         {
           path: "settings/mineru",
           name: "settings-mineru",
-          component: MinerUConfigPage,
+          component: () => import("@/pages/MinerUConfigPage.vue"),
           meta: { roles: ["admin"], permissions: ["settings:write"] },
         },
         {
           path: "settings/translation-term-sets",
           name: "settings-translation-term-sets",
-          component: TranslationTermSetPage,
+          component: () => import("@/pages/TranslationTermSetPage.vue"),
           meta: { permissions: ["settings:read"] },
         },
         {
           path: "settings/templates/:templateId",
           name: "settings-template-detail",
-          component: TemplateDetailPage,
+          component: () => import("@/pages/TemplateDetailPage.vue"),
           props: true,
           meta: { roles: ["admin"], permissions: ["settings:read"] },
         },
         {
           path: "term-rule-reviews",
           name: "term-rule-reviews",
-          component: TermRuleReviewFlowPage,
+          component: () => import("@/pages/TermRuleReviewFlowPage.vue"),
           meta: { permissions: ["term_proposals:read"] },
         },
-        { path: "term-proposals", name: "term-proposals", component: TermProposalsPage, meta: { permissions: ["term_proposals:read"] } },
-        { path: "system-status", name: "system-status", component: SystemStatusPage, meta: { permissions: ["system:read"] } },
+        { path: "term-proposals", name: "term-proposals", component: () => import("@/pages/TermProposalsPage.vue"), meta: { permissions: ["term_proposals:read"] } },
+        { path: "system-status", name: "system-status", component: () => import("@/pages/SystemStatusPage.vue"), meta: { permissions: ["system:read"] } },
         {
           path: "system-status/ops-dashboard",
           name: "system-status-ops-dashboard",
-          component: OpsDashboardPage,
+          component: () => import("@/pages/OpsDashboardPage.vue"),
           meta: { permissions: ["ops:read"] },
         },
         {
           path: "system-status/acceptance",
           name: "system-status-acceptance",
-          component: AcceptanceCenterPage,
+          component: () => import("@/pages/AcceptanceCenterPage.vue"),
           meta: { roles: ["admin"], permissions: ["ops:read"] },
         },
         {
           path: "system-status/audit-events",
           name: "system-status-audit-events",
-          component: AuditLogPage,
+          component: () => import("@/pages/AuditLogPage.vue"),
           meta: { permissions: ["audit:read"] },
         },
         {
           path: "system-status/users",
           name: "system-status-users",
-          component: UserManagementPage,
+          component: () => import("@/pages/UserManagementPage.vue"),
           meta: { roles: ["admin"], permissions: ["users:manage"] },
         },
         {
           path: "system-status/file-retention",
           name: "system-status-file-retention",
-          component: FileRetentionPage,
+          component: () => import("@/pages/FileRetentionPage.vue"),
           meta: { permissions: ["files:retention"] },
         },
       ],
@@ -175,6 +146,16 @@ const router = createRouter({
       redirect: "/cockpit",
     },
   ],
+});
+
+// 首次深链接失败时尚无页面可展示错误，由全局消息保留可见反馈。
+router.onError((error) => {
+  ElMessage.error({
+    message: "页面加载失败，请检查网络后重新打开此页面。",
+    duration: 0,
+    showClose: true,
+  });
+  console.error("页面导航失败：", error);
 });
 
 function authAccess(auth: ReturnType<typeof useAuthStore>): AppAccessContext {
