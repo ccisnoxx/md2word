@@ -1,0 +1,30 @@
+{
+  "id": "b08-migration-design",
+  "name": "b08-migration-design",
+  "title": "B08 schema 版本治理迁移设计",
+  "description": "仅交付迁移设计三件套；不实施代码或 DDL，生产 DROP 单独审批。",
+  "status": "planning",
+  "dev_type": "backend",
+  "scope": "design-only",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-06",
+  "completedAt": null,
+  "branch": "codex/b08-migration-design",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/11-06-b08-migration-design/prd.md",
+    ".trellis/tasks/11-06-b08-migration-design/design.md",
+    ".trellis/tasks/11-06-b08-migration-design/implement.md"
+  ],
+  "notes": "仅设计交付；保持 planning，不实施迁移代码或 DDL。B05 第 3/4 步合入及生产操作分别审批；不激活、归档、提交或更新父任务。",
+  "meta": {}
+}

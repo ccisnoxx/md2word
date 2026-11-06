@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "显式 adapter、schema 维护现状、数据保护与真实引擎验证边界"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "错误可见、禁止静默降级与敏感信息保护"}
+{"file": ".trellis/tasks/11-06-b08-migration-design/prd.md", "reason": "仅文档授权、验收与未来审批门槛"}
+{"file": ".trellis/tasks/11-06-b08-migration-design/design.md", "reason": "基线、版本账本、单执行者、中断恢复与收缩合同"}
+{"file": ".trellis/tasks/11-06-b08-migration-design/implement.md", "reason": "逐步实施、最小验证与生产授权分界"}
