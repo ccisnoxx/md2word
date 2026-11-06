@@ -1,17 +1,20 @@
 """双表回填的真实 SQLite 事务、恢复游标和原始数据保真合同。"""
 from copy import deepcopy
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import json
+import os
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch
 
 from app.core.config import Settings
 from app.domains.document_jobs.list_query import (
-    DocumentJobListProjectionUnavailable, DocumentJobListQuery, document_job_list_projection_from_raw,
+    DocumentJobListProjectionUnavailable, DocumentJobListQuery, document_job_list_storage_from_raw,
 )
 from app.infrastructure.persistence.sqlite.backend import SqlitePersistenceBackend
 from app.infrastructure.persistence.sqlite.document_jobs import SqliteDocumentJobRepository
@@ -38,6 +41,12 @@ def _old_database(path, jobs, files):
                     (key, payload, "原始列创建时间", "原始列更新时间", "原始额外列"))
         connection.execute("CREATE TABLE unrelated_audit (payload TEXT)")
         connection.execute("INSERT INTO unrelated_audit VALUES ('原有审计')")
+        connection.execute("CREATE TABLE job_events (event_id TEXT PRIMARY KEY, payload TEXT)")
+        connection.execute("INSERT INTO job_events VALUES ('event-before', '原有事件')")
+        for table in ("job_events", "unrelated_audit"):
+            for operation in ("INSERT", "UPDATE", "DELETE"):
+                connection.execute(f"CREATE TRIGGER protect_{table}_{operation} BEFORE {operation} ON {table} "
+                                   "BEGIN SELECT RAISE(ABORT, '迁移不得写其他表'); END")
 
 
 class DocumentJobListQueryMigrationTests(TestCase):
@@ -64,11 +73,11 @@ class DocumentJobListQueryMigrationTests(TestCase):
         self.assertEqual(report["exit_code"], 0)
         self.assertFalse(report["all_ready"])
         self.assertNotIn("last_successful_job_id", report)
-        for table, identity, column, version in (("document_files", "file_id", "review_query_json", 1),
-                ("document_jobs", "job_id", "list_query_json", 2)):
+        for table, identity, column, version in (("document_files", "file_id", "review_query_json", 2),
+                ("document_jobs", "job_id", "list_query_json", 3)):
             row = report["tables"][table]
             self.assertEqual((row["projection_version"], row["schema_missing"], row["committed_rows"]),
-                             (version, [column], 0))
+                             (version, list(next(target[2] for target in migration.TABLES if target[0] == table)), 0))
             self.assertEqual(row["last_successful_" + identity], "")
             self.assertEqual(row["scanned_rows"], 1)
         self.assertEqual(before, {path.name: path.read_bytes() for path in self.root.iterdir()})
@@ -139,8 +148,8 @@ class DocumentJobListQueryMigrationTests(TestCase):
                 self.assertEqual({key: new[key] for key in old}, old)
                 if table == "document_jobs":
                     projection = json.loads(new["list_query_json"])
-                    self.assertEqual(projection, document_job_list_projection_from_raw(old["payload"]))
-                    self.assertEqual((projection["version"], projection["review_status"]), (2, "unreviewed"))
+                    self.assertEqual(projection, json.loads(document_job_list_storage_from_raw(old["payload"])[0]))
+                    self.assertEqual((projection["version"], projection["review_status"]), (3, "unreviewed"))
         self.assertEqual(before["unrelated_audit"], self.rows("unrelated_audit"))
 
     def test_dry_run_preserves_database_bytes_and_reports_missing_time_and_bad_payload(self):
@@ -150,7 +159,7 @@ class DocumentJobListQueryMigrationTests(TestCase):
         report = self.migrate()
         jobs = report["tables"]["document_jobs"]
         self.assertEqual(report["exit_code"], 1)
-        self.assertEqual(jobs["schema_missing"], ["list_query_json"])
+        self.assertEqual(jobs["schema_missing"], list(migration.TABLES[1][2]))
         self.assertEqual(jobs["errors"], [{"job_id": "job-b", "category": "missing_time_key"},
                                           {"job_id": "job-c", "category": "invalid_json"}])
         self.assertEqual(jobs["last_successful_job_id"], "")
@@ -190,7 +199,7 @@ class DocumentJobListQueryMigrationTests(TestCase):
         self.assertEqual(report["exit_code"], 0, report)
         row = self.rows("document_jobs")[0]
         self.assertNotIn("created_at", json.loads(row["payload"]))
-        self.assertIsNone(row["list_query_json"])
+        self.assertTrue(all(row[name] is None for name in migration.TABLES[1][2]))
         repository = SqliteDocumentJobRepository(SqlitePersistenceBackend(self.path, initialize=False))
         with self.assertRaises(DocumentJobListProjectionUnavailable):
             repository.query_document_jobs(DocumentJobListQuery("tenant", "company"))
@@ -200,7 +209,7 @@ class DocumentJobListQueryMigrationTests(TestCase):
         report = migrate_document_job_state(Settings(_env_file=None, jobs_repository_backend="mysql"),
                                              mode="apply", mysql_connect_factory=database.connect)
         self.assertEqual(report["exit_code"], 0, report)
-        self.assertIsNone(database.document_jobs["job-a"]["list_query_json"])
+        self.assertTrue(all(database.document_jobs["job-a"][name] is None for name in migration.TABLES[1][2]))
         self.assertNotIn("created_at", json.loads(database.document_jobs["job-a"]["payload"]))
 
     def test_mysql_migration_binds_both_projections_and_locks_batches_without_rewriting_payloads(self):
@@ -220,15 +229,18 @@ class DocumentJobListQueryMigrationTests(TestCase):
                     cursor._rows = [deepcopy(row) for key, row in sorted(getattr(cursor.database, table).items())
                                     if after is None or key > after][:limit]
                     return
-                if sql.startswith("ALTER TABLE document_files ADD COLUMN"):
-                    cursor.database.table_columns["document_files"].add("review_query_json")
-                    for row in cursor.database.document_files.values():
-                        row["review_query_json"] = None
+                if sql.startswith(("ALTER TABLE document_files ADD COLUMN", "ALTER TABLE document_jobs ADD COLUMN")):
+                    table, column = sql.split()[2], sql.split()[5]
+                    cursor.database.table_columns[table].add(column)
+                    for row in getattr(cursor.database, table).values():
+                        row[column] = None
                     cursor._rows = []
                     return
                 if sql.startswith(("UPDATE document_jobs SET list_query_json", "UPDATE document_files SET review_query_json")):
-                    table, column = sql.split()[1], sql.split()[3]
-                    getattr(cursor.database, table)[params[-1]][column] = params[0]
+                    table = sql.split()[1]
+                    assignments = sql.split(" SET ")[1].split(" WHERE ")[0].split(", ")
+                    for assignment, value in zip(assignments, params[:-1], strict=True):
+                        getattr(cursor.database, table)[params[-1]][assignment.split()[0]] = value
                     cursor._rows = []
                     return
                 return super().execute(sql, params)
@@ -247,8 +259,8 @@ class DocumentJobListQueryMigrationTests(TestCase):
         statements.clear()
         applied = migration.migrate_document_job_list_query(settings, mode="apply", after_job_id="-", after_file_id="-", mysql_connect_factory=connect)
         self.assertEqual(applied["exit_code"], 0, applied)
-        for table, identity, column, version in (("document_files", "file_id", "review_query_json", 1),
-                ("document_jobs", "job_id", "list_query_json", 2)):
+        for table, identity, column, version in (("document_files", "file_id", "review_query_json", 2),
+                ("document_jobs", "job_id", "list_query_json", 3)):
             stored = next(iter(getattr(database, table).values()))
             original = next(iter(before[table].values()))
             self.assertEqual({key: stored[key] for key in original}, original)
@@ -257,7 +269,9 @@ class DocumentJobListQueryMigrationTests(TestCase):
             self.assertIn(f"CAST({identity} AS BINARY) > %s", select)
             self.assertTrue(select.endswith("FOR UPDATE"))
             update, values = next((sql, params) for sql, params in statements if sql.startswith(f"UPDATE {table}"))
-            self.assertEqual(update, f"UPDATE {table} SET {column} = %s WHERE CAST({identity} AS BINARY) = %s")
+            columns = next(target[2] for target in migration.TABLES if target[0] == table)
+            assignments = ", ".join(f"{name} = %s" for name in columns)
+            self.assertEqual(update, f"UPDATE {table} SET {assignments} WHERE CAST({identity} AS BINARY) = %s")
             self.assertEqual(values[-1], stored[identity])
         statements.clear()
         verified = migration.migrate_document_job_list_query(settings, mode="verify", mysql_connect_factory=connect)
@@ -272,7 +286,7 @@ class DocumentJobListQueryMigrationTests(TestCase):
         files = report["tables"]["document_files"]
         self.assertEqual(report["exit_code"], 1)
         self.assertEqual((files["processed_rows"], files["committed_rows"], files["last_successful_file_id"]), (0, 0, ""))
-        self.assertEqual(files["schema_added"], ["review_query_json"])
+        self.assertEqual(files["schema_added"], list(migration.TABLES[0][2]))
         self.assertTrue(all(row["review_query_json"] is None for row in self.rows("document_files")))
         self.assertIsNone(self.rows("document_jobs")[0]["list_query_json"])
         with sqlite3.connect(self.path) as connection:
@@ -290,7 +304,7 @@ class DocumentJobListQueryMigrationTests(TestCase):
         with patch.object(migration, "_execute", side_effect=fail_second):
             report = self.migrate(mode="apply")
         self.assertEqual(report["exit_code"], 1)
-        self.assertEqual(report["tables"]["document_files"]["schema_added"], ["review_query_json"])
+        self.assertEqual(report["tables"]["document_files"]["schema_added"], list(migration.TABLES[0][2]))
         self.assertEqual(report["tables"]["document_jobs"]["schema_added"], [])
         self.assertIsNone(self.rows("document_files")[0]["review_query_json"])
         self.assertNotIn("list_query_json", self.rows("document_jobs")[0])
@@ -401,7 +415,8 @@ class DocumentJobListQueryMigrationTests(TestCase):
         self.assertEqual({key: value for key, value in after.items() if key not in changed},
                          {key: value for key, value in raw.items() if key not in changed})
         self.assertEqual((row["created_at"], row["updated_at"]), ("原创建列", "原更新列"))
-        self.assertEqual(json.loads(row["list_query_json"]), document_job_list_projection_from_raw(row["payload"]))
+        self.assertEqual(tuple(row[name] for name in migration.TABLES[1][2]),
+                         document_job_list_storage_from_raw(row["payload"]))
         with sqlite3.connect(self.path) as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM document_job_review_records").fetchone()[0], 1)
         self.assertEqual(migrate_document_job_reviews(self.settings, mode="apply")["already_imported"], 1)
@@ -412,12 +427,15 @@ class DocumentJobListQueryMigrationTests(TestCase):
         with sqlite3.connect(self.path) as connection:
             connection.execute("INSERT INTO document_jobs (job_id, payload, created_at, updated_at, list_query_json) "
                 "VALUES ('job-a', ?, 'created', 'updated', 'original')", (serialized,))
+            connection.execute("UPDATE document_jobs SET list_descriptor_key = 'old-descriptor', "
+                               "list_receipt_key = 'old-receipt', list_table_snapshot_key = 'old-table'")
             connection.execute("CREATE TRIGGER fail_import BEFORE UPDATE ON document_jobs "
                                "BEGIN SELECT RAISE(ABORT, '导入失败'); END")
         report = migrate_document_job_reviews(self.settings, mode="apply")
         self.assertEqual((report["exit_code"], report["imported"]), (1, 0))
         row = self.rows("document_jobs")[0]
-        self.assertEqual((row["payload"], row["list_query_json"]), (serialized, "original"))
+        self.assertEqual((row["payload"], *(row[name] for name in migration.TABLES[1][2])),
+                         (serialized, "original", "old-descriptor", "old-receipt", "old-table"))
         with sqlite3.connect(self.path) as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM document_job_review_records").fetchone()[0], 0)
 
@@ -439,11 +457,13 @@ class DocumentJobListQueryMigrationTests(TestCase):
         with sqlite3.connect(self.path) as connection:
             connection.execute("INSERT INTO document_jobs (job_id, payload, created_at, updated_at, list_query_json) "
                 "VALUES ('job-a', ?, 'created', 'updated', 'stale')", (json.dumps(raw),))
+            connection.execute("UPDATE document_jobs SET list_descriptor_key = 'stale', "
+                               "list_receipt_key = 'stale', list_table_snapshot_key = 'stale'")
         report = migrate_document_job_reviews(self.settings, mode="apply")
         self.assertEqual(report["exit_code"], 0, report)
         row = self.rows("document_jobs")[0]
         self.assertNotIn("created_at", json.loads(row["payload"]))
-        self.assertIsNone(row["list_query_json"])
+        self.assertTrue(all(row[name] is None for name in migration.TABLES[1][2]))
 
     def test_cli_default_and_explicit_file_cursor_do_not_create_missing_database(self):
         output = StringIO()
@@ -452,3 +472,98 @@ class DocumentJobListQueryMigrationTests(TestCase):
         self.assertEqual(code, 1)
         self.assertFalse(self.path.exists())
         self.assertEqual(json.loads(output.getvalue())["mode"], "dry-run")
+
+    def test_partial_key_ddl_failure_resumes_only_missing_columns(self):
+        _old_database(self.path, {"job-a": _legacy()}, {"word": _file()})
+        execute = migration._execute
+        def fail_key(connection, backend, statement, params=()):
+            if statement.startswith("ALTER TABLE document_files ADD COLUMN review_receipt_key"):
+                raise sqlite3.OperationalError("模拟第三列 DDL 失败")
+            return execute(connection, backend, statement, params)
+        with patch.object(migration, "_execute", side_effect=fail_key):
+            failed = self.migrate(mode="apply")
+        files = failed["tables"]["document_files"]
+        self.assertEqual(failed["exit_code"], 1)
+        self.assertEqual(files["schema_added"], ["review_query_json", "review_descriptor_key"])
+        self.assertEqual(files["last_successful_file_id"], "")
+        self.assertNotIn("review_receipt_key", self.rows("document_files")[0])
+        resumed = self.migrate(mode="apply")
+        self.assertEqual(resumed["tables"]["document_files"]["schema_added"], ["review_receipt_key"])
+        self.assertTrue(self.migrate(mode="verify")["all_ready"])
+
+    def test_verify_detects_each_key_with_current_json_and_reapply_repairs_only_changed_row(self):
+        _old_database(self.path, {"job-a": _legacy()}, {"word": _file()})
+        self.assertEqual(self.migrate(mode="apply")["exit_code"], 0)
+        for table, identity, columns, _, _ in migration.TABLES:
+            for column in columns[1:]:
+                for stale in (None, "陈旧规范文本"):
+                    with self.subTest(table=table, column=column, stale=stale):
+                        with sqlite3.connect(self.path) as connection:
+                            connection.execute(f"UPDATE {table} SET {column} = ?", (stale,))
+                        before = self.path.read_bytes()
+                        report = self.migrate(mode="verify", batch_size=1)
+                        self.assertEqual(report["exit_code"], 1)
+                        expected_id = "word" if identity == "file_id" else "job-a"
+                        self.assertEqual(report["tables"][table]["mismatches"], [expected_id])
+                        self.assertEqual(before, self.path.read_bytes())
+                        with patch.object(migration, "_execute", wraps=migration._execute) as execute:
+                            fixed = self.migrate(mode="apply")
+                        self.assertEqual(fixed["exit_code"], 0)
+                        updates = [call.args[2] for call in execute.call_args_list if call.args[2].startswith("UPDATE ")]
+                        self.assertEqual(len(updates), 1)
+                        self.assertTrue(updates[0].startswith(f"UPDATE {table} "))
+        self.assertTrue(self.migrate(mode="verify")["all_ready"])
+
+    def test_idempotent_apply_issues_no_dml_and_preserves_other_tables(self):
+        _old_database(self.path, {"job-a": _legacy()}, {"word": _file()})
+        protected = {name: self.rows(name) for name in ("job_events", "unrelated_audit")}
+        self.assertEqual(self.migrate(mode="apply")["exit_code"], 0)
+        before = self.path.read_bytes()
+        with patch.object(migration, "_execute", wraps=migration._execute) as execute:
+            report = self.migrate(mode="apply")
+        self.assertEqual(report["exit_code"], 0)
+        self.assertFalse(any(call.args[2].startswith(("ALTER ", "UPDATE ", "INSERT ", "DELETE "))
+                             for call in execute.call_args_list))
+        self.assertEqual(before, self.path.read_bytes())
+        self.assertEqual(protected, {name: self.rows(name) for name in protected})
+
+    def test_review_import_requires_keys_even_with_query_json_before_any_write(self):
+        _old_database(self.path, {"job-a": _legacy()}, {})
+        with sqlite3.connect(self.path) as connection:
+            for definition in ("quality_status TEXT", "review_status TEXT", "delivery_status TEXT", "quality_summary_json TEXT",
+                               "list_query_json TEXT", "list_descriptor_key TEXT", "list_receipt_key TEXT"):
+                connection.execute("ALTER TABLE document_jobs ADD COLUMN " + definition)
+        before = self.path.read_bytes()
+        report = migrate_document_job_reviews(self.settings, mode="apply")
+        self.assertEqual(report["errors"][0]["category"], "list_query_schema_missing")
+        self.assertEqual(before, self.path.read_bytes())
+
+    def test_independent_cli_reuses_migration_and_disables_dotenv(self):
+        from scripts.ops import migrate_document_job_list_keys as keys
+        self.assertIs(keys.migrate_document_job_list_keys, migration.migrate_document_job_list_query)
+        _old_database(self.path, {"job-a": _legacy()}, {"word": _file()})
+        output = StringIO()
+        with patch.object(migration, "Settings", wraps=Settings) as settings, redirect_stdout(output):
+            code = keys.main(["--backend", "database", "--database-path", str(self.path)])
+        self.assertEqual(code, 0)
+        self.assertIsNone(settings.call_args.kwargs["_env_file"])
+        self.assertEqual(json.loads(output.getvalue())["mode"], "dry-run")
+        for args in ([], ["--backend", "database"], ["--backend", "mysql"]):
+            with self.subTest(args=args), patch.dict(os.environ, {}, clear=True), redirect_stderr(StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    keys.main(args)
+                self.assertEqual(error.exception.code, 2)
+
+
+    def test_independent_script_dry_run_is_readonly_without_pythonpath(self):
+        _old_database(self.path, {"job-a": _legacy()}, {"word": _file()})
+        before = self.path.read_bytes()
+        environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+        result = subprocess.run([sys.executable, str(migration.REPO_ROOT / "scripts/ops/migrate_document_job_list_keys.py"),
+                                 "--backend", "database", "--database-path", str(self.path)],
+                                cwd=self.root, env=environment, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["mode"], "dry-run")
+        self.assertEqual(report["tables"]["document_jobs"]["projection_version"], 3)
+        self.assertEqual(before, self.path.read_bytes())

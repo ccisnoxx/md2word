@@ -1,0 +1,32 @@
+{
+  "id": "list-loading-performance",
+  "name": "list-loading-performance",
+  "title": "线上任务工作台与异常列表加载性能排查",
+  "description": "普通列表与异常列表的本地修复、定向验证、独立复核完成；未提交/推送/部署，线上验收待后续授权。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "document_jobs",
+  "package": null,
+  "priority": "P1",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-11-06",
+  "completedAt": null,
+  "branch": "codex/list-loading-performance",
+  "base_branch": "main",
+  "worktree_path": "/Users/sc/PycharmProjects/md2word-wt/list-loading-performance",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "frontend/src/pages/JobsPage.vue",
+    "frontend/src/pages/IncidentTriagePage.vue",
+    "app/domains/document_jobs/service.py",
+    "app/domains/document_jobs/incidents.py",
+    "app/infrastructure/persistence/document_job_list_query.py"
+  ],
+  "notes": "2026-11-07 用户批准按既定计划核对并本地提交；当前执行提交与发布方案准备。推送、发布分支集成及生产变更仍按后续确认步骤执行，线上验收前保持in_progress。",
+  "meta": {}
+}

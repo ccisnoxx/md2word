@@ -1,0 +1,36 @@
+{
+  "source": "已登录Chrome admin正常页面GET；CDP仅保留路由与状态/时间，无令牌或响应正文",
+  "deployment_version": "28cacd8a",
+  "page_size": 20,
+  "visible_jobs": 74,
+  "incident_count": 6,
+  "samples_ms": {
+    "incidents_first_page": [
+      2350.973,
+      2450.462,
+      2220.444
+    ],
+    "jobs_first_page": [
+      12653.071,
+      13657.667,
+      13191.875
+    ],
+    "jobs_second_page": [
+      13188.278
+    ],
+    "jobs_no_match": [
+      11897.307
+    ]
+  },
+  "medians_ms": {
+    "incidents_first_page": 2350.973,
+    "jobs_first_page": 13191.875
+  },
+  "all_status": 200,
+  "browser_restored": "/incidents?page=1&sort=priority",
+  "notes": [
+    "异常样本含手动刷新和原自动刷新；未修改刷新设置。",
+    "responseReceived事件近似首字节，不作为严格服务器TTFB。",
+    "页面结束loading且返回原始6条异常；精确DOM就绪时间未取得，不把API时长当首屏时间。"
+  ]
+}

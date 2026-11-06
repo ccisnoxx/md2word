@@ -1,0 +1,9 @@
+{"stage": "database", "read_only": 1, "version": "8.4.9"}
+{"stage": "size", "table": "document_jobs", "rows_count": 119, "payload_bytes": 4118682.0, "projection_avg_bytes": 111623.1849, "projection_max_bytes": 2377676}
+{"stage": "size", "table": "document_files", "rows_count": 1928, "payload_bytes": 7701723.0, "projection_avg_bytes": 8995.2765, "projection_max_bytes": 2376229}
+{"stage": "scope_counts", "counts": [119]}
+{"stage": "incident_load_payloads", "seconds": 0.013011, "rows": 119}
+{"stage": "incident_decode", "seconds": 0.085468, "jobs": 119}
+{"stage": "incident_initial_review", "seconds": 0.001692, "rows": 74, "file_calls": 0, "file_seconds": 0}
+{"stage": "incident_classification_view", "seconds": 2.488179, "rows": 74, "file_calls": 68, "file_seconds": 1.864192}
+{"stage": "incident_read_details", "protection_calls": 24, "protection_seconds": 0.573995, "metrics": {"file_get": {"connect_seconds": 1.299013, "diagnostic_setup_seconds": 0.076668, "execute_seconds": 0.056993}, "protection": {"connect_seconds": 0.476491, "diagnostic_setup_seconds": 0.02714, "execute_seconds": 0.016111}}}

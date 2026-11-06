@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 import json
+import os
 from pathlib import Path
 import sqlite3
 import sys
@@ -17,8 +18,8 @@ from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.domains.document_jobs.list_query import (
-    DocumentJobListProjectionUnstable, document_file_review_projection_from_raw,
-    document_job_list_projection_from_raw,
+    DocumentJobListProjectionUnstable, document_file_review_storage_from_raw,
+    document_job_list_storage_from_raw,
 )
 from app.infrastructure.persistence.mysql.backend import ConnectFactory, MysqlPersistenceBackend, MysqlPersistenceConfig
 from scripts.ops.migrate_document_job_state import MigrationError, _error_category
@@ -26,8 +27,10 @@ from scripts.ops.migrate_document_job_state import MigrationError, _error_catego
 
 # 表名、列名和版本只来自本工具的固定目标，不能接受请求中的 SQL 标识符。
 TABLES = (
-    ("document_files", "file_id", "review_query_json", 1, document_file_review_projection_from_raw),
-    ("document_jobs", "job_id", "list_query_json", 2, document_job_list_projection_from_raw),
+    ("document_files", "file_id", ("review_query_json", "review_descriptor_key", "review_receipt_key"),
+     2, document_file_review_storage_from_raw),
+    ("document_jobs", "job_id", ("list_query_json", "list_descriptor_key", "list_receipt_key", "list_table_snapshot_key"),
+     3, document_job_list_storage_from_raw),
 )
 
 
@@ -84,10 +87,11 @@ def _table_report(table: str, identity: str, column: str, version: int, after: s
 
 def _scan_table(connection: Any, backend: str, target: tuple, columns: set[str], report: dict[str, Any],
                 *, mode: str, batch_size: int, after: str) -> None:
-    table, identity, column, _, build_projection = target
+    table, identity, storage_columns, _, build_storage = target
+    column = storage_columns[0]
     marker = "?" if backend == "database" else "%s"
     key = identity + " COLLATE BINARY" if backend == "database" else f"CAST({identity} AS BINARY)"
-    selected = f"{identity}, payload" + (f", {column}" if column in columns else "")
+    selected = ", ".join((identity, "payload", *(name for name in storage_columns if name in columns)))
     cursor_id = after if after else None
     while True:
         where = f" WHERE {key} > {marker}" if cursor_id is not None else ""
@@ -107,7 +111,7 @@ def _scan_table(connection: Any, backend: str, target: tuple, columns: set[str],
                 if raw.get("id") != current_id:
                     raise MigrationError(identity + "_mismatch")
                 # 共享入口在模型动态默认值生效前校验稳定时间；保留原始 JSON 读取语义。
-                projection = build_projection(row["payload"])
+                storage = build_storage(row["payload"])
             except (ValueError, MigrationError) as error:
                 category = ("missing_time_key" if isinstance(error, DocumentJobListProjectionUnstable)
                     else "invalid_document_file" if isinstance(error, ValidationError) and table == "document_files"
@@ -117,15 +121,18 @@ def _scan_table(connection: Any, backend: str, target: tuple, columns: set[str],
             stored = row[column] if column in columns else None
             try:
                 equal = stored is not None and json.dumps(json.loads(stored), sort_keys=True) == json.dumps(
-                    projection, sort_keys=True)
+                    json.loads(storage[0]), sort_keys=True)
+                equal = equal and all(name in columns and row[name] == expected
+                    for name, expected in zip(storage_columns[1:], storage[1:], strict=True))
             except (ValueError, TypeError):
                 equal = False
             if not equal:
                 report["mismatches"].append(current_id)
-            if mode == "apply":
+            if mode == "apply" and not equal:
+                assignments = ", ".join(f"{name} = {marker}" for name in storage_columns)
                 _execute(connection, backend,
-                    f"UPDATE {table} SET {column} = {marker} WHERE {key} = {marker}",
-                    (json.dumps(projection, ensure_ascii=False), current_id))
+                    f"UPDATE {table} SET {assignments} WHERE {key} = {marker}",
+                    (*storage, current_id))
             report["processed_rows"] += 1
         if mode == "apply" and report["errors"]:
             raise MigrationError("batch_invalid")
@@ -146,8 +153,8 @@ def migrate_document_job_list_query(
     """
     backend = settings.jobs_repository_backend
     cursors = {"document_files": after_file_id, "document_jobs": after_job_id}
-    reports = {table: _table_report(table, identity, column, version, cursors[table])
-               for table, identity, column, version, _ in TABLES}
+    reports = {table: _table_report(table, identity, storage_columns[0], version, cursors[table])
+               for table, identity, storage_columns, version, _ in TABLES}
     report: dict[str, Any] = dict(backend=backend, mode=mode, tables=reports, errors=[],
         verification_scope="full_two_table_snapshot" if mode == "verify" else "table_batches",
         all_ready=False, exit_code=0)
@@ -182,20 +189,21 @@ def migrate_document_job_list_query(
 
         columns_by_table = {}
         with connect(readonly=mode != "apply") as connection:
-            for table, identity, column, _, _ in TABLES:
+            for table, identity, storage_columns, _, _ in TABLES:
                 current_table = table
                 columns = _columns(connection, backend, table)
                 if not {identity, "payload", "created_at", "updated_at"}.issubset(columns):
                     raise MigrationError(table + "_schema_missing")
                 columns_by_table[table] = columns
-                if column not in columns:
-                    reports[table]["schema_missing"] = [column]
-                    if mode == "apply":
+                missing = [name for name in storage_columns if name not in columns]
+                reports[table]["schema_missing"] = missing
+                if mode == "apply":
+                    for column in missing:
                         definition = "TEXT" if backend == "database" else "LONGTEXT"
                         _execute(connection, backend, f"ALTER TABLE {table} ADD COLUMN {column} {definition} NULL")
-                        # 两个 DDL 分别前滚；后续批次失败不能宣称撤销已提交的列。
+                        # 每列独立前滚；后续失败不能宣称撤销已提交的 DDL。
                         connection.commit()
-                        reports[table]["schema_added"] = [column]
+                        reports[table]["schema_added"].append(column)
                         columns.add(column)
             if mode != "apply":
                 for target in TABLES:
@@ -238,23 +246,31 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--dry-run", dest="mode", action="store_const", const="dry-run", help="只读检查各表一批（默认）")
-    modes.add_argument("--apply", dest="mode", action="store_const", const="apply", help="补两列，按 files→jobs 提交批次")
+    modes.add_argument("--apply", dest="mode", action="store_const", const="apply", help="逐列补齐派生字段，按 files→jobs 提交批次")
     modes.add_argument("--verify", dest="mode", action="store_const", const="verify", help="同一快照从头校验两表全量")
     parser.set_defaults(mode="dry-run")
     parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--after-job-id", default="")
     parser.add_argument("--after-file-id", default="")
-    parser.add_argument("--backend", choices=("database", "mysql"))
+    parser.add_argument("--backend", choices=("database", "mysql"), required=True)
     parser.add_argument("--database-path")
     args = parser.parse_args(argv)
     if args.batch_size < 1:
         parser.error("--batch-size 必须大于 0")
     if args.mode == "verify" and (args.after_job_id or args.after_file_id):
         parser.error("--verify 必须从头校验两表，不能指定恢复游标")
+    if args.backend == "database" and not args.database_path:
+        parser.error("database 后端必须明确指定 --database-path")
+    overrides = {"jobs_repository_backend": args.backend}
+    if args.backend == "database":
+        overrides["jobs_metadata_database_path"] = args.database_path
+    else:
+        names = ("host", "port", "user", "password", "database")
+        if any("JOBS_MYSQL_" + name.upper() not in os.environ for name in names):
+            parser.error("mysql 后端必须显式设置 JOBS_MYSQL_HOST/PORT/USER/PASSWORD/DATABASE")
+        overrides.update({"jobs_mysql_" + name: os.environ["JOBS_MYSQL_" + name.upper()] for name in names})
     try:
-        settings = Settings(**{key: value for key, value in {
-            "jobs_repository_backend": args.backend, "jobs_metadata_database_path": args.database_path,
-        }.items() if value is not None})
+        settings = Settings(_env_file=None, **overrides)
     except Exception:
         print(json.dumps({"exit_code": 1, "errors": [{"category": "invalid_configuration"}]}))
         return 1

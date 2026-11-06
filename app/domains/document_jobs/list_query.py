@@ -177,6 +177,25 @@ def document_file_review_projection_from_raw(payload: str | dict) -> dict[str, A
     return document_file_review_projection(_raw_model(payload, DocumentFileRecord))
 
 
+def document_job_list_storage_from_raw(payload: str | dict) -> tuple[str, str, str, str]:
+    """从最终 payload 拆出完整规范文本，避免列表 JSON 反复解析大 key。"""
+    projection = document_job_list_projection_from_raw(payload)
+    descriptor = projection.pop("descriptor_key")
+    receipt = projection.pop("receipt_key")
+    table_snapshot = projection.pop("table_snapshot_key")
+    projection["version"] = 3
+    return json.dumps(projection, ensure_ascii=False), descriptor, receipt, table_snapshot
+
+
+def document_file_review_storage_from_raw(payload: str | dict) -> tuple[str, str, str]:
+    """非 Word 文件的 key 不适用，以空串区别尚未回填的 NULL。"""
+    projection = document_file_review_projection_from_raw(payload)
+    descriptor = projection.pop("descriptor_key", "")
+    receipt = projection.pop("receipt_key", "")
+    projection["version"] = 2
+    return json.dumps(projection, ensure_ascii=False), descriptor, receipt
+
+
 def dump_document_job_list_projection(job: DocumentJobRecord) -> str:
     return json.dumps(document_job_list_projection(job), ensure_ascii=False)
 

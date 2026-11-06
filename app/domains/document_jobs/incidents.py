@@ -84,15 +84,18 @@ class DocumentJobIncidentService:
         now = utc_now()
         normalized_q = self._normalize_optional_text(q)
         # 保留原始记录；公开响应不含完整内部字段，不能反向恢复动作输入。
-        jobs = {job.id: job for job in self.document_job_service.list_visible_jobs(user=user)}
         result_views: dict[str, tuple[DocumentJobRecord, DocumentJobAvailableActionResponse]] = {}
         candidates = []
-        for job in jobs.values():
-            view, retry_action, download = self.document_job_service.build_incident_classification_view(job)
-            result_views[job.id] = (view, download)
-            item = self._project_item(view, {"retry": retry_action}, now=now)
-            if item.is_incident:
-                candidates.append(item)
+        with self.document_job_service.file_repository.read_session() as file_reader:
+            jobs = {job.id: job for job in self.document_job_service.list_visible_jobs(
+                user=user, file_reader=file_reader)}
+            for job in jobs.values():
+                view, retry_action, download = self.document_job_service.build_incident_classification_view(
+                    job, file_reader=file_reader)
+                result_views[job.id] = (view, download)
+                item = self._project_item(view, {"retry": retry_action}, now=now)
+                if item.is_incident:
+                    candidates.append(item)
         filtered = [
             item
             for item in candidates

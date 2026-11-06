@@ -113,7 +113,8 @@ class _MigrationMysqlCursor(persistence._FakeMysqlCursor):
             super().execute(sql, params)
             name = normalized.split()[5]
             defaults = {"quality_status": "pending", "review_status": "unreviewed",
-                        "delivery_status": "internal_draft", "quality_summary_json": None, "list_query_json": None}
+                        "delivery_status": "internal_draft", "quality_summary_json": None, "list_query_json": None,
+                        "list_descriptor_key": None, "list_receipt_key": None, "list_table_snapshot_key": None}
             for row in self.database.document_jobs.values():
                 row.setdefault(name, defaults[name])
             return

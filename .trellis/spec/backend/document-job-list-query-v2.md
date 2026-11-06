@@ -8,7 +8,7 @@
 
 - 外部GET参数与字段保持；service列表items仍是`(job, available_actions)`。
 - 内部`DocumentJobListQuery.as_of`为单次aware UTC观察时刻；`DocumentJobListResult.observed_results`包含每个页内job ID的明确File或None，不允许缺键时重读。
-- `document_jobs.list_query_json`版本2；`document_files.review_query_json`版本1；SQLite TEXT/MySQL LONGTEXT，payload权威，不新增索引。非generated_word只保存基础身份/type，复核键不适用，不能与漏回填NULL混淆。
+- `document_jobs.list_query_json`存储版本3；`document_files.review_query_json`存储版本2；SQLite TEXT/MySQL LONGTEXT，payload权威，不新增索引。完整规范 key 已拆至独立列，查询 JSON 只保存其他事实；非generated_word的独立 key 为空串，不能与漏回填NULL混淆。
 - `is_document_job_table_evidence_snapshot_current(expected) -> bool`在每个原重核点独立读取最新事实，只返回结果，不返回完整payload；原archived/九字段tuple和deleted前提不增减。job ID仅用于原collation寻址。
 - 显式迁移保留dry-run/apply/verify，新增`--after-file-id`与原`--after-job-id`各自游标；报告`tables.document_files/document_jobs`各自计数/成功游标。apply先文件后任务；verify禁止非空游标，在同只读快照全量验证两表。
 - 任务内 `release/ops/migrate.py` 要求 `--expect-database/--expect-server-uuid`，仅取明确 `JOBS_MYSQL_*`，`initialize=False`；dry-run/verify 会话只读、两类锁等待均为 10 秒。`snapshot.py snapshot/compare` 仅核对双表原列；`query_diff.py` 要求独立冻结 O 源码/manifest 和 aware `--as-of`，只比较列表元数据，不扩写为完整 API/动作验收。
@@ -21,6 +21,12 @@
 
 三统计域：summary=V（权限/归档/删除）；QA summary=B（再加status/q/date）的翻译任务，固定四键且不受QA选项影响；filtered_summary/total/items=F（再加有效QA选项），分页前汇总。完整筛选/聚合/排序/分页由SQL执行；整次SQL列表请求包括动作构建，完整任务payload解码次数不超过页条数。已有页内model_copy不算重复解码。
 
+列表请求不再独立扫描两张全表检查 shape；就绪检查合入既有的文件 ID 一致性聚合。先安全判断任务可见性，再完整校验 V 域任务及完成态关联到的当前文件；不等到分页后才校验，不受 status/q/date/QA 筛选缩小。决定可见性的字段缺失、类型错误或 JSON 损坏时必须失败关闭，不能因 SQL NULL 或错误字段使任务静默消失。只有可见性可以可靠排除的任务、与请求无关的文件，才不在该请求做完整 shape 校验。缺列、V 域缺投影/坏形状/不支持版本仍为 `DocumentJobListProjectionUnavailable`，由 service 保持 503；校验与后续统计/分页处于原同一只读快照，不缓存跨请求就绪结果。
+
+后续文件 JSON 提取使用 `CASE WHEN JSON_VALID(f.review_query_json) THEN f.review_query_json END` 作为解析输入，避免优化器先求值文件谓词、后排除不可见任务时解析到无关坏 JSON。首条就绪聚合仍校验原始文件投影并先行抛错，因此此解析保护不允许 V 域坏文件作为 NULL 静默通过。
+
+全库事实与 payload 一致性继续由显式迁移的全量 verify 保证，不把 B08 的 schema 版本或一次启动成功当作投影正确证明。应用写路径必须在同次写入中从最终持久化 payload 生成投影（包括更新、删除预留、复核与旁路迁移）；运行中被破坏的 V 域投影下一请求仍会被发现。此优化不改变两个规范化大 key 的存储或相等比较，也不改变 file 后端与异常中心的原始记录读取路径。
+
 SQL关联当前文件保留原寻址语义：MySQL按file_id列collation寻找，随后精确核对payload.id与请求ID；不能用binary JOIN把原ID错误变成缺件。权限/复核业务字符串和规范文本仍binary比较。所有列表统计/页选择与文件观察在同连接只读快照，MySQL显式RR；不在事务中做对象I/O。
 
 比较有三个owner：receipt_identity沿原序列化摘要；descriptor按原dict相等；receipt按模型相等、仅排除etag/updated_at/expires_at/revision，expiry另比较。规范文本保留Python数字相等、NULL/缺键、数组顺序、typed日期及NaN/Infinity，不能以普通JSON或新SHA替代严格相等。MySQL JSON_TYPE的INTEGER和UNSIGNED INTEGER均是整数事实，数值比较仍使用精确signed微秒；不接受浮点或字符串伪数。
@@ -30,6 +36,8 @@ SQL关联当前文件保留原寻址语义：MySQL按file_id列collation寻找�
 读视图以默认开启的显式参数控制发布证据深度核验，仅任务列表与异常中心列表的页内动作构建关闭；不得根据 `observed_result` 是否存在推断。此例外不适用于详情、发布前检查、异常诊断或批量操作等其他调用方，不改变其他动作、非管理员行为或响应字段。沿用现有读视图规则，`publish.enabled=true` 时返回的 `delivery_status` 投影为 `ready_to_publish`；证据异常时列表与完整核验的详情可能不同，不写回持久化状态。
 
 `GET /api/v1/document-job-incidents` 保留全部可见任务的必要元数据分类：有效复核、重试资格、停滞与降级页，以及原建议/证据摘要参与的搜索。有效复核与重试资格复用既有 owner，不以原始状态替代有效状态；分类阶段不读取文件内容、不构建完整动作；主件到期沿用逐条分类时刻判断，请求起始时间只保留原停滞计算职责。页内复用分类阶段已校验的主件/下载观察，避免分页期间换件或到期使条目与统计分离。仍对完整过滤集合排序并计算 total/summary，然后仅为当前页任务构建完整动作，publish 复用同一轻量参数并保持 `publication_evidence=not_checked`。不改变分类、筛选、排序键和方向、分页、统计口径、非 publish 动作或可见性，也不将这次优化扩大为 SQL 下推或缓存。
+
+异常列表首次有效复核与分类使用局部文件 `read_session()` 复用物理连接；每次读取仍为独立短事务，保留逐次时钟、完整模型/ID和保护关系检查。分类结束即关闭连接，页内继续复用观察；默认详情/诊断/POST不变。签名、错误顺序与真实RR验证由[数据库读取会话合同](database-guidelines.md#异常列表的局部读取会话)拥有。
 
 正式迁移验收期间停止全部 job/file 及全库备份相关写者；先备份与隔离恢复演练，再 apply、空游标全量 verify、原列 before/after 比对和冻结 O/C 差分，完成后才启动任何新 API/Worker。应用启动仍可能运行原 schema/seed/recovery，不能当只读验收。数据覆盖恢复与兼容镜像代码回滚分开授权，旧写者恢复后两表重新从头构建。
 
@@ -46,7 +54,7 @@ SQL关联当前文件保留原寻址语义：MySQL按file_id列collation寻找�
 | 真缺件或未通过完成态/归属/type/status观察门 | 按原review规则失效；不能把任意JOIN文件直接传入复核 |
 | 下载检查ApiError、删除预留/到期 | 保留已观察file；删除预留先于expiry比较 |
 | 可达naive/aware错误、descriptor溢出/质量结构错误 | 按原前缀显式失败；前序已返回不额外触发，published不吞异常 |
-| 缺投影/旧版本/坏形状/缺列 | 明确不可用/503；不静默漏数、不GET回填或Python全量回退 |
+| V 域投影或其关联文件缺失/旧版本/坏形状，任务可见性无法可靠判断，或缺列 | 明确不可用/503；不静默漏数、不GET回填或Python全量回退；无关行由全量 verify 检查 |
 | job外层时间或prepared_result.file内嵌两时间缺raw键 | 显式预检阻断，不冻结default now |
 | generated_word缺created_at | 预检阻断；非word缺created_at及当前file缺updated_at不据此扩大阻断 |
 | 旧job或file writer恢复 | 两表事实整体不可信，重新停写、空游标全量重建，不只补NULL |
@@ -72,6 +80,8 @@ SQL关联当前文件保留原寻址语义：MySQL按file_id列collation寻找�
 
 真实MySQL入口`tests.test_document_job_list_query_v2_mysql`仅在授权环境显式启用`MD2WORD_TEST_MYSQL=1`及独立HOST/PORT/USER/PASSWORD，不接受已有库名、不读.env，只创建和删除自身UUID库。记录实际列collation与前后业务两表DDL摘要、库/隧道清理，fake或skip不作引擎证据。
 
+就绪校验定向回归须捕获实际 SQL：普通无日期筛选请求由 13 条 SELECT 降为 11 条，不再有两表独立全表 shape COUNT；当前页、空页与空结果均保留该性质。首次成功查询后破坏 job/file 投影，覆盖 NULL、坏 JSON、缺键及版本错误，并分别验证当前页与仅 V 统计域仍失败。复用 writer 定向用例证明同行维护；有效数据与 file owner 比较三统计域、筛选、排序和分页。生产原两次独立扫描约 5.2 秒仅是移除的查询预算，合并校验成本及真实 MySQL 净收益须单独测量，不能按 SQL 条数直接推断。
+
 候选原生镜像使用冻结线上镜像基底，只在无网络/业务挂载的测试容器验证，不能据此启动业务API/Worker。业务双表历史预检、停写、备份、正式回填、切换和线上验收另行完成。
 
 发布运维验证须区分准备证据与窗口结果：预检核对镜像、Compose、运行态及挂载；备份演练覆盖整个库和实际对象/配置卷，精确 COUNT 与内容/元数据相符。双表 snapshot 不能证明其余表或对象卷未变。一次性 `query_diff.py` 复用同一数据库快照的 jobs/files、原列寻址和 publication 保护集合，将 raw 仅经内存管道交给独立 O；计数直接比较，页内有序 ID/review/quality 用 SHA-256 摘要比较。离线测试应捕获陈旧投影、错误分支、权限/全分页及快照变化；真实业务差分只能在授权窗口记录为通过。
@@ -85,3 +95,13 @@ SQL关联当前文件保留原寻址语义：MySQL按file_id列collation寻找�
 错误：只保存raw review，或在file变化时刷新所有job，或缓存首次job撤掉表格证据重核。正确：各实体维护静态事实，SQL在同快照按as_of计算有效状态；即时guard在原每个重核点读窄当前事实。原锁序、账本、审计和对象认证继续由既有owner承担。
 
 错误：无JSON时丢弃全部失败线索，或为读0600代码恢复容器全部能力。正确：受限脱敏诊断明确失败，仅补实证所需能力并实际验证只读边界。[Docker运行约束](https://docs.docker.com/engine/containers/run/)与[Linux能力语义](https://man7.org/linux/man-pages/man7/capabilities.7.html)用于核对该合同，运行结果仍须本环境证明。
+
+## 8. 完整 key 拆列（2026-11-06 候选，未部署）
+
+- job 独立列为 `list_descriptor_key/list_receipt_key/list_table_snapshot_key`；file 为 `review_descriptor_key/review_receipt_key`，类型 SQLite TEXT/MySQL LONGTEXT。原 `equality_key`、descriptor、receipt 与 table snapshot owner 不变，不截断或散列替代；MySQL CAST AS BINARY、SQLite COLLATE BINARY 保留尾随空格、大小写和完整文本相等。
+- `document_job_list_storage_from_raw` / `document_file_review_storage_from_raw` 从最终 payload 调用原完整语义投影，再拆出 key、更新存储版本。create、共享 writer、状态回填、正式复核导入和显式列表回填必须同行维护全部列；缺稳定时间时整组置 NULL。旧完整投影 builder 仍是内部语义事实，不可直接序列化回当前查询列。
+- shape 检查新版本和完整列就绪；SQLite 另外拒绝 BLOB。缺列、旧版本、NULL 明确不可用，不GET回填、不回退解析旧大JSON。file 后端没有此派生布局，继续读取权威记录，结果必须与SQL后端一致。拆列与请求内就绪合并一同使用：首次关联聚合检查 V 域及其关联文件；不恢复独立全表 assert_ready 扫描。
+- 独立入口 `scripts/ops/migrate_document_job_list_keys.py` 复用原迁移流程，支持 dry-run/apply/verify、两表独立游标、逐列DDL前滚、批次提交后推进游标、整组比较和成功重跑零UPDATE。旧入口同步升级，不再写回旧布局；只改双表派生列，不改payload、时间或job_events等其他表。
+- 仅添加列而未回填时新版列表/窄guard失败关闭；新版API/Worker可正常维护其实际写到的行，但局部写入不代表全表就绪。全量回填并verify后新版正常；旧API/Worker不支持新JSON版本，禁止混部。旧写者一旦恢复，所有新列视为陈旧，再升级须两表空游标重建。
+- 当前schema仍走CREATE/ALTER + INFORMATION_SCHEMA/PRAGMA；B08只完成设计，不能声称已有版本账本。生产停写、备份恢复演练、执行顺序、代码回退须先重建旧JSON及再升级重建规则见[当前整合设计及冻结迁移方案](../../tasks/11-06-list-loading-performance/design.md)，所有生产操作需另行授权。
+- 定向证据涵盖大key体积、严格比较、file/SQLite列表与Python owner对照、writer原子性、干跑零写和中断恢复；MySQL SQL形状/fake不等于引擎性能。源候选此前未具备真实 MySQL 证据；当前整合任务使用独立 MySQL 8.4.13 做定向校验，结果以该任务 research 为准。生产为 8.4.9，迁移及线上性能验收仍待另行授权。

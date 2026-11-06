@@ -21,6 +21,7 @@ from app.infrastructure.persistence.mysql.files import MysqlDocumentFileReposito
 from app.infrastructure.persistence.mysql.schema import MYSQL_SCHEMA_STATEMENTS
 from tests.test_document_job_list_query_v2_writers import NOW, job_record, file_record
 from scripts.ops.migrate_document_job_list_query import migrate_document_job_list_query
+from tests.test_document_job_list_key_columns import LargeKeyAssertions
 
 
 def _connection_options(environ):
@@ -214,6 +215,36 @@ class MysqlV2IntegrationTests(TestCase):
             review_status="approved", current_review_record_id="review", review_sequence=1, current_review_binding=binding)
         return job, file
 
+    def test_ready_scope_preserves_split_key_failures_and_ignores_hidden_corruption(self):
+        item, file = self.bound()
+        self.seed([item], [file])
+        for table, columns in (
+            ("document_jobs", ("list_descriptor_key", "list_receipt_key", "list_table_snapshot_key")),
+            ("document_files", ("review_descriptor_key", "review_receipt_key")),
+        ):
+            for column in columns:
+                self.assertEqual(self.jobs.query_document_jobs(self.query).total, 1)
+                with self.backend.connect() as connection, connection.cursor() as cursor:
+                    cursor.execute(f"SELECT {column} FROM {table}")
+                    original = cursor.fetchone()[column]
+                    cursor.execute(f"UPDATE {table} SET {column} = NULL")
+                for query in (replace(self.query, page=99), replace(self.query, q="absent"),
+                              replace(self.query, statuses=("failed",))):
+                    with self.subTest(column=column, query=query):
+                        with self.assertRaises(DocumentJobListProjectionUnavailable):
+                            self.jobs.query_document_jobs(query)
+                with self.backend.connect() as connection, connection.cursor() as cursor:
+                    cursor.execute(f"UPDATE {table} SET {column} = %s", (original,))
+        hidden_file = file_record("hidden-word", job_id="hidden", tenant_id="other")
+        self.seed([job_record("hidden", tenant_id="other", status="succeeded", stage="completed",
+                             result_file_id=hidden_file.id)], [hidden_file])
+        with self.backend.connect() as connection, connection.cursor() as cursor:
+            cursor.execute("UPDATE document_jobs SET list_descriptor_key = NULL WHERE job_id = 'hidden'")
+            cursor.execute("UPDATE document_files SET review_query_json = '{broken', "
+                           "review_descriptor_key = NULL WHERE file_id = 'hidden-word'")
+        result = self.jobs.query_document_jobs(self.query)
+        self.assertEqual([row.id for row in result.items], [item.id])
+
     def test_effective_review_filter_order_permissions_summaries_and_all_pages(self):
         bound, file = self.bound()
         jobs = [bound, job_record("unbound", mode="en2zh_pdf_to_word", review_status="approved",
@@ -330,14 +361,20 @@ class MysqlV2IntegrationTests(TestCase):
         with self.backend.connect() as connection, connection.cursor() as cursor:
             cursor.execute("ALTER TABLE document_files DROP COLUMN review_query_json")
             cursor.execute("ALTER TABLE document_jobs DROP COLUMN list_query_json")
+            for column in ("review_descriptor_key", "review_receipt_key"):
+                cursor.execute(f"ALTER TABLE document_files DROP COLUMN {column}")
+            for column in ("list_descriptor_key", "list_receipt_key", "list_table_snapshot_key"):
+                cursor.execute(f"ALTER TABLE document_jobs DROP COLUMN {column}")
         dry = migrate_document_job_list_query(settings, mode="dry-run", mysql_connect_factory=self.connect)
         self.assertEqual(dry["exit_code"], 0)
         self.assertEqual(rows(), before)
         applied = migrate_document_job_list_query(settings, mode="apply", mysql_connect_factory=self.connect)
         self.assertEqual(applied["exit_code"], 0, applied)
         self.assertEqual(rows(), before)
-        self.assertEqual(applied["tables"]["document_files"]["schema_added"], ["review_query_json"])
-        self.assertEqual(applied["tables"]["document_jobs"]["schema_added"], ["list_query_json"])
+        self.assertEqual(applied["tables"]["document_files"]["schema_added"],
+            ["review_query_json", "review_descriptor_key", "review_receipt_key"])
+        self.assertEqual(applied["tables"]["document_jobs"]["schema_added"],
+            ["list_query_json", "list_descriptor_key", "list_receipt_key", "list_table_snapshot_key"])
         verified = migrate_document_job_list_query(settings, mode="verify", batch_size=1, mysql_connect_factory=self.connect)
         self.assertEqual(verified["exit_code"], 0, verified)
         self.assertTrue(verified["all_ready"])
@@ -429,3 +466,29 @@ class MysqlV2IntegrationTests(TestCase):
                     execute(connection, "UPDATE document_jobs SET list_query_json = NULL")
                 with self.assertRaises(DocumentJobListProjectionUnavailable):
                     self.jobs.is_document_job_table_evidence_snapshot_current(item)
+
+
+class MysqlLargeKeyIntegrationTests(LargeKeyAssertions, TestCase):
+    """复用隔离 UUID 库入口；大 key 真引擎证据必须显式启用。"""
+    mysql = True
+
+    @classmethod
+    def setUpClass(cls):
+        cls.options, cls.schema = cls.enterClassContext(_temporary_schema(os.environ))
+        cls.backend = MysqlPersistenceBackend(MysqlPersistenceConfig(host=cls.options["host"],
+            port=cls.options["port"], user=cls.options["user"], password=cls.options["password"],
+            database=cls.schema), initialize=False, connect_factory=cls.connect)
+        with cls.backend.connect() as connection, connection.cursor() as cursor:
+            ddl = next(sql for sql in MYSQL_SCHEMA_STATEMENTS
+                if sql.strip().startswith("CREATE TABLE IF NOT EXISTS document_job_review_records ("))
+            cursor.execute(ddl)
+        cls.jobs = MysqlDocumentJobRepository(cls.backend)
+        cls.files = MysqlDocumentFileRepository(cls.backend)
+        cls.settings = Settings.model_construct(jobs_repository_backend="mysql", jobs_mysql_host=cls.options["host"],
+            jobs_mysql_port=cls.options["port"], jobs_mysql_user=cls.options["user"],
+            jobs_mysql_password=cls.options["password"], jobs_mysql_database=cls.schema,
+            jobs_mysql_charset="utf8mb4", jobs_mysql_connect_timeout_seconds=5)
+
+    @classmethod
+    def connect(cls):
+        return pymysql.connect(**cls.options, database=cls.schema, autocommit=False)

@@ -68,7 +68,9 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        review_query_json TEXT NULL
+        review_query_json TEXT NULL,
+        review_descriptor_key TEXT NULL,
+        review_receipt_key TEXT NULL
     )
     """,
     """
@@ -125,7 +127,10 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
         review_status TEXT NOT NULL DEFAULT 'unreviewed',
         delivery_status TEXT NOT NULL DEFAULT 'internal_draft',
         quality_summary_json TEXT NULL,
-        list_query_json TEXT NULL
+        list_query_json TEXT NULL,
+        list_descriptor_key TEXT NULL,
+        list_receipt_key TEXT NULL,
+        list_table_snapshot_key TEXT NULL
     )
     """,
     """
@@ -249,8 +254,17 @@ DOCUMENT_JOB_STATE_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 
-DOCUMENT_JOB_LIST_QUERY_COLUMNS: tuple[tuple[str, str], ...] = (("list_query_json", "TEXT NULL"),)
-DOCUMENT_FILE_REVIEW_QUERY_COLUMNS: tuple[tuple[str, str], ...] = (("review_query_json", "TEXT NULL"),)
+DOCUMENT_JOB_LIST_QUERY_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("list_query_json", "TEXT NULL"),
+    ("list_descriptor_key", "TEXT NULL"),
+    ("list_receipt_key", "TEXT NULL"),
+    ("list_table_snapshot_key", "TEXT NULL"),
+)
+DOCUMENT_FILE_REVIEW_QUERY_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("review_query_json", "TEXT NULL"),
+    ("review_descriptor_key", "TEXT NULL"),
+    ("review_receipt_key", "TEXT NULL"),
+)
 
 
 def initialize_schema(connection: sqlite3.Connection) -> None:

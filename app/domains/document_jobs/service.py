@@ -80,7 +80,7 @@ from app.domains.document_jobs.workflow import (
 )
 from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord, DocumentFileType
-from app.domains.files.repository import DocumentFileRepositoryProtocol
+from app.domains.files.repository import DocumentFileReaderProtocol, DocumentFileRepositoryProtocol
 from app.domains.jobs.models import ConversionOptions, JobRecord, JobResourceSnapshot
 from app.domains.jobs.paths import build_job_paths
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
@@ -825,10 +825,12 @@ class DocumentJobService:
         self._ensure_visible(job, user)
         return job
 
-    def _effective_job(self, job: DocumentJobRecord) -> DocumentJobRecord:
+    def _effective_job(self, job: DocumentJobRecord, *,
+                       file_reader: DocumentFileReaderProtocol | None = None) -> DocumentJobRecord:
         """受权后按最新文件 metadata 投影；raw 写快照始终经 _get_job 取得。"""
         binding = job.current_review_binding
-        file = (self.file_repository.get_document_file(job.result_file_id)
+        reader = self.file_repository if file_reader is None else file_reader
+        file = (reader.get_document_file(job.result_file_id)
                 if job.result_file_id is not None and binding is not None and binding.binding_state == "verified" else None)
         return effective_review_job(job, file, now=utc_now())
 
@@ -1440,11 +1442,12 @@ class DocumentJobService:
         *,
         user: AuthenticatedUser,
         include_archived: bool = False,
+        file_reader: DocumentFileReaderProtocol | None = None,
     ) -> list[DocumentJobRecord]:
         """按可见性取得有效读投影，供异常队列使用。"""
 
         return [
-            self._effective_job(job)
+            self._effective_job(job, file_reader=file_reader)
             for job in self.job_repository.list_document_jobs()
             if self._is_visible(job, user)
             and job.deleted_at is None
@@ -1515,10 +1518,10 @@ class DocumentJobService:
         return job, actions, checks
 
     def build_incident_classification_view(
-        self, job: DocumentJobRecord,
+        self, job: DocumentJobRecord, *, file_reader: DocumentFileReaderProtocol | None = None,
     ) -> tuple[DocumentJobRecord, DocumentJobAvailableActionResponse, DocumentJobAvailableActionResponse]:
         """分类复用完整读视图的主件门控和重试判断，不构建无关动作。"""
-        job, download = self._build_result_read_view(job)
+        job, download = self._build_result_read_view(job, file_reader=file_reader)
         return job, self._build_retry_action(job), download
 
     def _build_retry_action(self, job: DocumentJobRecord) -> DocumentJobAvailableActionResponse:
@@ -2810,13 +2813,15 @@ class DocumentJobService:
         return source_file
 
     def _get_completed_result_file(self, job: DocumentJobRecord, *,
-            observed_result: DocumentFileRecord | None | object = _UNREAD_RESULT) -> DocumentFileRecord:
+            observed_result: DocumentFileRecord | None | object = _UNREAD_RESULT,
+            file_reader: DocumentFileReaderProtocol | None = None) -> DocumentFileRecord:
         self._ensure_job_not_deleted(job, reason_code="job_deleted")
         if job.status != "succeeded" or job.stage != "completed":
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。", reason_code="job_not_completed")
         if job.result_file_id is None:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。", reason_code="result_file_missing")
-        file = self.file_repository.get_document_file(job.result_file_id) if observed_result is _UNREAD_RESULT else observed_result
+        reader = self.file_repository if file_reader is None else file_reader
+        file = reader.get_document_file(job.result_file_id) if observed_result is _UNREAD_RESULT else observed_result
         if file is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"结果文件不存在: {job.result_file_id}", reason_code="result_file_missing")
         if ((file.tenant_id, file.company_id, file.job_id) != (job.tenant_id, job.company_id, job.id)
@@ -2875,10 +2880,12 @@ class DocumentJobService:
         self._ensure_file_not_expired(file)
         return file
 
-    def _ensure_file_not_expired(self, file: DocumentFileRecord, *, as_of: datetime | None = None) -> None:
+    def _ensure_file_not_expired(self, file: DocumentFileRecord, *, as_of: datetime | None = None,
+                               file_reader: DocumentFileReaderProtocol | None = None) -> None:
         if file.deletion_claim is not None:
             raise ApiError(409, "conflict", "文件已预留删除。", reason_code="file_deletion_reserved")
-        if file.expires_at is not None and file.expires_at <= (as_of if as_of is not None else utc_now()) and not self.file_repository.is_document_file_protected(file.id):
+        reader = self.file_repository if file_reader is None else file_reader
+        if file.expires_at is not None and file.expires_at <= (as_of if as_of is not None else utc_now()) and not reader.is_document_file_protected(file.id):
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件已过期，不能下载。", reason_code="file_expired")
 
     def _file_belongs_to_job(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
@@ -3174,13 +3181,14 @@ class DocumentJobService:
     def _build_result_read_view(
         self, job: DocumentJobRecord, *, observed_result: DocumentFileRecord | None | object = _UNREAD_RESULT,
         as_of: datetime | None = None,
+        file_reader: DocumentFileReaderProtocol | None = None,
     ) -> tuple[DocumentJobRecord, DocumentJobAvailableActionResponse]:
         """同一主件观察拥有有效复核和下载判定，期间不再次读取主件。"""
 
         file = None
         try:
-            file = self._get_completed_result_file(job, observed_result=observed_result)
-            self._ensure_file_not_expired(file, as_of=as_of)
+            file = self._get_completed_result_file(job, observed_result=observed_result, file_reader=file_reader)
+            self._ensure_file_not_expired(file, as_of=as_of, file_reader=file_reader)
         except ApiError as exc:
             reason = exc.message
             if exc.reason_code == "job_not_completed":

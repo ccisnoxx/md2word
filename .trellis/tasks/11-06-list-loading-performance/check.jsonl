@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/document-job-list-query-v2.md", "reason": "同快照、统计域、有效复核和异常分类观察合同"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "仓储所有权、派生事实与迁移边界"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "保留错误响应与失败关闭"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "按本项目授权和改动范围选择定向验证"}
+{"file": ".trellis/tasks/11-06-list-loading-performance/research/findings.md", "reason": "已部署版本、并行候选、证据缺口及不可直接删除的两次观察"}
+{"file": ".trellis/tasks/11-06-list-loading-performance/incident-read-session-plan.md", "reason": "2026-11-07已批准的异常请求级连接与逐次事务合同"}
