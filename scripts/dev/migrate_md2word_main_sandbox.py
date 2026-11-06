@@ -157,7 +157,7 @@ if __name__ == "__main__":
 def build_compat_config(official_root: Path) -> str:
     return f'''from __future__ import annotations
 
-# config.py: Thin compatibility config that reads md2word's official conversion runtime config.
+# config.py：兼容沙箱配置入口，读取 md2word 的正式转换配置。
 
 import os
 import sys
@@ -169,7 +169,7 @@ official_repo = Path(os.environ.get("MD2WORD_OFFICIAL_REPO", str(DEFAULT_OFFICIA
 if str(official_repo) not in sys.path:
     sys.path.insert(0, str(official_repo))
 
-from app.conversion.runtime_config import APP_CONFIG, ROOT_DIR
+from app.core.conversion_config import APP_CONFIG, ROOT_DIR
 
 __all__ = ["APP_CONFIG", "ROOT_DIR"]
 '''

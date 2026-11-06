@@ -1,0 +1,133 @@
+{
+  "head": "79f20cef9ca0bb1a59af635e2408e130c4935e2d",
+  "consumers": [
+    {
+      "path": "app/domains/translation/profiles_service.py",
+      "before": [
+        {
+          "line": 12,
+          "import": "from app.conversion.runtime import llm_client, translation_runtime"
+        }
+      ],
+      "after": [
+        {
+          "line": 12,
+          "import": "from app.clients.openai_sdk import DEFAULT_MODEL"
+        },
+        {
+          "line": 18,
+          "import": "from app.domains.translation.modes import DEFAULT_TARGET_LANGUAGE, DEFAULT_TRANSLATION_DOMAIN, TRANSLATION_PROMPT_VERSION, TRANSLATION_MODE_SPECS, TRANSLATION_PROFILE_IDS, spec_for_language_pair, translation_prompt_path"
+        }
+      ],
+      "remaining_target_legacy_imports": []
+    },
+    {
+      "path": "app/services/health_service.py",
+      "before": [
+        {
+          "line": 21,
+          "import": "from app.conversion.runtime import llm_client"
+        }
+      ],
+      "after": [
+        {
+          "line": 21,
+          "import": "from app.clients import openai_sdk"
+        },
+        {
+          "line": 38,
+          "import": "from app.domains.translation.modes import TRANSLATION_LANGUAGE_PAIRS, is_translation_mode, translation_prompt_path"
+        }
+      ],
+      "remaining_target_legacy_imports": []
+    },
+    {
+      "path": "scripts/dev/run_local_mineru_conversion.py",
+      "before": [
+        {
+          "line": 20,
+          "import": "from app.conversion.runtime import llm_client, translation_runtime"
+        },
+        {
+          "line": 21,
+          "import": "from app.conversion.runtime_config import APP_CONFIG"
+        }
+      ],
+      "after": [
+        {
+          "line": 20,
+          "import": "from app.clients.openai_sdk import DEFAULT_MODEL"
+        },
+        {
+          "line": 21,
+          "import": "from app.core.conversion_config import APP_CONFIG"
+        }
+      ],
+      "remaining_target_legacy_imports": []
+    },
+    {
+      "path": "scripts/dev/run_local_mineru_debug_config.py",
+      "before": [
+        {
+          "line": 17,
+          "import": "from app.conversion.runtime import llm_client"
+        },
+        {
+          "line": 18,
+          "import": "from app.conversion.runtime_config import APP_CONFIG"
+        }
+      ],
+      "after": [
+        {
+          "line": 17,
+          "import": "from app.clients.openai_sdk import DEFAULT_MODEL"
+        },
+        {
+          "line": 18,
+          "import": "from app.core.conversion_config import APP_CONFIG"
+        }
+      ],
+      "remaining_target_legacy_imports": []
+    },
+    {
+      "path": "scripts/dev/run_local_mineru_quality_matrix.py",
+      "before": [
+        {
+          "line": 28,
+          "import": "from app.conversion.runtime import llm_client"
+        },
+        {
+          "line": 29,
+          "import": "from app.conversion.runtime_config import APP_CONFIG"
+        }
+      ],
+      "after": [
+        {
+          "line": 28,
+          "import": "from app.clients.openai_sdk import DEFAULT_MODEL"
+        },
+        {
+          "line": 29,
+          "import": "from app.core.conversion_config import APP_CONFIG"
+        }
+      ],
+      "remaining_target_legacy_imports": []
+    },
+    {
+      "path": "scripts/dev/migrate_md2word_main_sandbox.py",
+      "before": [
+        {
+          "line": 158,
+          "generated_import": "from app.conversion.runtime_config import APP_CONFIG, ROOT_DIR"
+        }
+      ],
+      "after": [
+        {
+          "line": 15,
+          "generated_import": "from app.core.conversion_config import APP_CONFIG, ROOT_DIR"
+        }
+      ],
+      "remaining_target_legacy_imports": []
+    }
+  ]
+}

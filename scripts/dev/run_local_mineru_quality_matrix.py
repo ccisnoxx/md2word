@@ -25,8 +25,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.conversion.runtime import llm_client
-from app.conversion.runtime_config import APP_CONFIG
+from app.clients.openai_sdk import DEFAULT_MODEL
+from app.core.conversion_config import APP_CONFIG
 from app.services.renderer.docx_quality import analyze_docx_quality_file, build_docx_quality_flags
 from scripts.dev import formal_mineru_conversion
 
@@ -89,7 +89,7 @@ class MatrixConfig:
     layout_config_path: Path = DEFAULT_LAYOUT_CONFIG_PATH
     subscript_config_path: Path = DEFAULT_SUBSCRIPT_CONFIG_PATH
     translation_response_dir: Path | None = None
-    translation_model: str = APP_CONFIG.openai_model or llm_client.DEFAULT_MODEL
+    translation_model: str = APP_CONFIG.openai_model or DEFAULT_MODEL
     translation_api_key: str | None = None
     translation_base_url: str | None = None
     translation_max_pages: int = APP_CONFIG.translation_max_pages
@@ -222,7 +222,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--layout-config-path", default=str(DEFAULT_LAYOUT_CONFIG_PATH))
     parser.add_argument("--subscript-config-path", default=str(DEFAULT_SUBSCRIPT_CONFIG_PATH))
     parser.add_argument("--translation-response-dir", help="Directory containing <sample_id>.translation-response.json files.")
-    parser.add_argument("--translation-model", default=APP_CONFIG.openai_model or llm_client.DEFAULT_MODEL)
+    parser.add_argument("--translation-model", default=APP_CONFIG.openai_model or DEFAULT_MODEL)
     parser.add_argument("--translation-api-key", default=None)
     parser.add_argument("--translation-base-url", default=None)
     parser.add_argument("--translation-max-pages", type=int, default=APP_CONFIG.translation_max_pages)

@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.conversion.runtime import llm_client
-from app.conversion.runtime_config import APP_CONFIG
+from app.clients.openai_sdk import DEFAULT_MODEL
+from app.core.conversion_config import APP_CONFIG
 from scripts.dev import formal_mineru_conversion
 from scripts.dev.run_local_mineru_conversion import configure_logging, normalize_translation_mode
 
@@ -95,7 +95,7 @@ def build_conversion_kwargs(config_path: Path = DEFAULT_CONFIG_PATH, *, repo_roo
         "translation_request_output": _resolve_optional_path(config, "translation_request_output", repo_root=repo_root),
         "translation_response": _resolve_optional_path(config, "translation_response", repo_root=repo_root),
         "translation_trace_output": _resolve_optional_path(config, "translation_trace_output", repo_root=repo_root),
-        "translation_model": str(config.get("translation_model") or APP_CONFIG.openai_model or llm_client.DEFAULT_MODEL),
+        "translation_model": str(config.get("translation_model") or APP_CONFIG.openai_model or DEFAULT_MODEL),
         "translation_api_key": config.get("translation_api_key") or None,
         "translation_base_url": config.get("translation_base_url") or None,
         "translation_max_pages": int(config.get("translation_max_pages") or APP_CONFIG.translation_max_pages),

@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import Literal
 
 
+DEFAULT_TARGET_LANGUAGE = "zh-CN"
+DEFAULT_TRANSLATION_DOMAIN = "electronics engineering technical document"
+TRANSLATION_PROMPT_VERSION = "translation-minimal-v1"
+
+
 TranslationMode = Literal["direct", "en2zh", "ru2zh", "zh2en", "zh2ru"]
 TranslationLanguagePair = Literal["en2zh", "ru2zh", "zh2en", "zh2ru"]
 DocumentJobMode = Literal[
