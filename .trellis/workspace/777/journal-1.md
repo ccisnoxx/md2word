@@ -1558,3 +1558,24 @@ Worker 失败消息只保留固定码构造的消息，其余输出异常类型�
 ### Next Steps
 
 - PR #22 合并后依次推送 safe-error-message 与 partial-success 分支并建 PR；5.4 宽表横排仍暂缓
+
+
+## Session 47: Word 转换失败诊断展示上线
+
+**Date**: 2026-11-06
+**Task**: Word 转换失败诊断展示上线
+**Branch**: `codex/word-failure-deploy-record`
+
+### Summary
+
+失败概览、诊断和异常中心统一中文原因与源PDF定位；22/22定向测试、类型检查、生产构建和独立复核通过。PR #30合并后将前端0c5fc3fc部署hostdzire，104文件哈希和源站/公网8资源校验通过，live/ready正常，后端容器未变化。保留回滚目录；未进行浏览器视觉或真实失败任务重试。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1a346905` | (see git log) |
+
+### Status
+
+[OK] **Completed**

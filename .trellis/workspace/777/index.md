@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 46
-- **Last Active**: 2026-11-02
+- **Total Sessions**: 47
+- **Last Active**: 2026-11-06
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1560 | Active |
+| `journal-1.md` | ~1581 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 47 | 2026-11-06 | Word 转换失败诊断展示上线 | `1a346905` | `codex/word-failure-deploy-record` |
 | 46 | 2026-11-02 | 第三批 C4：降级页展示与翻译适配（第三批完成） | `8d103e13`, `5dfebb03` | `codex/partial-success-20261102` |
 | 45 | 2026-11-02 | 第三批 C3：渲染阶段整页降级 | `cd9f98d9`, `d2d532e2` | `codex/partial-success-20261102` |
 | 44 | 2026-11-02 | 第三批 C1+C2：验证阶段整页降级与依赖闭包 | `57d4041e`, `038501d6` | `codex/partial-success-20261102` |
