@@ -3,7 +3,7 @@
   "name": "word-failure-diagnostics",
   "title": "Word 转换失败原因与源页定位可见性",
   "description": "补齐失败任务概览的中文原因与源 PDF 页定位，明确无定位证据，复用现有脱敏诊断合同。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "document-jobs",
   "package": null,
@@ -11,12 +11,12 @@
   "creator": "777",
   "assignee": "777",
   "createdAt": "2026-11-06",
-  "completedAt": null,
+  "completedAt": "2026-11-06",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
-  "pr_url": null,
+  "commit": "1a346905095a11f4150e5f4d0572a24ae4bef336",
+  "pr_url": "https://github.com/ccisnoxx/md2word/pull/30",
   "subtasks": [],
   "children": [],
   "parent": null,
@@ -29,6 +29,6 @@
     "frontend/src/pages/IncidentTriagePage.vue",
     ".trellis/spec/frontend/ui-quality-guidelines.md"
   ],
-  "notes": "2026-11-06 已按批准方案实现，22/22 定向测试和 vue-tsc 通过，Trellis check 无实质问题。未提交/推送/部署，未运行归档或日志自动提交。证据见 validation.md；视觉及线上任务未验证。",
+  "notes": "2026-11-06 实施及22/22定向测试、类型检查和独立复核完成；PR #30已合并，前端0c5fc3fc已部署hostdzire并通过制品/公网/健康校验。详见 validation.md、deployment.md。浏览器视觉及具体任务根因未验证。",
   "meta": {}
 }
