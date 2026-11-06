@@ -194,7 +194,9 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         resolved_settings,
         config_resolver=ai_provider_config_service.get_effective_config,
     )
-    document_ir_translation_service = DocumentIRTranslationService(translation_provider)
+    document_ir_translation_service = DocumentIRTranslationService(
+        translation_provider, table_context_enabled=resolved_settings.translation_table_context_enabled,
+    )
     translation_audit_service = TranslationAuditService(
         resolved_settings,
         file_upload_service,
