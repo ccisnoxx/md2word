@@ -15,7 +15,7 @@ from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.table_placeholder import TablePlaceholderError
 from app.services.renderer.evidence import build_renderer_event_summary
 from app.services.renderer.table_renderer import TableRenderError
-from app.services.renderer.word_renderer import FAILURE_CONTEXT_ATTRIBUTE
+from app.services.failure_context import FAILURE_CONTEXT_ATTRIBUTE
 from app.services.tables.evidence import TableEvidenceError
 from app.services.tables.html_normalizer import TableBuildError
 from app.services.tables.quality import TableValidationError

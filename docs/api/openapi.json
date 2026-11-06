@@ -3155,7 +3155,7 @@
         "type": "object"
       },
       "DocumentJobFailureDiagnosticResponse": {
-        "description": "当前代失败定位投影（MinerU 验证或渲染操作）；页码为 1 起始，文档级问题不伪造页码。",
+        "description": "当前代失败定位投影（MinerU 验证、渲染或表格占位操作）；页码为 1 起始，文档级问题不伪造页码。",
         "properties": {
           "affected_page_numbers": {
             "items": {
@@ -3165,7 +3165,7 @@
             "type": "array"
           },
           "block_ids": {
-            "description": "渲染来源时为失败操作涉及的 IR 块 ID。",
+            "description": "失败操作涉及的 IR 块 ID。",
             "items": {
               "type": "string"
             },
@@ -3203,8 +3203,24 @@
                 "type": "null"
               }
             ],
-            "description": "渲染来源时为失败的 RenderPlan 操作类型。",
+            "description": "失败的渲染计划或表格占位操作类型。",
             "title": "Operation Kind"
+          },
+          "page_count_basis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "mineru_layout",
+                  "content_blocks"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "content_blocks 时空白页可能未计入，总页数只能当下限。",
+            "title": "Page Count Basis"
           },
           "page_number": {
             "anyOf": [
@@ -3244,10 +3260,23 @@
             "default": "mineru_validation",
             "enum": [
               "mineru_validation",
-              "render_operation"
+              "render_operation",
+              "table_placeholder"
             ],
             "title": "Source",
             "type": "string"
+          },
+          "source_page_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "源 PDF 总页数；无法得知时为 null。",
+            "title": "Source Page Count"
           },
           "source_type": {
             "anyOf": [

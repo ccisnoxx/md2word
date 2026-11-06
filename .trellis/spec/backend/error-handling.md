@@ -121,13 +121,62 @@ Current dominant convention for new application code is `ApiError`, but `HTTPExc
 
 ## DocumentJob 转换失败定位投影
 
-- 唯一读侧 owner 为 `app/domains/document_jobs/failure_diagnostic.py::project_failure_diagnostic`；只读取当前代（`payload.retry_count == job.retry_count`）最新 `stage_failed` 事件中已脱敏的 `mineru_validation`，要求 `can_convert=false` 且有 `first_fatal.code`，否则为 `null`。缺代数的历史事件不猜。
+- 唯一读侧 owner 为 `app/domains/document_jobs/failure_diagnostic.py::project_failure_diagnostic`；沿用当前代（`payload.retry_count == job.retry_count`）最新、带受支持证据的 `stage_failed` 事件选择。优先消费有效 MinerU 致命报告（`can_convert=false` 且有 `first_fatal.code`）；不能形成验证诊断时消费同一事件的已脱敏 `failure_context`，两者均不可用才为 `null`。缺代数的历史事件不猜，不能从另一代借定位。
 - 页码对外 1 起始；`first_fatal` 无 `page_index` 时 `scope=document`、`page_number=null`，不得伪造第 1 页。`details_truncated=true` 时受影响页列表可能不完整，UI 必须提示。
 - 仅 `GET /document-jobs/{id}` 与异常中心诊断接口填充；列表等共用 `DocumentJobResponse` 的接口恒为 `null`，不做逐行事件查询。前端只消费该投影，不解析事件 payload。
 - `error_code`/`failed_stage` 合同不变。异常中心分类中失败任务的明确错误码优先于关键词：`mineru_failed`/`document_ir_failed`/`render_failed` → `conversion_failed`，`translation_failed`/`translation_fan_in_mismatch` → `translation_failed`（历史 `ir_converting + translation_failed` 仍为翻译失败）。
 - 测试：`tests/test_document_job_failure_diagnostic.py`（含真实 eager Worker 页级与文档级失败）。
-- 渲染来源（P0-6）：`word_renderer.render_to_result` 在执行 RenderPlan 操作或表格预处理时捕获异常，只用 `attach_failure_context` 把操作定位（序号、类型、分节、块 ID、源页索引、逻辑表格单元）挂到异常属性 `md2word_failure_context` 后原样抛出，不改变异常类型与失败分类。计划阶段同样带定位，`operation_kind` 为 `layout_plan`、`table_plan`、`render_plan`：`TableRenderError` 按 `block_index` 定位块和页，因此可进入整页降级；其余为文档级；`render_plan` 的合同错误转 `DocumentIntegrityError` 后上下文挂在新异常上，仍不降级。`app/domains/document_jobs/_failure_policy.py::worker_failure_evidence` 以“固定错误码 → 完整性首个阻断码 → 异常类型名”取原因码写入 `failure_context`，`evidence._safe_failure_context` 逐字段白名单过滤（不收异常正文）；含 `failure_context` 的 payload 同样附 `retry_count`。投影来源为 `render_operation`，新增 `block_ids`、`operation_kind`、`source_page_count`、`page_count_basis`（MinerU 验证来源取 `inventory.raw_page_count`，依据固定 `content_blocks`，0 视为未知）；无源页的操作为 `scope=document`。测试：`tests/test_render_failure_context.py`。
+- 渲染来源（P0-6）：`word_renderer.render_to_result` 在执行 RenderPlan 操作或表格预处理时捕获异常，只用 `app/services/failure_context.py::attach_failure_context` 把操作定位（序号、类型、分节、块 ID、源页索引、逻辑表格单元）挂到异常属性 `md2word_failure_context` 后原样抛出，不改变异常类型与失败分类。计划阶段同样带定位，`operation_kind` 为 `layout_plan`、`table_plan`、`render_plan`：`TableRenderError` 按 `block_index` 定位块和页，因此可进入整页降级；其余为文档级；`render_plan` 的合同错误转 `DocumentIntegrityError` 后上下文挂在新异常上，仍不降级。`app/domains/document_jobs/_failure_policy.py::worker_failure_evidence` 以“固定错误码 → 完整性首个阻断码 → 异常类型名”取原因码写入 `failure_context`，`evidence._safe_failure_context` 逐字段白名单过滤（不收异常正文）；含 `failure_context` 的 payload 同样附 `retry_count`。投影来源为 `render_operation`，新增 `block_ids`、`operation_kind`、`source_page_count`、`page_count_basis`（MinerU 验证来源取 `inventory.raw_page_count`，依据固定 `content_blocks`，0 视为未知）；无源页的操作为 `scope=document`。测试：`tests/test_render_failure_context.py`。
 - Worker 失败消息：`app/domains/document_jobs/_failure_policy.py` 是失败分类、消息和证据的唯一 owner；`worker_failure_message` 构造安全消息，`stage_attempt_failure` 与 `render_failure` 分别拥有普通阶段与渲染路径的最终错误覆盖规则。只有消息由固定码构造的类型（`SAFE_MESSAGE_ERRORS`：MinerU 验证、表格占位/渲染/构建/证据/验证、翻译完整性）保留原消息；`DocumentIRTranslationError` 只输出 `翻译处理失败：{code}。`；完整性、MinerU 外部调用、OSError 维持固定文案；其余异常输出 `Worker 执行失败（{异常类型名}），详见事件 trace_id。`，不记录异常原文。翻译流程中直接写 `error_message` 的位置同样经该函数。测试：`tests/test_worker_failure_message.py`。
+
+
+### 表格占位失败诊断合同
+
+#### 1. 范围与触发
+
+修改 `prepare_placeholders`、失败上下文脱敏、诊断投影或前端失败摘要时适用。解决转换阶段的真实占位失败只有错误码、源片段页码未进入事件，以及通过的验证报告遮蔽随后失败的问题。
+
+#### 2. 签名与所有权
+
+- `app/services/failure_context.py` 统一拥有 `FAILURE_CONTEXT_ATTRIBUTE` 和 `attach_failure_context(error: BaseException, **context)`；仅首次附加，保留更内层位置，不包装异常。IR 转换层不得反向导入 Word renderer 获取此函数。
+- `prepare_placeholders(...)` 在真实来源片段操作处补上下文后原样抛出 `TablePlaceholderError`；`worker_failure_evidence` 仍是安全事件证据的唯一 owner。
+- `DocumentJobFailureDiagnosticResponse.source` 为 `mineru_validation | render_operation | table_placeholder`。端点与原字段不变；前端类型和 OpenAPI 快照同步来源枚举。
+
+#### 3. 字段与行为合同
+
+- 新操作类型固定为 `table_placeholder`，保留已有四类受控原因码：`table_placeholder_geometry_invalid`、`table_placeholder_crop_failed`、`table_placeholder_integrity_failed`、`table_placeholder_source_unavailable`。
+- 片段上下文的 `source_page_index` 取可信 `fragment.source_span.page_index`；不能以逻辑表格 owner 的首页代替后续片段页。`block_ids` 可记录 owner 标识，但不决定页码。
+- 全局数量/累计预算及源文件整体身份校验错误为文档范围；内层文档范围上下文也不能被外层片段补定位覆盖。没有可靠源页时不填 0。
+- 页数复用 `integrity.build_page_counts`，仅公开 `source_page_count/page_count_basis`，不声明已成功页数。`content_blocks` 仍只代表页数下限。
+- 新上下文仍经过 `_safe_failure_context` 逐字段白名单：只增加固定操作值，不放宽现有 ID、页索引、原因码验证，不公开正文、HTML、bbox、URL、文件路径或任意异常正文。
+- 操作诊断每次只证明当前停止的首个失败：已知页 `fatal_count=1`、`affected_page_numbers=[page_number]`；文档范围 `page_number=null`、受影响页为空。旧缺证据记录不回填，非致命表格告警不能替代实际失败位置。
+
+#### 4. 诊断选择矩阵
+
+| 同一当前代失败事件证据 | 结果 |
+|---|---|
+| 有效 MinerU 致命报告 | 保持 `mineru_validation` 的原位置与多页诊断 |
+| 验证报告通过或无法形成诊断，且有有效占位上下文 | `table_placeholder`，按真实片段索引 +1 显示源 PDF 页 |
+| 同上，操作是既有渲染操作 | `render_operation`，保留原定位语义 |
+| 有文档范围占位上下文 | 原因可读，明确无法定位单页 |
+| 无有效当前代证据 | `null`，UI 明确未记录失败页码 |
+
+#### 5. 正常、缺省与禁止案例
+
+正常：合并表格首页为第 2 页，第 5 页片段裁切失败，诊断显示第 5 页。缺省：历史任务只有通过的验证报告，继续返回 null。禁止：把 `empty_table_html` 非致命告警页当作几何失败页，或因增加定位而触发新的重试/降级策略。
+
+#### 6. 必要测试
+
+- `tests/test_table_placeholder_failure_context.py`：真实 converter→eager Worker→事件→详情/异常 API；跨页后续片段、页 0、全局预算/源身份失败。
+- 正常占位路径复用 `tests/test_image_normalization_pipeline.py` 的表格参考图用例及 `tests/test_document_ir_mineru_converter_layout.py` 的续表占位用例；直接受影响的降级回归由 `tests/test_page_degradation.py`、`tests/test_render_page_degradation.py` 覆盖。
+- `tests/test_document_job_failure_diagnostic.py`、`tests/test_worker_failure_policy.py`、`tests/test_render_failure_context.py`：报告与操作证据并存、旧代隔离、字段脱敏、原渲染诊断和异常类型不变。
+- 前端 `failureDiagnostic.test.ts` 和 `JobOverviewPanel.test.ts`：新来源的中文原因、一基源页和块/操作技术信息；旧 null 回退不变。API 枚举变更后导出并比对 OpenAPI 快照。
+
+#### 7. 错误与正确做法
+
+错误：看到 `mineru_validation.can_convert=true` 就直接返回 null，或者为跨页表格取 owner 页作为失败页。
+
+正确：无有效验证诊断时继续消费同一事件的操作上下文；在片段实际失败处保留其 source_span 页索引，按既有白名单过滤后仅在读侧转为一基页码。
 
 ## Scenario: DocumentIR Translation Provider Failures
 

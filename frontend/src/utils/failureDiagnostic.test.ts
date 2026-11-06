@@ -57,6 +57,29 @@ describe("失败诊断共享文案", () => {
     expect(lines).toContain("技术定位：块 block_0005，操作 logical_table");
   });
 
+  it.each([
+    ["table_placeholder_geometry_invalid", "表格占位区域无效"],
+    ["table_placeholder_crop_failed", "表格占位图裁剪失败"],
+    ["table_placeholder_source_unavailable", "表格占位所需的源文件不可用"],
+    ["table_placeholder_integrity_failed", "表格占位完整性校验失败"],
+  ])("表格占位 %s 复用摘要并在详细诊断展示真实片段位置", (reason_code, reason) => {
+    const diagnostic = buildDiagnostic({
+      source: "table_placeholder", stage: "ir_converting", page_number: 2, affected_page_numbers: [2],
+      reason_code, reason: null, source_type: null, json_pointer: null, fatal_count: 1,
+      block_ids: ["block_0001"], operation_kind: "table_placeholder",
+    });
+    const lines = failureDiagnosticLines(diagnostic);
+    expect(lines[0]).toBe(`原因：${reason}`);
+    expect(lines).toContain("首个失败位置：源 PDF 第 2 页");
+    expect(lines).toContain("技术定位：块 block_0001，操作 table_placeholder");
+    const job = { ...failedJob, failed_stage: "ir_converting" as const, error_code: "document_ir_failed", failure_diagnostic: diagnostic };
+    expect(jobFailureSummaryLines(job)).toContain(`原因：${reason}`);
+    expect(jobFailureSummaryLines(job).join()).not.toContain("block_0001");
+    expect(jobFailureSummaryLines(job, diagnostic, true)).toContain("技术定位：块 block_0001，操作 table_placeholder");
+    expect(failureDiagnosticLines({ ...diagnostic, scope: "document", page_number: null, affected_page_numbers: [] }))
+      .toContain("首个失败位置：文档范围错误，无法定位单页");
+  });
+
   it("泛型异常不伪造根因，未知细分原因只保留机器码", () => {
     const lines = failureDiagnosticLines(buildDiagnostic({
       source: "render_operation", reason_code: "ValueError", reason: "future_reason", operation_kind: "block",

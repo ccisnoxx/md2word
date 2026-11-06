@@ -140,6 +140,29 @@ class WorkerFailurePolicyTests(TestCase):
         error.code = PRIVATE
         self.assertNotIn("failure_context", policy.worker_failure_evidence(error))
 
+    def test_placeholder_context_keeps_controlled_codes_and_filters_private_fields(self):
+        context = {"operation_kind": "table_placeholder", "block_ids": ["block_0001"],
+                   "source_page_index": 0, "source_page_count": 3, "page_count_basis": "content_blocks",
+                   "message": PRIVATE, "url": PRIVATE, "html": PRIVATE, "bbox": [1, 2, 3, 4]}
+        for code in ("table_placeholder_geometry_invalid", "table_placeholder_crop_failed",
+                     "table_placeholder_source_unavailable", "table_placeholder_integrity_failed"):
+            error = TablePlaceholderError(code)
+            setattr(error, FAILURE_CONTEXT_ATTRIBUTE, context)
+            with self.subTest(code=code):
+                evidence = policy.worker_failure_evidence(error)
+                self.assertEqual(evidence["failure_context"]["reason_code"], code)
+                self.assertNotIn(PRIVATE, json.dumps(evidence, ensure_ascii=False))
+                self.assertNotIn("bbox", evidence["failure_context"])
+        for bad in ({"block_ids": [PRIVATE]}, {"operation_kind": PRIVATE}, {"block_ids": ["block"] * 21}):
+            setattr(error, FAILURE_CONTEXT_ATTRIBUTE, {**context, **bad})
+            self.assertNotIn("failure_context", policy.worker_failure_evidence(error))
+        for page in (-1, True, "2"):
+            setattr(error, FAILURE_CONTEXT_ATTRIBUTE, {**context, "source_page_index": page,
+                                                       "source_page_count": -2, "page_count_basis": PRIVATE})
+            safe = policy.worker_failure_evidence(error)["failure_context"]
+            self.assertEqual((safe["source_page_index"], safe["source_page_count"], safe["page_count_basis"]),
+                             (None, None, None))
+
     def test_baseline_empty_evidence_and_sensitive_exception_text(self):
         for error, _, _, _ in _cases():
             with self.subTest(error=type(error).__name__):
