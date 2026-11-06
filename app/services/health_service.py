@@ -18,7 +18,7 @@ from app.api.v1.routers.health_schemas import (
     HealthOpsAlertSummary,
     HealthReadyResponse,
 )
-from app.conversion.runtime import llm_client
+from app.clients import openai_sdk
 from app.core.config import Settings
 from app.infrastructure.pdf_crop import poppler_tools_available
 from app.domains.audit.repository import AuditEventRepositoryProtocol
@@ -26,14 +26,9 @@ from app.domains.document_jobs.repository import (
     DocumentJobCallbackMessageStoreProtocol,
     DocumentJobRepositoryProtocol,
 )
-from app.domains.jobs.models import JobStageMessage
 from app.domains.mineru.config import EffectiveMinerUConfig, MinerUConfigError
 from app.domains.resources.models import utc_now
 from app.domains.translation.provider_config import EffectiveAiProviderConfig
-from app.domains.jobs.repository import (
-    JobSnapshotRepositoryProtocol,
-    StageMessageStoreProtocol,
-)
 from app.domains.resources.repository import ResourceVersionRepositoryProtocol
 from app.domains.translation.modes import TRANSLATION_LANGUAGE_PAIRS, is_translation_mode, translation_prompt_path
 from app.domains.users.repository import InternalUserRepositoryProtocol
@@ -48,7 +43,6 @@ DOCUMENT_JOB_STALE_SECONDS = 600
 READINESS_REQUIRED_CHECKS = (
     "jobs_dir_exists",
     "jobs_dir_writable",
-    "stage_spool_dir_exists",
     "tmp_dir_exists",
     "template_docx_exists",
     "layout_config_exists",
@@ -60,10 +54,6 @@ READINESS_NON_BLOCKING_CHECKS = (
     "pdf_submission_available",
     "pdf_crop_tools_available",
     "translation_available",
-    "stage_spool_replayable_messages",
-    "stage_spool_failed_messages",
-    "stage_spool_running_stale_messages",
-    "stage_spool_needs_attention",
     "p0_document_jobs_ready",
     "document_jobs_automatic_execution_enabled",
     "document_job_callback_replayable_messages",
@@ -77,13 +67,9 @@ class HealthService:
     def __init__(
         self,
         settings: Settings,
-        stage_message_store: StageMessageStoreProtocol,
         *,
         effective_repository_backend: Literal["file", "database", "mysql"] = "file",
-        stage_message_store_backend: Literal["file", "database", "mysql"] = "file",
         artifact_storage_backend: str = "local_file",
-        stage_dispatcher_backend: Literal["background_tasks", "external_worker"] = "background_tasks",
-        job_repository: JobSnapshotRepositoryProtocol | None = None,
         document_job_repository: DocumentJobRepositoryProtocol | None = None,
         document_job_callback_message_store: DocumentJobCallbackMessageStoreProtocol | None = None,
         audit_event_repository: AuditEventRepositoryProtocol | None = None,
@@ -94,12 +80,8 @@ class HealthService:
         mineru_config_service: Any,
     ) -> None:
         self.settings = settings
-        self.stage_message_store = stage_message_store
         self.effective_repository_backend = effective_repository_backend
-        self.stage_message_store_backend = stage_message_store_backend
         self.artifact_storage_backend = artifact_storage_backend
-        self.stage_dispatcher_backend = stage_dispatcher_backend
-        self.job_repository = job_repository
         self.document_job_repository = document_job_repository
         self.document_job_callback_message_store = document_job_callback_message_store
         self.audit_event_repository = audit_event_repository
@@ -142,20 +124,9 @@ class HealthService:
         except MinerUConfigError:
             mineru_config_error = "mineru_config_invalid"
             mineru_config = EffectiveMinerUConfig(api_token=None, uid=None, source="runtime_config")
-        stage_spool_counts = self.stage_message_store.count_stage_messages_by_status()
-        running_observation = self._build_running_stage_observation()
         translation_provider_enabled = ai_provider_config.backend == "openai_compatible"
-        translation_client_configured = bool(ai_provider_config.api_key) and llm_client.OpenAI is not None
+        translation_client_configured = bool(ai_provider_config.api_key) and openai_sdk.OpenAI is not None
         translation_available = translation_provider_enabled and translation_client_configured and translation_prompt_exists
-        stage_spool_available = self.stage_message_store_backend in {"database", "mysql"} or self.settings.stage_messages_dir.exists()
-        stage_spool_replayable_messages = (
-            stage_spool_counts.get("pending", 0)
-            + stage_spool_counts.get("running", 0)
-        )
-        stage_spool_needs_attention = (
-            stage_spool_counts.get("failed", 0) > 0
-            or running_observation["stale_count"] > 0
-        )
         pdf_submission_available = mineru_config.api_token_configured
         artifact_root = self._artifact_root()
         resource_labels = self._build_default_resource_labels()
@@ -180,25 +151,11 @@ class HealthService:
             "document_jobs_worker_backend": self.settings.document_jobs_worker_backend,
             "document_jobs_celery_queue": self.settings.document_jobs_celery_queue,
             "document_jobs_translation_batch_celery_queue": self.settings.document_jobs_translation_batch_celery_queue,
-            "stage_dispatcher": self.stage_dispatcher_backend,
-            "stage_message_store": self.stage_message_store_backend,
             "artifact_storage": self.artifact_storage_backend,
             "jobs_dir_exists": self.settings.jobs_dir.exists(),
             "jobs_dir_writable": self._is_writable(),
             "artifact_root_writable": self._is_writable(artifact_root),
             "artifact_disk_free_bytes": self._disk_free_bytes(artifact_root),
-            "stage_spool_dir_exists": stage_spool_available,
-            "stage_spool_pending_messages": stage_spool_counts.get("pending", 0),
-            "stage_spool_running_messages": stage_spool_counts.get("running", 0),
-            "stage_spool_failed_messages": stage_spool_counts.get("failed", 0),
-            "stage_spool_replayable_messages": stage_spool_replayable_messages,
-            "stage_spool_running_stale_messages": running_observation["stale_count"],
-            "stage_spool_oldest_running_age_seconds": running_observation["oldest_age_seconds"],
-            "stage_spool_needs_attention": stage_spool_needs_attention,
-            "stage_spool_observation_status": self._build_stage_spool_observation_status(
-                replayable_count=stage_spool_replayable_messages,
-                needs_attention=stage_spool_needs_attention,
-            ),
             "tmp_dir_exists": self.settings.tmp_dir.exists(),
             "template_docx_exists": template_path is not None and template_path.exists(),
             "layout_config_exists": layout_config_path is not None and layout_config_path.exists(),
@@ -252,8 +209,6 @@ class HealthService:
             blockers.append("jobs_dir_missing")
         if not checks["jobs_dir_writable"]:
             blockers.append("data_dir_not_writable")
-        if self.stage_message_store_backend == "file" and not checks["stage_spool_dir_exists"]:
-            blockers.append("stage_spool_dir_missing")
         if not checks["tmp_dir_exists"]:
             blockers.append("tmp_dir_missing")
         if not checks["template_docx_exists"]:
@@ -281,12 +236,6 @@ class HealthService:
             warnings.append("translation_unavailable")
         if ai_provider_config_error is not None and not checks["translation_required_for_default_mode"]:
             warnings.append(ai_provider_config_error)
-        if stage_spool_replayable_messages > 0:
-            warnings.append("stage_spool_replayable_messages_present")
-        if stage_spool_counts.get("failed", 0) > 0:
-            warnings.append("stage_spool_failed_messages_present")
-        if running_observation["stale_count"] > 0:
-            warnings.append("stage_spool_stale_running_messages_present")
         warnings.extend(p0_document_jobs["warnings"])
         if document_job_observation["stale_count"] > 0:
             warnings.append("document_jobs_stale_running_present")
@@ -308,7 +257,7 @@ class HealthService:
                 checks["translation_unavailable_reason"] = "OPENAI_API_KEY 未配置"
             elif checks["ai_provider_config_error"]:
                 checks["translation_unavailable_reason"] = "AI provider 配置文件不可读取"
-            elif llm_client.OpenAI is None:
+            elif openai_sdk.OpenAI is None:
                 checks["translation_unavailable_reason"] = "openai Python SDK 不可用"
             elif not checks["translation_prompt_exists"]:
                 checks["translation_unavailable_reason"] = "翻译 prompt 文件缺失"
@@ -474,7 +423,6 @@ class HealthService:
         )
 
     def build_metrics_response(self) -> HealthMetricsResponse:
-        stage_spool_counts = self.stage_message_store.count_stage_messages_by_status()
         callback_observation = self._build_document_job_callback_observation()
         resource_counts = self._build_resource_version_counts()
         resource_labels = self._build_default_resource_labels()
@@ -494,17 +442,17 @@ class HealthService:
             metadata_store=self.effective_repository_backend,
             artifact_storage=self.artifact_storage_backend,
             worker_mode=self.settings.jobs_worker_mode,
-            stage_dispatcher=self.stage_dispatcher_backend,
-            jobs=self._build_job_status_counts(),
+            # 保留前端计数字段的读取合同，已退役链路不再读取仓储。
+            jobs={},
+            stage_messages={},
             document_jobs=self._build_document_job_status_counts(),
-            stage_messages=stage_spool_counts,
             document_job_callback_messages=callback_observation["status_counts"],
             resources=resources,
             audit_events={"total": self._count_audit_events()},
         )
 
     def _build_deployment_info(self) -> HealthDeploymentInfo:
-        """Return release identity fields safe for health responses and evidence reports."""
+        """返回可用于健康响应和验证报告的非敏感发布标识。"""
 
         deployment_id = self.settings.deployment_id.strip() or None
         return HealthDeploymentInfo(
@@ -520,14 +468,11 @@ class HealthService:
         checks: dict[str, Any],
         document_job_counts: dict[str, int],
     ) -> HealthOpsAlertSummary:
-        """把 readiness、stage spool 和 document_jobs 计数收敛成稳定摘要。"""
+        """把 readiness 和 document_jobs 计数收敛成稳定摘要。"""
 
         return HealthOpsAlertSummary(
             readiness_blockers=len(self._string_list_check(checks, "readiness_blockers")),
             readiness_warnings=len(self._string_list_check(checks, "readiness_warnings")),
-            stage_failed_messages=self._int_check(checks, "stage_spool_failed_messages"),
-            stage_stale_running_messages=self._int_check(checks, "stage_spool_running_stale_messages"),
-            stage_replayable_messages=self._int_check(checks, "stage_spool_replayable_messages"),
             callback_failed_messages=self._int_check(checks, "document_job_callback_failed_messages"),
             callback_replayable_messages=self._int_check(checks, "document_job_callback_replayable_messages"),
             callback_oldest_replayable_age_seconds=self._int_check(
@@ -537,8 +482,6 @@ class HealthService:
             failed_jobs=document_job_counts.get("failed", 0),
             running_jobs=document_job_counts.get("running", 0),
             worker_mode=str(checks.get("worker_mode") or self.settings.jobs_worker_mode),
-            stage_dispatcher=str(checks.get("stage_dispatcher") or self.stage_dispatcher_backend),
-            stage_message_store=str(checks.get("stage_message_store") or self.stage_message_store_backend),
             artifact_storage=str(checks.get("artifact_storage") or self.artifact_storage_backend),
         )
 
@@ -552,9 +495,6 @@ class HealthService:
         alerts: list[HealthOpsAlertItem] = []
         blockers = self._string_list_check(checks, "readiness_blockers")
         warnings = self._string_list_check(checks, "readiness_warnings")
-        stage_failed_count = self._int_check(checks, "stage_spool_failed_messages")
-        stage_stale_count = self._int_check(checks, "stage_spool_running_stale_messages")
-        stage_replayable_count = self._int_check(checks, "stage_spool_replayable_messages")
         callback_failed_count = self._int_check(checks, "document_job_callback_failed_messages")
         callback_replayable_count = self._int_check(checks, "document_job_callback_replayable_messages")
         callback_oldest_replayable_age_seconds = self._int_check(
@@ -604,45 +544,6 @@ class HealthService:
                     count=len(warnings),
                     suggested_route="/system-status",
                     suggested_action="查看就绪检查详情；告警只提示风险，不在此接口触发修复动作。",
-                )
-            )
-        if stage_failed_count > 0:
-            alerts.append(
-                HealthOpsAlertItem(
-                    code="stage_spool_failed_messages_present",
-                    severity="critical",
-                    source="stage_spool",
-                    title="存在失败的阶段消息",
-                    description="失败的阶段消息不会自动重放，需要结合任务详情和事件流判断下一步。",
-                    count=stage_failed_count,
-                    suggested_route="/jobs?status=failed&sort=updated_at_desc",
-                    suggested_action="查看失败任务和事件；如需重试，使用既有任务流程手动处理。",
-                )
-            )
-        if stage_stale_count > 0:
-            alerts.append(
-                HealthOpsAlertItem(
-                    code="stage_spool_stale_running_messages_present",
-                    severity="critical",
-                    source="stage_spool",
-                    title="存在过期运行中的阶段消息",
-                    description="运行中的阶段消息已超过租约观察窗口，可能来自工作进程退出或处理卡住。",
-                    count=stage_stale_count,
-                    suggested_route="/jobs?status=running&sort=updated_at_desc",
-                    suggested_action="先确认工作进程和任务事件，再按既有运维流程处理。",
-                )
-            )
-        if stage_replayable_count > 0:
-            alerts.append(
-                HealthOpsAlertItem(
-                    code="stage_spool_replayable_messages_present",
-                    severity="warning",
-                    source="stage_spool",
-                    title="存在可继续处理的阶段消息",
-                    description="待处理或运行中的阶段消息属于可观察信号，可能随工作进程恢复继续处理。",
-                    count=stage_replayable_count,
-                    suggested_route="/jobs?status=running&sort=updated_at_desc",
-                    suggested_action="观察工作进程和任务事件进展；本接口不会启动重放。",
                 )
             )
         if callback_failed_count > 0:
@@ -761,14 +662,6 @@ class HealthService:
         except OSError:
             return 0
 
-    def _build_job_status_counts(self) -> dict[str, int]:
-        counts: Counter[str] = Counter()
-        if self.job_repository is None:
-            return {}
-        for job in self.job_repository.list_jobs():
-            counts[job.status] += 1
-        return dict(sorted(counts.items()))
-
     def _build_document_job_status_counts(self) -> dict[str, int]:
         """统计未归档 document_jobs 的状态，匹配运维看板只读列表语义。"""
 
@@ -843,38 +736,6 @@ class HealthService:
         if isinstance(value, int):
             return max(0, value)
         return 0
-
-    def _build_running_stage_observation(self) -> dict[str, int]:
-        """汇总 running stage message 中已过 lease 的数量和最老运行时长。"""
-
-        now = utc_now()
-        stale_count = 0
-        oldest_age_seconds = 0
-        for message in self.stage_message_store.list_replayable_stage_messages():
-            if message.status != "running":
-                continue
-            age_seconds = max(0, int((now - message.updated_at).total_seconds()))
-            oldest_age_seconds = max(oldest_age_seconds, age_seconds)
-            if self._is_running_stage_stale(message):
-                stale_count += 1
-        return {
-            "stale_count": stale_count,
-            "oldest_age_seconds": oldest_age_seconds,
-        }
-
-    @staticmethod
-    def _build_stage_spool_observation_status(*, replayable_count: int, needs_attention: bool) -> str:
-        if needs_attention:
-            return "needs_attention"
-        if replayable_count > 0:
-            return "replayable"
-        return "ok"
-
-    def _is_running_stage_stale(self, message: JobStageMessage) -> bool:
-        now = utc_now()
-        if message.lease_expires_at is not None:
-            return message.lease_expires_at <= now
-        return (now - message.updated_at).total_seconds() >= self.settings.stage_message_lease_seconds
 
     def build_ready_response(self) -> HealthReadyResponse:
         return HealthReadyResponse(

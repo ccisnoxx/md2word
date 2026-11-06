@@ -4,6 +4,9 @@ from __future__ import annotations
 # Purpose: Manage admin-owned runtime AI provider configuration without exposing secrets.
 
 import json
+import os
+import stat
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -159,20 +162,39 @@ class AiProviderConfigService:
         )
 
     def _write_record(self, record: AiProviderConfigRecord) -> None:
-        self.config_path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(record.model_dump(mode="json"), ensure_ascii=False, indent=2)
-        temp_path = self.config_path.with_suffix(f"{self.config_path.suffix}.tmp")
-        temp_path.write_text(payload + "\n", encoding="utf-8")
-        self._restrict_permissions(temp_path)
-        temp_path.replace(self.config_path)
-        self._restrict_permissions(self.config_path)
+        try:
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            # 唯一名称的排他创建避开历史残留，也不跟随残留符号链接。
+            descriptor, temp_name = tempfile.mkstemp(
+                dir=self.config_path.parent, prefix=f"{self.config_path.name}.", suffix=".tmp"
+            )
+        except OSError as exc:
+            raise OSError("无法创建 AI Provider 配置临时文件。") from exc
+
+        temp_path = Path(temp_name)
+        try:
+            try:
+                self._restrict_permissions(descriptor)
+                with os.fdopen(descriptor, "w", encoding="utf-8", closefd=False) as stream:
+                    stream.write(payload + "\n")
+            finally:
+                os.close(descriptor)
+            # 替换保留已确认的 inode 权限，不在覆盖旧配置后执行可能失败的权限操作。
+            temp_path.replace(self.config_path)
+        except BaseException:
+            temp_path.unlink(missing_ok=True)
+            raise
 
     @staticmethod
-    def _restrict_permissions(path: Path) -> None:
+    def _restrict_permissions(descriptor: int) -> None:
         try:
-            path.chmod(0o600)
-        except OSError:
-            return
+            os.fchmod(descriptor, 0o600)
+            mode = stat.S_IMODE(os.fstat(descriptor).st_mode)
+        except OSError as exc:
+            raise OSError("无法设置或确认 AI Provider 配置文件权限为 0600。") from exc
+        if mode != 0o600:
+            raise OSError("AI Provider 配置文件权限必须为 0600，已停止写入。")
 
     @staticmethod
     def _normalize_optional(value: str | None) -> str | None:

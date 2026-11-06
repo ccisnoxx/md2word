@@ -6,7 +6,7 @@ services:
     build:
       context: ../..
       dockerfile: docker/prod/Dockerfile
-    image: md2word-p0:latest
+    image: ${MD2WORD_IMAGE:?必须设置同一版本的 API/Worker 镜像引用}
     command:
       [
         "python",
@@ -47,7 +47,7 @@ services:
       start_period: 20s
 
   worker:
-    image: md2word-p0:latest
+    image: ${MD2WORD_IMAGE:?必须设置同一版本的 API/Worker 镜像引用}
     command: ["python", "scripts/dev/run_document_worker.py"]
     env_file:
       - ../../.env
@@ -64,7 +64,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    image: docker.io/library/redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - md2word-redis:/data
@@ -76,7 +76,7 @@ services:
       retries: 10
 
   mysql:
-    image: mysql:8.4
+    image: docker.io/library/mysql@sha256:c36050afdca850f23cef85703f84c7531a5ae155a11b5ee1c60acb09937c4084
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
       MYSQL_DATABASE: ${JOBS_MYSQL_DATABASE:-md2word}

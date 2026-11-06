@@ -53,8 +53,6 @@ class Settings(BaseSettings):
     jobs_artifact_s3_download_mode: Literal["redirect", "stream"] = "redirect"
     jobs_artifact_s3_presign_expires_seconds: int = 3600
     jobs_worker_mode: Literal["in_process", "external"] = "in_process"
-    jobs_worker_poll_interval_seconds: float = 2.0
-    jobs_worker_id: str = "md2word-worker"
     stage_message_lease_seconds: int = 900
     jobs_upload_max_bytes: int = 52_428_800
     oss_upload_presign_expires_seconds: int = 600
@@ -143,6 +141,7 @@ class Settings(BaseSettings):
     translation_provider_backend: Literal["disabled", "openai_compatible"] = "disabled"
     translation_provider_timeout_seconds: float = 120.0
     translation_provider_max_output_tokens: int = 12000
+    translation_table_context_enabled: bool = False
     ai_provider_config_path: str = "var/config/ai_provider_config.json"
     translation_debug_archive_enabled: bool = False
     translation_debug_archive_retention_days: int = 1
@@ -194,10 +193,6 @@ class Settings(BaseSettings):
     @property
     def jobs_dir(self) -> Path:
         return self.data_path / "jobs"
-
-    @property
-    def stage_messages_dir(self) -> Path:
-        return self.data_path / "stage_messages"
 
     @property
     def tmp_dir(self) -> Path:

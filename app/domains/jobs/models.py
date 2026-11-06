@@ -15,8 +15,6 @@ from app.domains.translation.modes import DocumentLanguage, TranslationMode
 JobStatus = Literal["uploaded", "queued", "submitting", "parsing", "parsed", "converting", "completed", "failed", "canceled"]
 JobLifecycleStatus = Literal["uploaded", "parsed", "completed", "failed", "canceled"]
 JobExecutionStatus = Literal["idle", "queued", "submitting", "parsing", "converting"]
-JobStageStatus = Literal["pending", "running", "failed"]
-JobStageName = Literal["convert_package", "submit_to_mineru", "process_callback", "convert_parsed_result"]
 
 
 def utc_now() -> datetime:
@@ -273,31 +271,6 @@ class JobEvent(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
     trace_id: str
     created_at: datetime = Field(default_factory=utc_now)
-
-
-class JobStageMessage(BaseModel):
-    """后台 stage spool 记录。
-
-    `pending` 表示尚未被 dispatcher 尝试执行；`running` 表示已被当前单实例
-    dispatcher claim，但进程重启后仍允许 replay；`failed` 表示已知失败并保留
-    诊断现场，不进入自动 replay。lease 字段只是未来独立 worker 的非破坏性扩展点，
-    当前 in-process worker 只用它们做 readiness 观察。
-    """
-
-    id: str
-    job_id: str
-    stage: JobStageName
-    trace_id: str
-    payload: dict[str, Any] = Field(default_factory=dict)
-    status: JobStageStatus = "pending"
-    attempts: int = 0
-    lease_owner: str | None = None
-    leased_at: datetime | None = None
-    lease_expires_at: datetime | None = None
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
-    error_code: str | None = None
-    error_message: str | None = None
 
 
 @dataclass(slots=True)

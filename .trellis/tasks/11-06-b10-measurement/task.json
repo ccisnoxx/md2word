@@ -1,0 +1,12 @@
+{
+  "id": "b10-measurement",
+  "title": "B10 定向测量",
+  "status": "completed",
+  "branch": "codex/b10-measurement",
+  "base_commit": "828e1d9d656bf266cba7bba0ed23a62c550db15c",
+  "scope": "仅本任务目录",
+  "authorization": "用户明确授权规划完成后直接执行；禁止提交、推送、发布和任务目录外写入",
+  "result": "测量完成，未实施优化",
+  "acceptance_owner": "Codex报告；不代表Claude已验收",
+  "report": "report.md"
+}

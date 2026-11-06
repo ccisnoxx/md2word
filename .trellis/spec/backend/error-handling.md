@@ -21,7 +21,6 @@ Evidence:
 - `app/domains/document_jobs/service.py`
 - `app/domains/document_jobs/router.py`
 - `app/domains/files/service.py`
-- `app/domains/jobs/workflow.py`
 - `tests/test_internal_user_management.py`
 - `tests/test_fastapi_jobs_backend.py`
 
@@ -61,23 +60,64 @@ When introducing a new stable API error code, add it to the `ApiErrorCode` liter
 Current dominant convention for new application code is `ApiError`, but `HTTPException` still exists in the codebase:
 
 - `app/api/errors.py` wraps `HTTPException` into the unified error shape.
-- Helper functions such as `not_found_http_exception()`, `bad_request_http_exception()`, and `artifact_download_http_exception()` map lower-level exceptions.
+- `not_found_http_exception()` 和 `bad_request_http_exception()` 将底层异常映射为 HTTP 错误。
 - Some existing routers, such as parts of `app/domains/term_rules/proposals_router.py` and `app/domains/config_workbench/router.py`, still raise `HTTPException` directly.
 
 当前未建立此约定：the repository has not fully eliminated direct `HTTPException`. Prefer `ApiError` for new domain/service behavior and use direct `HTTPException` only when matching an existing local router helper or FastAPI boundary pattern.
 
-## Workflow And Conversion Errors
+## 正式任务与资源快照错误
 
-Workflow policy errors are centralized in `app/domains/jobs/workflow.py`:
+正式任务状态规则由 `document_jobs` 领域维护，API 使用 `ApiError` 统一错误合同。旧 workflow/conversion 专属异常和 HTTP 映射已删除。
 
-- `JobWorkflowViolation` represents illegal job state/variant transitions.
-- `app/api/errors.py` maps it to HTTP 409 with `error_code="job_state_conflict"`.
+`JobResourceSnapshotError` 仍由正式任务资源绑定使用，按自身状态码映射为 `resource_snapshot_error`；不能随旧 Jobs 实现删除。
 
-Conversion failures use `ConversionFailure` from `app/conversion/contracts.py`, mapped to HTTP 503 with `error_code="conversion_failed"`.
+## MinerU 结果下载边界
 
-Resource snapshot failures use `JobResourceSnapshotError`, mapped through its own status code and `error_code="resource_snapshot_error"`.
+### 1. 范围与触发
 
-Do not duplicate workflow state checks in routers when the rule already belongs in `workflow.py` or the owning service. Existing `JobStageService` applies transitions from `app/domains/jobs/workflow.py` instead of hand-building status patches in each stage branch.
+修改结果 ZIP 下载、callback URL guard 或正式客户端工厂时应用此合同。供应商 API 返回值、已入队消息和持久化结果 URL 均须在实际下载边界检查；入队时已验证不能代替发送前校验。
+
+### 2. 签名与 owner
+
+- 唯一策略：`app/clients/mineru_result_url.py::validate_mineru_result_url(full_zip_url: str, allowed_hosts: Sequence[str]) -> None`，非法时抛安全 `ValueError`。
+- `MinerUClient(*, api_token, result_host_allowlist, model_version="vlm", user_token="")`：结果名单为必传参数，由正式 `DocumentJobExecutionService` 客户端工厂从 `Settings.allowed_mineru_result_hosts` 注入。
+- `download_result_zip(result_url: str, output_path: Path) -> Path`：先检查初始 URL，再由下载专用 Session 在公开 `send` 边界检查每个实际请求。
+
+### 3. 合同
+
+仅允许 HTTPS，host 精确或点分隔子域命中非空名单，拒绝 URL userinfo 和无效端口；合法端口、签名 query 保持。复用 Requests 的重定向和跳转上限，不在下载后才检查最终 response，不因越界自动放宽名单或回退旧下载器。
+
+下载 Session 不复制 API Session 的 Authorization、token、auth 或 cookie；保持标准 TLS 验证与代理/CA 环境设置。标准 trust_env/netrc 行为不变，不能把 API 凭据隔离解释为禁用所有环境凭据。
+
+最终 200 后才创建/打开输出；非法初始 URL、越界跳转和非 200 不得截断已有文件。流读取开始后的失败沿用既有临时目录/Artifact 生命周期，不能登记部分 ZIP。Session 和已持有响应须释放；不新增无限重试。
+
+### 4. 校验与错误矩阵
+
+| 场景 | 结果 |
+|---|---|
+| callback 初始 URL 非法 | 安全 ValueError → HTTP 400，不入队。 |
+| 下载策略、Requests 传输/解析/流读取或跳转上限失败 | 安全 MinerUError，抑制原始异常链；违规目标零请求。 |
+| 最终非 200 | MinerUError，可保留状态码，不含完整 URL/上游异常。 |
+| 正式 Worker 下载失败 | parsing/mineru_failed；不登记成功原始 ZIP。 |
+| 本地文件 OSError | 保持原错误类别，不包装为供应商错误。 |
+
+应用主动记录的下载日志、外抛错误及格式化异常链不得包含原始 URL、Location、query、userinfo 或上游异常 repr。此合同不声明依赖库 DEBUG/代理日志已全面脱敏。
+
+### 5. 正常、基线与拒绝案例
+
+- 正常：名单内源站经相对 Location 或名单内 CDN HTTPS 跳转，最终 200 字节完整写入。
+- 基线：无跳转结果仍按原分块方式下载，状态/CAS/checksum/ZIP 校验不变。
+- 拒绝：合法首跳返回名单外 Location，先前合法请求可以发生，但违规目标收到零次请求，文件和状态不能伪装成功。
+
+### 6. 定向验证
+
+`tests.test_mineru_download_boundary` 保留真实客户端和 Requests 重定向流程，只替换网络发送端；检查请求目标、字节、资源关闭、错误/日志脱敏、正式客户端工厂及轮询/回调入口。保留既有 callback checksum、入队、去重与取消回归；不运行整个大型 backend 测试模块或发布聚合脚本。
+
+### 7. 错误与正确做法
+
+错误：入口校验一次后调用无保护的 requests.get，或下载完成后检查 response.url；越界请求已经发出。
+
+正确：初始 URL 预检，并在实际 Session.send 前调用同一策略；校验通过才交给 Requests 发送，合法跳转沿用库流程。
 
 ## DocumentJob 转换失败定位投影
 
@@ -86,8 +126,8 @@ Do not duplicate workflow state checks in routers when the rule already belongs 
 - 仅 `GET /document-jobs/{id}` 与异常中心诊断接口填充；列表等共用 `DocumentJobResponse` 的接口恒为 `null`，不做逐行事件查询。前端只消费该投影，不解析事件 payload。
 - `error_code`/`failed_stage` 合同不变。异常中心分类中失败任务的明确错误码优先于关键词：`mineru_failed`/`document_ir_failed`/`render_failed` → `conversion_failed`，`translation_failed`/`translation_fan_in_mismatch` → `translation_failed`（历史 `ir_converting + translation_failed` 仍为翻译失败）。
 - 测试：`tests/test_document_job_failure_diagnostic.py`（含真实 eager Worker 页级与文档级失败）。
-- 渲染来源（P0-6）：`word_renderer.render_to_result` 在执行 RenderPlan 操作或表格预处理时捕获异常，只用 `attach_failure_context` 把操作定位（序号、类型、分节、块 ID、源页索引、逻辑表格单元）挂到异常属性 `md2word_failure_context` 后原样抛出，不改变异常类型与失败分类。计划阶段同样带定位，`operation_kind` 为 `layout_plan`、`table_plan`、`render_plan`：`TableRenderError` 按 `block_index` 定位块和页，因此可进入整页降级；其余为文档级；`render_plan` 的合同错误转 `DocumentIntegrityError` 后上下文挂在新异常上，仍不降级。`execution._worker_failure_evidence` 以“固定错误码 → 完整性首个阻断码 → 异常类型名”取原因码写入 `failure_context`，`evidence._safe_failure_context` 逐字段白名单过滤（不收异常正文）；含 `failure_context` 的 payload 同样附 `retry_count`。投影来源为 `render_operation`，新增 `block_ids`、`operation_kind`、`source_page_count`、`page_count_basis`（MinerU 验证来源取 `inventory.raw_page_count`，依据固定 `content_blocks`，0 视为未知）；无源页的操作为 `scope=document`。测试：`tests/test_render_failure_context.py`。
-- Worker 失败消息：`execution._worker_failure_message` 是唯一构造点。只有消息由固定码构造的类型（`SAFE_MESSAGE_ERRORS`：MinerU 验证、表格占位/渲染/构建/证据/验证、翻译完整性）保留原消息；`DocumentIRTranslationError` 只输出 `翻译处理失败：{code}。`；完整性、MinerU 外部调用、OSError 维持固定文案；其余异常输出 `Worker 执行失败（{异常类型名}），详见事件 trace_id。`，不记录异常原文。翻译流程中直接写 `error_message` 的位置同样经该函数。测试：`tests/test_worker_failure_message.py`。
+- 渲染来源（P0-6）：`word_renderer.render_to_result` 在执行 RenderPlan 操作或表格预处理时捕获异常，只用 `attach_failure_context` 把操作定位（序号、类型、分节、块 ID、源页索引、逻辑表格单元）挂到异常属性 `md2word_failure_context` 后原样抛出，不改变异常类型与失败分类。计划阶段同样带定位，`operation_kind` 为 `layout_plan`、`table_plan`、`render_plan`：`TableRenderError` 按 `block_index` 定位块和页，因此可进入整页降级；其余为文档级；`render_plan` 的合同错误转 `DocumentIntegrityError` 后上下文挂在新异常上，仍不降级。`app/domains/document_jobs/_failure_policy.py::worker_failure_evidence` 以“固定错误码 → 完整性首个阻断码 → 异常类型名”取原因码写入 `failure_context`，`evidence._safe_failure_context` 逐字段白名单过滤（不收异常正文）；含 `failure_context` 的 payload 同样附 `retry_count`。投影来源为 `render_operation`，新增 `block_ids`、`operation_kind`、`source_page_count`、`page_count_basis`（MinerU 验证来源取 `inventory.raw_page_count`，依据固定 `content_blocks`，0 视为未知）；无源页的操作为 `scope=document`。测试：`tests/test_render_failure_context.py`。
+- Worker 失败消息：`app/domains/document_jobs/_failure_policy.py` 是失败分类、消息和证据的唯一 owner；`worker_failure_message` 构造安全消息，`stage_attempt_failure` 与 `render_failure` 分别拥有普通阶段与渲染路径的最终错误覆盖规则。只有消息由固定码构造的类型（`SAFE_MESSAGE_ERRORS`：MinerU 验证、表格占位/渲染/构建/证据/验证、翻译完整性）保留原消息；`DocumentIRTranslationError` 只输出 `翻译处理失败：{code}。`；完整性、MinerU 外部调用、OSError 维持固定文案；其余异常输出 `Worker 执行失败（{异常类型名}），详见事件 trace_id。`，不记录异常原文。翻译流程中直接写 `error_message` 的位置同样经该函数。测试：`tests/test_worker_failure_message.py`。
 
 ## Scenario: DocumentIR Translation Provider Failures
 
@@ -112,7 +152,7 @@ Do not duplicate workflow state checks in routers when the rule already belongs 
 ### 4. Validation & Error Matrix
 
 - Provider raises, returns invalid JSON, missing `items`, empty item text, or mismatched item IDs -> raise `DocumentIRTranslationError`.
-- `DocumentJobExecutionService._classify_worker_failure()` 将 Provider/单批次翻译失败映射为 `error_code="translation_failed"`、`failed_stage="translating"`；全量合并/回填失败定位 `translation_validating`，missing/extra ID 保留 `translation_fan_in_mismatch`，文件/存储错误保留 `oss_failed`。历史 `ir_converting` 诊断仍可读取；阶段与恢复的唯一合同见 [DocumentJob 模式与阶段合同](./document-job-mode-contract.md#8-执行阶段与恢复合同con-102)。
+- `app/domains/document_jobs/_failure_policy.py::classify_worker_failure()` 将 Provider/单批次翻译失败映射为 `error_code="translation_failed"`、`failed_stage="translating"`；全量合并/回填失败定位 `translation_validating`，missing/extra ID 保留 `translation_fan_in_mismatch`，文件/存储错误保留 `oss_failed`。历史 `ir_converting` 诊断仍可读取；阶段与恢复的唯一合同见 [DocumentJob 模式与阶段合同](./document-job-mode-contract.md#8-执行阶段与恢复合同con-102)。
 - Already written call logs are still recorded as job events, but translated text replacements are applied only after all batches validate.
 
 ### 5. Good/Base/Bad Cases
@@ -166,7 +206,7 @@ Only use this pattern when the API response schema explicitly represents per-ite
 
 ## Unexpected Exceptions
 
-The HTTP middleware in `app/main.py` logs unexpected exceptions on the `system` logger with trace, method, path, and duration, then re-raises. Stage execution uses `JobStageService._handle_stage_failure()` to update job/stage state, append events, and log business failures.
+The HTTP middleware in `app/main.py` logs unexpected exceptions on the `system` logger with trace, method, path, and duration, then re-raises. 正式阶段失败由 `document_jobs` execution 与 `_failure_policy.py` 更新任务、追加事件并记录脱敏业务错误。
 
 Do not add broad silent `except Exception` blocks that hide errors. If an exception is caught, either convert it to a stable `ApiError`/workflow transition or preserve it in stage/job diagnostic state.
 

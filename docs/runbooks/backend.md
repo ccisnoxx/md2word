@@ -12,7 +12,9 @@ last_reviewed: 2026-06-17
 
 ## 0. 线上优先验证边界
 
-当前 P0 验收以 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md) 为准：本地只做代码/文档改写和不依赖真实服务的检查，完整 API、Worker、MySQL、Redis/Celery、MinerU 和 Golden Sample 证据在 `hostdzire` 收集。
+当前 P0 验收以 [线上优先验证流程](../deploy/online-first-validation-workflow.md) 为准：本地只做代码/文档改写和不依赖真实服务的检查，完整 API、Worker、MySQL、Redis/Celery、MinerU 和 Golden Sample 证据在 `hostdzire` 收集。
+
+B02 镜像构建以 [Docker 部署说明的依赖锁与构建输入](../deploy/p0-docker-deployment.md#依赖锁与构建输入) 为准。旧线上流程中的镜像构建/回滚命令仅适用于 B02 之前的版本，不构成新镜像的构建步骤；版本化镜像选择与回退边界见同一部署说明。
 
 不要为了当前 P0 验收在本机启动前后端、MySQL、Redis/Celery、Worker 或前端 smoke。以下本地命令仅保留给专项开发调试使用，不构成本轮发布证据。
 
@@ -20,20 +22,7 @@ last_reviewed: 2026-06-17
 
 当前 P0 主流程是 Files + Document Jobs，调用方先登录 `/api/v1/auth/login` 获取 Bearer JWT，再按 `operator` / `admin` 角色访问接口。普通 operator 可以上传、创建、查看、下载、取消、重试、归档自己的任务；任务级删除只允许 admin。
 
-本地 legacy jobs 排查仍可以使用旧访问模式：
-
-```env
-JOBS_ACCESS_MODE=open
-JOBS_OPS_ACCESS_MODE=admin
-ADMIN_TOKEN=local-admin-token
-```
-
-`JOBS_ACCESS_MODE=open` 只适合本地开发。生产或任何可被外部访问的环境不要使用 `open`，应改为：
-
-- `JOBS_ACCESS_MODE=token`，并配置 `JOBS_ACCESS_TOKEN`
-- 或 `JOBS_ACCESS_MODE=admin`，并配置 `ADMIN_TOKEN`
-
-这些 `JOBS_*` 配置只用于 legacy jobs 入口和历史排查口径；新联调不要用它们替代 Bearer JWT。部分旧配置写接口仍兼容 legacy `X-Admin-Token`，但 P0 Document Jobs 工作台和 admin delete 以 Bearer admin JWT 为准。
+旧 Jobs HTTP、stage worker 和转换运行时已删除。`JOBS_ACCESS_MODE` 等既有配置与生产启动约束暂保留，但不提供旧 Jobs 执行入口；正式业务使用 Bearer JWT。部分配置与运维接口原有 `X-Admin-Token` 兼容合同保持。
 
 ## 0.2 环境配置样例
 
@@ -42,7 +31,6 @@ ADMIN_TOKEN=local-admin-token
 - `JOBS_REPOSITORY_BACKEND=mysql` 与 `JOBS_MYSQL_*`
 - `JOBS_ARTIFACT_STORAGE_BACKEND=local_file`，artifact 二进制仍保存在 artifact storage，不写入 MySQL
 - `DOCUMENT_JOBS_WORKER_BACKEND=celery` 与 `DOCUMENT_JOBS_CELERY_*`
-- legacy `JOBS_WORKER_MODE=in_process` / `external`
 - `JOBS_ACCESS_MODE`、`JOBS_ACCESS_TOKEN`、`JOBS_OPS_ACCESS_MODE`、`ADMIN_TOKEN`
 - `MINERU_CALLBACK_URL`、`MINERU_UID` 和 `MINERU_RESULT_HOST_ALLOWLIST`
 - `LOG_FORMAT=json`
@@ -76,14 +64,12 @@ curl http://127.0.0.1:8000/api/v1/health/metrics
 
 `ready` 里当前 worker/storage 口径应为：
 
-- `worker_mode=in_process`（默认）或 `external`
-- `stage_dispatcher=background_tasks`（默认）或 `external_worker`
+- `worker_mode` 保留原配置回显；正式执行模式以 `document_jobs_worker_backend` 为准
 - `configured_repository_backend=file`（默认；切换后可为 `database` 或 `mysql`）
 - `effective_repository_backend=file`（默认；切换后可为 `database` 或 `mysql`）
-- `stage_message_store=file`（默认；切换后可为 `database` 或 `mysql`）
 - `artifact_storage=local_file`（默认；切换后可为 `local_object` 或 `s3`）
 
-`stage_spool_pending_messages` 和 `stage_spool_running_messages` 表示启动时会尝试 replay 的后台消息；`stage_spool_failed_messages` 只作为诊断信号，不会自动恢复。
+旧 stage spool 健康字段已移除；正式回调计数和 DocumentJob 超时/陈旧任务观察继续保留，启动恢复只处理正式任务。
 
 `ready` 还会报告：
 
@@ -95,9 +81,11 @@ curl http://127.0.0.1:8000/api/v1/health/metrics
 - `mysql_schema_bootstrap_available`
 - `pdf_crop_tools_available`：`pdfinfo` 与 `pdftoppm`（Poppler，`poppler-utils`）是否都在 PATH 中。表格占位裁切、图片 PDF 回退和整页降级都依赖它们。缺失时报 `pdf_crop_tools_missing`：生产或 `single_tenant_public` 部署列为阻断项，且 `scripts/dev/run_document_worker.py` 拒绝启动；开发环境只告警，页面失败时无法恢复。`docker/prod`、`docker/dev` 镜像已内置；本地开发需自行安装（如 `brew install poppler`）。
 
-运行时 Python 依赖只来自 `requirements.txt`（镜像只执行 `pip install -r`）；`tests/test_runtime_dependency_declarations.py` 要求 `app/` 的第三方导入都在其中直接声明或进入写明来源的白名单。
+`requirements.txt` 负责直接依赖声明；`tests/test_runtime_dependency_declarations.py` 要求 `app/` 的第三方导入都在其中直接声明或进入写明来源的白名单。镜像安装消费完整 hash 锁 `requirements/locks/cp311-linux-amd64.txt`，目标限定 CPython 3.11.18 / Debian 13 / linux/amd64；根声明变更须同步重新解析和核对锁，传递闭包不能代替直接声明。
 
-`metrics` 是 JSON 运维计数，不是 Prometheus 格式；当前包括 jobs 状态计数、stage message 状态计数、资源版本计数和 audit event 总数。
+dev/prod 构建均需在上下文的 `requirements/wheels/` 提供已对账官方 PyPI 文件与 SHA-256 的 57 个运行 wheel，不含 pip 工具；使用固定基础镜像自带的 pip 24.0 离线、hash 校验、仅 wheel 安装。`PyMySQL[rsa]` 保留既有 RSA 依赖能力，不表示已验证真实数据库 RSA 握手。API/Worker 共用 `MD2WORD_IMAGE`：生产必填，使用版本化标签并核对实际 image ID；开发默认 `md2word-dev:local`，可用同名变量覆盖，API 构建与 API/Worker 运行均固定 `linux/amd64`。制品来源清单、固定 Python/MySQL/Redis 引用及发布准备步骤见 [Docker 部署说明](../deploy/p0-docker-deployment.md#依赖锁与构建输入)。apt/Poppler 系统包仍可能漂移，锁与定向 DOCX 测试不代表整镜像字节可复现或生产验收。
+
+`metrics` 是 JSON 运维计数，不是 Prometheus 格式；当前包括 `document_jobs` 状态计数、`document_job_callback_messages` 计数、资源版本计数和 audit event 总数；旧 `jobs`、`stage_messages` 字段仅保留为空对象，不读取旧仓储。
 
 `ready` 和 `metrics` 都包含非敏感 `deployment` 对象：
 
@@ -135,131 +123,15 @@ DOCUMENT_JOBS_TRANSLATION_BATCH_CELERY_QUEUE=document-translation-batches
 - `/health/ready` 不出现 `document_jobs_celery_broker_url_missing`、`document_jobs_celery_queue_missing` 或 `document_jobs_translation_batch_celery_queue_missing`
 - 生产部署默认保持单 worker，但该 worker 必须同时订阅 `document-jobs` 和 `document-translation-batches`，否则 P1 翻译任务会在 `ir_converting` 阶段留下 queued batch；多 worker 原子并发语义不是当前 P0 范围
 
-## 2.1 legacy stage worker 模式
+## 2.1 旧链路移除与持久化边界
 
-默认 `JOBS_WORKER_MODE=in_process` 时，API 进程在响应返回后通过 FastAPI
-`BackgroundTasks` 直接推进 stage。若要让 API 只接请求、由独立 worker 消费 stage
-message，设置：
+B05 第 3、4 步已移除旧 StageWorker、stage 调度/重放、Jobs 仓储与旧转换运行时，不能再启动旧 worker 或运行旧 metadata/artifact shadow 工具。
 
-```env
-JOBS_WORKER_MODE=external
-JOBS_WORKER_POLL_INTERVAL_SECONDS=2
-JOBS_WORKER_ID=md2word-worker-1
-```
+`JOBS_REPOSITORY_BACKEND` 继续选择正式 metadata adapter：本地可用 `file` 或 SQLite `database`，正式生产基线为 `mysql`。数据库保存正式任务、文件元数据、事件、回调、翻译批次和资源版本；产物字节由正式 `FileUploadService` 管理。
 
-分别启动：
+`jobs`、`job_files`、`stage_messages` 三张既有旧空表留待 B08 治理，本次只删除对应建表与仓储，不执行 DROP、不迁移旧任务。`job_events` 仍用于正式 DocumentJob 事件，全量保留建表与读写。
 
-```bash
-.venv/bin/python scripts/dev/run_api.py
-.venv/bin/python scripts/dev/run_stage_worker.py
-```
-
-预期：
-
-- `/health/ready` 返回 `worker_mode=external`
-- `/health/ready` 返回 `stage_dispatcher=external_worker`
-- API 上传后只写入 `pending` stage message
-- `scripts/dev/run_stage_worker.py` 轮询 `pending/running` stage message 并调用 `JobStageService`
-
-当前外部 worker 仍面向单 worker 进程；`lease_owner`、`leased_at`、`lease_expires_at`
-用于 readiness 观察 stale running message，不是多 worker 抢占锁。
-
-## 2.2 jobs metadata backend 与 file -> sqlite 迁移
-
-默认策略：
-
-- `JOBS_REPOSITORY_BACKEND=file` 是代码默认值，用于本地开发和最小联调。
-- `JOBS_REPOSITORY_BACKEND=database` 使用 sqlite 保存 jobs、files、events 和 stage messages，推荐给准生产单实例部署。
-- sqlite 只迁移 metadata；artifact 文件仍由 `JOBS_ARTIFACT_STORAGE_BACKEND` 控制，默认继续使用 job 本地目录。
-- `JOBS_REPOSITORY_BACKEND=mysql` 使用 MySQL 保存 jobs、files、events、stage messages 和 resource_versions 基础表，面向单实例生产化部署。
-- MySQL 只保存 metadata；PDF、DOCX、MinerU zip 等 artifact 二进制仍由 `JOBS_ARTIFACT_STORAGE_BACKEND` 控制。
-
-从已有 file backend 切到 sqlite 前，先做只读完整性检查：
-
-```bash
-.venv/bin/python scripts/ops/check_local_file_storage_integrity.py \
-  --data-dir var
-```
-
-如果 `blocker_count` 不为 `0`，先修复缺失或不可解析的本地记录，不要切换 backend。
-
-生成并校验 sqlite shadow copy：
-
-```bash
-.venv/bin/python scripts/ops/shadow_copy_metadata_to_database.py \
-  --data-dir var \
-  --database-path var/metadata.sqlite3
-```
-
-只读复核：
-
-```bash
-.venv/bin/python scripts/ops/shadow_copy_metadata_to_database.py \
-  --data-dir var \
-  --database-path var/metadata.sqlite3 \
-  --validate-only
-```
-
-报告 `ok: true` 后再切换 `.env`：
-
-```env
-JOBS_REPOSITORY_BACKEND=database
-JOBS_METADATA_DATABASE_PATH=var/metadata.sqlite3
-```
-
-重启服务后检查：
-
-```bash
-curl http://127.0.0.1:8000/api/v1/health/ready
-```
-
-预期：
-
-- `configured_repository_backend=database`
-- `effective_repository_backend=database`
-- `stage_message_store=database`
-
-如果要启用 MySQL metadata store，先确保依赖和 MySQL schema bootstrap 可在启动时执行：
-
-```env
-JOBS_REPOSITORY_BACKEND=mysql
-JOBS_MYSQL_HOST=127.0.0.1
-JOBS_MYSQL_PORT=3306
-JOBS_MYSQL_USER=md2word
-JOBS_MYSQL_PASSWORD=change-me
-JOBS_MYSQL_DATABASE=md2word
-```
-
-重启服务后检查：
-
-```bash
-curl http://127.0.0.1:8000/api/v1/health/ready
-```
-
-预期：
-
-- `configured_repository_backend=mysql`
-- `effective_repository_backend=mysql`
-- `stage_message_store=mysql`
-
-如果缺少 `PyMySQL` 或 MySQL 无法连接，服务启动应直接失败；不要回退到 file backend 后继续运行。
-
-从 file metadata 切到 MySQL 前，先让目标 MySQL database 保持空 metadata，再执行 shadow copy：
-
-```bash
-.venv/bin/python scripts/ops/shadow_copy_metadata_to_mysql.py \
-  --data-dir var
-```
-
-只读复核：
-
-```bash
-.venv/bin/python scripts/ops/shadow_copy_metadata_to_mysql.py \
-  --data-dir var \
-  --validate-only
-```
-
-报告 `ok: true` 后再切换 `.env` 到 `JOBS_REPOSITORY_BACKEND=mysql` 并重启服务。脚本默认拒绝写入非空 MySQL metadata 目标，避免 job events、stage messages 或 audit events 被重复追加。
+旧 file→SQLite/MySQL shadow copy 不适用于正式 DocumentJob，不再提供该命令。正式数据迁移需遵循具体迁移合同；现有状态与列表投影工具如下。
 
 ### CON-103 Migration A
 
@@ -286,102 +158,11 @@ SQLite可指定 `--backend database --database-path <metadata.sqlite3>`。dry-ru
 
 本地SQLite、fake MySQL及静态检查不替代真实MySQL 8.4语义与部署环境验证。只有对应版本的明确执行证据才能证明真实引擎、正式迁移或线上验收已完成；本地源码接回不触发新的线上发布。
 
-## 2.2 artifact storage 与对象 adapter
+## 2.2 正式文件存储与保留期
 
-默认策略：
+`FileUploadService` 继续按 `JOBS_ARTIFACT_STORAGE_BACKEND=local_file|local_object|s3` 管理正式文件。`local_file` 使用 `DATA_DIR/document_file_objects`，`local_object` 使用配置的对象目录，S3 使用现有 bucket/endpoint/凭据配置。下载依据文件记录中的 `object_key`，不重建历史路径。
 
-- `JOBS_ARTIFACT_STORAGE_BACKEND=local_file` 是代码默认值，artifact 二进制文件保留在 `var/jobs/{job_id}/` 下。
-- `JOBS_ARTIFACT_STORAGE_BACKEND=local_object` 使用本地目录模拟对象存储，适合在接入真实 S3-compatible backend 前验证 `object_key` 合同。
-- `JOBS_ARTIFACT_STORAGE_BACKEND=s3` 使用 S3-compatible API 上传 artifact，并在下载时返回临时重定向或对象流。
-- `JOBS_ARTIFACT_OBJECT_STORE_PATH=var/object_artifacts` 是默认对象目录；相对路径会解析到当前 `DATA_DIR` 下。
-
-新任务启用 local object adapter：
-
-```env
-JOBS_ARTIFACT_STORAGE_BACKEND=local_object
-JOBS_ARTIFACT_OBJECT_STORE_PATH=var/object_artifacts
-```
-
-重启后检查：
-
-```bash
-curl http://127.0.0.1:8000/api/v1/health/ready
-```
-
-预期：
-
-- `artifact_storage=local_object`
-- 新登记的 artifact `storage_backend=object`
-- `object_key` 形如 `jobs/{job_id}/input/source.pdf`、`jobs/{job_id}/output/result.docx`
-
-已有本地 artifact 切换到 local object 前，可先 shadow upload 并回填 `JobFile` metadata：
-
-```bash
-.venv/bin/python scripts/ops/shadow_upload_artifacts_to_object_storage.py \
-  --data-dir var \
-  --object-root var/object_artifacts \
-  --metadata-backend file
-```
-
-如果 metadata 已切到 sqlite：
-
-```bash
-.venv/bin/python scripts/ops/shadow_upload_artifacts_to_object_storage.py \
-  --data-dir var \
-  --object-root var/object_artifacts \
-  --metadata-backend database \
-  --database-path var/metadata.sqlite3
-```
-
-排障口径：
-
-- local object adapter 下载时优先读 `object_key` 对应文件；对象副本缺失时，会回退到 `JobFile.path` 指向的本地 artifact。
-- 如果对象副本和本地 fallback 都不存在，下载接口会返回 artifact missing。
-- `JobFile.path` 仍是 job 内逻辑路径，不要改成对象目录绝对路径。
-- 新登记 artifact 会写入 `size_bytes` 和 `sha256`；旧记录缺少这两个字段时仍按兼容路径下载。
-- 下载诊断口径：本地文件缺失返回 missing，logical path 越界 / 不匹配返回 bad request，fingerprint 不匹配返回 conflict。
-- `cleanup-local-files` 只删除 `work/` 运行态目录，不删除登记 artifact，也不会清理 `var/object_artifacts/`。
-
-启用 S3-compatible adapter 前，确保运行环境安装了 `boto3` 并能访问目标 bucket：
-
-```env
-JOBS_ARTIFACT_STORAGE_BACKEND=s3
-JOBS_ARTIFACT_S3_BUCKET=md2word-artifacts
-JOBS_ARTIFACT_S3_ENDPOINT_URL=https://s3.example.com
-JOBS_ARTIFACT_S3_REGION=us-east-1
-JOBS_ARTIFACT_S3_ACCESS_KEY_ID=
-JOBS_ARTIFACT_S3_SECRET_ACCESS_KEY=
-JOBS_ARTIFACT_S3_KEY_PREFIX=
-JOBS_ARTIFACT_S3_PUBLIC_BASE_URL=
-JOBS_ARTIFACT_S3_DOWNLOAD_MODE=redirect
-JOBS_ARTIFACT_S3_PRESIGN_EXPIRES_SECONDS=3600
-```
-
-说明：
-
-- `ACCESS_KEY_ID` / `SECRET_ACCESS_KEY` 可留空，让运行环境使用实例角色、容器注入或标准 boto3 credential chain。
-- `DOWNLOAD_MODE=redirect` 会返回 S3 `get_object` 临时签名 URL；`DOWNLOAD_MODE=stream` 会由后端读取对象并流式返回。
-- `KEY_PREFIX` 可用于多环境隔离，例如 `prod` 或 `tenant-a`；生成的 `object_key` 仍保持 `jobs/{job_id}/...` 后缀。
-- 旧 `storage_backend=local` 的记录仍可通过本地 fallback 下载；新登记 artifact 会写入 `storage_backend=object` 和 `object_key`。
-
-## 2.3 artifact retention dry-run 策略
-
-当前 retention 只生成 dry-run 计划，不执行删除。默认策略面向已登记 artifact：
-
-| job 状态 | 默认保留期 |
-|---|---|
-| `completed` | 30 天 |
-| `failed` | 14 天 |
-| `canceled` | 7 天 |
-
-策略口径：
-
-- `storage_backend=local` 且有 logical `path` 的 `JobFile` 会进入候选。
-- `storage_backend=object` 且有 `object_key` 的 `JobFile` 会进入候选。
-- dry-run 候选会带 `path`、`object_key`、`size_bytes` 和 `sha256`，用于人工复核。
-- `uploaded/queued/submitting/parsing/parsed/converting` 不进入清理候选。
-- 年龄按 `completed_at` 优先，其次 `updated_at`，最后 `created_at` 计算。
-- 计划输出来自 `ArtifactRetentionPlanner.build_dry_run()`；真正删除 artifact 前必须先人工复核 dry-run 结果。
+旧 `JobFile` artifact adapter、shadow upload 和 `ArtifactRetentionPlanner` 已删除。正式保留期与物理清理由 Files API 的 preview、确认和审计合同负责；任务删除与文件清理是不同操作。
 
 ## 2.4 OpenAPI 快照与发布前检查
 
@@ -423,8 +204,7 @@ GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
 - P0 Word renderer/layout/table/formula 语义 targeted smoke
 - Golden Sample manifest、DOCX quality evidence、admin sign-off validation targeted smoke
 - Document Jobs admin delete 和 generated Word OOXML metadata smoke
-- file -> MySQL metadata migration fake-MySQL smoke
-- job workflow policy tests
+- 正式共享模型合同测试
 - JSON logging tests
 - 可选 `--runtime-url` 真实 `/health/ready` 检查，要求 `deployment_init_ready=true`、`p0_document_jobs_ready=true`、`effective_repository_backend=mysql`、`document_jobs_worker_backend=celery`，且 `document_jobs_translation_batch_celery_queue` 已配置
 - 可选 `--golden-sample-preflight`，只检查 4 个 canonical PDF、admin 登录角色和运行时门禁，不提交真实转换任务
@@ -596,4 +376,4 @@ P0 Golden Sample 以 `tests/fixtures/golden_samples/pdfs` 下的四个 OPA228 da
 
 这四份样本通过 Files + Document Jobs 主链路执行 `direct_pdf_to_word`。P0 通过条件是 4/4 任务成功、4/4 结果 DOCX 可由 Word 打开、4/4 由 admin reviewer 人工签字通过；不再以扩充到 10-20 份样本作为阻塞条件。人工质量线要求接近原版排版并符合 Word 文档排版标准，二者冲突时以可维护的 Word 标准结构为准。
 
-正式执行地点是 hostdzire；本地不跑真实 Golden Sample 转换。执行、签字和证据回填步骤见 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md)。
+正式执行地点是 hostdzire；本地不跑真实 Golden Sample 转换。执行、签字和证据回填步骤见 [线上优先验证流程](../deploy/online-first-validation-workflow.md)。

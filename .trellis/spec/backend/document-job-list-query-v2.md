@@ -25,7 +25,11 @@ SQL关联当前文件保留原寻址语义：MySQL按file_id列collation寻找�
 
 比较有三个owner：receipt_identity沿原序列化摘要；descriptor按原dict相等；receipt按模型相等、仅排除etag/updated_at/expires_at/revision，expiry另比较。规范文本保留Python数字相等、NULL/缺键、数组顺序、typed日期及NaN/Infinity，不能以普通JSON或新SHA替代严格相等。MySQL JSON_TYPE的INTEGER和UNSIGNED INTEGER均是整数事实，数值比较仍使用精确signed微秒；不接受浮点或字符串伪数。
 
-单请求固定as_of；下一请求自然反映到期。SQL与页内复核复用同次元数据观察；发布/预览/表格/新代深度动作仅对当前页执行，保留实时外部认证和POST重核。因此页外对象故障不再拖累本页，但V域有效复核的元数据错误保持。file后端保留原读取与历史校验，不承诺跨两集合原子快照。
+单请求固定as_of；下一请求自然反映到期。SQL与页内复核复用同次元数据观察；列表当前页的 publish 动作仅按既有状态条件判定，publication_evidence 保持 not_checked，不读取发布证据正文或执行证据文件回查。详情、发布前检查与 POST 提交保留完整实时核验；列表显示可点不保证提交成功。预览/表格/新代深度动作仅对当前页执行，保留实时外部认证和POST重核。因此页外对象故障不再拖累本页，但V域有效复核的元数据错误保持。file后端保留原读取与历史校验，不承诺跨两集合原子快照。
+
+读视图以默认开启的显式参数控制发布证据深度核验，仅任务列表与异常中心列表的页内动作构建关闭；不得根据 `observed_result` 是否存在推断。此例外不适用于详情、发布前检查、异常诊断或批量操作等其他调用方，不改变其他动作、非管理员行为或响应字段。沿用现有读视图规则，`publish.enabled=true` 时返回的 `delivery_status` 投影为 `ready_to_publish`；证据异常时列表与完整核验的详情可能不同，不写回持久化状态。
+
+`GET /api/v1/document-job-incidents` 保留全部可见任务的必要元数据分类：有效复核、重试资格、停滞与降级页，以及原建议/证据摘要参与的搜索。有效复核与重试资格复用既有 owner，不以原始状态替代有效状态；分类阶段不读取文件内容、不构建完整动作；主件到期沿用逐条分类时刻判断，请求起始时间只保留原停滞计算职责。页内复用分类阶段已校验的主件/下载观察，避免分页期间换件或到期使条目与统计分离。仍对完整过滤集合排序并计算 total/summary，然后仅为当前页任务构建完整动作，publish 复用同一轻量参数并保持 `publication_evidence=not_checked`。不改变分类、筛选、排序键和方向、分页、统计口径、非 publish 动作或可见性，也不将这次优化扩大为 SQL 下推或缓存。
 
 正式迁移验收期间停止全部 job/file 及全库备份相关写者；先备份与隔离恢复演练，再 apply、空游标全量 verify、原列 before/after 比对和冻结 O/C 差分，完成后才启动任何新 API/Worker。应用启动仍可能运行原 schema/seed/recovery，不能当只读验收。数据覆盖恢复与兼容镜像代码回滚分开授权，旧写者恢复后两表重新从头构建。
 
@@ -62,7 +66,9 @@ SQL关联当前文件保留原寻址语义：MySQL按file_id列collation寻找�
 
 ## 6. 必要验证
 
-固定O/C独立进程调用完整线上list/read view作差分，不能仅拿新纯query或SQL自身生成期望。SQLite与真实MySQL覆盖类型/NULL/Unicode、三统计域、双表两连接快照、receipt条件错误与窄guard；完整API含实际表格和发布成功链，证明1条页记录仅解码1次但仍执行至少8次即时重核。
+固定O/C独立进程调用完整线上list/read view作差分，不能仅拿新纯query或SQL自身生成期望。SQLite与真实MySQL覆盖类型/NULL/Unicode、三统计域、双表两连接快照、receipt条件错误与窄guard；完整API含实际表格和发布成功链，证明1条页记录仅解码1次。列表发布状态准入例外不再要求发布证据即时重核次数；表格与发布完整核验入口的原即时重核合同保持。
+
+列表发布例外用定向测试验证：管理员待发布任务的 `prepare_publication_evidence` 与 `read_file_content` 零调用，证据检查为 `not_checked`；状态不符仍返回原禁用原因。证据异常时允许列表可点，但详情、发布前检查与 POST 必须保留原拒绝及 reason_code；同时比较其他动作和非管理员结果。错误做法是全局跳过证据核验，正确做法是仅列表显式关闭并保留默认完整核验。
 
 真实MySQL入口`tests.test_document_job_list_query_v2_mysql`仅在授权环境显式启用`MD2WORD_TEST_MYSQL=1`及独立HOST/PORT/USER/PASSWORD，不接受已有库名、不读.env，只创建和删除自身UUID库。记录实际列collation与前后业务两表DDL摘要、库/隧道清理，fake或skip不作引擎证据。
 

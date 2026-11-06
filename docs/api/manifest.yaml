@@ -332,8 +332,3 @@ guides:
     doc_path: scripts/ops/check_release.py
     status: current
     note: "发布前聚合检查入口；当前包含 OpenAPI 快照一致性和 targeted unittest smoke。"
-  - slug: mysql-metadata-shadow-copy
-    category: ops-script
-    doc_path: scripts/ops/shadow_copy_metadata_to_mysql.py
-    status: current
-    note: "file metadata 到 MySQL metadata store 的空目标 shadow copy 和只读校验脚本。"

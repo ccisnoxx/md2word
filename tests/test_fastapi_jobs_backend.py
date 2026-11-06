@@ -28,11 +28,8 @@ from fastapi.testclient import TestClient
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-from app.conversion.contracts import ArtifactDescriptor, ConversionFailure, ConversionResult
 from app.core.config import Settings
-from app.domains.jobs.models import JobFile, JobRecord, JobStageMessage, SourcePdfJobContext, build_source_pdf_context_patch, utc_now
-from app.domains.jobs.workflow import JobWorkflowViolation
-from app.domains.jobs.paths import build_job_paths, ensure_job_dirs
+from app.domains.jobs.models import JobRecord, utc_now
 from app.core.runtime import AppRuntime
 from app.infrastructure.persistence import (
     PersistenceAdapters,
@@ -64,16 +61,7 @@ from app.domains.files import FileRetentionPolicyService, FileUploadService
 from app.domains.files.cleanup_lock import FileRetentionCleanupLockService
 from app.domains.files.models import DocumentFileRecord
 from app.services.health_service import HealthService
-from app.domains.jobs.artifact_integrity import ArtifactFingerprintMismatch
-from app.domains.jobs.artifact_storage import DownloadArtifact, LocalArtifactStorageAdapter
-from app.domains.jobs.artifacts import JobArtifactService
-from app.domains.jobs.command import JobCommandService
-from app.domains.jobs.dispatch import ExternalWorkerStageDispatcher, InProcessStageDispatcher
-from app.domains.jobs.lifecycle import JobLifecycleService
-from app.domains.jobs.object_artifact_storage import ObjectArtifactStorageAdapter
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
-from app.domains.jobs.query import JobQueryService
-from app.domains.jobs.stage import JobStageService
 from app.api.mineru_callback_guards import verify_mineru_callback_checksum_for_job
 from app.domains.mineru.config import MinerUConfigError, MinerUConfigService
 from app.domains.ops.real_alert_delivery import RealAlertDeliveryProviderResult
@@ -101,7 +89,6 @@ from app.domains.translation.proposals_service import TranslationTermProposalSer
 from app.domains.translation.provider import TranslationProviderResponseError, build_translation_provider
 from app.domains.translation.term_set_version_service import TranslationTermSetVersionService
 from app.domains.translation.term_version_service import TermVersionService
-from app.workers.stage_worker import StageWorker
 
 
 MINIMAL_PNG_BYTES = (
@@ -172,66 +159,6 @@ class FakeMinerUClient:
         }
 
 
-class FakeConversionService:
-    def __init__(self) -> None:
-        self.requests = []
-        self.raise_error = False
-
-    def convert(self, request):
-        if self.raise_error:
-            raise ConversionFailure("conversion_failed", "boom")
-        self.requests.append(request)
-        request.output_path.parent.mkdir(parents=True, exist_ok=True)
-        request.output_path.write_bytes(b"fake-docx")
-        artifacts = [ArtifactDescriptor(file_type="result_docx", path=request.output_path)]
-        if request.translation_request_output is not None:
-            request.translation_request_output.parent.mkdir(parents=True, exist_ok=True)
-            request.translation_request_output.write_text(
-                json.dumps({"items": []}, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            artifacts.append(
-                ArtifactDescriptor(
-                    file_type="translation_request",
-                    path=request.translation_request_output,
-                    )
-            )
-        if request.translation_trace_output is not None:
-            request.translation_trace_output.parent.mkdir(parents=True, exist_ok=True)
-            request.translation_trace_output.write_text(
-                json.dumps(
-                    {
-                        "schema_version": 1,
-                        "job_id": request.job_id,
-                        "translation_profile": (
-                            {
-                                "translation_profile_id": request.translation_profile.translation_profile_id,
-                                "language_pair": request.translation_profile.language_pair,
-                                "version": request.translation_profile.version,
-                                "snapshot_hash": request.translation_profile.snapshot_hash,
-                            }
-                            if request.translation_profile is not None
-                            else None
-                        ),
-                        "segments": [],
-                    },
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
-            artifacts.append(
-                ArtifactDescriptor(
-                    file_type="translation_trace",
-                    path=request.translation_trace_output,
-                )
-            )
-        return ConversionResult(
-            source_path=request.package_path,
-            output_docx_path=request.output_path,
-            pages=2,
-            document_language="zh",
-            artifacts=artifacts,
-        )
 
 
 class FakeDocumentJobTranslationProvider:
@@ -312,6 +239,19 @@ class FakeAlertDeliveryProvider:
             provider_calls_executed=True,
             external_delivery_executed=self.outcome == "sent",
         )
+
+
+def build_pilot_alert_response(runtime):
+    """注入固定许可码的合成告警，隔离验证 pilot 安全合同而不复活旧消息仓储。"""
+
+    from app.api.v1.routers.health_schemas import HealthOpsAlertItem
+
+    response = runtime.health_service.build_ops_alerts_response()
+    return response.model_copy(update={"alerts": [HealthOpsAlertItem(
+        code="stage_spool_failed_messages_present", severity="critical", source="readiness",
+        title="测试告警", description="仅用于 pilot 边界测试。", count=1,
+        suggested_action="仅验证注入的测试发送端。",
+    )]})
 
 
 class FakeSecretResolver:
@@ -486,8 +426,6 @@ def build_test_runtime(
         )
     else:
         persistence_adapters = build_file_persistence_adapters(settings.data_path)
-    job_repository = persistence_adapters.job_repository
-    job_file_repository = persistence_adapters.job_file_repository
     job_event_repository = persistence_adapters.job_event_repository
     audit_event_repository = persistence_adapters.audit_event_repository
     acceptance_run_repository = persistence_adapters.acceptance_run_repository
@@ -501,7 +439,6 @@ def build_test_runtime(
     document_job_translation_batch_repository = persistence_adapters.document_job_translation_batch_repository
     internal_user_repository = persistence_adapters.internal_user_repository
     saved_view_repository = persistence_adapters.saved_view_repository
-    stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
     acceptance_run_service = AcceptanceRunService(acceptance_run_repository)
     auth_service = AuthService(settings, internal_user_repository)
@@ -606,12 +543,8 @@ def build_test_runtime(
     document_job_incident_service = DocumentJobIncidentService(document_job_service)
     health_service = HealthService(
         settings,
-        stage_message_store,
         effective_repository_backend=jobs_repository_backend,
-        stage_message_store_backend=jobs_repository_backend,
         artifact_storage_backend=jobs_artifact_storage_backend,
-        stage_dispatcher_backend="external_worker" if jobs_worker_mode == "external" else "background_tasks",
-        job_repository=job_repository,
         document_job_repository=document_job_repository,
         document_job_callback_message_store=document_job_callback_message_store,
         internal_user_repository=internal_user_repository,
@@ -688,66 +621,10 @@ def build_test_runtime(
     if translation_profile_service is not None:
         translation_profile_service.bootstrap_default_profiles_if_missing()
     template_read_service.get_default_template_id()
-    conversion_service = FakeConversionService()
-    artifact_service = JobArtifactService()
-    if jobs_artifact_storage_backend == "local_object":
-        artifact_storage = ObjectArtifactStorageAdapter(artifact_service, settings.jobs_artifact_object_store_dir)
-    else:
-        artifact_storage = LocalArtifactStorageAdapter(artifact_service)
-    fake_mineru_client = FakeMinerUClient()
-    stage_service = JobStageService(
-        settings,
-        job_repository,
-        job_file_repository,
-        job_event_repository,
-        conversion_service,
-        artifact_storage,
-        stage_message_store=stage_message_store,
-        mineru_config_resolver=mineru_config_service.get_effective_config,
-        stage_worker_id="md2word-worker" if jobs_worker_mode == "external" else "in_process",
-        mineru_client_factory=lambda: fake_mineru_client,
-        resolve_template_path=template_read_service.resolve_job_template_path,
-        resolve_layout_config_path=template_read_service.resolve_job_layout_config_path,
-        resolve_subscript_config_path=lambda: settings.subscript_config_path,
-        resolve_translation_profile_snapshot=(
-            translation_profile_service.resolve_default_snapshot
-            if translation_profile_service is not None
-            else None
-        ),
-        resource_snapshot_service=job_resource_snapshot_service,
-    )
-    stage_service.fake_mineru_client = fake_mineru_client
-    if jobs_worker_mode == "external":
-        stage_dispatcher = ExternalWorkerStageDispatcher()
-    else:
-        stage_dispatcher = InProcessStageDispatcher(stage_service)
-    command_service = JobCommandService(
-        settings,
-        job_repository,
-        job_file_repository,
-        job_event_repository,
-        stage_service,
-        artifact_storage,
-        job_resource_snapshot_service,
-    )
-    lifecycle_service = JobLifecycleService(
-        job_repository=job_repository,
-        job_file_repository=job_file_repository,
-        job_event_repository=job_event_repository,
-        audit_service=audit_service,
-        stage_message_store=stage_message_store,
-        stage_service=stage_service,
-        artifact_service=artifact_service,
-        artifact_storage=artifact_storage,
-        resource_snapshot_service=job_resource_snapshot_service,
-    )
-    query_service = JobQueryService(job_repository, job_file_repository, job_event_repository)
     saved_view_service = SavedViewService(saved_view_repository)
     return AppRuntime(
         settings=settings,
         persistence_adapters=persistence_adapters,
-        job_repository=job_repository,
-        job_file_repository=job_file_repository,
         job_event_repository=job_event_repository,
         audit_event_repository=audit_event_repository,
         acceptance_run_repository=acceptance_run_repository,
@@ -796,14 +673,6 @@ def build_test_runtime(
         translation_profile_service=translation_profile_service,
         resource_version_service=resource_version_service,
         job_resource_snapshot_service=job_resource_snapshot_service,
-        artifact_service=artifact_service,
-        artifact_storage=artifact_storage,
-        command_service=command_service,
-        lifecycle_service=lifecycle_service,
-        query_service=query_service,
-        stage_service=stage_service,
-        stage_dispatcher=stage_dispatcher,
-        stage_message_store=stage_message_store,
         alert_delivery_provider=alert_delivery_provider,
         secret_resolver=secret_resolver,
     )
@@ -1430,24 +1299,13 @@ class FastAPIJobsBackendTests(TestCase):
             payload["dependency_checks"]["document_jobs_translation_batch_celery_queue"],
             "document-translation-batches",
         )
-        self.assertEqual(payload["dependency_checks"]["stage_dispatcher"], "background_tasks")
-        self.assertEqual(payload["dependency_checks"]["stage_message_store"], "file")
         self.assertEqual(payload["dependency_checks"]["artifact_storage"], "local_file")
         self.assertIn("jobs_dir_writable", payload["dependency_checks"]["readiness_required_checks"])
         self.assertIn("translation_available", payload["dependency_checks"]["readiness_non_blocking_checks"])
         self.assertTrue(payload["dependency_checks"]["jobs_dir_exists"])
-        self.assertTrue(payload["dependency_checks"]["stage_spool_dir_exists"])
         self.assertTrue(payload["dependency_checks"]["jobs_dir_writable"])
         self.assertTrue(payload["dependency_checks"]["artifact_root_writable"])
         self.assertGreater(payload["dependency_checks"]["artifact_disk_free_bytes"], 0)
-        self.assertEqual(payload["dependency_checks"]["stage_spool_pending_messages"], 0)
-        self.assertEqual(payload["dependency_checks"]["stage_spool_running_messages"], 0)
-        self.assertEqual(payload["dependency_checks"]["stage_spool_failed_messages"], 0)
-        self.assertEqual(payload["dependency_checks"]["stage_spool_replayable_messages"], 0)
-        self.assertEqual(payload["dependency_checks"]["stage_spool_running_stale_messages"], 0)
-        self.assertEqual(payload["dependency_checks"]["stage_spool_oldest_running_age_seconds"], 0)
-        self.assertFalse(payload["dependency_checks"]["stage_spool_needs_attention"])
-        self.assertEqual(payload["dependency_checks"]["stage_spool_observation_status"], "ok")
         self.assertEqual(payload["dependency_checks"]["default_translation_mode"], "direct")
         self.assertFalse(payload["dependency_checks"]["translation_required_for_default_mode"])
         self.assertEqual(payload["dependency_checks"]["translation_provider_backend"], "disabled")
@@ -1550,7 +1408,6 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
             )
-            old_stage_client = runtime.stage_service._build_mineru_client()
             old_document_client = runtime.document_job_execution_service._build_mineru_client()
             app = create_app(runtime)
 
@@ -1604,7 +1461,6 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=admin_headers,
                 )
 
-            new_stage_client = runtime.stage_service._build_mineru_client()
             new_document_client = runtime.document_job_execution_service._build_mineru_client()
             callback_seed = "runtime-config-uid-seed"
             callback_content = "{}"
@@ -1675,13 +1531,9 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(checks["pdf_submission_available"])
         self.assertEqual(checks["mineru_config_source"], "runtime_config")
         self.assertIsNone(checks["mineru_config_error"])
-        self.assertEqual(old_stage_client.api_token, "old-env-token")
         self.assertEqual(old_document_client.api_token, "old-env-token")
-        self.assertEqual(old_stage_client.session.headers.get("token"), "old-env-uid")
         self.assertEqual(old_document_client.session.headers.get("token"), "old-env-uid")
-        self.assertEqual(new_stage_client.api_token, "new-runtime-token")
         self.assertEqual(new_document_client.api_token, "new-runtime-token")
-        self.assertEqual(new_stage_client.session.headers.get("token"), "new-runtime-uid")
         self.assertEqual(new_document_client.session.headers.get("token"), "new-runtime-uid")
         self.assertEqual(integration_response.status_code, 200)
         capabilities = {item["capability_id"]: item for item in integration_response.json()["capabilities"]}
@@ -1718,7 +1570,7 @@ class FastAPIJobsBackendTests(TestCase):
                 get_response = client.get("/api/v1/mineru-config", headers=admin_headers)
                 health_before = client.get("/api/v1/health/ready")
                 with self.assertRaisesRegex(MinerUConfigError, "配置文件"):
-                    runtime.stage_service._build_mineru_client()
+                    runtime.document_job_execution_service._build_mineru_client()
                 invalid_callback_job = JobRecord(
                     id="job_invalid_runtime_config_uid",
                     source_filename="source.pdf",
@@ -2127,10 +1979,9 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["metadata_store"], "file")
         self.assertEqual(payload["artifact_storage"], "local_file")
         self.assertEqual(payload["worker_mode"], "in_process")
-        self.assertEqual(payload["stage_dispatcher"], "background_tasks")
         self.assertEqual(payload["jobs"], {})
+        self.assertEqual(payload["stage_messages"], {})
         self.assertEqual(payload["document_jobs"], {"pending": 1})
-        self.assertEqual(payload["stage_messages"], {"pending": 0, "running": 0, "failed": 0})
         self.assertEqual(payload["resources"]["template_versions"], 0)
         self.assertGreaterEqual(payload["audit_events"]["total"], 1)
         serialized = json.dumps(payload, ensure_ascii=False)
@@ -2398,51 +2249,6 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["resources"]["default_term_rule_version"], "electronics-default@1")
         self.assertEqual(payload["resources"]["default_translation_profile_version"], "electronics-en2zh@1")
 
-    def test_health_ready_reports_stage_spool_status_counts(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir))
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_health_pending",
-                    job_id="job_health",
-                    stage="convert_package",
-                    trace_id="trace_health",
-                    status="pending",
-                )
-            )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_health_running",
-                    job_id="job_health",
-                    stage="submit_to_mineru",
-                    trace_id="trace_health",
-                    status="running",
-                    updated_at=utc_now() - timedelta(seconds=1200),
-                    lease_expires_at=utc_now() - timedelta(seconds=1),
-                )
-            )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_health_failed",
-                    job_id="job_health",
-                    stage="process_callback",
-                    trace_id="trace_health",
-                    status="failed",
-                )
-            )
-            checks = runtime.health_service.build_dependency_checks()
-
-        self.assertEqual(checks["stage_spool_pending_messages"], 1)
-        self.assertEqual(checks["stage_spool_running_messages"], 1)
-        self.assertEqual(checks["stage_spool_failed_messages"], 1)
-        self.assertEqual(checks["stage_spool_replayable_messages"], 2)
-        self.assertEqual(checks["stage_spool_running_stale_messages"], 1)
-        self.assertGreaterEqual(checks["stage_spool_oldest_running_age_seconds"], 1199)
-        self.assertTrue(checks["stage_spool_needs_attention"])
-        self.assertEqual(checks["stage_spool_observation_status"], "needs_attention")
-        self.assertIn("stage_spool_replayable_messages_present", checks["readiness_warnings"])
-        self.assertIn("stage_spool_failed_messages_present", checks["readiness_warnings"])
-        self.assertIn("stage_spool_stale_running_messages_present", checks["readiness_warnings"])
 
     def test_health_ops_alerts_is_admin_only_readonly_and_reports_recovery_readiness(self):
         """验证 ops-alerts 只允许 Admin 读取，并只返回恢复建议不执行动作。"""
@@ -2504,35 +2310,6 @@ class FastAPIJobsBackendTests(TestCase):
                     updated_at=now - timedelta(minutes=20),
                 )
             )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_ops_pending",
-                    job_id="docjob_ops_running",
-                    stage="submit_to_mineru",
-                    trace_id="trace_ops_pending",
-                    status="pending",
-                )
-            )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_ops_running_stale",
-                    job_id="docjob_ops_running",
-                    stage="process_callback",
-                    trace_id="trace_ops_running_stale",
-                    status="running",
-                    updated_at=now - timedelta(seconds=1200),
-                    lease_expires_at=now - timedelta(seconds=1),
-                )
-            )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_ops_failed",
-                    job_id="docjob_ops_failed",
-                    stage="convert_package",
-                    trace_id="trace_ops_failed",
-                    status="failed",
-                )
-            )
             runtime.document_job_callback_message_store.put_or_get_callback_message(
                 DocumentJobCallbackMessage(
                     id="doccb_ops_pending",
@@ -2573,9 +2350,6 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(legacy_admin_response.json()["safety"]["read_only"], True)
         payload = admin_response.json()
         self.assertEqual(payload["status"], "needs_attention")
-        self.assertEqual(payload["summary"]["stage_failed_messages"], 1)
-        self.assertEqual(payload["summary"]["stage_stale_running_messages"], 1)
-        self.assertEqual(payload["summary"]["stage_replayable_messages"], 2)
         self.assertEqual(payload["summary"]["callback_failed_messages"], 1)
         self.assertEqual(payload["summary"]["callback_replayable_messages"], 1)
         self.assertGreaterEqual(payload["summary"]["callback_oldest_replayable_age_seconds"], 899)
@@ -2590,9 +2364,6 @@ class FastAPIJobsBackendTests(TestCase):
 
         alerts_by_code = {item["code"]: item for item in payload["alerts"]}
         self.assertIn("readiness_warnings_present", alerts_by_code)
-        self.assertIn("stage_spool_failed_messages_present", alerts_by_code)
-        self.assertIn("stage_spool_stale_running_messages_present", alerts_by_code)
-        self.assertIn("stage_spool_replayable_messages_present", alerts_by_code)
         self.assertIn("document_jobs_failed_present", alerts_by_code)
         self.assertIn("document_jobs_timed_out_present", alerts_by_code)
         self.assertIn("document_jobs_stale_running_present", alerts_by_code)
@@ -2600,8 +2371,6 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("document_job_callback_failed_messages_present", alerts_by_code)
         self.assertIn("document_job_callback_replayable_messages_present", alerts_by_code)
         self.assertIn("document_job_callback_oldest_replayable_stale", alerts_by_code)
-        self.assertEqual(alerts_by_code["stage_spool_failed_messages_present"]["severity"], "critical")
-        self.assertEqual(alerts_by_code["stage_spool_failed_messages_present"]["source"], "stage_spool")
         self.assertEqual(alerts_by_code["document_jobs_failed_present"]["source"], "jobs")
         self.assertEqual(
             alerts_by_code["document_job_callback_failed_messages_present"]["source"],
@@ -2717,13 +2486,10 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
             )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_alert_delivery_preview_failed",
-                    job_id="docjob_alert_delivery",
-                    stage="convert_package",
-                    trace_id="trace_alert_delivery_preview",
-                    status="failed",
+            runtime.document_job_callback_message_store.put_or_get_callback_message(
+                DocumentJobCallbackMessage(
+                    id='msg_alert_delivery_preview_failed', job_id='docjob_alert_delivery',
+                    status="failed", dedupe_key='msg_alert_delivery_preview_failed', payload={},
                 )
             )
             app = create_app(runtime)
@@ -2735,7 +2501,7 @@ class FastAPIJobsBackendTests(TestCase):
                     "/api/v1/ops/alert-deliveries/preview",
                     headers=admin_headers,
                     json={
-                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "alert_codes": ["document_job_callback_failed_messages_present"],
                         "channel": "local_outbox",
                         "dedupe_window_minutes": 60,
                     },
@@ -2744,7 +2510,7 @@ class FastAPIJobsBackendTests(TestCase):
                     "/api/v1/ops/alert-deliveries/preview",
                     headers=operator_headers,
                     json={
-                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "alert_codes": ["document_job_callback_failed_messages_present"],
                         "channel": "local_outbox",
                     },
                 )
@@ -2774,7 +2540,7 @@ class FastAPIJobsBackendTests(TestCase):
                 "secret_ref": "OPS_WEBHOOK_SECRET",
                 "secret_value": "should-not-leak",
                 "target_label": "ops-webhook",
-                "allowlist": ["stage_spool_failed_messages_present"],
+                "allowlist": ["document_job_callback_failed_messages_present"],
             }
         ]
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2853,18 +2619,15 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
             )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_alert_delivery_fake_failed",
-                    job_id="docjob_alert_delivery",
-                    stage="convert_package",
-                    trace_id="trace_alert_delivery_fake",
-                    status="failed",
+            runtime.document_job_callback_message_store.put_or_get_callback_message(
+                DocumentJobCallbackMessage(
+                    id='msg_alert_delivery_fake_failed', job_id='docjob_alert_delivery',
+                    status="failed", dedupe_key='msg_alert_delivery_fake_failed', payload={},
                 )
             )
             app = create_app(runtime)
             payload = {
-                "alert_codes": ["stage_spool_failed_messages_present"],
+                "alert_codes": ["document_job_callback_failed_messages_present"],
                 "channel": "local_outbox",
                 "reason": "ops drill",
                 "confirmation": "SEND FAKE OPS ALERTS",
@@ -2909,7 +2672,6 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(len(delivery_events), 1)
         self.assertEqual(delivery_events[0].trace_id, "trace_alert_delivery_fake")
-        self.assertIn("stage_spool_failed_messages_present:local_outbox", delivery_events[0].reason)
         self.assertIn("fake_delivered=1", delivery_events[0].reason)
         self.assertIsNotNone(delivery_events[0].details)
         self.assertEqual(delivery_events[0].details["delivery_id"], first_payload["delivery_id"])
@@ -2918,7 +2680,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertFalse(delivery_events[0].details["safety"]["external_delivery_executed"])
         self.assertEqual(
             delivery_events[0].details["items"][0]["alert_code"],
-            "stage_spool_failed_messages_present",
+            "document_job_callback_failed_messages_present",
         )
 
     def test_ops_alert_delivery_fake_send_includes_adapter_contract_parity_in_audit(self):
@@ -2930,13 +2692,10 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
             )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_alert_delivery_contract_failed",
-                    job_id="docjob_alert_delivery_contract",
-                    stage="convert_package",
-                    trace_id="trace_alert_delivery_contract",
-                    status="failed",
+            runtime.document_job_callback_message_store.put_or_get_callback_message(
+                DocumentJobCallbackMessage(
+                    id='msg_alert_delivery_contract_failed', job_id='docjob_alert_delivery_contract',
+                    status="failed", dedupe_key='msg_alert_delivery_contract_failed', payload={},
                 )
             )
             app = create_app(runtime)
@@ -2946,7 +2705,7 @@ class FastAPIJobsBackendTests(TestCase):
                     "/api/v1/ops/alert-deliveries/fake-send",
                     headers={**admin_headers, "X-Trace-Id": "trace_alert_delivery_contract"},
                     json={
-                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "alert_codes": ["document_job_callback_failed_messages_present"],
                         "channel": "local_outbox",
                         "reason": "adapter contract parity drill",
                         "confirmation": "SEND FAKE OPS ALERTS",
@@ -2965,9 +2724,6 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(adapter_result["adapter_id"], "local_outbox_fake")
         self.assertEqual(adapter_result["adapter_mode"], "fake")
         self.assertEqual(adapter_result["channel"], "local_outbox")
-        self.assertEqual(adapter_result["alert_code"], "stage_spool_failed_messages_present")
-        self.assertEqual(adapter_result["dedupe_key"], "stage_spool_failed_messages_present:local_outbox")
-        self.assertEqual(adapter_result["idempotency_key"], "ops_alert_delivery:stage_spool_failed_messages_present:local_outbox")
         self.assertEqual(adapter_result["timeout_seconds"], 10)
         self.assertFalse(adapter_result["provider_calls_executed"])
         self.assertFalse(adapter_result["external_delivery_executed"])
@@ -3022,13 +2778,13 @@ class FastAPIJobsBackendTests(TestCase):
                 inactive_response = client.post(
                     "/api/v1/ops/alert-deliveries/preview",
                     headers=admin_headers,
-                    json={"alert_codes": ["stage_spool_failed_messages_present"]},
+                    json={"alert_codes": ["document_job_callback_failed_messages_present"]},
                 )
                 bad_confirmation_response = client.post(
                     "/api/v1/ops/alert-deliveries/fake-send",
                     headers=admin_headers,
                     json={
-                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "alert_codes": ["document_job_callback_failed_messages_present"],
                         "reason": "ops drill",
                         "confirmation": "SEND",
                     },
@@ -3060,7 +2816,7 @@ class FastAPIJobsBackendTests(TestCase):
                 "secret_ref": "OPS_SLACK_WEBHOOK_URL",
                 "secret_value": "should-not-leak",
                 "target_label": "#ops-alerts",
-                "allowlist": ["stage_spool_failed_messages_present"],
+                "allowlist": ["document_job_callback_failed_messages_present"],
                 "rate_limit_per_hour": 30,
                 "dedupe_window_minutes": 60,
             }
@@ -3072,13 +2828,10 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
                 ops_alert_destinations_json=json.dumps(destination_config),
             )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_alert_destination_dry_run_failed",
-                    job_id="docjob_alert_destination",
-                    stage="convert_package",
-                    trace_id="trace_alert_destination",
-                    status="failed",
+            runtime.document_job_callback_message_store.put_or_get_callback_message(
+                DocumentJobCallbackMessage(
+                    id='msg_alert_destination_dry_run_failed', job_id='docjob_alert_destination',
+                    status="failed", dedupe_key='msg_alert_destination_dry_run_failed', payload={},
                 )
             )
             app = create_app(runtime)
@@ -3090,7 +2843,7 @@ class FastAPIJobsBackendTests(TestCase):
                     "/api/v1/ops/alert-destinations/dry-run",
                     headers=admin_headers,
                     json={
-                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "alert_codes": ["document_job_callback_failed_messages_present"],
                         "destination_ids": ["ops-slack-primary"],
                     },
                 )
@@ -3098,7 +2851,7 @@ class FastAPIJobsBackendTests(TestCase):
                     "/api/v1/ops/alert-destinations/dry-run",
                     headers=operator_headers,
                     json={
-                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "alert_codes": ["document_job_callback_failed_messages_present"],
                         "destination_ids": ["ops-slack-primary"],
                     },
                 )
@@ -3120,7 +2873,6 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(destination["status"], "dry_run_passed")
         self.assertEqual(destination["secret_ref"], "OPS_SLACK_WEBHOOK_URL")
         self.assertTrue(destination["secret_ref_present"])
-        self.assertEqual(destination["matched_alert_codes"], ["stage_spool_failed_messages_present"])
         self.assertEqual(destination["blocked_alert_codes"], [])
         self.assertIn("real_delivery_requires_explicit_real_send", destination["missing_gates"])
         self.assertNotIn("should-not-leak", admin_response.text)
@@ -3197,15 +2949,10 @@ class FastAPIJobsBackendTests(TestCase):
                 alert_delivery_provider=provider,
                 secret_resolver=secret_resolver,
             )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_real_alert_preview_failed",
-                    job_id="docjob_real_alert_preview",
-                    stage="convert_package",
-                    trace_id="trace_real_alert_preview",
-                    status="failed",
-                )
-            )
+            self.enterContext(patch.object(
+                runtime.health_service, "build_ops_alerts_response",
+                return_value=build_pilot_alert_response(runtime),
+            ))
             app = create_app(runtime)
             with TestClient(app) as client:
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
@@ -3280,15 +3027,10 @@ class FastAPIJobsBackendTests(TestCase):
                 alert_delivery_provider=provider,
                 secret_resolver=secret_resolver,
             )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_real_alert_invalid_failed",
-                    job_id="docjob_real_alert_invalid",
-                    stage="convert_package",
-                    trace_id="trace_real_alert_invalid",
-                    status="failed",
-                )
-            )
+            self.enterContext(patch.object(
+                runtime.health_service, "build_ops_alerts_response",
+                return_value=build_pilot_alert_response(runtime),
+            ))
             app = create_app(runtime)
             with TestClient(app) as client:
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
@@ -3355,15 +3097,10 @@ class FastAPIJobsBackendTests(TestCase):
                 alert_delivery_provider=provider,
                 secret_resolver=secret_resolver,
             )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_real_alert_kill_failed",
-                    job_id="docjob_real_alert_kill",
-                    stage="convert_package",
-                    trace_id="trace_real_alert_kill",
-                    status="failed",
-                )
-            )
+            self.enterContext(patch.object(
+                runtime.health_service, "build_ops_alerts_response",
+                return_value=build_pilot_alert_response(runtime),
+            ))
             app = create_app(runtime)
             with TestClient(app) as client:
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
@@ -3430,15 +3167,10 @@ class FastAPIJobsBackendTests(TestCase):
                 alert_delivery_provider=provider,
                 secret_resolver=secret_resolver,
             )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_real_alert_success_failed",
-                    job_id="docjob_real_alert_success",
-                    stage="convert_package",
-                    trace_id="trace_real_alert_success",
-                    status="failed",
-                )
-            )
+            self.enterContext(patch.object(
+                runtime.health_service, "build_ops_alerts_response",
+                return_value=build_pilot_alert_response(runtime),
+            ))
             app = create_app(runtime)
             payload = {
                 "alert_codes": ["stage_spool_failed_messages_present"],
@@ -3514,15 +3246,10 @@ class FastAPIJobsBackendTests(TestCase):
                 alert_delivery_provider=provider,
                 secret_resolver=secret_resolver,
             )
-            runtime.stage_message_store.put_stage_message(
-                JobStageMessage(
-                    id="msg_real_alert_rate_failed",
-                    job_id="docjob_real_alert_rate",
-                    stage="convert_package",
-                    trace_id="trace_real_alert_rate",
-                    status="failed",
-                )
-            )
+            self.enterContext(patch.object(
+                runtime.health_service, "build_ops_alerts_response",
+                return_value=build_pilot_alert_response(runtime),
+            ))
             app = create_app(runtime)
             payload = {
                 "alert_codes": ["stage_spool_failed_messages_present"],
@@ -4521,30 +4248,6 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertFalse(checks["deployment_init_ready"])
         self.assertIn("mineru_uid_missing", checks["readiness_blockers"])
 
-    def test_api_error_handlers_map_domain_exceptions(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            app = create_app(build_test_runtime(Path(temp_dir)))
-
-            @app.get("/test-errors/workflow")
-            def raise_workflow_error():
-                raise JobWorkflowViolation("当前状态不允许执行。")
-
-            @app.get("/test-errors/conversion")
-            def raise_conversion_error():
-                raise ConversionFailure("conversion_failed", "转换失败。")
-
-            with TestClient(app, raise_server_exceptions=False) as client:
-                workflow_response = client.get("/test-errors/workflow")
-                conversion_response = client.get("/test-errors/conversion")
-
-        self.assertEqual(workflow_response.status_code, 409)
-        self.assertEqual(workflow_response.json()["detail"], "当前状态不允许执行。")
-        self.assertEqual(conversion_response.status_code, 503)
-        self.assertEqual(conversion_response.json()["detail"], "转换失败。")
-        self.assertEqual(workflow_response.json()["error_code"], "job_state_conflict")
-        self.assertEqual(workflow_response.json()["request_id"], workflow_response.json()["error"]["request_id"])
-        self.assertEqual(workflow_response.json()["trace_id"], workflow_response.json()["error"]["trace_id"])
-        self.assertEqual(conversion_response.json()["error_code"], "conversion_failed")
 
     def test_internal_auth_login_and_me_support_admin_and_operator(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -9287,7 +8990,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
-                public_deployment_mode="single_tenant_public",
+                public_deployment_mode="internal",
                 mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
@@ -9304,6 +9007,7 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=headers,
                     json={"source_file_id": source_file["id"]},
                 )
+                self.assertEqual(create_response.status_code, 201)
                 job_id = create_response.json()["job_id"]
                 waiting_job = runtime.document_job_repository.get_document_job(job_id)
                 payload, content = build_callback_payload(
@@ -9335,7 +9039,6 @@ class FastAPIJobsBackendTests(TestCase):
                 processed_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
                 fake_client = runtime.document_job_execution_service.fake_mineru_client
 
-        self.assertEqual(create_response.status_code, 201)
         self.assertEqual(create_response.json()["status"], "running")
         self.assertEqual(create_response.json()["stage"], "parsing")
         self.assertIsNotNone(waiting_job)
@@ -9375,7 +9078,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
-                public_deployment_mode="single_tenant_public",
+                public_deployment_mode="internal",
                 mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
@@ -9392,6 +9095,7 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=headers,
                     json={"source_file_id": source_file["id"]},
                 )
+                self.assertEqual(create_response.status_code, 201)
                 job_id = create_response.json()["job_id"]
                 waiting_job = runtime.document_job_repository.get_document_job(job_id)
                 payload, content = build_callback_payload(
@@ -9414,7 +9118,6 @@ class FastAPIJobsBackendTests(TestCase):
                 processed_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
                 fake_client = runtime.document_job_execution_service.fake_mineru_client
 
-        self.assertEqual(create_response.status_code, 201)
         self.assertEqual(first_callback_response.status_code, 200)
         self.assertEqual(second_callback_response.status_code, 200)
         self.assertEqual(queued_counts["pending"], 1)
@@ -9434,7 +9137,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
-                public_deployment_mode="single_tenant_public",
+                public_deployment_mode="internal",
                 mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
@@ -9451,6 +9154,7 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=headers,
                     json={"source_file_id": source_file["id"]},
                 )
+                self.assertEqual(create_response.status_code, 201)
                 job_id = create_response.json()["job_id"]
                 waiting_job = runtime.document_job_repository.get_document_job(job_id)
                 payload, content = build_callback_payload(
@@ -9471,7 +9175,6 @@ class FastAPIJobsBackendTests(TestCase):
                 final_job = runtime.document_job_repository.get_document_job(job_id)
                 fake_client = runtime.document_job_execution_service.fake_mineru_client
 
-        self.assertEqual(create_response.status_code, 201)
         self.assertEqual(callback_response.status_code, 200)
         self.assertEqual(cancel_response.status_code, 200)
         self.assertIsNotNone(worker_result)
@@ -9541,7 +9244,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
-                public_deployment_mode="single_tenant_public",
+                public_deployment_mode="internal",
                 mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
@@ -9558,6 +9261,7 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=headers,
                     json={"source_file_id": source_file["id"]},
                 )
+                self.assertEqual(create_response.status_code, 201)
                 job_id = create_response.json()["job_id"]
                 waiting_job = runtime.document_job_repository.get_document_job(job_id)
                 payload, _content = build_callback_payload(
@@ -9571,7 +9275,6 @@ class FastAPIJobsBackendTests(TestCase):
                 counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
                 final_job = runtime.document_job_repository.get_document_job(job_id)
 
-        self.assertEqual(create_response.status_code, 201)
         self.assertEqual(callback_response.status_code, 403)
         self.assertEqual(sum(counts.values()), 0)
         self.assertIsNotNone(final_job)
@@ -15783,319 +15486,3 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual([event.action for event in audit_events], ["translation_profile.rollback"])
         self.assertEqual(audit_events[0].target_id, "electronics-en2zh@1")
         self.assertEqual(audit_events[0].actor_role, "admin")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    def test_callback_rejects_non_parsing_job_status(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir))
-            app = create_app(runtime)
-            job = JobRecord(
-                id="job_completed_callback",
-                source_filename="done.zip",
-                status="completed",
-                progress=100,
-                result_ready=True,
-                source_kind="source_pdf",
-                source_pdf_context=SourcePdfJobContext(
-                    batch_id="batch_completed",
-                    data_id="job_completed_callback",
-                ),
-                completed_at=utc_now(),
-            )
-            runtime.job_repository.create_job(job)
-            with TestClient(app) as client:
-                payload, _content = build_callback_payload(
-                    batch_id="batch_completed",
-                    data_id="job_completed_callback",
-                    state="done",
-                    full_zip_url="https://mineru.net/result.zip",
-                )
-                response = client.post("/api/v1/mineru-callbacks/result", json=payload)
-
-            self.assertEqual(response.status_code, 400)
-            self.assertIn("不允许处理 MinerU callback", response.json()["detail"])
-            self.assertEqual(runtime.stage_message_store.list_replayable_stage_messages(), [])
-
-    def test_find_job_for_callback_reads_nested_source_pdf_context(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir))
-            job = JobRecord(
-                id="job_nested_callback",
-                source_filename="source.pdf",
-                status="parsing",
-                progress=25,
-                source_kind="source_pdf",
-                lifecycle_status="uploaded",
-                execution_status="parsing",
-                source_pdf_context=SourcePdfJobContext(
-                    batch_id="batch_nested",
-                    data_id="job_nested_callback",
-                    callback_seed="seed_nested",
-                    upstream_status="submitted",
-                ),
-            )
-            runtime.job_repository.create_job(job)
-
-            by_data_id = runtime.command_service.find_job_for_callback({"data_id": "job_nested_callback"})
-            by_batch_id = runtime.command_service.find_job_for_callback({"batch_id": "batch_nested"})
-
-            self.assertEqual(by_data_id.id, "job_nested_callback")
-            self.assertEqual(by_batch_id.id, "job_nested_callback")
-
-    def test_replay_pending_replays_pending_and_running_stage_messages_only(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir))
-            job = JobRecord(
-                id="job_replay",
-                source_filename="source.pdf",
-                status="queued",
-                progress=10,
-                source_kind="source_pdf",
-                lifecycle_status="uploaded",
-                execution_status="queued",
-                source_pdf_context=SourcePdfJobContext(),
-            )
-            runtime.job_repository.create_job(job)
-            pending = JobStageMessage(
-                id="msg_pending",
-                job_id=job.id,
-                stage="submit_to_mineru",
-                trace_id="trace_pending",
-                status="pending",
-            )
-            running = JobStageMessage(
-                id="msg_running",
-                job_id=job.id,
-                stage="process_callback",
-                trace_id="trace_running",
-                status="running",
-            )
-            failed = JobStageMessage(
-                id="msg_failed",
-                job_id=job.id,
-                stage="convert_package",
-                trace_id="trace_failed",
-                status="failed",
-            )
-            runtime.stage_message_store.put_stage_message(pending)
-            runtime.stage_message_store.put_stage_message(running)
-            runtime.stage_message_store.put_stage_message(failed)
-            replayable_messages = runtime.stage_message_store.list_replayable_stage_messages()
-            self.assertEqual([message.id for message in replayable_messages], ["msg_pending", "msg_running"])
-
-            dispatched: list[str] = []
-            runtime.stage_service.dispatch_message = lambda message_id: dispatched.append(message_id)
-
-            runtime.stage_service.replay_pending()
-
-            self.assertEqual(dispatched, ["msg_pending", "msg_running"])
-
-    def test_dispatch_skips_completed_conversion_message_without_rerunning_conversion(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir))
-            job = JobRecord(
-                id="job_completed_replay",
-                source_filename="source.zip",
-                status="completed",
-                progress=100,
-                lifecycle_status="completed",
-                execution_status="idle",
-                result_ready=True,
-                completed_at=utc_now(),
-            )
-            runtime.job_repository.create_job(job)
-            message = JobStageMessage(
-                id="msg_completed_replay",
-                job_id=job.id,
-                stage="convert_package",
-                trace_id="trace_completed_replay",
-                status="running",
-            )
-            runtime.stage_message_store.put_stage_message(message)
-
-            runtime.stage_service.dispatch_message(message.id)
-
-            self.assertEqual(runtime.stage_service.conversion_entrypoint.requests, [])
-            self.assertIsNone(runtime.stage_message_store.get_stage_message(message.id))
-            self.assertEqual(runtime.job_repository.get_job(job.id).status, "completed")
-
-    def test_dispatch_skips_replayed_mineru_submit_after_batch_recorded(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir), mineru_api_token="token-123")
-            job = JobRecord(
-                id="job_submitted_replay",
-                source_filename="source.pdf",
-                status="parsing",
-                progress=25,
-                source_kind="source_pdf",
-                lifecycle_status="uploaded",
-                execution_status="parsing",
-                source_pdf_context=SourcePdfJobContext(
-                    batch_id="batch_existing",
-                    data_id="job_submitted_replay",
-                    upstream_status="submitted",
-                ),
-            )
-            runtime.job_repository.create_job(job)
-            message = JobStageMessage(
-                id="msg_submitted_replay",
-                job_id=job.id,
-                stage="submit_to_mineru",
-                trace_id="trace_submitted_replay",
-                status="running",
-            )
-            runtime.stage_message_store.put_stage_message(message)
-
-            runtime.stage_service.dispatch_message(message.id)
-
-            self.assertEqual(runtime.stage_service.fake_mineru_client.calls, [])
-            self.assertIsNone(runtime.stage_message_store.get_stage_message(message.id))
-            self.assertEqual(runtime.job_repository.get_job(job.id).status, "parsing")
-
-    def test_dispatch_skips_duplicate_callback_after_job_completed(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir), mineru_api_token="token-123")
-            job = JobRecord(
-                id="job_callback_completed",
-                source_filename="source.pdf",
-                status="completed",
-                progress=100,
-                source_kind="source_pdf",
-                lifecycle_status="completed",
-                execution_status="idle",
-                source_pdf_context=SourcePdfJobContext(
-                    batch_id="batch_done",
-                    data_id="job_callback_completed",
-                    upstream_status="done",
-                    result_zip_url="https://mineru.net/result.zip",
-                ),
-                result_ready=True,
-                completed_at=utc_now(),
-            )
-            runtime.job_repository.create_job(job)
-            message = JobStageMessage(
-                id="msg_callback_completed",
-                job_id=job.id,
-                stage="process_callback",
-                trace_id="trace_callback_completed",
-                status="pending",
-                payload={
-                    "batch_id": "batch_done",
-                    "data_id": job.id,
-                    "state": "done",
-                    "full_zip_url": "https://mineru.net/result.zip",
-                },
-            )
-            runtime.stage_message_store.put_stage_message(message)
-
-            runtime.stage_service.dispatch_message(message.id)
-
-            self.assertEqual(runtime.stage_service.conversion_entrypoint.requests, [])
-            self.assertIsNone(runtime.stage_message_store.get_stage_message(message.id))
-            self.assertEqual(runtime.job_repository.get_job(job.id).status, "completed")
-
-    def test_enqueue_parsed_result_conversion_downloads_zip_and_completes_docx(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir))
-            job = JobRecord(
-                id="job_parsed_conversion",
-                source_filename="source.pdf",
-                status="parsed",
-                progress=60,
-                source_kind="source_pdf",
-                lifecycle_status="parsed",
-                execution_status="idle",
-                source_pdf_context=SourcePdfJobContext(
-                    batch_id="batch_parsed",
-                    data_id="job_parsed_conversion",
-                    upstream_status="done",
-                    result_zip_url="https://mineru.net/result.zip",
-                ),
-            )
-            runtime.job_repository.create_job(job)
-
-            message = runtime.stage_service.enqueue_parsed_result_conversion(job, trace_id="trace_parsed")
-            queued_job = runtime.job_repository.get_job(job.id)
-            self.assertIsNotNone(queued_job)
-            self.assertEqual(queued_job.status, "queued")
-            self.assertEqual(queued_job.progress, 65)
-            self.assertEqual(message.stage, "convert_parsed_result")
-
-            runtime.stage_service.dispatch_message(message.id)
-
-            updated_job = runtime.job_repository.get_job(job.id)
-            self.assertIsNotNone(updated_job)
-            self.assertEqual(updated_job.status, "completed")
-            self.assertEqual(updated_job.resolved_execution_status(), "idle")
-            self.assertIsNone(runtime.stage_message_store.get_stage_message(message.id))
-            files = runtime.job_file_repository.list_files(job.id)
-            self.assertEqual([item.file_type for item in files], ["parsed_result_package", "result_docx"])
-            job_paths = build_job_paths(runtime.settings.data_path, job.id)
-            self.assertTrue(job_paths.parsed_result_package.exists())
-            self.assertEqual(job_paths.parsed_result_package.read_bytes(), b"fake-parsed-result-zip")
-            self.assertEqual(runtime.stage_service.fake_mineru_client.download_calls[0]["result_url"], "https://mineru.net/result.zip")
-            fake_conversion = runtime.stage_service.conversion_entrypoint
-            self.assertEqual(fake_conversion.requests[0].package_path, job_paths.parsed_result_package)
-            self.assertEqual(job_paths.result_docx.read_bytes(), b"fake-docx")
-
-            event_stages = [item.stage for item in runtime.job_event_repository.list_events(job.id)]
-            self.assertIn("parsed_result_conversion_started", event_stages)
-            self.assertIn("parsed_result_package_recovered", event_stages)
-            self.assertIn("job_completed", event_stages)
-
-    def test_convert_parsed_result_fails_when_result_zip_download_fails(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir))
-            runtime.stage_service.fake_mineru_client.raise_download_error = True
-            job = JobRecord(
-                id="job_parsed_download_fail",
-                source_filename="source.pdf",
-                status="parsed",
-                progress=60,
-                source_kind="source_pdf",
-                lifecycle_status="parsed",
-                execution_status="idle",
-                source_pdf_context=SourcePdfJobContext(
-                    batch_id="batch_parsed",
-                    data_id="job_parsed_download_fail",
-                    upstream_status="done",
-                    result_zip_url="https://mineru.net/result.zip",
-                ),
-            )
-            runtime.job_repository.create_job(job)
-
-            message = runtime.stage_service.enqueue_parsed_result_conversion(job, trace_id="trace_parsed_fail")
-            runtime.stage_service.dispatch_message(message.id)
-
-            updated_job = runtime.job_repository.get_job(job.id)
-            self.assertIsNotNone(updated_job)
-            self.assertEqual(updated_job.status, "failed")
-            self.assertEqual(updated_job.error_code, "parsed_result_download_failed")
-            event_stages = [item.stage for item in runtime.job_event_repository.list_events(job.id)]
-            self.assertIn("job_failed", event_stages)

@@ -1,0 +1,32 @@
+[
+  {
+    "reference": "docker.io/library/python:3.11.18-slim-trixie@sha256:b701198cb708b68d9413ca67d6311bd97c9389a2c5fe4da0511fc652642366cd",
+    "id": "sha256:b701198cb708b68d9413ca67d6311bd97c9389a2c5fe4da0511fc652642366cd",
+    "repo_digests": [
+      "python@sha256:b701198cb708b68d9413ca67d6311bd97c9389a2c5fe4da0511fc652642366cd"
+    ],
+    "os": "linux",
+    "architecture": "amd64",
+    "size": 45610528
+  },
+  {
+    "reference": "docker.io/library/mysql@sha256:c36050afdca850f23cef85703f84c7531a5ae155a11b5ee1c60acb09937c4084",
+    "id": "sha256:c36050afdca850f23cef85703f84c7531a5ae155a11b5ee1c60acb09937c4084",
+    "repo_digests": [
+      "mysql@sha256:c36050afdca850f23cef85703f84c7531a5ae155a11b5ee1c60acb09937c4084"
+    ],
+    "os": "linux",
+    "architecture": "amd64",
+    "size": 238266123
+  },
+  {
+    "reference": "docker.io/library/redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+    "id": "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+    "repo_digests": [
+      "redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99"
+    ],
+    "os": "linux",
+    "architecture": "amd64",
+    "size": 16275739
+  }
+]

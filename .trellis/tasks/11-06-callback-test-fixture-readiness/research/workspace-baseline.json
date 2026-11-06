@@ -1,0 +1,118 @@
+[
+  {
+    "path": ".trellis/spec/backend/error-handling.md",
+    "sha256": "be1b45c57bbd257e313f338cc942befd9f9ff5a96dcf0fce1497cde766db5cf7"
+  },
+  {
+    "path": "app/api/mineru_callback_guards.py",
+    "sha256": "220fc23d68fddaee987b6f5f31646308b52a5cf9ee2cc547d1654bdbdfd10a20"
+  },
+  {
+    "path": "app/clients/mineru_client.py",
+    "sha256": "3ccc88b21c6cbbcf3ab4db62b26522bb916e67ab5a361dac1eff7782e499bdd9"
+  },
+  {
+    "path": "app/domains/document_jobs/execution.py",
+    "sha256": "e0d5fa6d6ac503eeb48d4479ebbb826d9990f7e9172f33ed90d2db3d92512e2f"
+  },
+  {
+    "path": "app/domains/jobs/mineru_callback.py",
+    "sha256": null
+  },
+  {
+    "path": "app/domains/jobs/stage.py",
+    "sha256": "ad38ee7be8f75cad2baccdebbc5659d2267a401162d84a3847774427afe8d2b1"
+  },
+  {
+    "path": "docs/api/mineru-callbacks.md",
+    "sha256": "bde29f985a87f7fc19be3a3bf8d715654b9fdc80a2cb2a7eea29b403a8315bc3"
+  },
+  {
+    "path": ".trellis/tasks/11-06-mineru-download-boundary/check.jsonl",
+    "sha256": "2a8db914811a5521dfb6b6a7cfcebb6fc159b5121280536f9ece1ecbd01f8f5f"
+  },
+  {
+    "path": ".trellis/tasks/11-06-mineru-download-boundary/design.md",
+    "sha256": "d4b1185881526bc0a83b12bc255a1311d83a1b5a6d84634e5b00c92a65f5e6af"
+  },
+  {
+    "path": ".trellis/tasks/11-06-mineru-download-boundary/implement.jsonl",
+    "sha256": "2a8db914811a5521dfb6b6a7cfcebb6fc159b5121280536f9ece1ecbd01f8f5f"
+  },
+  {
+    "path": ".trellis/tasks/11-06-mineru-download-boundary/implement.md",
+    "sha256": "d7eb51891e3d2d9c75a28bd42790479a853544e209bdbc9c396f079ea77a118d"
+  },
+  {
+    "path": ".trellis/tasks/11-06-mineru-download-boundary/implementation-validation.md",
+    "sha256": "748278225b4e4d8c41807af8ca2e76e6f21204d93d3334df762e7f9018daffb2"
+  },
+  {
+    "path": ".trellis/tasks/11-06-mineru-download-boundary/planning-validation.md",
+    "sha256": "1e24d388e9d28046d385e416a5e30cfc79891c9adccdad59e934feb5e77892a4"
+  },
+  {
+    "path": ".trellis/tasks/11-06-mineru-download-boundary/prd.md",
+    "sha256": "5fd79ac737bcfdb47f5c65323cd0be1caf57461325067489379bb7b529587360"
+  },
+  {
+    "path": ".trellis/tasks/11-06-mineru-download-boundary/research/current-state.md",
+    "sha256": "232aea655c2e2d42905c628658270344adb2977b9ea37f5f320b9e2ef6efb631"
+  },
+  {
+    "path": ".trellis/tasks/11-06-mineru-download-boundary/research/upstream.md",
+    "sha256": "6c5cb7cac4dda75a4e02ad2350df81978a94e58765d1dab666ebd0f0f0363c6b"
+  },
+  {
+    "path": ".trellis/tasks/11-06-mineru-download-boundary/task.json",
+    "sha256": "2ef60b16a2d57f2a58924f06877c9a94978d48f6af6ad5c7f26669a88112bdcf"
+  },
+  {
+    "path": ".trellis/tasks/11-06-mineru-download-boundary/validation/baseline-targeted-tests.log",
+    "sha256": "8953d5693c872755035b69c27c200a32df8b19060f85b464dfa6b09ea759c1d5"
+  },
+  {
+    "path": ".trellis/tasks/11-06-source-audit-remediation-plan/check.jsonl",
+    "sha256": "0b518cd43c25f13db52116dba6367b1d9b2446d5750b9b9842d270c0ca7bd28b"
+  },
+  {
+    "path": ".trellis/tasks/11-06-source-audit-remediation-plan/design.md",
+    "sha256": "7c3299e52c39a04eeafa73f27e767bf3125ea157032d4da7686737187e97fa31"
+  },
+  {
+    "path": ".trellis/tasks/11-06-source-audit-remediation-plan/implement.jsonl",
+    "sha256": "0b518cd43c25f13db52116dba6367b1d9b2446d5750b9b9842d270c0ca7bd28b"
+  },
+  {
+    "path": ".trellis/tasks/11-06-source-audit-remediation-plan/implement.md",
+    "sha256": "627d2ecf428a15dae2a6d324ffbd9969f389f5ec8e48011c8ba5a7610b025154"
+  },
+  {
+    "path": ".trellis/tasks/11-06-source-audit-remediation-plan/planning-validation.md",
+    "sha256": "c6be83a55ce12d166548abc82f7edc5ecd1560205741f24618831adc1a1bbb9b"
+  },
+  {
+    "path": ".trellis/tasks/11-06-source-audit-remediation-plan/prd.md",
+    "sha256": "e6c3024575dea370a7c42b4dca22ae3542e0c7993828ec3c9463d3214346eaa6"
+  },
+  {
+    "path": ".trellis/tasks/11-06-source-audit-remediation-plan/research/audit-matrix.md",
+    "sha256": "d8b9ad3bd67d04ebfaa5adce6c390c98449a3cc01154bdbd00e39a6244a2d679"
+  },
+  {
+    "path": ".trellis/tasks/11-06-source-audit-remediation-plan/research/existing-work.md",
+    "sha256": "90ae54417b22157e878e86eedb7d9b5bb897bc6326d5de57f287af8cd48802de"
+  },
+  {
+    "path": ".trellis/tasks/11-06-source-audit-remediation-plan/task.json",
+    "sha256": "fb73135244a580c59f5bd36a2351fa3bbd9650e11031d0bb6062c5245bb090bb"
+  },
+  {
+    "path": "app/clients/mineru_result_url.py",
+    "sha256": "a847b09e5d05b266ec948b202310e785eaaaacabdd0b4bded5c52a65f111952d"
+  },
+  {
+    "path": "tests/test_mineru_download_boundary.py",
+    "sha256": "e85bbe01c04112facda5c9d1d16b3e013c073a7b774322bb7cb0df3f1a0f3cc0"
+  }
+]

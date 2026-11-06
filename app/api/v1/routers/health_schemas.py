@@ -1,5 +1,5 @@
-# File: app/api/v1/routers/health_schemas.py
-# Purpose: Define v1 response models for health and read-only operations alert APIs.
+# 文件： app/api/v1/routers/health_schemas.py
+# 用途：定义健康检查与只读运维告警 API 的 v1 响应模型。
 
 from __future__ import annotations
 
@@ -40,10 +40,9 @@ class HealthMetricsResponse(BaseModel):
     metadata_store: str
     artifact_storage: str
     worker_mode: str
-    stage_dispatcher: str
     jobs: dict[str, int]
-    document_jobs: dict[str, int] = Field(default_factory=dict)
     stage_messages: dict[str, int]
+    document_jobs: dict[str, int] = Field(default_factory=dict)
     document_job_callback_messages: dict[str, int] = Field(default_factory=dict)
     resources: dict[str, int | str | None]
     audit_events: dict[str, int]
@@ -51,7 +50,7 @@ class HealthMetricsResponse(BaseModel):
 
 HealthOpsStatus = Literal["ok", "watch", "needs_attention"]
 HealthOpsAlertSeverity = Literal["info", "warning", "critical"]
-HealthOpsAlertSource = Literal["readiness", "stage_spool", "jobs", "document_job_callbacks"]
+HealthOpsAlertSource = Literal["readiness", "jobs", "document_job_callbacks"]
 
 
 class HealthOpsAlertSummary(BaseModel):
@@ -59,17 +58,12 @@ class HealthOpsAlertSummary(BaseModel):
 
     readiness_blockers: int
     readiness_warnings: int
-    stage_failed_messages: int
-    stage_stale_running_messages: int
-    stage_replayable_messages: int
     callback_failed_messages: int
     callback_replayable_messages: int
     callback_oldest_replayable_age_seconds: int
     failed_jobs: int
     running_jobs: int
     worker_mode: str
-    stage_dispatcher: str
-    stage_message_store: str
     artifact_storage: str
 
 

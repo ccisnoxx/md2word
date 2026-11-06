@@ -1,4 +1,4 @@
-"""纯内存技术 Token Codec；尚未接入 Provider、翻译回填或 Worker。"""
+"""纯内存技术 Token Codec；经 TranslationIntegrityValidator 接入正式翻译与 Worker 校验。"""
 
 from __future__ import annotations
 

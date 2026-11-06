@@ -1,0 +1,7 @@
+{
+  "id": "b05-1-formal-deps",
+  "name": "b05-1-formal-deps",
+  "title": "B05 第 1 步：解除正式消费者 legacy 配置依赖",
+  "status": "in_progress",
+  "description": "用户已授权创建计划后直接实施；仅使用任务内状态，避免写入范围外的开发者/session 指针。"
+}

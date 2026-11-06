@@ -1,0 +1,1206 @@
+{
+  "summary": {
+    "files_deleted": 59,
+    "deleted_file_lines": 15512,
+    "diff_added_lines": 307,
+    "diff_deleted_lines": 19606,
+    "removed_test_methods": 170
+  },
+  "deleted_files": [
+    {
+      "path": "app/conversion/contracts.py",
+      "deleted_lines": 66
+    },
+    {
+      "path": "app/conversion/entrypoint.py",
+      "deleted_lines": 79
+    },
+    {
+      "path": "app/conversion/runtime/input_adapter_runtime.py",
+      "deleted_lines": 1095
+    },
+    {
+      "path": "app/conversion/runtime/llm_client.py",
+      "deleted_lines": 162
+    },
+    {
+      "path": "app/conversion/runtime/page_flow_runtime.py",
+      "deleted_lines": 359
+    },
+    {
+      "path": "app/conversion/runtime/page_layout_runtime.py",
+      "deleted_lines": 1144
+    },
+    {
+      "path": "app/conversion/runtime/page_repair_runtime.py",
+      "deleted_lines": 179
+    },
+    {
+      "path": "app/conversion/runtime/render_config_runtime.py",
+      "deleted_lines": 214
+    },
+    {
+      "path": "app/conversion/runtime/table_long_renderer.py",
+      "deleted_lines": 362
+    },
+    {
+      "path": "app/conversion/runtime/table_render_runtime.py",
+      "deleted_lines": 367
+    },
+    {
+      "path": "app/conversion/runtime/text_rendering.py",
+      "deleted_lines": 713
+    },
+    {
+      "path": "app/conversion/runtime/translation_runtime.py",
+      "deleted_lines": 690
+    },
+    {
+      "path": "app/conversion/runtime_config.py",
+      "deleted_lines": 11
+    },
+    {
+      "path": "app/conversion/runtime_facade.py",
+      "deleted_lines": 28
+    },
+    {
+      "path": "app/conversion/runtime_helpers.py",
+      "deleted_lines": 207
+    },
+    {
+      "path": "app/conversion/runtime_models.py",
+      "deleted_lines": 122
+    },
+    {
+      "path": "app/conversion/runtime_rendering_api.py",
+      "deleted_lines": 361
+    },
+    {
+      "path": "app/conversion/runtime_runner.py",
+      "deleted_lines": 274
+    },
+    {
+      "path": "app/conversion/service.py",
+      "deleted_lines": 113
+    },
+    {
+      "path": "app/domains/jobs/artifact_integrity.py",
+      "deleted_lines": 71
+    },
+    {
+      "path": "app/domains/jobs/artifact_retention.py",
+      "deleted_lines": 166
+    },
+    {
+      "path": "app/domains/jobs/artifact_storage.py",
+      "deleted_lines": 80
+    },
+    {
+      "path": "app/domains/jobs/artifacts.py",
+      "deleted_lines": 112
+    },
+    {
+      "path": "app/domains/jobs/command.py",
+      "deleted_lines": 175
+    },
+    {
+      "path": "app/domains/jobs/dispatch.py",
+      "deleted_lines": 49
+    },
+    {
+      "path": "app/domains/jobs/ingest_router.py",
+      "deleted_lines": 342
+    },
+    {
+      "path": "app/domains/jobs/lifecycle.py",
+      "deleted_lines": 295
+    },
+    {
+      "path": "app/domains/jobs/object_artifact_storage.py",
+      "deleted_lines": 277
+    },
+    {
+      "path": "app/domains/jobs/ops_router.py",
+      "deleted_lines": 192
+    },
+    {
+      "path": "app/domains/jobs/presenters.py",
+      "deleted_lines": 118
+    },
+    {
+      "path": "app/domains/jobs/query.py",
+      "deleted_lines": 91
+    },
+    {
+      "path": "app/domains/jobs/query_router.py",
+      "deleted_lines": 198
+    },
+    {
+      "path": "app/domains/jobs/router.py",
+      "deleted_lines": 14
+    },
+    {
+      "path": "app/domains/jobs/schemas.py",
+      "deleted_lines": 165
+    },
+    {
+      "path": "app/domains/jobs/stage.py",
+      "deleted_lines": 897
+    },
+    {
+      "path": "app/domains/jobs/workflow.py",
+      "deleted_lines": 525
+    },
+    {
+      "path": "app/domains/jobs/workflow_events.py",
+      "deleted_lines": 80
+    },
+    {
+      "path": "app/infrastructure/persistence/file/stage_messages.py",
+      "deleted_lines": 62
+    },
+    {
+      "path": "app/infrastructure/persistence/mysql/stage_messages.py",
+      "deleted_lines": 123
+    },
+    {
+      "path": "app/infrastructure/persistence/sqlite/stage_messages.py",
+      "deleted_lines": 112
+    },
+    {
+      "path": "app/workers/stage_worker.py",
+      "deleted_lines": 47
+    },
+    {
+      "path": "scripts/dev/run_stage_worker.py",
+      "deleted_lines": 37
+    },
+    {
+      "path": "scripts/ops/check_local_file_storage_integrity.py",
+      "deleted_lines": 407
+    },
+    {
+      "path": "scripts/ops/shadow_copy_metadata_to_database.py",
+      "deleted_lines": 352
+    },
+    {
+      "path": "scripts/ops/shadow_copy_metadata_to_mysql.py",
+      "deleted_lines": 213
+    },
+    {
+      "path": "scripts/ops/shadow_upload_artifacts_to_object_storage.py",
+      "deleted_lines": 213
+    },
+    {
+      "path": "tests/runtime_direct_loaders.py",
+      "deleted_lines": 797
+    },
+    {
+      "path": "tests/test_artifact_shadow_upload.py",
+      "deleted_lines": 91
+    },
+    {
+      "path": "tests/test_job_artifact_contract.py",
+      "deleted_lines": 138
+    },
+    {
+      "path": "tests/test_llm_client_characterization.py",
+      "deleted_lines": 113
+    },
+    {
+      "path": "tests/test_local_file_storage_integrity_check.py",
+      "deleted_lines": 160
+    },
+    {
+      "path": "tests/test_metadata_shadow_copy.py",
+      "deleted_lines": 210
+    },
+    {
+      "path": "tests/test_page_flow_characterization.py",
+      "deleted_lines": 74
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "deleted_lines": 635
+    },
+    {
+      "path": "tests/test_page_repair_characterization.py",
+      "deleted_lines": 131
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "deleted_lines": 701
+    },
+    {
+      "path": "tests/test_runtime_direct_loaders.py",
+      "deleted_lines": 130
+    },
+    {
+      "path": "tests/test_s3_artifact_storage.py",
+      "deleted_lines": 108
+    },
+    {
+      "path": "tests/test_translation_runtime_characterization.py",
+      "deleted_lines": 265
+    }
+  ],
+  "removed_tests": [
+    {
+      "path": "tests/test_artifact_retention.py",
+      "test": "ArtifactRetentionTests.test_retention_dry_run_selects_local_and_object_artifacts_by_status_and_age",
+      "reason": "仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。"
+    },
+    {
+      "path": "tests/test_artifact_shadow_upload.py",
+      "test": "ArtifactShadowUploadTests.test_object_adapter_download_prefers_object_and_keeps_local_fallback",
+      "reason": "仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。"
+    },
+    {
+      "path": "tests/test_artifact_shadow_upload.py",
+      "test": "ArtifactShadowUploadTests.test_shadow_upload_updates_job_files_and_is_idempotent",
+      "reason": "仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。"
+    },
+    {
+      "path": "tests/test_conversion_sandbox_dev_tools.py",
+      "test": "OfficialConversionRuntimeBindingTests.test_runtime_facade_load_pages_binds_model_classes",
+      "reason": "仅检查旧运行时动态绑定；正式本地 adapter 测试保留。"
+    },
+    {
+      "path": "tests/test_database_job_repository.py",
+      "test": "PersistenceAdapterTests.test_replay_pending_flow_uses_database_repository",
+      "reason": "仅覆盖旧 stage 启动重放与仓储；正式仓储及事件测试保留。"
+    },
+    {
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "test": "FastAPIJobsBackendTests.test_api_error_handlers_map_domain_exceptions",
+      "reason": "仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。"
+    },
+    {
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "test": "FastAPIJobsBackendTests.test_callback_rejects_non_parsing_job_status",
+      "reason": "仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。"
+    },
+    {
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "test": "FastAPIJobsBackendTests.test_convert_parsed_result_fails_when_result_zip_download_fails",
+      "reason": "仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。"
+    },
+    {
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "test": "FastAPIJobsBackendTests.test_dispatch_skips_completed_conversion_message_without_rerunning_conversion",
+      "reason": "仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。"
+    },
+    {
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "test": "FastAPIJobsBackendTests.test_dispatch_skips_duplicate_callback_after_job_completed",
+      "reason": "仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。"
+    },
+    {
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "test": "FastAPIJobsBackendTests.test_dispatch_skips_replayed_mineru_submit_after_batch_recorded",
+      "reason": "仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。"
+    },
+    {
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "test": "FastAPIJobsBackendTests.test_enqueue_parsed_result_conversion_downloads_zip_and_completes_docx",
+      "reason": "仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。"
+    },
+    {
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "test": "FastAPIJobsBackendTests.test_find_job_for_callback_reads_nested_source_pdf_context",
+      "reason": "仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。"
+    },
+    {
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "test": "FastAPIJobsBackendTests.test_health_ready_reports_stage_spool_status_counts",
+      "reason": "仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。"
+    },
+    {
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "test": "FastAPIJobsBackendTests.test_replay_pending_replays_pending_and_running_stage_messages_only",
+      "reason": "仅覆盖旧 stage/jobs 调度、仓储或旧异常映射；正式 API、回调与健康测试保留。"
+    },
+    {
+      "path": "tests/test_formal_conversion_configuration.py",
+      "test": "FormalConversionConfigurationTests.test_legacy_exports_and_generated_config_share_formal_objects",
+      "reason": "仅移除旧配置导出断言；正式生成配置与默认值断言在重命名方法中保留。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_collect_middle_visual_blocks_collects_and_deduplicates_visuals",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_load_content_pages_error_points_to_nearby_mineru_output_directory",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_load_content_pages_falls_back_to_legacy",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_load_content_pages_prefers_v2_when_both_exist",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_load_content_pages_reuses_final_promotional_page_rule_for_legacy",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_load_content_pages_reuses_shared_final_promotional_page_rule",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_load_middle_pages_reads_layout_json_page_sizes",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_load_middle_pages_returns_empty_without_middle_json",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_materialize_input_extracts_zip_to_temp_directory",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_materialize_input_rejects_unsupported_path",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_materialize_input_rejects_zip_path_traversal",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_materialize_input_yields_directory_as_is",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_parse_legacy_block_maps_text_and_list",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_parse_v2_block_keeps_spacing_around_inline_equation_fragments",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_parse_v2_block_maps_page_decorations_and_equation",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_parse_v2_block_maps_title_paragraph_and_list",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_parse_v2_block_preserves_html_scripts_and_semantic_formula_sources",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_parse_v2_block_preserves_inline_equation_sources_inside_paragraph",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_parse_v2_block_removes_details_from_content_list_paragraph_text",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_parse_v2_block_splits_toc_like_multiline_paragraph",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_parse_visual_block_maps_visual_metadata",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_parse_visual_block_merges_numbered_footnote_fragments",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_parse_visual_block_returns_table_placeholder_for_images_directory",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_resolve_asset_path_returns_real_image_file_from_images_directory",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_input_adapter_characterization.py",
+      "test": "InputAdapterCharacterizationTests.test_resolve_local_run_options_falls_back_to_configured_input_for_project_root",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_job_artifact_contract.py",
+      "test": "JobArtifactContractTests.test_artifact_alias_file_type_media_type_and_paths_are_stable",
+      "reason": "仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。"
+    },
+    {
+      "path": "tests/test_job_artifact_contract.py",
+      "test": "JobArtifactContractTests.test_download_artifact_contract_supports_stream_and_redirect_shapes",
+      "reason": "仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。"
+    },
+    {
+      "path": "tests/test_job_artifact_contract.py",
+      "test": "JobArtifactContractTests.test_legacy_job_file_without_fingerprint_remains_valid",
+      "reason": "仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。"
+    },
+    {
+      "path": "tests/test_job_artifact_contract.py",
+      "test": "JobArtifactContractTests.test_parsed_result_package_contract_is_stable",
+      "reason": "仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_cancel_transition_rejects_converting_job",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_cleanup_transition_requires_completed_job",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_conversion_started_transition_marks_converting_and_clears_error",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_conversion_transitions_cover_failed_and_completed_paths",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_mineru_callback_done_transition_marks_job_parsed",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_mineru_callback_failed_transition_marks_job_failed",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_mineru_callback_transition_rejects_completed_job",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_mineru_submit_failed_transition_marks_job_failed",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_mineru_submit_transitions_reject_non_pdf_jobs",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_mineru_submit_transitions_update_pdf_job_context",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_parsed_result_stage_requires_parsed_idle_pdf_job",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_retry_pdf_transition_resets_mineru_context",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_stage_enqueue_transition_marks_job_queued",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_job_workflow_policy.py",
+      "test": "JobWorkflowPolicyTests.test_stage_enqueue_transition_rejects_wrong_stage_owner",
+      "reason": "仅覆盖已删除旧 jobs workflow 状态转换；共享模型 4 项测试保留。"
+    },
+    {
+      "path": "tests/test_llm_client_characterization.py",
+      "test": "LLMClientCharacterizationTests.test_build_client_requires_api_key",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_llm_client_characterization.py",
+      "test": "LLMClientCharacterizationTests.test_build_client_requires_sdk",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_llm_client_characterization.py",
+      "test": "LLMClientCharacterizationTests.test_build_system_prompt_reads_template_file",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_llm_client_characterization.py",
+      "test": "LLMClientCharacterizationTests.test_build_system_prompt_selects_ru2zh_template",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_llm_client_characterization.py",
+      "test": "LLMClientCharacterizationTests.test_parse_json_response_accepts_code_fence",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_llm_client_characterization.py",
+      "test": "LLMClientCharacterizationTests.test_translate_payload_uses_chat_completion_items",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_local_file_storage_integrity_check.py",
+      "test": "LocalFileStorageIntegrityCheckTests.test_empty_data_dir_does_not_create_files",
+      "reason": "仅覆盖已删除旧 jobs/stage 元数据运维脚本。"
+    },
+    {
+      "path": "tests/test_local_file_storage_integrity_check.py",
+      "test": "LocalFileStorageIntegrityCheckTests.test_reports_counts_missing_artifacts_and_non_migratable_items",
+      "reason": "仅覆盖已删除旧 jobs/stage 元数据运维脚本。"
+    },
+    {
+      "path": "tests/test_local_file_storage_integrity_check.py",
+      "test": "LocalFileStorageIntegrityCheckTests.test_reports_fingerprint_mismatches_and_legacy_warning",
+      "reason": "仅覆盖已删除旧 jobs/stage 元数据运维脚本。"
+    },
+    {
+      "path": "tests/test_metadata_shadow_copy.py",
+      "test": "MetadataShadowCopyTests.test_shadow_copy_is_idempotent_and_does_not_duplicate_metadata",
+      "reason": "仅覆盖已删除旧 jobs/stage 元数据运维脚本。"
+    },
+    {
+      "path": "tests/test_metadata_shadow_copy.py",
+      "test": "MetadataShadowCopyTests.test_shadow_copy_to_mysql_refuses_non_empty_target_by_default",
+      "reason": "仅覆盖已删除旧 jobs/stage 元数据运维脚本。"
+    },
+    {
+      "path": "tests/test_metadata_shadow_copy.py",
+      "test": "MetadataShadowCopyTests.test_shadow_copy_writes_database_and_validates_all_metadata",
+      "reason": "仅覆盖已删除旧 jobs/stage 元数据运维脚本。"
+    },
+    {
+      "path": "tests/test_metadata_shadow_copy.py",
+      "test": "MetadataShadowCopyTests.test_shadow_copy_writes_mysql_and_validates_all_metadata",
+      "reason": "仅覆盖已删除旧 jobs/stage 元数据运维脚本。"
+    },
+    {
+      "path": "tests/test_metadata_shadow_copy.py",
+      "test": "MetadataShadowCopyTests.test_validate_reports_mismatched_database_metadata",
+      "reason": "仅覆盖已删除旧 jobs/stage 元数据运维脚本。"
+    },
+    {
+      "path": "tests/test_mineru_download_boundary.py",
+      "test": "MinerUDownloadBoundaryTests.test_legacy_saved_result_recovery_uses_real_downloader",
+      "reason": "仅覆盖旧 stage 结果恢复；正式轮询与回调下载边界保留。"
+    },
+    {
+      "path": "tests/test_page_flow_characterization.py",
+      "test": "PageFlowCharacterizationTests.test_plan_page_breaks_before_unit_when_anchor_would_be_orphaned",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_flow_characterization.py",
+      "test": "PageFlowCharacterizationTests.test_table_anchor_includes_caption_and_visible_rows",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_build_document_reuses_single_section_for_same_orientation_flow_pages",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_build_document_skips_empty_page_and_keeps_toc_continuation_mode",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_build_regions_detects_two_col_band_then_one_col_region",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_build_regions_keeps_separated_source_columns_in_one_two_col_region",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_configure_section_prefers_yaml_page_size_over_source_pdf_page_size",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_configure_section_uses_default_word_page_size_not_source_pdf_page_size",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_is_toc_continuation_page_true_for_toc_like_list_page",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_is_toc_page_true_for_english_contents_title",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_is_toc_page_true_for_explicit_directory_title",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_render_block_into_container_disables_keep_with_next_before_visual_block",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_render_block_into_container_promotes_bullet_like_paragraph_to_list",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_render_document_page_body_renders_mixed_toc_remainder_as_body",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_render_page_body_applies_flow_plan_break_before_region",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_render_page_body_skips_primary_product_title_when_requested",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_should_start_new_section_false_for_appendix_entry_inside_toc_continuation",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_should_start_new_section_false_for_consecutive_normal_pages",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_should_start_new_section_false_for_top_level_title_after_short_visual_page",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_should_start_new_section_false_when_previous_visual_page_already_overflows",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_should_start_new_section_ignores_source_orientation_when_word_page_size_is_configured",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_should_start_new_section_true_for_appendix_title_page",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_should_start_new_section_true_for_english_appendix_title_page",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_should_start_new_section_true_for_top_level_title_after_dense_visual_page",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_should_start_new_section_true_when_leaving_toc",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_split_page_blocks_separates_header_footer_page_number_and_body",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_split_toc_column_blocks_rejects_single_column_toc",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_split_toc_column_blocks_uses_source_left_and_right_toc_columns",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_layout_characterization.py",
+      "test": "PageLayoutCharacterizationTests.test_split_toc_page_blocks_separates_later_body_title",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_repair_characterization.py",
+      "test": "PageRepairCharacterizationTests.test_attach_table_continuations_moves_placeholder_heights_to_last_real_table",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_repair_characterization.py",
+      "test": "PageRepairCharacterizationTests.test_bbox_distance_sums_coordinate_deltas",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_repair_characterization.py",
+      "test": "PageRepairCharacterizationTests.test_find_best_visual_match_picks_closest_same_type_under_threshold",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_repair_characterization.py",
+      "test": "PageRepairCharacterizationTests.test_find_best_visual_match_returns_none_when_distance_too_large",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_repair_characterization.py",
+      "test": "PageRepairCharacterizationTests.test_load_pages_merges_middle_sorts_blocks_and_attaches_continuations",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_page_repair_characterization.py",
+      "test": "PageRepairCharacterizationTests.test_merge_page_with_middle_backfills_header_and_visual_metadata",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_config_characterization.py",
+      "test": "RenderConfigCharacterizationTests.test_apply_document_language_overrides_keeps_non_english_config_unchanged",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_config_characterization.py",
+      "test": "RenderConfigCharacterizationTests.test_apply_document_language_overrides_preserves_explicit_new_font_fields",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_config_characterization.py",
+      "test": "RenderConfigCharacterizationTests.test_apply_document_language_overrides_uses_english_font_without_changing_config_sizes",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_config_characterization.py",
+      "test": "RenderConfigCharacterizationTests.test_load_paragraph_styles_maps_yaml_keys_to_word_styles",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_config_characterization.py",
+      "test": "RenderConfigCharacterizationTests.test_load_render_config_keeps_non_empty_terminology",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_config_characterization.py",
+      "test": "RenderConfigCharacterizationTests.test_load_render_config_omits_empty_terminology",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_config_characterization.py",
+      "test": "RenderConfigCharacterizationTests.test_load_section_layout_falls_back_to_default_layout_without_template_or_config",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_config_characterization.py",
+      "test": "RenderConfigCharacterizationTests.test_load_section_layout_uses_template_base_and_yaml_overrides_selected_fields",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_config_characterization.py",
+      "test": "RenderConfigCharacterizationTests.test_load_table_style_maps_header_bold_flag",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_config_characterization.py",
+      "test": "RenderConfigCharacterizationTests.test_resolve_document_language_detects_english_from_page_content",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_config_characterization.py",
+      "test": "RenderConfigCharacterizationTests.test_resolve_document_language_honors_explicit_override",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_estimate_long_table_page_capacity_subtracts_caption_height",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_estimated_table_under_long_threshold_does_not_use_large_table_path",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_fill_table_cell_applies_configured_header_fill",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_fill_table_cell_keeps_header_cell_plain",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_five_column_datasheet_table_uses_wide_description_column",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_large_complex_table_uses_fallback_renderer",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_large_simple_table_uses_chunk_renderer",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_later_th_cells_are_treated_as_table_headers",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_numbered_section_table_caption_uses_heading_style",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_remove_table_borders_applies_printable_grid",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_remove_table_borders_uses_configured_border_color",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_render_long_simple_table_uses_single_continuous_table_with_repeating_header",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_render_normalized_text_fragment_falls_back_for_unknown_markup",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_render_normalized_text_fragment_handles_sub_sup_without_beautifulsoup",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_returns_false_when_html_table_cannot_be_parsed",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_small_table_renders_standard_table_and_appends_caption_and_footnote",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_split_long_simple_table_rows_uses_word_capacity_without_source_page_scaling",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_split_long_simple_table_rows_without_source_pages_keeps_default_packing",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_standard_table_marks_rows_for_word_pagination",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_render_table_from_html_characterization.py",
+      "test": "RenderTableFromHtmlCharacterizationTests.test_terminology_replacement_runs_before_table_parsing",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_runtime_direct_loaders.py",
+      "test": "RuntimeDirectLoaderIsolationTests.test_loaders_do_not_leak_missing_modules_or_parent_attributes",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_runtime_direct_loaders.py",
+      "test": "RuntimeDirectLoaderIsolationTests.test_loaders_restore_loaded_modules_and_parent_packages",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_runtime_direct_loaders.py",
+      "test": "RuntimeDirectLoaderIsolationTests.test_loaders_restore_partially_loaded_services_package",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_runtime_direct_loaders.py",
+      "test": "RuntimeDirectLoaderIsolationTests.test_text_loader_does_not_bind_stub_font_rules_to_real_docx",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_s3_artifact_storage.py",
+      "test": "S3ArtifactStorageTests.test_s3_adapter_streams_object_body_when_configured",
+      "reason": "仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。"
+    },
+    {
+      "path": "tests/test_s3_artifact_storage.py",
+      "test": "S3ArtifactStorageTests.test_s3_adapter_uploads_local_artifact_and_returns_presigned_redirect",
+      "reason": "仅覆盖旧 JobFile artifact 存储、迁移或保留期；正式 DocumentFile 用例保留。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_apply_named_style_config_updates_paragraph_format",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_apply_run_defaults_keeps_legacy_single_font_behavior",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_apply_run_defaults_preserves_explicit_empty_font_inheritance",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_apply_run_defaults_writes_independent_font_slots",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_fill_body_paragraph_applies_normal_style_and_prepared_text",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_fill_list_paragraph_uses_word_numbering_without_manual_marker",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_fill_title_paragraph_allows_disabling_keep_with_next",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_fill_title_paragraph_uses_cover_title_style_on_first_page",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_fill_title_paragraph_uses_heading_style_for_numbered_title",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_fill_toc_entry_paragraph_uses_dot_leader_tab_for_page_number",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_fill_toc_entry_paragraph_uses_supplied_usable_width_for_tab_stop",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_is_cover_title_rejects_english_contents_heading",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_prepare_text_applies_terminology_after_formula_normalization",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_text_render_characterization.py",
+      "test": "TextRenderCharacterizationTests.test_render_inline_html_into_paragraph_fallback_applies_requested_flags",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_translation_runtime_characterization.py",
+      "test": "TranslationRuntimeCharacterizationTests.test_apply_translation_responses_restores_placeholders_and_rewrites_html_cells",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_translation_runtime_characterization.py",
+      "test": "TranslationRuntimeCharacterizationTests.test_batching_extends_to_complete_section_when_page_boundary_splits_it",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_translation_runtime_characterization.py",
+      "test": "TranslationRuntimeCharacterizationTests.test_batching_splits_oversized_section_by_page_and_marks_continuation",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_translation_runtime_characterization.py",
+      "test": "TranslationRuntimeCharacterizationTests.test_build_translation_trace_payload_records_ai_and_final_text",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_translation_runtime_characterization.py",
+      "test": "TranslationRuntimeCharacterizationTests.test_extract_translation_items_includes_cyrillic_text_for_ru2zh",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_translation_runtime_characterization.py",
+      "test": "TranslationRuntimeCharacterizationTests.test_extract_translation_items_skips_page_decorations",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_translation_runtime_characterization.py",
+      "test": "TranslationRuntimeCharacterizationTests.test_extract_translation_items_uses_stable_minimal_ids",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_translation_runtime_characterization.py",
+      "test": "TranslationRuntimeCharacterizationTests.test_load_translation_response_file_accepts_batch_payload",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_translation_runtime_characterization.py",
+      "test": "TranslationRuntimeCharacterizationTests.test_request_payload_keeps_llm_items_minimal",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    },
+    {
+      "path": "tests/test_translation_runtime_characterization.py",
+      "test": "TranslationRuntimeCharacterizationTests.test_validate_translation_responses_rejects_placeholder_mismatch",
+      "reason": "仅覆盖旧运行时或直接加载机制；混合文件中的共享规则测试保留并直接导入。"
+    }
+  ],
+  "changed_files": [
+    ".trellis/spec/backend/database-guidelines.md",
+    ".trellis/spec/backend/directory-structure.md",
+    ".trellis/spec/backend/error-handling.md",
+    ".trellis/spec/backend/logging-guidelines.md",
+    ".trellis/spec/backend/quality-guidelines.md",
+    ".trellis/spec/backend/runtime-configuration.md",
+    "app/api/errors.py",
+    "app/api/v1/routers/health_schemas.py",
+    "app/conversion/contracts.py",
+    "app/conversion/entrypoint.py",
+    "app/conversion/runtime/input_adapter_runtime.py",
+    "app/conversion/runtime/llm_client.py",
+    "app/conversion/runtime/page_flow_runtime.py",
+    "app/conversion/runtime/page_layout_runtime.py",
+    "app/conversion/runtime/page_repair_runtime.py",
+    "app/conversion/runtime/render_config_runtime.py",
+    "app/conversion/runtime/table_long_renderer.py",
+    "app/conversion/runtime/table_render_runtime.py",
+    "app/conversion/runtime/text_rendering.py",
+    "app/conversion/runtime/translation_runtime.py",
+    "app/conversion/runtime_config.py",
+    "app/conversion/runtime_facade.py",
+    "app/conversion/runtime_helpers.py",
+    "app/conversion/runtime_models.py",
+    "app/conversion/runtime_rendering_api.py",
+    "app/conversion/runtime_runner.py",
+    "app/conversion/service.py",
+    "app/core/config.py",
+    "app/core/runtime.py",
+    "app/domains/jobs/artifact_integrity.py",
+    "app/domains/jobs/artifact_retention.py",
+    "app/domains/jobs/artifact_storage.py",
+    "app/domains/jobs/artifacts.py",
+    "app/domains/jobs/command.py",
+    "app/domains/jobs/dispatch.py",
+    "app/domains/jobs/ingest_router.py",
+    "app/domains/jobs/lifecycle.py",
+    "app/domains/jobs/models.py",
+    "app/domains/jobs/object_artifact_storage.py",
+    "app/domains/jobs/ops_router.py",
+    "app/domains/jobs/presenters.py",
+    "app/domains/jobs/query.py",
+    "app/domains/jobs/query_router.py",
+    "app/domains/jobs/repository.py",
+    "app/domains/jobs/router.py",
+    "app/domains/jobs/schemas.py",
+    "app/domains/jobs/stage.py",
+    "app/domains/jobs/workflow.py",
+    "app/domains/jobs/workflow_events.py",
+    "app/infrastructure/persistence/factory.py",
+    "app/infrastructure/persistence/file/__init__.py",
+    "app/infrastructure/persistence/file/backend.py",
+    "app/infrastructure/persistence/file/files.py",
+    "app/infrastructure/persistence/file/jobs.py",
+    "app/infrastructure/persistence/file/stage_messages.py",
+    "app/infrastructure/persistence/mysql/__init__.py",
+    "app/infrastructure/persistence/mysql/files.py",
+    "app/infrastructure/persistence/mysql/jobs.py",
+    "app/infrastructure/persistence/mysql/schema.py",
+    "app/infrastructure/persistence/mysql/stage_messages.py",
+    "app/infrastructure/persistence/sqlite/__init__.py",
+    "app/infrastructure/persistence/sqlite/files.py",
+    "app/infrastructure/persistence/sqlite/jobs.py",
+    "app/infrastructure/persistence/sqlite/schema.py",
+    "app/infrastructure/persistence/sqlite/stage_messages.py",
+    "app/main.py",
+    "app/services/health_service.py",
+    "app/workers/stage_worker.py",
+    "docs/api/health.md",
+    "docs/api/openapi.json",
+    "docs/api/ops.md",
+    "docs/architecture/system-architecture.md",
+    "docs/dev/backend-local-setup-and-architecture.md",
+    "docs/dev/runtime-observability-and-health.md",
+    "docs/runbooks/backend.md",
+    "scripts/dev/run_stage_worker.py",
+    "scripts/ops/check_local_file_storage_integrity.py",
+    "scripts/ops/check_release.py",
+    "scripts/ops/shadow_copy_metadata_to_database.py",
+    "scripts/ops/shadow_copy_metadata_to_mysql.py",
+    "scripts/ops/shadow_upload_artifacts_to_object_storage.py",
+    "tests/runtime_direct_loaders.py",
+    "tests/test_artifact_retention.py",
+    "tests/test_artifact_shadow_upload.py",
+    "tests/test_conversion_sandbox_dev_tools.py",
+    "tests/test_database_job_repository.py",
+    "tests/test_fastapi_jobs_backend.py",
+    "tests/test_formal_conversion_configuration.py",
+    "tests/test_input_adapter_characterization.py",
+    "tests/test_job_artifact_contract.py",
+    "tests/test_job_workflow_policy.py",
+    "tests/test_llm_client_characterization.py",
+    "tests/test_local_file_storage_integrity_check.py",
+    "tests/test_metadata_shadow_copy.py",
+    "tests/test_mineru_download_boundary.py",
+    "tests/test_openapi_export.py",
+    "tests/test_page_flow_characterization.py",
+    "tests/test_page_layout_characterization.py",
+    "tests/test_page_repair_characterization.py",
+    "tests/test_render_config_characterization.py",
+    "tests/test_render_table_from_html_characterization.py",
+    "tests/test_runtime_direct_loaders.py",
+    "tests/test_s3_artifact_storage.py",
+    "tests/test_text_render_characterization.py",
+    "tests/test_translation_runtime_characterization.py"
+  ]
+}

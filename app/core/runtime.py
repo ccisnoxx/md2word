@@ -19,14 +19,7 @@ if TYPE_CHECKING:
     )
     from app.domains.document_jobs.recovery import DocumentJobRecoveryService
     from app.domains.files.repository import DocumentFileRepositoryProtocol
-    from app.domains.jobs.repository import (
-        JobEventRepositoryProtocol,
-        JobFileRepositoryProtocol,
-        JobSnapshotRepositoryProtocol,
-        StageMessageStoreProtocol,
-    )
-    from app.domains.jobs.artifact_storage import ArtifactStorageProtocol
-    from app.domains.jobs.dispatch import StageDispatcherProtocol
+    from app.domains.jobs.repository import JobEventRepositoryProtocol
     from app.domains.saved_views.repository import SavedViewRepositoryProtocol
     from app.domains.users.repository import InternalUserRepositoryProtocol
     from app.infrastructure.persistence import PersistenceAdapters
@@ -38,8 +31,6 @@ class AppRuntime:
 
     settings: Settings
     persistence_adapters: PersistenceAdapters
-    job_repository: JobSnapshotRepositoryProtocol
-    job_file_repository: JobFileRepositoryProtocol
     job_event_repository: JobEventRepositoryProtocol
     audit_event_repository: AuditEventRepositoryProtocol
     acceptance_run_repository: AcceptanceRunRepositoryProtocol
@@ -88,14 +79,6 @@ class AppRuntime:
     translation_profile_service: Any | None
     resource_version_service: Any | None
     job_resource_snapshot_service: Any
-    artifact_service: Any
-    artifact_storage: ArtifactStorageProtocol
-    command_service: Any
-    lifecycle_service: Any
-    query_service: Any
-    stage_service: Any
-    stage_dispatcher: StageDispatcherProtocol
-    stage_message_store: StageMessageStoreProtocol
     word_preview_service: Any | None = None
     alert_delivery_provider: Any | None = None
     secret_resolver: Any | None = None

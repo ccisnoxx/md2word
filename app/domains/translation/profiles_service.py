@@ -9,13 +9,16 @@ from datetime import timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
-from app.conversion.runtime import llm_client, translation_runtime
+from app.clients.openai_sdk import DEFAULT_MODEL
 from app.core.config import Settings
 from app.domains.audit.models import ActorContext
 from app.domains.resources.models import ResourceVersionRecord, ResourceVersionStatus, utc_now
 from app.domains.resources.service import ResourceVersionService
 from app.domains.translation.models import TranslationProfileSnapshot, TranslationPromptSnapshot
 from app.domains.translation.modes import (
+    DEFAULT_TARGET_LANGUAGE,
+    DEFAULT_TRANSLATION_DOMAIN,
+    TRANSLATION_PROMPT_VERSION,
     TRANSLATION_MODE_SPECS,
     TRANSLATION_PROFILE_IDS,
     spec_for_language_pair,
@@ -52,7 +55,7 @@ PROFILE_LANGUAGE_PAIRS = {
     if spec.language_pair is not None and spec.default_profile_id is not None
 }
 DEFAULT_PROMPT_VERSIONS = {
-    "en2zh": translation_runtime.TRANSLATION_PROMPT_VERSION,
+    "en2zh": TRANSLATION_PROMPT_VERSION,
     "ru2zh": "ru2zh@v1",
     "zh2en": "zh2en@v1",
     "zh2ru": "zh2ru@v1",
@@ -104,7 +107,7 @@ def translation_profile_snapshot_from_record(
         version=record.version,
         snapshot_hash=record.snapshot_hash,
         target_language=_payload_text(payload, "target_language") or _default_target_language(language_pair),
-        domain=_payload_text(payload, "domain") or translation_runtime.DEFAULT_TRANSLATION_DOMAIN,
+        domain=_payload_text(payload, "domain") or DEFAULT_TRANSLATION_DOMAIN,
         prompt_version=active_prompt.id,
         model=_payload_text(payload, "model"),
         max_pages_per_batch=_payload_int(
@@ -241,7 +244,7 @@ def _read_seed_prompt(settings: Settings, language_pair: str) -> str:
 def _default_target_language(language_pair: str) -> str:
     spec = spec_for_language_pair(language_pair)
     if spec.target_language == "zh":
-        return translation_runtime.DEFAULT_TARGET_LANGUAGE
+        return DEFAULT_TARGET_LANGUAGE
     if spec.target_language is None:
         raise ValueError(f"Translation Profile 缺少目标语言: {language_pair}")
     return spec.target_language
@@ -782,7 +785,7 @@ class TranslationProfileVersionService:
             ),
             domain=(
                 self._payload_text(payload, "domain")
-                or translation_runtime.DEFAULT_TRANSLATION_DOMAIN
+                or DEFAULT_TRANSLATION_DOMAIN
             ),
             prompt_version=active_prompt_id,
             prompt_schemes=prompts,
@@ -943,10 +946,10 @@ class TranslationProfileVersionService:
             base_version=base_version,
             language_pair=language_pair,
             target_language=_default_target_language(language_pair),
-            domain=translation_runtime.DEFAULT_TRANSLATION_DOMAIN,
+            domain=DEFAULT_TRANSLATION_DOMAIN,
             prompt_version=prompt.id,
             prompt_schemes=[prompt],
-            model=self.settings.openai_model or llm_client.DEFAULT_MODEL,
+            model=self.settings.openai_model or DEFAULT_MODEL,
             max_pages_per_batch=self.settings.translation_max_pages,
             max_chars_per_batch=self.settings.translation_max_chars,
             published_at=published_at,
@@ -1078,7 +1081,7 @@ class TranslationProfileVersionService:
             ),
             domain=(
                 self._payload_text(payload, "domain")
-                or translation_runtime.DEFAULT_TRANSLATION_DOMAIN
+                or DEFAULT_TRANSLATION_DOMAIN
             ),
             prompt_version=active_prompt.id,
             prompt_schemes=prompts,

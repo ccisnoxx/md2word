@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-# app/infrastructure/persistence/sqlite/files.py: sqlite backend 的 job files 和 document files adapter。
+# app/infrastructure/persistence/sqlite/files.py: sqlite backend的正式文档文件仓储。
 
-import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 import json
 from typing import Any
 
-from app.domains.jobs.models import JobFile
 from app.domains.files.models import DocumentFileRecord
 from app.domains.document_jobs.list_query import document_file_review_projection_from_raw
 from app.infrastructure.persistence.sqlite.backend import SqlitePersistenceBackend
@@ -17,34 +15,6 @@ from app.domains.files.result_registration import (
     expired_file, materialized_file, patched_file, ensure_file_mutation_allowed,
     reserved_file_deletion, finished_file_deletion, ensure_new_file_identity, ensure_result_descriptor_matches,
 )
-
-
-class SqliteJobFileRepository:
-    """用 sqlite backend 读写 JobFile artifact metadata。"""
-
-    def __init__(self, backend: SqlitePersistenceBackend) -> None:
-        self.backend = backend
-
-    def upsert_file(self, job_id: str, file: JobFile) -> None:
-        with self.backend.connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO job_files (job_id, file_type, payload, created_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(job_id, file_type) DO UPDATE SET
-                    payload = excluded.payload,
-                    created_at = excluded.created_at
-                """,
-                (job_id, file.file_type, self.backend.dump_payload(file), file.created_at.isoformat()),
-            )
-
-    def list_files(self, job_id: str) -> list[JobFile]:
-        with self.backend.connect() as connection:
-            rows = connection.execute(
-                "SELECT payload FROM job_files WHERE job_id = ? ORDER BY created_at, file_type",
-                (job_id,),
-            ).fetchall()
-        return [JobFile.model_validate_json(row["payload"]) for row in rows]
 
 
 class SqliteDocumentFileRepository:

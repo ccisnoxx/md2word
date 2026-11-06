@@ -10,6 +10,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 import zipfile
 
+from billiard.exceptions import SoftTimeLimitExceeded
 from pydantic import ValidationError
 
 from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJobRecord
@@ -196,6 +197,48 @@ class DocumentJobExecutionStageTests(TestCase):
             self.assertFalse({"translating", "translation_validating"} & {event.stage for event in events})
             self.assertFalse(provider.requests)
             self.assertEqual(len(self._files(runtime, job_id, "generated_word")), 1)
+
+    def test_failure_policy_preserves_direct_events_and_receipt_identity(self):
+        with self._runtime() as (runtime, execution, provider, client, headers):
+            job_id = self._create(client, headers)
+            job = runtime.document_job_repository.get_document_job(job_id)
+            self.assertEqual(job.status, "succeeded", job.error_message)
+            events = runtime.document_job_event_repository.list_document_job_events(job_id)
+            self.assertFalse(provider.requests)
+            self.assertFalse({"translating", "translation_validating"} & {event.stage for event in events})
+            self.assertEqual(len(self._files(runtime, job_id, "generated_word")), 1)
+            self.assertEqual(job.prepared_result.file.id, job.result_file_id)
+            self.assertEqual(
+                [(event.event_type, event.stage) for event in events if event.stage in {
+                    "rendering", "quality_checking", "uploading", "completed",
+                } and event.event_type in {"stage_started", "stage_succeeded", "file_registered"}],
+                [("stage_started", "rendering"), ("stage_succeeded", "rendering"),
+                 ("stage_started", "quality_checking"), ("stage_succeeded", "quality_checking"),
+                 ("stage_started", "uploading"), ("file_registered", "uploading"),
+                 ("stage_succeeded", "completed")],
+            )
+
+    def test_failure_policy_keeps_timeout_priority_and_safe_single_event(self):
+        private = "正文-B04 password=B04-secret https://user:pass@example.invalid/private?token=B04-token"
+        for error, code in ((SoftTimeLimitExceeded(private), "document_job_timeout"),
+                            (KeyError(private), "document_job_unexpected_error"),
+                            (OSError(private), "render_failed")):
+            with self.subTest(error=type(error).__name__), self._runtime() as (runtime, execution, provider, client, headers):
+                job = self._pause_after_ir(runtime, execution, client, headers)
+                failed = execution._fail_stage_attempt(job, error, trace_id="trace_failure_policy")
+                self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "rendering", code))
+                events = runtime.document_job_event_repository.list_document_job_events(job.id)
+                failures = [event for event in events if event.event_type == "stage_failed"]
+                self.assertEqual(len(failures), 1)
+                self.assertEqual((failures[0].payload["error_code"], failures[0].trace_id), (code, "trace_failure_policy"))
+                self.assertEqual(failures[0].payload["generation"], job.retry_count)
+                serialized = json.dumps([event.model_dump(mode="json") for event in events], ensure_ascii=False)
+                for secret in ("正文-B04", "B04-secret", "user:pass", "/private", "B04-token"):
+                    self.assertNotIn(secret, serialized + failed.error_message)
+                execution._fail_stage_attempt(job, error, trace_id="trace_replay")
+                self.assertEqual(runtime.document_job_event_repository.list_document_job_events(job.id), events)
+                self.assertFalse(provider.requests)
+                self.assertFalse(self._files(runtime, job.id, "generated_word"))
 
     def test_zero_translation_units_complete_without_provider_calls(self):
         with self._runtime() as (runtime, execution, provider, client, headers):

@@ -27,13 +27,13 @@ Evidence:
 
 `build_persistence_adapters()` in `app/infrastructure/persistence/factory.py` is the single wiring point for backend-specific repositories. Add new repository ports to `PersistenceAdapters`, then implement and wire each supported backend there.
 
-Artifact binaries are not stored in sqlite or MySQL metadata tables. `Settings.jobs_artifact_storage_backend` selects `local_file`, `local_object`, or `s3`, and `app/main.py` wires the matching artifact storage adapter separately.
+产物二进制不写入 SQLite/MySQL 元数据表。正式 `FileUploadService` 继续由 `Settings.jobs_artifact_storage_backend` 选择 `local_file`、`local_object` 或 `s3`；旧 jobs artifact adapter 已移除。该配置与健康输出语义保持。
 
 ## Repository Ports And Adapters
 
 Domain code should depend on narrow repository protocols in `app/domains/**/repository.py`. Examples:
 
-- `app/domains/jobs/repository.py` defines `JobSnapshotRepositoryProtocol`, `JobEventRepositoryProtocol`, `JobFileRepositoryProtocol`, and `StageMessageStoreProtocol`.
+- `app/domains/jobs/repository.py` 仅保留共享 `JobEventRepositoryProtocol`；正式任务端口位于 `app/domains/document_jobs/repository.py`。
 - `app/infrastructure/persistence/factory.py` returns a concrete `PersistenceAdapters` object containing implementations for the selected backend.
 - `app/main.py` passes those adapters into services and stores them on `AppRuntime`.
 
@@ -51,28 +51,24 @@ Schema creation is bootstrap SQL in code:
 - MySQL statements live in `app/infrastructure/persistence/mysql/schema.py`.
 - `SqlitePersistenceBackend` and `MysqlPersistenceBackend` call `initialize_schema()` during backend initialization.
 
-MySQL 的 `initialize_schema(connection)` 不止建表：按建表、maintenance SQL、补列、post-column SQL、删除旧索引、补索引的顺序执行。`_ensure_column()` / `_ensure_index()` 查询 `INFORMATION_SCHEMA` 后决定是否执行 ALTER；这是启动时 schema maintenance，不是有版本账本的 up/down migration。SQLite 在 CREATE TABLE/INDEX IF NOT EXISTS 后检查 DocumentJob 状态列并幂等补列；payload 回填仍由显式工具执行。shadow copy 用于 metadata 后端搬迁，不提供 schema 版本回滚。
+MySQL 的 `initialize_schema(connection)` 不止建表：按建表、maintenance SQL、补列、post-column SQL、删除旧索引、补索引的顺序执行。`_ensure_column()` / `_ensure_index()` 查询 `INFORMATION_SCHEMA` 后决定是否执行 ALTER；这是启动时 schema maintenance，不是有版本账本的 up/down migration。SQLite 在 CREATE TABLE/INDEX IF NOT EXISTS 后检查 DocumentJob 状态列并幂等补列；payload 回填仍由显式工具执行。旧 jobs shadow copy 工具已移除，不作为正式 DocumentJob 的迁移入口。
 
 既有定向证据为 `tests/test_database_job_repository.py::PersistenceAdapterTests.test_mysql_schema_maintenance_adds_missing_translation_term_columns_without_if_not_exists`：fake MySQL 验证缺列维护及 SQL 兼容形状，不能据此宣称真实 DDL 原子回滚或并发初始化安全。首次持久化字段变更仍须在对应任务设计前滚、backfill、兼容窗口和回滚/不可逆处理；不能等发布阶段才补设计。BAS-001 的当前运行证据见 `docs/implementation/baseline-verification-2026-10-12.md`。
 
 Do not add ORM migrations or PostgreSQL assumptions inside feature work unless the task explicitly establishes that new convention. `docs/dev/backend-local-setup-and-architecture.md` and `docs/runbooks/backend.md` both state the current production-oriented metadata backend is MySQL, while PostgreSQL is not present.
 
-For metadata backend moves from file to sqlite/MySQL, use the existing shadow-copy scripts documented in `docs/runbooks/backend.md`:
-
-- `scripts/ops/check_local_file_storage_integrity.py`
-- `scripts/ops/shadow_copy_metadata_to_database.py`
-- `scripts/ops/shadow_copy_metadata_to_mysql.py`
+旧 `jobs`、`job_files`、`stage_messages` 的建表和仓储已移除。不得因此删除 `job_events`：SQLite/MySQL 的正式 DocumentJob 事件仍读写该表。既有生产旧表保持原状，另由 B08 治理，本任务不提供 DROP 或旧任务迁移。
 
 ## Storage Shape
 
 The dominant adapter pattern stores Pydantic model payloads as JSON and keeps a small number of indexed columns for lookup/sorting/status:
 
-- `app/infrastructure/persistence/mysql/jobs.py` stores `JobRecord` in `jobs.payload` and events in `job_events.payload`.
-- `app/infrastructure/persistence/sqlite/jobs.py` mirrors that pattern with sqlite.
-- `app/infrastructure/persistence/file/jobs.py` stores `job.json`, `files.json`, and `events.jsonl`.
-- `app/infrastructure/persistence/file/backend.py` writes JSON via a temporary file and `replace()`, and appends JSONL for events.
+- 正式主记录由 `document_jobs.py` 写入 `document_jobs.payload`，事件使用 `job_events.payload`。
+- 三种后端的 `jobs.py` 仅保留 `JobEvent` 事件仓储；其余旧 snapshot/file/message 仓储已删除。
+- file 正式任务写 `document_jobs/<id>/job.json` 与 `events.jsonl`，正式文件由 `files.py` 写 `document_files/`。
+- `file/backend.py` 通过临时文件与 `replace()` 写 JSON，通过追加 JSONL 写事件。
 
-Use `model_dump(mode="json")`, `model_dump_json()`, and `model_validate_json()` for Pydantic record persistence. Keep compatibility transforms at the persistence boundary when the existing model requires them, as `sync_source_pdf_compatibility_fields()` does for jobs.
+Pydantic 记录使用 `model_dump(mode="json")`、`model_dump_json()`、`model_validate_json()` 持久化；共享模型兼容逻辑保持在其现有所有者。
 
 ## Query And Transaction Patterns
 
@@ -90,17 +86,9 @@ Connection helpers define commit behavior:
 
 当前未建立此约定：there is no shared query builder, ORM transaction manager, or multi-statement domain transaction abstraction. Existing adapters open a short connection per repository method.
 
-## Stage Message Persistence
+## 正式回调消息持久化
 
-`StageMessageStoreProtocol` defines stage spool behavior. Current stores:
-
-- `FileStageMessageStore`
-- `SqliteStageMessageStore`
-- `MysqlStageMessageStore`
-
-`pending` and `running` are replayable. `failed` preserves diagnostic state and is not automatically replayed. This is documented in `app/domains/jobs/repository.py`, `app/domains/jobs/stage.py`, and `docs/dev/runtime-observability-and-health.md`.
-
-When changing stage messages, update all supported stores and tests. `tests/test_database_job_repository.py` is the main contract test for adapter parity.
+旧 stage spool 已移除。正式 `DocumentJobCallbackMessageStoreProtocol` 的三种后端及其重放语义保持，`tests/test_database_job_repository.py` 继续验证正式任务、回调、文件和事件仓储合同。
 
 ## DocumentJob 翻译批次持久化
 
@@ -114,7 +102,7 @@ When changing stage messages, update all supported stores and tests. `tests/test
 
 ## DocumentJob 结果登记的局部原子合同（CON-102）
 
-触发：修改DocumentJob主记录写入、prepared_result、结果候选的创建/物化/保留期或retry换代。流程与下载规则由[任务模式与阶段合同](./document-job-mode-contract.md#8-执行阶段与恢复合同con-102)定义；本节只拥有持久化保证，不将batch或legacy jobs仓储改造成全局CAS。
+触发：修改DocumentJob主记录写入、prepared_result、结果候选的创建/物化/保留期或retry换代。流程与下载规则由[任务模式与阶段合同](./document-job-mode-contract.md#8-执行阶段与恢复合同con-102)定义；本节只拥有持久化保证，不将 batch 仓储改造成全局 CAS。
 
 - `DocumentJobRecord.prepared_result`是内部JSON payload，旧记录缺省None；公开response不增加字段，无DDL/backfill。首次原子选定receipt决定同代/最终IR唯一结果身份，之后不得换件。
 - `document_jobs/result_state.py`共用纯条件/更新规则；序列化由adapter负责。所有同job主记录创建/patch/if_current/prepare/retry必须在同一记录序列化点读最新值、检查、验证并写回。create不以upsert覆盖已有ID；非状态patch保留已有receipt。

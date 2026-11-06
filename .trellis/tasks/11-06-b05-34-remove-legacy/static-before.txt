@@ -1,0 +1,76 @@
+app/main.py:52:from app.domains.jobs.stage import JobStageService
+app/main.py:102:def _build_stage_dispatcher(settings: Settings, stage_service: JobStageService):
+app/main.py:373:stage_service = JobStageService(
+app/main.py:397:stage_dispatcher, stage_dispatcher_backend = _build_stage_dispatcher(resolved_settings, stage_service)
+app/main.py:404:stage_dispatcher_backend=stage_dispatcher_backend,
+app/main.py:498:stage_dispatcher=stage_dispatcher,
+app/main.py:513:asyncio.create_task(asyncio.to_thread(app.state.runtime.stage_dispatcher.replay_pending)),
+app/domains/jobs/command.py:15:from app.domains.jobs.stage import JobStageService
+app/domains/jobs/command.py:26:stage_service: JobStageService,
+app/domains/jobs/ops_router.py:102:background_tasks.add_task(runtime.stage_dispatcher.dispatch, message.id)
+app/domains/jobs/ops_router.py:164:background_tasks.add_task(runtime.stage_dispatcher.dispatch, stage_message.id)
+app/domains/jobs/dispatch.py:8:from app.domains.jobs.stage import JobStageService
+app/domains/jobs/dispatch.py:17:def replay_pending(self) -> None:
+app/domains/jobs/dispatch.py:22:"""当前默认 dispatcher：同进程委托给 JobStageService。"""
+app/domains/jobs/dispatch.py:24:def __init__(self, stage_service: JobStageService) -> None:
+app/domains/jobs/dispatch.py:28:"""保持现有行为：直接调用 JobStageService.dispatch_message()。"""
+app/domains/jobs/dispatch.py:32:def replay_pending(self) -> None:
+app/domains/jobs/dispatch.py:33:"""保持现有行为：直接调用 JobStageService.replay_pending()。"""
+app/domains/jobs/dispatch.py:35:self.stage_service.replay_pending()
+app/domains/jobs/dispatch.py:46:def replay_pending(self) -> None:
+app/domains/jobs/ingest_router.py:272:background_tasks.add_task(runtime.stage_dispatcher.dispatch, stage_message.id)
+app/domains/jobs/ingest_router.py:335:background_tasks.add_task(runtime.stage_dispatcher.dispatch, stage_message.id)
+app/domains/jobs/lifecycle.py:28:from app.domains.jobs.stage import JobStageService
+app/domains/jobs/lifecycle.py:59:stage_service: JobStageService,
+app/domains/jobs/stage.py:14:from app.conversion.contracts import ConversionEntrypoint, ConversionFailure
+app/domains/jobs/stage.py:51:class JobStageService:
+app/domains/jobs/stage.py:174:def replay_pending(self) -> None:
+app/domains/jobs/stage.py:439:except ConversionFailure as exc:
+app/core/runtime.py:97:stage_dispatcher: StageDispatcherProtocol
+app/conversion/service.py:7:ConversionFailure,
+app/conversion/service.py:11:from app.conversion.runtime_facade import load_pages, materialize_input, resolve_document_language, run_conversion
+app/conversion/service.py:15:class ConversionService:
+app/conversion/service.py:68:raise ConversionFailure("docx_save_failed", f"DOCX 输出文件不存在: {request.output_path}")
+app/conversion/service.py:93:except ConversionFailure:
+app/conversion/service.py:96:raise ConversionFailure(self._classify_error_code(exc), str(exc)) from exc
+app/conversion/runtime_runner.py:3:# app/conversion/runtime_runner.py: legacy MinerU 输出到 DOCX 转换链路的共享运行入口。
+app/conversion/runtime_facade.py:8:from app.conversion.runtime_runner import ensure_runtime_bound, run_conversion
+app/conversion/entrypoint.py:8:from app.conversion.service import ConversionService
+app/conversion/entrypoint.py:79:return ConversionService()
+app/conversion/contracts.py:58:class ConversionFailure(RuntimeError):
+app/api/errors.py:9:from app.conversion.contracts import ConversionFailure
+app/api/errors.py:58:async def _conversion_failure_handler(_request: Request, exc: ConversionFailure) -> JSONResponse:
+app/api/errors.py:217:app.add_exception_handler(ConversionFailure, _conversion_failure_handler)
+app/api/v1/routers/health_schemas.py:43:stage_dispatcher: str
+app/api/v1/routers/health_schemas.py:71:stage_dispatcher: str
+app/workers/stage_worker.py:11:class StageWorker:
+app/services/health_service.py:85:stage_dispatcher_backend: Literal["background_tasks", "external_worker"] = "background_tasks",
+app/services/health_service.py:101:self.stage_dispatcher_backend = stage_dispatcher_backend
+app/services/health_service.py:183:"stage_dispatcher": self.stage_dispatcher_backend,
+app/services/health_service.py:497:stage_dispatcher=self.stage_dispatcher_backend,
+app/services/health_service.py:540:stage_dispatcher=str(checks.get("stage_dispatcher") or self.stage_dispatcher_backend),
+scripts/dev/run_stage_worker.py:23:from app.workers.stage_worker import StageWorker
+scripts/dev/run_stage_worker.py:33:StageWorker(runtime).run_forever()
+tests/test_fastapi_jobs_backend.py:31:from app.conversion.contracts import ArtifactDescriptor, ConversionFailure, ConversionResult
+tests/test_fastapi_jobs_backend.py:76:from app.domains.jobs.stage import JobStageService
+tests/test_fastapi_jobs_backend.py:104:from app.workers.stage_worker import StageWorker
+tests/test_fastapi_jobs_backend.py:175:class FakeConversionService:
+tests/test_fastapi_jobs_backend.py:182:raise ConversionFailure("conversion_failed", "boom")
+tests/test_fastapi_jobs_backend.py:613:stage_dispatcher_backend="external_worker" if jobs_worker_mode == "external" else "background_tasks",
+tests/test_fastapi_jobs_backend.py:691:conversion_service = FakeConversionService()
+tests/test_fastapi_jobs_backend.py:698:stage_service = JobStageService(
+tests/test_fastapi_jobs_backend.py:721:stage_dispatcher = ExternalWorkerStageDispatcher()
+tests/test_fastapi_jobs_backend.py:723:stage_dispatcher = InProcessStageDispatcher(stage_service)
+tests/test_fastapi_jobs_backend.py:805:stage_dispatcher=stage_dispatcher,
+tests/test_fastapi_jobs_backend.py:1433:self.assertEqual(payload["dependency_checks"]["stage_dispatcher"], "background_tasks")
+tests/test_fastapi_jobs_backend.py:2130:self.assertEqual(payload["stage_dispatcher"], "background_tasks")
+tests/test_fastapi_jobs_backend.py:4534:raise ConversionFailure("conversion_failed", "转换失败。")
+tests/test_fastapi_jobs_backend.py:15871:def test_replay_pending_replays_pending_and_running_stage_messages_only(self):
+tests/test_fastapi_jobs_backend.py:15915:runtime.stage_service.replay_pending()
+tests/test_conversion_sandbox_dev_tools.py:16:from app.conversion import runtime_facade
+tests/test_conversion_sandbox_dev_tools.py:732:def test_runtime_facade_load_pages_binds_model_classes(self) -> None:
+tests/test_conversion_sandbox_dev_tools.py:750:pages, source_path = runtime_facade.load_pages(package_root)
+tests/test_openapi_export.py:310:"stage_dispatcher": "external_worker",
+tests/test_openapi_export.py:431:"stage_dispatcher": "external_worker",
+tests/test_database_job_repository.py:2117:def test_replay_pending_flow_uses_database_repository(self):
+tests/test_database_job_repository.py:2158:runtime.stage_dispatcher.replay_pending()

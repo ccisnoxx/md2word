@@ -43,7 +43,10 @@ Questions to answer:
 
 ### 运行时依赖声明
 
-- 镜像只执行 `pip install -r requirements.txt`；`app/` 中任何第三方导入（含函数内延迟导入）必须在其中直接声明，不能依赖本地 venv 里被其他包间接带入的版本。`tests/test_runtime_dependency_declarations.py` 是该合同的守卫，传递依赖或有意可选依赖只能进入其白名单并写明父依赖或降级行为。
+- `requirements.txt` 是直接依赖声明入口；`app/` 中任何第三方导入（含函数内延迟导入）必须在其中直接声明，不能依赖本地 venv 里被其他包间接带入的版本。`tests/test_runtime_dependency_declarations.py` 是该合同的守卫，传递依赖或有意可选依赖只能进入其白名单并写明父依赖或降级行为。
+- dev/prod 镜像共同消费 `requirements/locks/cp311-linux-amd64.txt` 完整版本/hash 锁与经官方 PyPI 文件身份对账的 `requirements/wheels/`，仅覆盖 CPython 3.11.18 / Debian 13 trixie / linux/amd64。根声明或目标版本变更须同步重新解析并核对闭包与制品来源；锁内的传递依赖不能替代根声明。首版保留 57 项运行依赖及 `PyMySQL[rsa]` 能力，不隐含升级或降级。
+- 安装须显式 `--isolated --no-index --find-links --require-hashes --only-binary=:all:`，缺 wheel、来源/hash 不符或解析冲突时停止；不得自动回退索引或 sdist。A/B 干净 venv 只有 pip 24.0、setuptools 79.0.1，未安装 wheel；候选镜像保留固定 Python digest 自带的全局工具 pip 24.0、setuptools 79.0.1、wheel 0.46.3。两种环境均使用 pip 24.0 安装，工具不计入运行锁，不执行无版本 pip 升级。来源与构建准备见 [Docker 部署说明](../../../docs/deploy/p0-docker-deployment.md#依赖锁与构建输入)。
+- API/Worker 共用 `MD2WORD_IMAGE`：生产必填，开发默认 `md2word-dev:local` 并允许同名变量覆盖；构建一次后复用并核对实际 image ID。开发 API 构建与 API/Worker 运行均固定 `linux/amd64`，Apple Silicon 使用仿真，不扩展锁的平台范围。Python/MySQL/Redis 使用已核实的官方 digest。apt/Poppler 系统包未锁快照，依赖锁与镜像身份不等于整镜像逐字节可复现，也不能替代真实 Word 客户端或生产验收。
 - 系统工具（当前为 Poppler `pdfinfo`/`pdftoppm`）由 `docker/prod`、`docker/dev` Dockerfile 安装，并在 readiness 中暴露可用性（`pdf_crop_tools_available`，缺失为非阻断 warning `pdf_crop_tools_missing`）。
 - 线上 hostdzire 镜像经仓库外固定发布包增量构建，不能作为仓库依赖完整的证据；验证仓库可复现性须用仓库 Dockerfile 构建。
 
@@ -57,15 +60,9 @@ Questions to answer:
 - `DocumentJobActionId`、前端动作类型与 `check_release.py` 的静态契约检查应同步维护。`publish` 和 `new_generation` 在兼容旧响应时保持可选，缺失动作不能被前端默认启用，也不能由前端推算后端权限。
 - 门禁回归需同时覆盖有效契约通过、过时快照失败、动作枚举遗漏失败，以及新增动作可选性丢失失败。同步类型不意味着增加可见操作入口。
 
-### characterization 测试替身隔离
+### 共享解析与渲染测试
 
-- `tests/runtime_direct_loaders.py` 的依赖替身只在直接加载期间生效，结束后恢复原有模块表及已有项目父包属性；返回的测试模块可以保留自己的局部替身绑定。
-- 保留“先运行文本 characterization，再运行真实布局完整性校验”的顺序回归。后续校验必须读取真实 `docx.Document`，不能用调整测试顺序、重导入依赖或放松完整性断言掩盖全局替身泄漏。
-
-### characterization 数学与配置夹具
-
-- 输入适配器按共享 `mineru_content` 的当前合同保留 LaTeX 数学源，核对周围正文、题注分组与编号表注守恒；原生公式生成由正式 renderer 验证。不能为满足旧 HTML 断言恢复有损拍平，真实 HTML sub/sup 输入应单独保留语义回归。
-- 共享 `TerminologyReplacer` 的加载测试使用真实临时 YAML 文件，实际验证优先级、作用域和大小写规则；不能用测试自身的 Python 文件加局部 `safe_load` 替身代替真实加载。无效 YAML 的解析拒绝必须保留，不能转成空规则成功。
+旧转换运行时专属 characterization 与直接加载替身已随实现删除。共享 `docx_rules`、表格解析和正式 DocumentIR/renderer 的必要回归继续保留；不能以旧实现测试替代正式输出合同。真实 DOCX 校验应读取实际 `docx.Document`，不得使用污染全局模块表的替身掩盖失败。
 
 ### 复核状态与成功渲染夹具
 

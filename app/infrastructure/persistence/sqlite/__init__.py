@@ -14,12 +14,11 @@ from app.infrastructure.persistence.sqlite.document_jobs import (
     SqliteDocumentJobRepository,
     SqliteDocumentJobTranslationBatchRepository,
 )
-from app.infrastructure.persistence.sqlite.files import SqliteDocumentFileRepository, SqliteJobFileRepository
+from app.infrastructure.persistence.sqlite.files import SqliteDocumentFileRepository
 from app.infrastructure.persistence.sqlite.internal_users import SqliteInternalUserRepository
-from app.infrastructure.persistence.sqlite.jobs import SqliteJobEventRepository, SqliteJobSnapshotRepository
+from app.infrastructure.persistence.sqlite.jobs import SqliteJobEventRepository
 from app.infrastructure.persistence.sqlite.retention_policies import SqliteRetentionPolicyRepository
 from app.infrastructure.persistence.sqlite.saved_views import SqliteSavedViewRepository
-from app.infrastructure.persistence.sqlite.stage_messages import SqliteStageMessageStore
 from app.infrastructure.persistence.sqlite.terminology_releases import SqliteTerminologyReleaseRepository
 
 __all__ = [
@@ -32,13 +31,10 @@ __all__ = [
     "SqliteDocumentJobTranslationBatchRepository",
     "SqliteInternalUserRepository",
     "SqliteJobEventRepository",
-    "SqliteJobFileRepository",
-    "SqliteJobSnapshotRepository",
     "SqlitePersistenceBackend",
     "SqliteRetentionCleanupLockRepository",
     "SqliteRetentionCleanupRunHistoryRepository",
     "SqliteRetentionPolicyRepository",
     "SqliteSavedViewRepository",
-    "SqliteStageMessageStore",
     "SqliteTerminologyReleaseRepository",
 ]

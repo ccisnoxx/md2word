@@ -7,6 +7,8 @@ last_reviewed: 2026-10-03
 
 # 系统架构
 
+> **局部复核（2026-11-06，源码基线 `79f20cef`）**：第 2 节按 B05 第 3、4 步更新旧 Jobs 运行时移除边界，并更新第 7.2、8 节的 Codec/Validator 接入事实。其余章节、拓扑与目标描述仍沿用 `e51e6ccd129f59d1b372dfc6907def1fd6bb5cd8` / 2026-10-03 的历史基线，未作全面复核；页首 `baseline_commit` 和 `last_reviewed` 保持历史值。
+
 ## 1. 架构风格
 
 系统保持为**模块化单体 + 异步 Worker**，不拆分微服务。
@@ -37,6 +39,8 @@ flowchart LR
 ```
 
 生产 Docker Compose 当前包括 API、Worker、Redis 和 MySQL；API 与 Worker共用 Python 镜像，产物卷挂载到 `/app/var`。
+
+2026-11-06 B05 第 3、4 步源码更新：[v1 路由聚合](../../app/api/v1/router.py) 文档转换入口统一使用正式 Files + Document Jobs 与保留的 MinerU callback；[app/main.py](../../app/main.py) 已删除旧服务和 stage 调度/启动重放，旧 StageWorker、未挂载 Jobs 路由与转换运行时也已删除。共享 `jobs` 模型、资源快照、路径仍被正式任务使用。`jobs`、`job_files`、`stage_messages` 三张既有旧空表留待 B08 治理，本次不 DROP；`job_events` 继续供正式任务读写。此处是源码状态，不代表部署或线上验收。
 
 ## 3. 目标逻辑组件
 
@@ -208,7 +212,7 @@ Translation → DocumentIR models + Provider port
 - 前端推断后端状态迁移；
 - API router 实现表格、翻译或 OOXML 算法；
 - Redis/Celery 状态作为任务业务真源；
-- `jobs` legacy 链路与 `document_jobs` 新链路重复增加新能力。
+- 重新接回已删除的旧 Jobs/stage 转换链路，或在共享 `jobs` 模块中恢复第二套任务执行实现。
 
 ## 7. 运行时交互
 
@@ -223,6 +227,10 @@ Translation → DocumentIR models + Provider port
 7. 继续翻译或直接渲染。
 
 ### 7.2 翻译批次
+
+2026-11-06 局部复核：[DocumentIRTranslationService](../../app/domains/translation/document_ir_translator.py) 通过 [TranslationIntegrityValidator](../../app/domains/translation/integrity.py) 的 `prepare()` 编码请求、`validate()` 校验返回并恢复技术 Token；同步流程全部批次通过后才回填。[Document Jobs execution](../../app/domains/document_jobs/execution.py) 复用该准备/校验入口，并在 fan-in 调用 `validate_persisted()` 复核持久化结果及证据。检测、占位和恢复由 [protected_tokens.py](../../app/domains/translation/protected_tokens.py) 唯一负责；合同见 [Codec Spec](../../.trellis/spec/backend/protected-token-codec.md) 和 [翻译完整性 Spec](../../.trellis/spec/backend/translation-integrity-validator.md)。
+
+校验覆盖已支持的有限语法、ID、占位符及恢复后逐 item 技术 inventory，不等同于任意技术语义、参数关联或目标语言正确性证明；本次未执行真实 Provider、四方向正式实译或线上/Word 验收。
 
 1. 主任务创建确定性批次计划；
 2. 每个批次独立 lease、重试和拆分；
@@ -257,6 +265,6 @@ Translation → DocumentIR models + Provider port
 - `document_jobs/execution.py` 与 `service.py` 的超大职责；
 - 表格解析与渲染之间缺少 CanonicalTableGrid；
 - 大表展开合并关系的回退策略；
-- 翻译缺少技术 Token codec 和确定性校验；
+- 翻译已接入技术 Token Codec 与确定性完整性校验；后续需依据独立证据评估有限语法之外的技术语义和真实实译质量，不能继续按“缺少 Codec/校验”重复实现（2026-11-06 局部复核）；
 - QA 仍偏翻译专用；
 - 缺少明确文档发布记录和 Word 页面预览合同。

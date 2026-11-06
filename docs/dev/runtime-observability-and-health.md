@@ -15,7 +15,7 @@ last_reviewed: 2026-05-28
 | 通道 | 用途 | 典型来源 |
 |---|---|---|
 | `access` | 请求访问日志 | `trace_logging_middleware` |
-| `business` | 带 job 上下文的业务链路日志 | stage dispatch、retry、cleanup |
+| `business` | 带 job 上下文的业务链路日志 | 正式任务执行、retry、文件清理 |
 | `system` | 无业务上下文或第三方库日志 | `uvicorn`、`httpx`、`python_multipart`、异常堆栈 |
 
 ## 当前日志格式
@@ -40,18 +40,7 @@ access 日志字段约定：
 [trace_id=... method=GET path=/api/v1/health/ready status_code=200 duration_ms=1.5]
 ```
 
-其中业务日志要求 message 自带上下文，例如：
-
-```text
-[trace_id=... job_id=... stage=convert_package message_id=... status=completed] result=/abs/path/result.docx
-```
-
-在线解析 callback 常见日志还包括：
-
-```text
-[trace_id=... job_id=... stage=submit_to_mineru message_id=... status=parsing] batch_id=... data_id=...
-[trace_id=... job_id=... stage=process_callback message_id=... status=parsed] batch_id=... state=done
-```
+业务日志由正式 execution、callback 和 recovery 记录，使用实际可用的 `trace_id`、`job_id`、`stage` 等上下文。旧 stage worker 日志已停止，不以旧消息 ID 判断正式任务执行。
 
 ## `/health/ready` 应怎么看
 
@@ -63,7 +52,7 @@ access 日志字段约定：
 - `readiness_non_blocking_checks`：能力或观察项，不阻塞最小启动。
 - `deployment_init_ready`：必检项是否都通过。
 - `readiness_blockers`：导致 `deployment_init_ready=false` 的原因。
-- `readiness_warnings`：非阻塞提示，例如 MinerU token 缺失、翻译不可用或 stage spool 有遗留消息。
+- `readiness_warnings`：非阻塞提示，例如 MinerU token 缺失、翻译不可用或正式 callback 有待处理消息。
 
 ### 运行目录
 
@@ -71,7 +60,6 @@ access 日志字段约定：
 - `jobs_dir_writable`
 - `artifact_root_writable`
 - `artifact_disk_free_bytes`
-- `stage_spool_dir_exists`
 - `tmp_dir_exists`
 
 ### 版本化资产
@@ -101,17 +89,7 @@ access 日志字段约定：
 - `configured_repository_backend`
 - `effective_repository_backend`
 - `worker_mode`
-- `stage_dispatcher`
-- `stage_message_store`
 - `artifact_storage`
-- `stage_spool_pending_messages`
-- `stage_spool_running_messages`
-- `stage_spool_failed_messages`
-- `stage_spool_replayable_messages`
-- `stage_spool_running_stale_messages`
-- `stage_spool_oldest_running_age_seconds`
-- `stage_spool_needs_attention`
-- `stage_spool_observation_status`
 - `document_jobs_worker_backend`
 - `document_jobs_celery_queue`
 - `document_jobs_translation_batch_celery_queue`
@@ -152,50 +130,24 @@ access 日志字段约定：
 
 - `metadata_store`：当前实际 jobs metadata store，取值 `file` / `database` / `mysql`。
 - `artifact_storage`：当前 artifact adapter，取值 `local_file` / `local_object` / `s3`。
-- `worker_mode` 和 `stage_dispatcher`：判断 API 是否同进程消费 stage。
-- `jobs`：按 job status 聚合的任务数量。
-- `stage_messages`：`pending` / `running` / `failed` 数量。
+- `worker_mode`：保留既有配置回显，不再代表旧 stage 消费；正式执行模式看 `document_jobs_worker_backend`。
+- `jobs={}`、`stage_messages={}`：只保留兼容空字段，不读取旧仓储。
+- `document_jobs`：正式任务状态计数。
+- `document_job_callback_messages`：正式 callback 状态计数。
 - `resources`：模板、术语规则集、翻译配置的版本数量和当前默认版本标签。
 - `audit_events.total`：当前审计事件总数。
 
 metrics 适合被脚本轮询或人工排障读取；如果后续接 Prometheus / OpenTelemetry，需要另起 feature，不在当前单实例基线里隐式引入。
 
-## Stage message 恢复语义
+## 正式任务恢复与排障
 
-当前支持两种 worker 形态：
-
-- `JOBS_WORKER_MODE=in_process`：默认模式，API 进程通过 `BackgroundTasks` 同进程推进 stage。
-- `JOBS_WORKER_MODE=external`：API 只写入 stage message，`run_worker.py` 独立轮询并消费。
-
-stage message 的持久化语义：
-
-| 状态 | 语义 | replay 规则 | 保留规则 |
-|---|---|---|---|
-| `pending` | 已写入 spool，尚未被 dispatcher 尝试执行 | 应在启动恢复或显式 replay 时执行 | 成功后删除，失败后改为 `failed` |
-| `running` | 已被 dispatcher claim，可能因进程退出残留 | 仍允许 replay；dispatch 前会先按 job 当前状态做幂等跳过 | 成功后删除，失败后改为 `failed` |
-| `failed` | stage 已知失败，错误信息已写入 message 和 job events | 不自动 replay | 保留诊断现场，后续通过 retry/cancel 等运维动作处理 |
-
-`lease_owner`、`leased_at`、`lease_expires_at` 是 worker readiness 字段。当前独立
-worker 仍按单 worker 进程设计，不把它们当成多 worker 抢占锁；`/health/ready`
-会用它们识别过期 `running` message。
-
-## 典型排障
+API 启动时仅调用 `DocumentJobRecoveryService.run_startup_recovery`；正式 Worker 仍按 DocumentJob 状态、callback 消息与既有恢复合同执行。旧 stage spool、dispatcher 和 StageWorker 已删除。
 
 ### 场景 1：上传成功，但任务不推进
 
-先看：
+检查 `document_jobs_worker_backend`、正式 Celery 队列订阅、任务详情和 `GET /api/v1/document-jobs/{job_id}/events`。结合 `document_job_callback_replayable_messages`、`document_job_callback_failed_messages`、`document_jobs_running_stale_count` 与 `document_jobs_timed_out_count` 判断问题；健康查询本身不会重放或修改任务。
 
-- `stage_spool_pending_messages`
-- `stage_spool_running_messages`
-- `stage_spool_failed_messages`
-- `GET /api/v1/document-jobs/{job_id}/events`
-
-如果 `stage_spool_pending_messages > 0` 或 `stage_spool_running_messages > 0`，说明有后台消息还没完成，重启应用会 replay。
-如果 `stage_spool_failed_messages > 0`，说明有失败消息留存在 spool 中；它不会被启动 replay 自动恢复，需要通过 job 详情、events 和 retry 决定下一步。
-如果 `stage_spool_running_stale_messages > 0`，说明存在已经超过 lease 的 `running` message；`in_process` 模式通常可以先重启服务触发 replay，`external` 模式应先确认 `run_worker.py` 进程是否存活，再结合 job events 判断是否需要 retry。
-`stage_spool_observation_status=ok` 表示没有遗留消息，`replayable` 表示有 pending/running 消息可恢复，`needs_attention` 表示存在 failed 或 stale running 消息。
-
-如果 `effective_repository_backend=database`，说明 jobs snapshot、events、files 和 stage messages 已经切到 sqlite metadata store；如果是 `mysql`，说明这些 metadata 已切到 MySQL metadata store。artifact 二进制看 `artifact_storage`：`local_file` 表示仍读写 job 本地目录，`local_object` 表示登记时会 shadow upload 到本地对象目录并优先从 `object_key` 下载，`s3` 表示 artifact 登记时会上传到 S3-compatible bucket，下载时返回临时重定向或对象流。
+`effective_repository_backend` 表示正式元数据后端；产物由正式 Files 服务按记录中的 `object_key` 读写。旧 jobs/file/stage 仓储已删除，`job_events` 仍供正式任务使用。三张既有旧空表留待 B08，本次不 DROP。
 
 ### 场景 2：`direct` 都跑不通
 

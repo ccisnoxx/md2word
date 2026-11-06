@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-# app/infrastructure/persistence/file/files.py: file backend 的 job files 和 document files adapter。
+# app/infrastructure/persistence/file/files.py: file backend的正式文档文件仓储。
 
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
-from app.domains.jobs.models import JobFile
 from app.domains.files.models import DocumentFileRecord
 from app.infrastructure.persistence.file.backend import FilePersistenceBackend
 from app.domains.files.result_registration import (
@@ -15,27 +14,6 @@ from app.domains.files.result_registration import (
     reserved_file_deletion, finished_file_deletion, ensure_new_file_identity, ensure_result_descriptor_matches,
 )
 from app.infrastructure.persistence.file.record_lock import record_lock
-
-
-class FileJobFileRepository:
-    """用 file backend 读写 JobFile artifact metadata。"""
-
-    def __init__(self, backend: FilePersistenceBackend) -> None:
-        self.backend = backend
-
-    def upsert_file(self, job_id: str, file: JobFile) -> None:
-        path = self.backend.job_paths(job_id).files_json
-        existing = [
-            JobFile.model_validate(item)
-            for item in self.backend.read_json(path, [])
-        ]
-        kept = [item for item in existing if item.file_type != file.file_type]
-        kept.append(file)
-        self.backend.write_json(path, [item.model_dump(mode="json") for item in kept])
-
-    def list_files(self, job_id: str) -> list[JobFile]:
-        path = self.backend.job_paths(job_id).files_json
-        return [JobFile.model_validate(item) for item in self.backend.read_json(path, [])]
 
 
 class FileDocumentFileRepository:

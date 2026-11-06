@@ -11,6 +11,8 @@ last_reviewed: 2026-10-03
 
 本文件是 Codex 开始任务前的调查清单。每个任务必须先验证当前代码是否已经变化，不得机械按本文重复实现。
 
+> **局部复核（2026-11-06，源码基线 `79f20cef`）**：本次仅更新第 5 节的 ProtectedTokenCodec、数字/单位/公式后验校验，以及第 10 节对应优先级描述。其余条目仍为 `e51e6ccd129f59d1b372dfc6907def1fd6bb5cd8` / 2026-10-03 的历史判断，未作全面复核；保留页首历史基线与 `last_reviewed`，不据此认定其他缺口仍存在。
+
 状态：
 
 - **已有**：目标基本具备，主要补测试/文档；
@@ -61,10 +63,12 @@ last_reviewed: 2026-10-03
 | 批次/重试/拆分 | 已有 | 保持 | 已有 |
 | 术语匹配/trace | 已有 | 保持并校验输出 | 部分 |
 | caption/footnote 翻译 | extract 入口显式包含 text/list/table nodes，需确认 annotation | 全部 annotation | 不确定/可能缺失 |
-| ProtectedTokenCodec | 未发现 | 必须实现 | 缺失 |
-| 数字/单位/公式后验校验 | 未发现统一服务 | 必须实现 | 缺失 |
+| ProtectedTokenCodec | [纯内存 Codec](../../app/domains/translation/protected_tokens.py) 已由 DocumentIRTranslationService 经 Validator 接入正式翻译与 Worker | 复用既有检测、占位和恢复合同 | 已有（有限语法） |
+| 数字/单位/公式后验校验 | [TranslationIntegrityValidator](../../app/domains/translation/integrity.py) 已统一检查 ID、占位符与恢复后逐 item 技术 inventory | 保持整批失败关闭；语义与实译质量另行验收 | 已有（有限语法） |
 | table context | TranslationTextItem 只有 id/text | 增加只读 context | 缺失 |
 | 四方向正式回归 | 当前 P1 manifest 主要 en2zh | 每方向独立 | 缺失 |
+
+局部复核依据：[DocumentIRTranslationService](../../app/domains/translation/document_ir_translator.py) 的 `build_provider_request()` 调用 `validator.prepare()`，将编码 items 交给 Provider；同步 `translate()` 在 `validator.validate()` 成功后消费恢复结果，全部批次通过后才回填。[Document Jobs execution](../../app/domains/document_jobs/execution.py) 复用同一准备与校验入口，并在 fan-in 时调用 `validate_persisted()` 复核持久化结果及证据。具体合同见 [Codec Spec](../../.trellis/spec/backend/protected-token-codec.md) 和 [翻译完整性 Spec](../../.trellis/spec/backend/translation-integrity-validator.md)。这些实现只覆盖已支持的有限技术语法及逐项多重集一致性，不保证任意型号/公式、参数语义关联或目标语言正确；本次文字复核没有验证真实 Provider、四方向正式实译或线上/Word 验收。
 
 ## 6. Renderer 与模板
 
@@ -115,7 +119,7 @@ last_reviewed: 2026-10-03
 
 1. 状态/合同冻结；
 2. CanonicalTableGrid 和表格 QA；
-3. ProtectedTokenCodec 和翻译完整性；
+3. 复用已接入的 ProtectedTokenCodec 与翻译完整性校验；按独立证据评估有限语法之外的技术语义和真实实译质量，不重复实现 Codec/Validator（2026-11-06 局部复核）；
 4. 统一 quality/review/delivery 状态。
 
 ### 第二优先级

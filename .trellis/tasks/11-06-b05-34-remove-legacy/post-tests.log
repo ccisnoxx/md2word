@@ -1,0 +1,348 @@
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+test_export_openapi_writes_snapshot_and_check_passes (tests.test_openapi_export.OpenAPIExportTests.test_export_openapi_writes_snapshot_and_check_passes) ... ok
+test_legacy_jobs_api_paths_are_removed (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_legacy_jobs_api_paths_are_removed) ... 2026-11-06 16:01:44,751 | business | WARNING | [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+2026-11-06 16:01:44,751 | access | INFO | [trace_id=b7e0ab323f084350943eef97621826de method=GET path=/api/v1/jobs status_code=404 duration_ms=0.3]
+2026-11-06 16:01:44,752 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/jobs "HTTP/1.1 404 Not Found"
+2026-11-06 16:01:44,752 | access | INFO | [trace_id=5b986b0e239c45958fa009feab30a22e method=POST path=/api/v1/jobs status_code=404 duration_ms=0.2]
+2026-11-06 16:01:44,752 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/jobs "HTTP/1.1 404 Not Found"
+2026-11-06 16:01:44,753 | access | INFO | [trace_id=eeb291f9b340410f99c36eb5fa09d2e1 method=POST path=/api/v1/jobs/pdf status_code=404 duration_ms=0.2]
+2026-11-06 16:01:44,753 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/jobs/pdf "HTTP/1.1 404 Not Found"
+2026-11-06 16:01:44,753 | access | INFO | [trace_id=cceea8a86e9c47379b82a8e508926e57 method=GET path=/api/v1/jobs/job_removed status_code=404 duration_ms=0.2]
+2026-11-06 16:01:44,753 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/jobs/job_removed "HTTP/1.1 404 Not Found"
+2026-11-06 16:01:44,754 | access | INFO | [trace_id=3f0765aef22c4442b0103ae518a5a79b method=GET path=/api/v1/jobs/job_removed/files status_code=404 duration_ms=0.2]
+2026-11-06 16:01:44,754 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/jobs/job_removed/files "HTTP/1.1 404 Not Found"
+2026-11-06 16:01:44,754 | access | INFO | [trace_id=44db80f15a314c19b3402d55816c34ae method=GET path=/api/v1/jobs/job_removed/events status_code=404 duration_ms=0.5]
+2026-11-06 16:01:44,754 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/jobs/job_removed/events "HTTP/1.1 404 Not Found"
+2026-11-06 16:01:44,755 | access | INFO | [trace_id=71db538d7d57482a836342d2c07d8386 method=GET path=/api/v1/jobs/job_removed/result status_code=404 duration_ms=0.2]
+2026-11-06 16:01:44,755 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/jobs/job_removed/result "HTTP/1.1 404 Not Found"
+2026-11-06 16:01:44,755 | access | INFO | [trace_id=e498de88bc134dc1a2bcf672ea9afe91 method=GET path=/api/v1/jobs/job_removed/download/result status_code=404 duration_ms=0.2]
+2026-11-06 16:01:44,755 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/jobs/job_removed/download/result "HTTP/1.1 404 Not Found"
+2026-11-06 16:01:44,756 | access | INFO | [trace_id=c1736b1a76d046a4bda58987f18d445e method=POST path=/api/v1/jobs/job_removed/retry status_code=404 duration_ms=0.2]
+2026-11-06 16:01:44,756 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/jobs/job_removed/retry "HTTP/1.1 404 Not Found"
+2026-11-06 16:01:44,756 | access | INFO | [trace_id=f6c8235b8aec4f9380c459348bf8056b method=POST path=/api/v1/jobs/job_removed/cancel status_code=404 duration_ms=0.2]
+2026-11-06 16:01:44,756 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/jobs/job_removed/cancel "HTTP/1.1 404 Not Found"
+2026-11-06 16:01:44,757 | access | INFO | [trace_id=3f989f482de543f59a03e5e6273f09fb method=POST path=/api/v1/jobs/job_removed/recover-mineru-result status_code=404 duration_ms=0.2]
+2026-11-06 16:01:44,757 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/jobs/job_removed/recover-mineru-result "HTTP/1.1 404 Not Found"
+2026-11-06 16:01:44,757 | access | INFO | [trace_id=0f34d843050343e89356c107973cef47 method=POST path=/api/v1/jobs/job_removed/cleanup-local-files status_code=404 duration_ms=0.2]
+2026-11-06 16:01:44,757 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/jobs/job_removed/cleanup-local-files "HTTP/1.1 404 Not Found"
+ok
+test_direct_without_translation_configuration_executes_one_docx_without_translation_calls (tests.test_document_job_modes.DocumentJobModesTests.test_direct_without_translation_configuration_executes_one_docx_without_translation_calls) ... 2026-11-06 16:01:44,901 | access | INFO | [trace_id=0fbdf2e515634f039597fda6f62e1c55 method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.5]
+2026-11-06 16:01:44,902 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:44,902 | access | INFO | [trace_id=8f3dfee8f1434d3da5bff4dc5d418abf method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.7]
+2026-11-06 16:01:44,903 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:44,905 | access | INFO | [trace_id=58e06b3cb04e4daab45aceee966097bc method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.9]
+2026-11-06 16:01:44,905 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:44,907 | access | INFO | [trace_id=9011ade309f94d689c515354228bd67e method=PUT path=/api/v1/files/file_79461e838fec/content status_code=201 duration_ms=1.8]
+2026-11-06 16:01:44,908 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_79461e838fec/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:44,913 | business | INFO | [trace_id=6b10b7f4a1164af19c4a9d538493a94f job_id=docjob_81d51ef81ef3 stage=parsing status=parsed] mineru_raw_result_file_id=file_934e44210bc8
+2026-11-06 16:01:44,921 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:44,921 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:44,921 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:44,921 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:44,926 | business | INFO | [trace_id=6b10b7f4a1164af19c4a9d538493a94f job_id=docjob_81d51ef81ef3 stage=ir_converting status=rendering] document_ir_file_id=file_d6297595c266 image_assets=1
+2026-11-06 16:01:45,162 | access | INFO | [trace_id=6b10b7f4a1164af19c4a9d538493a94f method=POST path=/api/v1/document-jobs status_code=201 duration_ms=254.5]
+2026-11-06 16:01:45,162 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:45,274 | access | INFO | [trace_id=024b09c9e22945b391ab7dc0a19836cf method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.7]
+2026-11-06 16:01:45,274 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:45,275 | access | INFO | [trace_id=82a6e88650084022bec50ffaab733400 method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.8]
+2026-11-06 16:01:45,275 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:45,277 | access | INFO | [trace_id=783158ff5d0e4b7ba9d15a9278375670 method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=0.9]
+2026-11-06 16:01:45,277 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:45,278 | access | INFO | [trace_id=5d5ada0bd6d24f1cb04cb9d62fb17170 method=PUT path=/api/v1/files/file_c9fcfb881626/content status_code=201 duration_ms=1.2]
+2026-11-06 16:01:45,278 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_c9fcfb881626/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:45,282 | business | INFO | [trace_id=6809355f13434ca2881e1970d443c671 job_id=docjob_dc6d735c7bc8 stage=parsing status=parsed] mineru_raw_result_file_id=file_928510a6bbce
+2026-11-06 16:01:45,285 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:45,285 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:45,285 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:45,285 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:45,288 | business | INFO | [trace_id=6809355f13434ca2881e1970d443c671 job_id=docjob_dc6d735c7bc8 stage=ir_converting status=rendering] document_ir_file_id=file_fade948d0287 image_assets=1
+2026-11-06 16:01:45,597 | access | INFO | [trace_id=6809355f13434ca2881e1970d443c671 method=POST path=/api/v1/document-jobs status_code=201 duration_ms=318.1]
+2026-11-06 16:01:45,597 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+ok
+test_four_directions_share_real_stage_boundaries_before_eager_delivery (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_four_directions_share_real_stage_boundaries_before_eager_delivery) ... 2026-11-06 16:01:45,743 | access | INFO | [trace_id=e496fde3789b44f8ac288047b95d225e method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.9]
+2026-11-06 16:01:45,743 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:45,745 | access | INFO | [trace_id=d343fc6c6f694c60b714d9d4ac17015b method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.5]
+2026-11-06 16:01:45,745 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:45,746 | access | INFO | [trace_id=ffa10c50346149b5a4f8a0f99d743840 method=PUT path=/api/v1/files/file_e347553f191e/content status_code=201 duration_ms=1.6]
+2026-11-06 16:01:45,747 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_e347553f191e/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:45,751 | business | INFO | [trace_id=trace_stages job_id=docjob_91a30ba06909 stage=parsing status=parsed] mineru_raw_result_file_id=file_c1e92e45a430
+2026-11-06 16:01:45,754 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:45,754 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:45,754 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:45,754 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:46,043 | access | INFO | [trace_id=trace_stages method=POST path=/api/v1/document-jobs status_code=201 duration_ms=295.9]
+2026-11-06 16:01:46,043 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:46,153 | access | INFO | [trace_id=72a23f8499e14f6f86105796641cc1ca method=POST path=/api/v1/auth/login status_code=200 duration_ms=2.1]
+2026-11-06 16:01:46,153 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:46,161 | access | INFO | [trace_id=ff22fe49164d4adf9e2580791e44b07c method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=7.6]
+2026-11-06 16:01:46,165 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:46,167 | access | INFO | [trace_id=5d7b658044be40c5b2b6539c5b0a1fc4 method=PUT path=/api/v1/files/file_e0e2d599258c/content status_code=201 duration_ms=1.6]
+2026-11-06 16:01:46,167 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_e0e2d599258c/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:46,172 | business | INFO | [trace_id=trace_stages job_id=docjob_5f1801d4d356 stage=parsing status=parsed] mineru_raw_result_file_id=file_315fe372a453
+2026-11-06 16:01:46,175 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:46,175 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:46,175 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:46,175 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:46,474 | access | INFO | [trace_id=trace_stages method=POST path=/api/v1/document-jobs status_code=201 duration_ms=307.2]
+2026-11-06 16:01:46,474 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:46,582 | access | INFO | [trace_id=9ab1602221384b7a94c3e759c6062004 method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.9]
+2026-11-06 16:01:46,582 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:46,584 | access | INFO | [trace_id=d4d1581d95bc4afba5e32add96f6940e method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.1]
+2026-11-06 16:01:46,584 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:46,633 | access | INFO | [trace_id=2008edd1c7d64d80890a1f6458614fbb method=PUT path=/api/v1/files/file_1f722ef0e825/content status_code=201 duration_ms=48.5]
+2026-11-06 16:01:46,633 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_1f722ef0e825/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:46,638 | business | INFO | [trace_id=trace_stages job_id=docjob_23c7eff5da86 stage=parsing status=parsed] mineru_raw_result_file_id=file_7fd8e7737c7b
+2026-11-06 16:01:46,641 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:46,641 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:46,641 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:46,641 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:46,894 | access | INFO | [trace_id=trace_stages method=POST path=/api/v1/document-jobs status_code=201 duration_ms=260.5]
+2026-11-06 16:01:46,894 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:47,052 | access | INFO | [trace_id=bcd6c798a60441ae8d771fd4f452a687 method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.1]
+2026-11-06 16:01:47,052 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:47,054 | access | INFO | [trace_id=c437321e03c74928950c5c5cef314cc3 method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.4]
+2026-11-06 16:01:47,054 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:47,057 | access | INFO | [trace_id=f8f83d6b41f4435b85ef1213880c4875 method=PUT path=/api/v1/files/file_da8e582e6857/content status_code=201 duration_ms=2.2]
+2026-11-06 16:01:47,057 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_da8e582e6857/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:47,063 | business | INFO | [trace_id=trace_stages job_id=docjob_c4247aeb5b50 stage=parsing status=parsed] mineru_raw_result_file_id=file_c8b2728404b3
+2026-11-06 16:01:47,066 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:47,066 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:47,066 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:47,066 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:47,366 | access | INFO | [trace_id=trace_stages method=POST path=/api/v1/document-jobs status_code=201 duration_ms=308.7]
+2026-11-06 16:01:47,366 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+ok
+test_fan_in_failures_are_persisted_at_validation_boundary (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_fan_in_failures_are_persisted_at_validation_boundary) ... 2026-11-06 16:01:47,476 | access | INFO | [trace_id=375806acacfa41dd811e30338f38f28e method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.0]
+2026-11-06 16:01:47,476 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:47,477 | access | INFO | [trace_id=eebf8447d8ec43e4bc6b5d6eb97577ce method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.1]
+2026-11-06 16:01:47,477 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:47,479 | access | INFO | [trace_id=4ca1daeacf6a41969c33b24eb2f3b53d method=PUT path=/api/v1/files/file_32cba5109b58/content status_code=201 duration_ms=1.6]
+2026-11-06 16:01:47,479 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_32cba5109b58/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:47,485 | business | INFO | [trace_id=trace_stages job_id=docjob_630dccc0b77f stage=parsing status=parsed] mineru_raw_result_file_id=file_b442e27382c7
+2026-11-06 16:01:47,487 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:47,487 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:47,487 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:47,487 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:47,507 | access | INFO | [trace_id=trace_stages method=POST path=/api/v1/document-jobs status_code=201 duration_ms=27.3]
+2026-11-06 16:01:47,507 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:47,541 | business | ERROR | [trace_id=trace_fan_in job_id=docjob_630dccc0b77f stage=translation_validating status=failed] 翻译批次合并校验失败: translation_fan_in_mismatch
+2026-11-06 16:01:47,694 | access | INFO | [trace_id=77d9a8ff93ad48819449a76eef4af11d method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.9]
+2026-11-06 16:01:47,694 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:47,696 | access | INFO | [trace_id=63771ffe8bd548849cbf0cc4030666fe method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.1]
+2026-11-06 16:01:47,696 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:47,698 | access | INFO | [trace_id=820bf504ada64586907252bf0026958e method=PUT path=/api/v1/files/file_3f56561e1d6e/content status_code=201 duration_ms=1.5]
+2026-11-06 16:01:47,698 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_3f56561e1d6e/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:47,703 | business | INFO | [trace_id=trace_stages job_id=docjob_8fc562a01af5 stage=parsing status=parsed] mineru_raw_result_file_id=file_36394bde775b
+2026-11-06 16:01:47,705 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:47,705 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:47,705 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:47,705 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:47,725 | access | INFO | [trace_id=trace_stages method=POST path=/api/v1/document-jobs status_code=201 duration_ms=27.0]
+2026-11-06 16:01:47,725 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:47,759 | business | ERROR | [trace_id=trace_fan_in job_id=docjob_8fc562a01af5 stage=translation_validating status=failed] 翻译批次合并校验失败: translation_fan_in_mismatch
+2026-11-06 16:01:47,866 | access | INFO | [trace_id=9c3b104e8cbd4c6491e06ccffda35e01 method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.9]
+2026-11-06 16:01:47,866 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:47,867 | access | INFO | [trace_id=88645b2764cf455fae3e21bd63cf9e04 method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.1]
+2026-11-06 16:01:47,868 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:47,869 | access | INFO | [trace_id=60c52121291049978c05618bc75c5b7f method=PUT path=/api/v1/files/file_cfbdf1bc18ed/content status_code=201 duration_ms=1.6]
+2026-11-06 16:01:47,869 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_cfbdf1bc18ed/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:47,874 | business | INFO | [trace_id=trace_stages job_id=docjob_301c72632d73 stage=parsing status=parsed] mineru_raw_result_file_id=file_844065e59a46
+2026-11-06 16:01:47,877 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:47,877 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:47,877 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:47,877 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:47,895 | access | INFO | [trace_id=trace_stages method=POST path=/api/v1/document-jobs status_code=201 duration_ms=26.0]
+2026-11-06 16:01:47,896 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:47,931 | business | ERROR | [trace_id=trace_fan_in job_id=docjob_301c72632d73 stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+2026-11-06 16:01:48,086 | access | INFO | [trace_id=251c831244954b399c881c8054def13b method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.9]
+2026-11-06 16:01:48,086 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:48,087 | access | INFO | [trace_id=632f6eb82e8b456aba0acf7010a54d90 method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.1]
+2026-11-06 16:01:48,088 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:48,089 | access | INFO | [trace_id=6891009aa6e04bd9aa77a1c0252b1392 method=PUT path=/api/v1/files/file_25b188cea294/content status_code=201 duration_ms=1.5]
+2026-11-06 16:01:48,089 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_25b188cea294/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:48,094 | business | INFO | [trace_id=trace_stages job_id=docjob_1d48c4569971 stage=parsing status=parsed] mineru_raw_result_file_id=file_44bb4b7a6269
+2026-11-06 16:01:48,097 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:48,097 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:48,097 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:48,097 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:48,116 | access | INFO | [trace_id=trace_stages method=POST path=/api/v1/document-jobs status_code=201 duration_ms=26.6]
+2026-11-06 16:01:48,116 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:48,151 | business | ERROR | [trace_id=trace_fan_in job_id=docjob_1d48c4569971 stage=translation_validating status=failed] 翻译批次合并校验失败: translation_provider_invalid_response
+2026-11-06 16:01:48,257 | access | INFO | [trace_id=3ba96647df7f4657b73cab7471e83bde method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.9]
+2026-11-06 16:01:48,257 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:48,258 | access | INFO | [trace_id=0c20eac2c8114dcf80ef38193752a314 method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.1]
+2026-11-06 16:01:48,258 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:48,260 | access | INFO | [trace_id=276cf4c55a2f4a4bb157b870b62bcf40 method=PUT path=/api/v1/files/file_c10de3777bce/content status_code=201 duration_ms=1.4]
+2026-11-06 16:01:48,260 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_c10de3777bce/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:48,265 | business | INFO | [trace_id=trace_stages job_id=docjob_5c545ff55bfc stage=parsing status=parsed] mineru_raw_result_file_id=file_d9573d84312a
+2026-11-06 16:01:48,268 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:48,268 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:48,268 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:48,268 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:48,287 | access | INFO | [trace_id=trace_stages method=POST path=/api/v1/document-jobs status_code=201 duration_ms=26.7]
+2026-11-06 16:01:48,287 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:48,321 | business | ERROR | [trace_id=trace_fan_in job_id=docjob_5c545ff55bfc stage=translation_validating status=failed] 翻译批次合并校验失败: translation_provider_failed
+2026-11-06 16:01:48,477 | access | INFO | [trace_id=1088277bba23410fb07772ad2290ffe6 method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.0]
+2026-11-06 16:01:48,477 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:48,479 | access | INFO | [trace_id=c257ae3335244d3e83b73bf41f9cb4fe method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.1]
+2026-11-06 16:01:48,479 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:48,480 | access | INFO | [trace_id=8492a81fa7e94d2d81cd08e21675c01b method=PUT path=/api/v1/files/file_2315573fe73e/content status_code=201 duration_ms=1.5]
+2026-11-06 16:01:48,481 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_2315573fe73e/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:48,485 | business | INFO | [trace_id=trace_stages job_id=docjob_9ff8c0984109 stage=parsing status=parsed] mineru_raw_result_file_id=file_c04a968182b4
+2026-11-06 16:01:48,488 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:48,488 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:48,488 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:48,488 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:48,507 | access | INFO | [trace_id=trace_stages method=POST path=/api/v1/document-jobs status_code=201 duration_ms=26.0]
+2026-11-06 16:01:48,507 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:48,543 | business | ERROR | [trace_id=trace_fan_in job_id=docjob_9ff8c0984109 stage=translation_validating status=failed] Worker 文件或对象存储操作失败。
+ok
+test_render_to_bytes_keeps_v1_sequential_fallback (tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_keeps_v1_sequential_fallback) ... ok
+test_renderer_evidence_blocks_missing_layout_drawing_and_table (tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_renderer_evidence_blocks_missing_layout_drawing_and_table) ... ok
+test_formal_adapter_converts_minimal_mineru_package_to_openable_docx (tests.test_conversion_sandbox_dev_tools.LocalMinerUConversionCliTests.test_formal_adapter_converts_minimal_mineru_package_to_openable_docx) ... ok
+test_health_ready_reports_runtime_dependencies (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_reports_runtime_dependencies) ... 2026-11-06 16:01:48,803 | business | WARNING | [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+2026-11-06 16:01:48,804 | access | INFO | [trace_id=6ce15ebc24864e99a370d8e1c30a381a method=GET path=/api/v1/health/ready status_code=200 duration_ms=1.4]
+2026-11-06 16:01:48,804 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/health/ready "HTTP/1.1 200 OK"
+ok
+test_health_ready_reports_invalid_ai_provider_config_file (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_reports_invalid_ai_provider_config_file) ... ok
+test_health_ready_blocks_p0_document_jobs_in_production_when_required_config_missing (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_blocks_p0_document_jobs_in_production_when_required_config_missing) ... FAIL
+test_health_ready_blocks_p0_document_jobs_when_production_uses_non_mysql_metadata_store (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_blocks_p0_document_jobs_when_production_uses_non_mysql_metadata_store) ... ok
+test_health_ready_blocks_p0_document_jobs_when_production_uses_eager_worker (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_blocks_p0_document_jobs_when_production_uses_eager_worker) ... ok
+test_health_ready_blocks_celery_when_translation_batch_queue_is_missing (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_blocks_celery_when_translation_batch_queue_is_missing) ... ok
+test_health_ready_allows_p0_document_jobs_when_production_config_is_complete (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_allows_p0_document_jobs_when_production_config_is_complete) ... ok
+test_health_metrics_reports_runtime_counters (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_metrics_reports_runtime_counters) ... 2026-11-06 16:01:48,934 | business | WARNING | [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+2026-11-06 16:01:48,935 | access | INFO | [trace_id=bf37686ec2b74ff1aa459eb29b632a47 method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.0]
+2026-11-06 16:01:48,935 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:48,937 | access | INFO | [trace_id=2524abdd445447599f02dbd7dbd93f6c method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.1]
+2026-11-06 16:01:48,937 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:48,938 | access | INFO | [trace_id=43b0349866f44c3d99d2c63f6a82e628 method=PUT path=/api/v1/files/file_2a2eb87c2be1/content status_code=201 duration_ms=1.4]
+2026-11-06 16:01:48,938 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_2a2eb87c2be1/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:48,941 | access | INFO | [trace_id=f61e5997c49547ada7f089e31a34e3d5 method=POST path=/api/v1/document-jobs status_code=201 duration_ms=2.2]
+2026-11-06 16:01:48,941 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:48,942 | access | INFO | [trace_id=bf9640a08c0d4b6fa06eaceddebf4b56 method=GET path=/api/v1/health/metrics status_code=200 duration_ms=0.7]
+2026-11-06 16:01:48,942 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/health/metrics "HTTP/1.1 200 OK"
+ok
+test_health_metrics_reports_default_resource_versions_in_mysql_mode (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_metrics_reports_default_resource_versions_in_mysql_mode) ... 2026-11-06 16:01:49,103 | business | WARNING | [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+2026-11-06 16:01:49,104 | access | INFO | [trace_id=fe9115ef40224dc0a647ab85c07673ff method=GET path=/api/v1/health/metrics status_code=200 duration_ms=0.9]
+2026-11-06 16:01:49,104 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/health/metrics "HTTP/1.1 200 OK"
+ok
+test_health_ops_alerts_is_admin_only_readonly_and_reports_recovery_readiness (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ops_alerts_is_admin_only_readonly_and_reports_recovery_readiness)
+验证 ops-alerts 只允许 Admin 读取，并只返回恢复建议不执行动作。 ... 2026-11-06 16:01:49,206 | business | WARNING | [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+2026-11-06 16:01:49,207 | access | INFO | [trace_id=5ab0258d56f7497fa39050b796573e6a method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.9]
+2026-11-06 16:01:49,207 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:49,208 | access | INFO | [trace_id=655c6f50bbcf403b85c8d6ff1307e7b5 method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.6]
+2026-11-06 16:01:49,208 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:49,210 | access | INFO | [trace_id=427ae14fa0884dea944917a62b62df9c method=GET path=/api/v1/health/ops-alerts status_code=200 duration_ms=1.4]
+2026-11-06 16:01:49,210 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/health/ops-alerts "HTTP/1.1 200 OK"
+2026-11-06 16:01:49,212 | access | INFO | [trace_id=fbd0730fe5bb46e88a507bcae4b7e0a8 method=GET path=/api/v1/health/ops-alerts status_code=200 duration_ms=1.1]
+2026-11-06 16:01:49,212 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/health/ops-alerts "HTTP/1.1 200 OK"
+2026-11-06 16:01:49,212 | access | INFO | [trace_id=179ba6772a1840339d78ec707d46cf07 method=GET path=/api/v1/health/ops-alerts status_code=403 duration_ms=0.3]
+2026-11-06 16:01:49,212 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/health/ops-alerts "HTTP/1.1 403 Forbidden"
+ok
+test_health_ready_blocks_when_default_translation_mode_requires_missing_client (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_blocks_when_default_translation_mode_requires_missing_client) ... ok
+test_health_ready_marks_translation_unavailable_when_provider_disabled (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_marks_translation_unavailable_when_provider_disabled) ... ok
+test_health_ready_blocks_when_callback_uid_missing (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_blocks_when_callback_uid_missing) ... ok
+test_document_job_mineru_callback_queues_before_worker_completes_parse (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_mineru_callback_queues_before_worker_completes_parse) ... 2026-11-06 16:01:49,366 | access | INFO | [trace_id=714f2fbbf1034bfab5d0a597a8fc66df method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.9]
+2026-11-06 16:01:49,366 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:49,367 | access | INFO | [trace_id=0b10e7b7f1e04acf9229bc1b98317e2d method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.1]
+2026-11-06 16:01:49,367 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:49,369 | access | INFO | [trace_id=1513b82be2dc43d29882d84855ca79d6 method=PUT path=/api/v1/files/file_fa4099d45e90/content status_code=201 duration_ms=1.4]
+2026-11-06 16:01:49,369 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_fa4099d45e90/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:49,373 | access | INFO | [trace_id=7637dc78de8044aab3217a1e20a9ed58 method=POST path=/api/v1/document-jobs status_code=201 duration_ms=4.1]
+2026-11-06 16:01:49,373 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:49,375 | access | INFO | [trace_id=90ebe881737a42198def9c91c7cbb4b7 method=POST path=/api/v1/mineru-callbacks/result status_code=200 duration_ms=1.2]
+2026-11-06 16:01:49,375 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/mineru-callbacks/result "HTTP/1.1 200 OK"
+2026-11-06 16:01:49,376 | access | INFO | [trace_id=27fb02ef9705441d9afbb4f924fc04f4 method=GET path=/api/v1/document-jobs/docjob_0ded4ccecf31 status_code=200 duration_ms=0.8]
+2026-11-06 16:01:49,376 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/document-jobs/docjob_0ded4ccecf31 "HTTP/1.1 200 OK"
+2026-11-06 16:01:49,377 | access | INFO | [trace_id=70e7812e9adf4613a840b30de84e7f63 method=GET path=/api/v1/document-jobs/docjob_0ded4ccecf31/callback-messages/summary status_code=200 duration_ms=0.7]
+2026-11-06 16:01:49,377 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/document-jobs/docjob_0ded4ccecf31/callback-messages/summary "HTTP/1.1 200 OK"
+2026-11-06 16:01:49,377 | access | INFO | [trace_id=51d67ec1aafa4a458440ab6dc261e4e4 method=GET path=/api/v1/health/metrics status_code=200 duration_ms=0.6]
+2026-11-06 16:01:49,378 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/health/metrics "HTTP/1.1 200 OK"
+2026-11-06 16:01:49,379 | business | INFO | [trace_id=90ebe881737a42198def9c91c7cbb4b7 job_id=docjob_0ded4ccecf31 stage=parsing status=parsed] mineru_raw_result_file_id=file_7cbfda3a85a7
+2026-11-06 16:01:49,382 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:49,382 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:49,382 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:49,382 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:49,386 | business | INFO | [trace_id=trace_callback_worker job_id=docjob_0ded4ccecf31 stage=ir_converting status=rendering] document_ir_file_id=file_c6fcae642b46 image_assets=1
+2026-11-06 16:01:49,617 | access | INFO | [trace_id=bd64a9a3cdfd4779b1cfc8dcde2872b2 method=GET path=/api/v1/document-jobs/docjob_0ded4ccecf31 status_code=200 duration_ms=1.6]
+2026-11-06 16:01:49,618 | httpx | INFO | HTTP Request: GET http://testserver/api/v1/document-jobs/docjob_0ded4ccecf31 "HTTP/1.1 200 OK"
+ok
+test_document_job_mineru_callback_dedupes_duplicate_delivery_before_worker (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_mineru_callback_dedupes_duplicate_delivery_before_worker) ... 2026-11-06 16:01:49,723 | access | INFO | [trace_id=5da0b7ae194c4e95b59f0a012f092608 method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.9]
+2026-11-06 16:01:49,723 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:49,725 | access | INFO | [trace_id=97ef362a33314d4da325c15907801f4d method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.1]
+2026-11-06 16:01:49,725 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:49,726 | access | INFO | [trace_id=bb8a6fd6f94b472282dbde05a82f2f39 method=PUT path=/api/v1/files/file_53d8a7c108f0/content status_code=201 duration_ms=1.5]
+2026-11-06 16:01:49,727 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_53d8a7c108f0/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:49,731 | access | INFO | [trace_id=95fee1707b7a4b45aee3d9d9668acc29 method=POST path=/api/v1/document-jobs status_code=201 duration_ms=4.1]
+2026-11-06 16:01:49,731 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:49,732 | access | INFO | [trace_id=f3f9b5082d05429a8425c1c3e5caac5a method=POST path=/api/v1/mineru-callbacks/result status_code=200 duration_ms=0.8]
+2026-11-06 16:01:49,732 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/mineru-callbacks/result "HTTP/1.1 200 OK"
+2026-11-06 16:01:49,733 | access | INFO | [trace_id=06b7d72f7e1b48a48498b891ad0db12d method=POST path=/api/v1/mineru-callbacks/result status_code=200 duration_ms=0.6]
+2026-11-06 16:01:49,733 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/mineru-callbacks/result "HTTP/1.1 200 OK"
+2026-11-06 16:01:49,735 | business | INFO | [trace_id=f3f9b5082d05429a8425c1c3e5caac5a job_id=docjob_23ba042f33dd stage=parsing status=parsed] mineru_raw_result_file_id=file_abd7c5ad0a89
+2026-11-06 16:01:49,738 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:49,738 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:49,738 | PIL.PngImagePlugin | DEBUG | STREAM b'IHDR' 16 13
+2026-11-06 16:01:49,738 | PIL.PngImagePlugin | DEBUG | STREAM b'IDAT' 41 10
+2026-11-06 16:01:49,742 | business | INFO | [trace_id=trace_duplicate_callback job_id=docjob_23ba042f33dd stage=ir_converting status=rendering] document_ir_file_id=file_283dba7b1e87 image_assets=1
+ok
+test_document_job_worker_ignores_queued_callback_after_cancel (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_worker_ignores_queued_callback_after_cancel) ... 2026-11-06 16:01:50,122 | access | INFO | [trace_id=4264e6aa7f3d4cfd9ebb35b4928469b2 method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.0]
+2026-11-06 16:01:50,122 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:50,124 | access | INFO | [trace_id=f29d1894d7e44871ac4687f4ec3ea0ac method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.3]
+2026-11-06 16:01:50,124 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:50,125 | access | INFO | [trace_id=9c01ce26f4814757a296398730ecca60 method=PUT path=/api/v1/files/file_064992cf226b/content status_code=201 duration_ms=1.5]
+2026-11-06 16:01:50,126 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_064992cf226b/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:50,130 | access | INFO | [trace_id=3f4556cbb5dc49f2abcf4086591c8152 method=POST path=/api/v1/document-jobs status_code=201 duration_ms=4.2]
+2026-11-06 16:01:50,130 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:50,131 | access | INFO | [trace_id=a5c49f17b3214a1686502da33264f95b method=POST path=/api/v1/mineru-callbacks/result status_code=200 duration_ms=0.8]
+2026-11-06 16:01:50,131 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/mineru-callbacks/result "HTTP/1.1 200 OK"
+2026-11-06 16:01:50,133 | access | INFO | [trace_id=1a6b4ed463204c1487da182801ec3875 method=POST path=/api/v1/document-jobs/docjob_180d32b5b811/cancel status_code=200 duration_ms=1.4]
+2026-11-06 16:01:50,133 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs/docjob_180d32b5b811/cancel "HTTP/1.1 200 OK"
+ok
+test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed) ... 2026-11-06 16:01:50,242 | access | INFO | [trace_id=5cc730285875455f9869ba69c763f58c method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.9]
+2026-11-06 16:01:50,242 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:50,243 | access | INFO | [trace_id=3924137aeac64ea6b5ede1cf72bf0af0 method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.2]
+2026-11-06 16:01:50,243 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:50,245 | access | INFO | [trace_id=26ec6508c1e542389ea34514d3ca36f4 method=PUT path=/api/v1/files/file_b87842c757c9/content status_code=201 duration_ms=1.5]
+2026-11-06 16:01:50,245 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_b87842c757c9/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:50,246 | access | INFO | [trace_id=2dc5b73f8b2548ba947bc184ea2ed553 method=POST path=/api/v1/document-jobs status_code=503 duration_ms=1.0]
+2026-11-06 16:01:50,246 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 503 Service Unavailable"
+ERROR
+test_document_job_invalid_callback_checksum_leaves_no_callback_message (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_invalid_callback_checksum_leaves_no_callback_message) ... 2026-11-06 16:01:50,391 | access | INFO | [trace_id=0fdd5ef2469c45cab93e919cf2041c98 method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.0]
+2026-11-06 16:01:50,392 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/auth/login "HTTP/1.1 200 OK"
+2026-11-06 16:01:50,393 | access | INFO | [trace_id=e61b15ca807a49a2a956e89136b4ffc1 method=POST path=/api/v1/files/upload-url status_code=201 duration_ms=1.2]
+2026-11-06 16:01:50,393 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/files/upload-url "HTTP/1.1 201 Created"
+2026-11-06 16:01:50,395 | access | INFO | [trace_id=313407365ebf40bc982e20a1b769eb08 method=PUT path=/api/v1/files/file_eef6831eadfd/content status_code=201 duration_ms=1.5]
+2026-11-06 16:01:50,395 | httpx | INFO | HTTP Request: PUT http://testserver/api/v1/files/file_eef6831eadfd/content "HTTP/1.1 201 Created"
+2026-11-06 16:01:50,399 | access | INFO | [trace_id=bf7cce254f0d48a0a328d4345e9da2f7 method=POST path=/api/v1/document-jobs status_code=201 duration_ms=4.1]
+2026-11-06 16:01:50,399 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/document-jobs "HTTP/1.1 201 Created"
+2026-11-06 16:01:50,400 | access | INFO | [trace_id=a9c7dea5859c49b38e1db4e85cff7fe2 method=POST path=/api/v1/mineru-callbacks/result status_code=403 duration_ms=0.5]
+2026-11-06 16:01:50,400 | httpx | INFO | HTTP Request: POST http://testserver/api/v1/mineru-callbacks/result "HTTP/1.1 403 Forbidden"
+ok
+
+======================================================================
+ERROR: test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 9207, in test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed
+    job_id = create_response.json()["job_id"]
+             ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+KeyError: 'job_id'
+
+======================================================================
+FAIL: test_health_ready_blocks_p0_document_jobs_in_production_when_required_config_missing (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_blocks_p0_document_jobs_in_production_when_required_config_missing)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 1668, in test_health_ready_blocks_p0_document_jobs_in_production_when_required_config_missing
+    self.assertIn("mineru_callback_url_missing", checks["p0_document_jobs_blockers"])
+AssertionError: 'mineru_callback_url_missing' not found in ['document_jobs_worker_backend_disabled', 'document_jobs_metadata_store_not_mysql', 'auth_jwt_secret_key_missing', 'auth_internal_users_source_missing', 'mineru_api_token_missing']
+
+----------------------------------------------------------------------
+Ran 26 tests in 7.055s
+
+FAILED (failures=1, errors=1)

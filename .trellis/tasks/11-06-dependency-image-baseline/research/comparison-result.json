@@ -1,0 +1,13 @@
+{
+  "runtime_count": 57,
+  "normalized_locks_equal": true,
+  "installed_sets_equal": true,
+  "source_hashes_match": true,
+  "tools": {
+    "pip": "24.0",
+    "setuptools": "79.0.1"
+  },
+  "pip_version": "24.0",
+  "lock_sha256": "09676451b4382e8e443668a34be93e456345d39db2e06117205aa1056e623526",
+  "requirements_sha256": "fb15812d47bbaa988d1b7007906eec453bae37aba4871f9160c4faa5d2db2540"
+}
