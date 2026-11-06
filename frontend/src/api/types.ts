@@ -1489,9 +1489,9 @@ export type DocumentJobResourceSnapshot = {
   artifact_ids?: Record<string, string>;
 };
 
-/** 当前代 MinerU 验证失败定位；页码 1 起始，文档级问题 page_number 为 null。 */
+/** 当前代 MinerU 验证、渲染或表格占位失败定位；页码 1 起始，文档级问题 page_number 为 null。 */
 export type DocumentJobFailureDiagnostic = {
-  source: "mineru_validation" | "render_operation";
+  source: "mineru_validation" | "render_operation" | "table_placeholder";
   stage: string;
   scope: "page" | "document";
   page_number: number | null;
@@ -1503,7 +1503,7 @@ export type DocumentJobFailureDiagnostic = {
   fatal_count: number;
   warning_count: number;
   details_truncated: boolean;
-  /** 渲染来源时为失败操作涉及的块 ID 与操作类型；旧响应可能缺失。 */
+  /** 失败操作涉及的块 ID 与操作类型；旧响应可能缺失。 */
   block_ids?: string[];
   operation_kind?: string | null;
   /** 源 PDF 总页数；旧响应可能缺失。content_blocks 依据下只能当下限。 */

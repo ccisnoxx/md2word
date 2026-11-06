@@ -797,7 +797,7 @@ def _type_counts(value):
 
 
 FAILURE_OPERATION_KINDS = frozenset({"section", "configure_page", "decoration", "block", "image_pair", "column_break",
-                                     "logical_table", "table_prepare", "layout_plan", "table_plan", "render_plan"})
+                                     "logical_table", "table_prepare", "layout_plan", "table_plan", "render_plan", "table_placeholder"})
 FAILURE_REASON_CODES = frozenset({
     "table_render_input", "table_render_geometry", "table_render_failed", "table_build_limit", "table_html_encoding",
     "table_html_unsupported_structure", "table_placeholder_crop_failed", "table_placeholder_geometry_invalid",
@@ -809,7 +809,7 @@ FAILURE_ID_RE = re.compile(r"[A-Za-z0-9:_-]{1,120}")
 
 
 def _safe_failure_context(value: Any) -> dict[str, Any] | None:
-    """渲染失败定位逐字段白名单；原因码只接受固定错误码、受控质量标记或异常类型名，不收异常正文。"""
+    """失败操作定位逐字段白名单；原因码只接受固定错误码、受控质量标记或异常类型名，不收异常正文。"""
     if not isinstance(value, dict) or value.get("operation_kind") not in FAILURE_OPERATION_KINDS:
         return None
     reason = value.get("reason_code")

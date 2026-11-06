@@ -49,6 +49,18 @@ describe("任务概览真实组件渲染", () => {
     expect(html).not.toContain("block_0001");
   });
 
+  it("表格占位失败显示转换原因及实际片段源页", async () => {
+    const html = await renderOverview({ failed_stage: "ir_converting", error_code: "document_ir_failed",
+      failure_diagnostic: diagnostic({ source: "table_placeholder", stage: "ir_converting",
+        operation_kind: "table_placeholder", reason_code: "table_placeholder_geometry_invalid",
+        page_number: 2, affected_page_numbers: [2] }),
+    });
+    expect(html).toContain("表格占位区域无效");
+    expect(html).toContain("首个失败位置：源 PDF 第 2 页");
+    expect(html).not.toContain("源 PDF 第 1 页");
+    expect(html).not.toContain("block_0001");
+  });
+
   it.each([null, undefined])("旧响应诊断为 %s 时明确未记录页码", async (failure_diagnostic) => {
     const html = await renderOverview({ failure_diagnostic, error_message: "Worker 执行发生未预期异常。" });
     expect(html).toContain("具体原因尚未识别");

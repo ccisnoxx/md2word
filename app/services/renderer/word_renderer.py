@@ -19,6 +19,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Mm, Twips
 
 from app.conversion.docx_rules.terminology import TerminologyReplacer
+from app.services.failure_context import FAILURE_CONTEXT_ATTRIBUTE, attach_failure_context
 from app.services.document_ir.integrity import build_page_counts
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
 from app.services.renderer.image_renderer import WordImageRendererMixin
@@ -79,15 +80,6 @@ class _RenderContext:
     placeholders: list[Any] = field(default_factory=list)
     assets: dict[str, Any] = field(default_factory=dict)
     image_loader: Any = None
-
-
-FAILURE_CONTEXT_ATTRIBUTE = "md2word_failure_context"
-
-
-def attach_failure_context(error: BaseException, **context: Any) -> None:
-    """把渲染操作定位挂到异常上；已有（更内层）上下文时保留原值。执行层只读取并白名单过滤。"""
-    if getattr(error, FAILURE_CONTEXT_ATTRIBUTE, None) is None:
-        setattr(error, FAILURE_CONTEXT_ATTRIBUTE, context)
 
 
 def _source_page_context(document_ir: DocumentIR) -> dict[str, Any]:

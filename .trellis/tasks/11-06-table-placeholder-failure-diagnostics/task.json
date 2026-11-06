@@ -1,0 +1,31 @@
+{
+  "id": "table-placeholder-failure-diagnostics",
+  "name": "table-placeholder-failure-diagnostics",
+  "title": "补齐表格占位失败原因与源页诊断",
+  "description": "补齐表格占位异常源片段定位，避免通过的MinerU报告遮蔽失败上下文；同步诊断API与现有页面展示。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "failure-diagnostics",
+  "package": null,
+  "priority": "P2",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-11-06",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "app/services/document_ir/table_placeholder.py",
+    "app/domains/document_jobs/failure_diagnostic.py",
+    "app/services/renderer/evidence.py",
+    "frontend/src/utils/failureDiagnostic.ts"
+  ],
+  "notes": "2026-11-06 实施与独立复核完成，见 validation-implementation.md / validation-review.md。诊断安全34项、成功降级23项、前端27项、vue-tsc及OpenAPI比对通过；6项误收集历史夹具失败另行保留。代码未提交，任务等待后续提交收尾；不推送/部署/重试生产任务。",
+  "meta": {}
+}

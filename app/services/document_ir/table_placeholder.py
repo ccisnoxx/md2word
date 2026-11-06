@@ -12,6 +12,8 @@ import warnings
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services.failure_context import attach_failure_context
+
 VERSION = "table-placeholder/v1"
 BLOCKER = "table_noneditable_placeholder"
 LABEL = "表格非编辑占位；质量阻塞，不可交付"
@@ -136,6 +138,7 @@ def binding_identity(binding: TablePlaceholderBinding) -> str:
 def prepare_placeholders(document, references, *, source_loader: Callable[[], PdfCropSource] | None,
                          crop_provider: PdfTableCropProvider | None) -> list[PlaceholderAsset]:
     """仅对可信账本的 missing/empty 片段准备绑定；安全输入错误已由 IR-201 先验拒绝。"""
+    from app.services.document_ir.integrity import build_page_counts
     from app.services.document_ir.models import DocumentIRAsset
     from app.services.document_ir.table_reference_assets import decode_table_references
 
@@ -143,8 +146,15 @@ def prepare_placeholders(document, references, *, source_loader: Callable[[], Pd
     needed = [item for item in decoded.values() if item.fragment.html_state in {"missing", "empty"}]
     if not needed:
         return []
+    counts = build_page_counts(document) or {}
+    document_context = {
+        "operation_kind": "table_placeholder", "block_ids": [], "source_page_index": None,
+        "source_page_count": counts.get("source_page_count"), "page_count_basis": counts.get("page_count_basis"),
+    }
     if len(needed) > MAX_PLACEHOLDERS:
-        raise TablePlaceholderError("table_placeholder_source_unavailable")
+        error = TablePlaceholderError("table_placeholder_source_unavailable")
+        attach_failure_context(error, **document_context)
+        raise error
     pages = {page.index: page for page in document.pages}
     source = None
     pending = []
@@ -153,60 +163,77 @@ def prepare_placeholders(document, references, *, source_loader: Callable[[], Pd
     for item in needed:
         fragment = item.fragment
         span = fragment.source_span
-        frame = None
-        pdf_hash = None
-        if item.asset is not None:
-            reference = references[span.json_pointer]
-            content = reference.image.content
-            validate_image(content)
-            asset_ref = item.asset.id
-            source_kind = "mineru_reference"
-            provider = "mineru-reference/v1"
-        else:
-            if source_loader is None or crop_provider is None:
-                raise TablePlaceholderError("table_placeholder_source_unavailable")
-            if source is None:
-                source = source_loader()
-                if (source.file_id != document.metadata.source_file_id or
-                        checksum(source.content) != source.checksum_sha256):
-                    raise TablePlaceholderError("table_placeholder_integrity_failed")
-            page = pages.get(span.page_index)
-            raw_size = page.metadata.get("pdf_page_size") if page is not None else None
-            if page is not None and page.metadata.get("page_size_source") and isinstance(raw_size, list) and len(raw_size) == 2:
-                frame = tuple(raw_size)
-            # 来源 bbox 是 MinerU 原始坐标（通常为 0–1000 归一化），裁切只接受换算后的 PDF 点；无法确认坐标空间时失败关闭。
-            # 绑定仍记录原始 span.bbox，解码时与来源片段逐值核对。
-            from app.services.document_ir.layout_signals import pdf_point_bbox
-            crop_box = pdf_point_bbox(span.bbox, page)
-            validate_geometry(span.page_index, crop_box, frame)
-            result = crop_provider.crop(PdfCropRequest(source, span.page_index, crop_box, frame))
-            if result.frame != frame or result.provider != "poppler-pdftoppm/v1":
-                raise TablePlaceholderError("table_placeholder_geometry_invalid")
-            content = result.content
-            validate_image(content)
-            pdf_hash = source.checksum_sha256
-            source_kind, provider = "source_pdf_crop", result.provider
-            asset_ref = "table-placeholder:" + canonical_hash([VERSION, fragment.fragment_id, pdf_hash, span.bbox, frame, checksum(content)])[7:]
-            document.assets = [asset for asset in document.assets if asset.id != asset_ref]
-            document.assets.append(DocumentIRAsset(id=asset_ref, kind="image", source_path="derived/table-placeholder.png",
-                                                   mime_type="image/png", checksum_sha256=checksum(content)))
-            pending.append(PlaceholderAsset(asset_ref, content, "image/png"))
-        total += len(content)
-        if total > MAX_TOTAL_BYTES:
-            raise TablePlaceholderError("table_placeholder_source_unavailable")
-        binding = TablePlaceholderBinding(
-            placeholder_id="pending", job_id=document.metadata.job_id, fragment_id=fragment.fragment_id, logical_group_id=item.logical_group_id,
-            owner_block_id=item.block_id, content_list_sha256=document.metadata.mineru_validation.content_list_sha256,
-            fragment_sha256=canonical_hash(fragment.raw_fragment), html_state=fragment.html_state,
-            asset_ref=asset_ref, asset_sha256=checksum(content), source_kind=source_kind,
-            source_file_id=document.metadata.source_file_id, source_pdf_sha256=pdf_hash,
-            page_index=span.page_index, bbox=span.bbox, frame=frame, provider=provider,
-        )
-        binding.placeholder_id = binding_identity(binding)
-        bindings.append(binding)
+        try:
+            frame = None
+            pdf_hash = None
+            if item.asset is not None:
+                reference = references[span.json_pointer]
+                content = reference.image.content
+                validate_image(content)
+                asset_ref = item.asset.id
+                source_kind = "mineru_reference"
+                provider = "mineru-reference/v1"
+            else:
+                if source_loader is None or crop_provider is None:
+                    raise TablePlaceholderError("table_placeholder_source_unavailable")
+                if source is None:
+                    try:
+                        source = source_loader()
+                        if (source.file_id != document.metadata.source_file_id or
+                                checksum(source.content) != source.checksum_sha256):
+                            raise TablePlaceholderError("table_placeholder_integrity_failed")
+                    except TablePlaceholderError as error:
+                        # 加载器也会核验整份源文件的身份与 hash；不能归到当前片段页。
+                        attach_failure_context(error, **document_context)
+                        raise
+                page = pages.get(span.page_index)
+                raw_size = page.metadata.get("pdf_page_size") if page is not None else None
+                if page is not None and page.metadata.get("page_size_source") and isinstance(raw_size, list) and len(raw_size) == 2:
+                    frame = tuple(raw_size)
+                # 来源 bbox 是 MinerU 原始坐标（通常为 0–1000 归一化），裁切只接受换算后的 PDF 点；无法确认坐标空间时失败关闭。
+                # 绑定仍记录原始 span.bbox，解码时与来源片段逐值核对。
+                from app.services.document_ir.layout_signals import pdf_point_bbox
+                crop_box = pdf_point_bbox(span.bbox, page)
+                validate_geometry(span.page_index, crop_box, frame)
+                result = crop_provider.crop(PdfCropRequest(source, span.page_index, crop_box, frame))
+                if result.frame != frame or result.provider != "poppler-pdftoppm/v1":
+                    raise TablePlaceholderError("table_placeholder_geometry_invalid")
+                content = result.content
+                validate_image(content)
+                pdf_hash = source.checksum_sha256
+                source_kind, provider = "source_pdf_crop", result.provider
+                asset_ref = "table-placeholder:" + canonical_hash([VERSION, fragment.fragment_id, pdf_hash, span.bbox, frame, checksum(content)])[7:]
+                document.assets = [asset for asset in document.assets if asset.id != asset_ref]
+                document.assets.append(DocumentIRAsset(id=asset_ref, kind="image", source_path="derived/table-placeholder.png",
+                                                       mime_type="image/png", checksum_sha256=checksum(content)))
+                pending.append(PlaceholderAsset(asset_ref, content, "image/png"))
+            total += len(content)
+            if total > MAX_TOTAL_BYTES:
+                error = TablePlaceholderError("table_placeholder_source_unavailable")
+                attach_failure_context(error, **document_context)
+                raise error
+            binding = TablePlaceholderBinding(
+                placeholder_id="pending", job_id=document.metadata.job_id, fragment_id=fragment.fragment_id, logical_group_id=item.logical_group_id,
+                owner_block_id=item.block_id, content_list_sha256=document.metadata.mineru_validation.content_list_sha256,
+                fragment_sha256=canonical_hash(fragment.raw_fragment), html_state=fragment.html_state,
+                asset_ref=asset_ref, asset_sha256=checksum(content), source_kind=source_kind,
+                source_file_id=document.metadata.source_file_id, source_pdf_sha256=pdf_hash,
+                page_index=span.page_index, bbox=span.bbox, frame=frame, provider=provider,
+            )
+            binding.placeholder_id = binding_identity(binding)
+            bindings.append(binding)
+        except TablePlaceholderError as error:
+            # 跨页片段的 render owner 可能在首页，定位必须取实际来源 span。
+            attach_failure_context(error, **{**document_context, "block_ids": [item.block_id],
+                                             "source_page_index": span.page_index})
+            raise
     document.metadata.table_placeholders_version = VERSION
     document.metadata.table_placeholders = bindings
-    decode_placeholders(document)
+    try:
+        decode_placeholders(document)
+    except TablePlaceholderError as error:
+        attach_failure_context(error, **document_context)
+        raise
     return pending
 
 

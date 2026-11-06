@@ -120,7 +120,7 @@ export function failureDiagnosticLines(
   }
   if (includeTechnicalDetails) {
     lines.push(`诊断原因码：${diagnostic.reason_code}${diagnostic.reason ? ` / ${diagnostic.reason}` : ""}`);
-    const location = diagnostic.source === "render_operation"
+    const location = diagnostic.source === "render_operation" || diagnostic.source === "table_placeholder"
       ? [diagnostic.block_ids?.length ? `块 ${diagnostic.block_ids.join("、")}` : null,
         diagnostic.operation_kind ? `操作 ${diagnostic.operation_kind}` : null].filter(Boolean).join("，")
       : [diagnostic.source_type, diagnostic.json_pointer].filter(Boolean).join("，");

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # 文件：app/domains/document_jobs/failure_diagnostic.py
-# 用途：从当前代 stage_failed 事件的已脱敏 MinerU 验证报告或渲染失败上下文投影失败定位，供详情与异常中心共用。
+# 用途：从当前代 stage_failed 事件的已脱敏 MinerU 验证报告或失败操作上下文投影失败定位，供详情与异常中心共用。
 
 from collections.abc import Iterable
 from typing import Any
@@ -28,14 +28,14 @@ def project_failure_diagnostic(
     if event is None:
         return None
     if not isinstance(event.payload.get("mineru_validation"), dict):
-        return _project_render_failure(event)
+        return _project_operation_failure(event)
     report = event.payload["mineru_validation"]
     first = report.get("first_fatal")
     if report.get("can_convert") is not False or not isinstance(first, dict):
-        return None
+        return _project_operation_failure(event)
     code = _text(first.get("code"))
     if code is None:
-        return None
+        return _project_operation_failure(event)
     page_index = _non_negative_int(first.get("page_index"))
     affected = {page_index} if page_index is not None else set()
     blockers = report.get("blockers")
@@ -65,16 +65,18 @@ def project_failure_diagnostic(
     )
 
 
-def _project_render_failure(event: DocumentJobEventRecord) -> DocumentJobFailureDiagnosticResponse | None:
-    """渲染操作定位：一次失败只对应一个操作；无源页的操作（如页眉页脚装饰）按文档级展示。"""
-    context = event.payload["failure_context"]
+def _project_operation_failure(event: DocumentJobEventRecord) -> DocumentJobFailureDiagnosticResponse | None:
+    """一次失败只对应一个操作；无可信源页的操作按文档级展示。"""
+    context = event.payload.get("failure_context")
+    if not isinstance(context, dict):
+        return None
     code = _text(context.get("reason_code"))
     if code is None:
         return None
     page_index = _non_negative_int(context.get("source_page_index"))
     block_ids = context.get("block_ids")
     return DocumentJobFailureDiagnosticResponse(
-        source="render_operation",
+        source="table_placeholder" if context.get("operation_kind") == "table_placeholder" else "render_operation",
         stage=event.stage,
         scope="document" if page_index is None else "page",
         page_number=None if page_index is None else page_index + 1,

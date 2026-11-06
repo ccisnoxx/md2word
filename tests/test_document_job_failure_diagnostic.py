@@ -94,6 +94,31 @@ class ProjectFailureDiagnosticTests(TestCase):
             with self.subTest(name):
                 self.assertIsNone(project_failure_diagnostic(job, events))
 
+    def test_nonfatal_or_incomplete_report_falls_back_to_same_event_context(self):
+        context = {"operation_kind": "table_placeholder", "reason_code": "table_placeholder_geometry_invalid",
+                   "block_ids": ["block_0001"], "source_page_index": 0}
+        for report in (None, {"can_convert": True, "first_fatal": IMAGE_ISSUE},
+                       {"can_convert": False, "first_fatal": None},
+                       {"can_convert": False, "first_fatal": {"page_index": 8}}):
+            with self.subTest(report=report):
+                result = project_failure_diagnostic(self.job, [_event({
+                    "retry_count": 1, "mineru_validation": report, "failure_context": context})])
+                self.assertEqual((result.source, result.page_number), ("table_placeholder", 1))
+        result = project_failure_diagnostic(self.job, [_event({
+            "retry_count": 1, "mineru_validation": _report(IMAGE_ISSUE), "failure_context": context})])
+        self.assertEqual((result.source, result.page_number), ("mineru_validation", 13))
+
+    def test_placeholder_context_obeys_generation_and_existing_event_selection(self):
+        context = {"operation_kind": "table_placeholder", "reason_code": "table_placeholder_geometry_invalid",
+                   "block_ids": ["block_0001"], "source_page_index": 0}
+        for generation in (0, None, True):
+            with self.subTest(generation=generation):
+                self.assertIsNone(project_failure_diagnostic(self.job, [_event({
+                    "retry_count": generation, "failure_context": context})]))
+        previous = _event({"retry_count": 1, "failure_context": context}, age=5)
+        latest = _event({"retry_count": 1, "mineru_validation": {"can_convert": True}})
+        self.assertIsNone(project_failure_diagnostic(self.job, [previous, latest]))
+
     def test_malformed_fields_are_narrowed_not_trusted(self):
         first = {"code": "invalid_image_asset", "page_index": -1, "source_type": 7, "json_pointer": ["x"],
                  "facts": {"reason": {"nested": True}}}
