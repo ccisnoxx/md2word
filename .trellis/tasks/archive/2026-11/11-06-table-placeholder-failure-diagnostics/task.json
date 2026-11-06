@@ -3,7 +3,7 @@
   "name": "table-placeholder-failure-diagnostics",
   "title": "补齐表格占位失败原因与源页诊断",
   "description": "补齐表格占位异常源片段定位，避免通过的MinerU报告遮蔽失败上下文；同步诊断API与现有页面展示。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "failure-diagnostics",
   "package": null,
@@ -11,12 +11,12 @@
   "creator": "777",
   "assignee": "777",
   "createdAt": "2026-11-06",
-  "completedAt": null,
+  "completedAt": "2026-11-06",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
-  "pr_url": null,
+  "commit": "af33c9401f1b71db6fe7dd509fe599fde714f57f",
+  "pr_url": "https://github.com/ccisnoxx/md2word/pull/32",
   "subtasks": [],
   "children": [],
   "parent": null,
@@ -26,6 +26,6 @@
     "app/services/renderer/evidence.py",
     "frontend/src/utils/failureDiagnostic.ts"
   ],
-  "notes": "2026-11-06 实施与独立复核完成，见 validation-implementation.md / validation-review.md。诊断安全34项、成功降级23项、前端27项、vue-tsc及OpenAPI比对通过；6项误收集历史夹具失败另行保留。代码未提交，任务等待后续提交收尾；不推送/部署/重试生产任务。",
+  "notes": "2026-11-06 实施、独立复核、提交推送及线上验收完成。PR #32 已合并；API/Worker/前端运行 28cacd8a。仅重试一个历史占位失败任务，实际失败原因和源 PDF 第53页在三处页面显示一致；事件与原始片段核对通过。详见 deployment.md。",
   "meta": {}
 }

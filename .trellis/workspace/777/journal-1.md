@@ -1579,3 +1579,25 @@ Worker 失败消息只保留固定码构造的消息，其余输出异常类型�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 48: 表格占位失败诊断上线与真实任务验收
+
+**Date**: 2026-11-06
+**Task**: 表格占位失败诊断上线与真实任务验收
+**Branch**: `codex/table-placeholder-deploy-record`
+
+### Summary
+
+完成表格占位失败上下文、源页定位及前端适配；定向检查与独立复核通过。PR #32 合并并在 hostdzire 部署 28cacd8a，API/Worker 镜像一致且公网健康正常。仅重试 docjob_914c18d077b8 一次，三处页面显示表格占位区域无效及源 PDF 第53页，与新事件和原始解析片段一致。部署首次过早检查 Worker 触发自动回滚，调整等待后使用同一制品完成；MySQL/Redis 未重建。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `af33c940` | (see git log) |
+| `fdd12f91` | (see git log) |
+
+### Status
+
+[OK] **Completed**
