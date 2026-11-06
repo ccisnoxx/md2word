@@ -10,6 +10,7 @@ from typing import Callable
 from uuid import uuid4
 
 from app.clients.mineru_client import MinerUClient
+from app.clients.mineru_result_url import validate_mineru_result_url
 from app.conversion.contracts import ConversionEntrypoint, ConversionFailure
 from app.conversion.entrypoint import build_job_conversion_request
 from app.core.config import Settings
@@ -34,7 +35,6 @@ from app.domains.jobs.workflow import (
 from app.domains.jobs.models import ConversionOptions, JobRecord, JobStageMessage, JobStageName, utc_now
 from app.domains.mineru.config import EffectiveMinerUConfig
 from app.domains.jobs.paths import build_job_paths
-from app.domains.jobs.mineru_callback import validate_mineru_result_url
 from app.domains.translation.models import TranslationProfileSnapshot
 from app.domains.jobs.repository import (
     JobEventRepositoryProtocol,
@@ -798,6 +798,7 @@ class JobStageService:
             raise RuntimeError("MINERU_API_TOKEN 未配置，无法调用 MinerU。")
         return MinerUClient(
             api_token=config.api_token,
+            result_host_allowlist=self.settings.allowed_mineru_result_hosts,
             model_version=model_version or self.settings.mineru_model_version,
             user_token=config.uid or "",
         )

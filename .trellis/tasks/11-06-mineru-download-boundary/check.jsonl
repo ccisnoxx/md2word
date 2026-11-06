@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "客户端层拥有共享校验，两个业务工厂注入配置，避免 clients 反向依赖 domains"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "保留 HTTP 400、MinerUError、mineru_failed 和 legacy 错误码；下载边界脱敏"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "禁止下载 URL/query/userinfo/凭据及原始异常链泄漏"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "只选当前边界的定向验证；用户禁止 CI、全量测试与聚合发布检查"}
+{"file": ".trellis/spec/backend/runtime-configuration.md", "reason": "两个工厂继续使用既有配置 resolver；不改账号密钥与环境优先级"}
+{"file": ".trellis/tasks/11-06-mineru-download-boundary/research/current-state.md", "reason": "真实构造和下载入口、状态边界及 fake 客户端覆盖缺口"}
+{"file": ".trellis/tasks/11-06-mineru-download-boundary/research/upstream.md", "reason": "公开 Session.send 选择依据、重定向/环境/依赖边界"}

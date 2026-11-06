@@ -4133,6 +4133,7 @@ class DocumentJobExecutionService:
             raise RuntimeError("MINERU_API_TOKEN 未配置，无法提交 MinerU。")
         return MinerUClient(
             api_token=config.api_token,
+            result_host_allowlist=self.settings.allowed_mineru_result_hosts,
             model_version=self.settings.mineru_model_version,
             user_token=config.uid or "",
         )

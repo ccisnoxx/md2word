@@ -7,13 +7,15 @@ source_files:
   - app/api/v1/router.py
   - app/domains/jobs/mineru_callbacks_router.py
   - app/api/dependencies.py
-  - app/domains/jobs/mineru_callback.py
+  - app/api/mineru_callback_guards.py
+  - app/clients/mineru_result_url.py
+  - app/clients/mineru_client.py
   - app/domains/document_jobs/execution.py
   - app/domains/document_jobs/schemas.py
   - app/core/config.py
 summary: MinerU callback API 提供 document_jobs 的 callback ingress、payload 归一化、checksum 验签和结果 URL 安全校验。
 tags: [mineru, callback, api, guards]
-last_reviewed: 2026-06-10
+last_reviewed: 2026-11-06
 ---
 
 ## 概述
@@ -113,7 +115,14 @@ MINERU_UID=...
 
 - scheme 是 `https`
 - host 存在
-- host 命中 `MINERU_RESULT_HOST_ALLOWLIST`
+- host 精确命中 `MINERU_RESULT_HOST_ALLOWLIST`，或为其中某一 host 的点分隔子域；大小写不敏感，空名单拒绝下载
+- URL 不包含用户名或密码；合法显式端口保留，无效端口拒绝
+
+校验由 `app/clients/mineru_result_url.py` 统一提供。非法初始地址返回 `400`，不创建 callback 消息。
+
+Worker 实际下载时重新校验初始地址，并在每次请求发送前检查实际目标。允许名单内的 HTTPS 重定向（包括相对 Location），禁止跳转到 HTTP、名单外 host 或包含用户名/密码的地址；违规目标不会收到下载请求。正式主动轮询与保留的 legacy 结果恢复路径使用同一下载边界。
+
+因此 callback 返回 `200` 只表示已接受入队：若后续重定向越界，正式任务仍会在 `parsing` 阶段以 `mineru_failed` 失败，不登记成功的原始结果 ZIP。下载使用独立于 MinerU API 凭据的会话；合法签名 query 用于实际请求，但不写入应用主动记录的下载日志或异常。
 
 ### 响应
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 # app/clients/mineru_client.py: 封装 MinerU 外部集成协议，包括上传和结果 zip 下载。
 
 import logging
+from collections.abc import Sequence
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
@@ -10,9 +12,23 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from app.clients.mineru_result_url import validate_mineru_result_url
+
 
 class MinerUError(RuntimeError):
     pass
+
+
+class _MinerUResultSession(requests.Session):
+    """在真实发送边界约束首跳和 Requests 自动生成的每次跳转。"""
+
+    def __init__(self, allowed_hosts: tuple[str, ...]) -> None:
+        super().__init__()
+        self.allowed_hosts = allowed_hosts
+
+    def send(self, request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:
+        validate_mineru_result_url(request.url, self.allowed_hosts)
+        return super().send(request, **kwargs)
 
 
 class MinerUClient:
@@ -20,10 +36,18 @@ class MinerUClient:
     PATH_BATCH_UPLOAD = "/file-urls/batch"
     PATH_BATCH_RESULT = "/extract-results/batch/{batch_id}"
 
-    def __init__(self, *, api_token: str, model_version: str = "vlm", user_token: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        api_token: str,
+        result_host_allowlist: Sequence[str],
+        model_version: str = "vlm",
+        user_token: str = "",
+    ) -> None:
         if not api_token:
             raise ValueError("api_token 不能为空")
         self.api_token = api_token
+        self.result_host_allowlist = tuple(result_host_allowlist)
         self.model_version = model_version
         self.logger = logging.getLogger("system")
         self.session = requests.Session()
@@ -107,15 +131,29 @@ class MinerUClient:
         这里把远端 HTTP 获取职责放在 provider 层；stage 只负责决定何时下载、下载到哪里以及何时登记 artifact。
         """
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        response = requests.get(result_url, stream=True, timeout=300)
-        if response.status_code != 200:
-            raise MinerUError(f"下载结果 zip 失败: HTTP {response.status_code}, url={result_url}")
-        with output_path.open("wb") as handle:
-            for chunk in response.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    handle.write(chunk)
-        self.logger.info("MinerU result zip downloaded url=%s path=%s", result_url, output_path)
+        try:
+            validate_mineru_result_url(result_url, self.result_host_allowlist)
+            with _MinerUResultSession(self.result_host_allowlist) as session, ExitStack() as responses:
+                def retain_response(response: requests.Response, **kwargs: Any) -> requests.Response:
+                    # 跳转解析/读取失败时 get 尚未返回，仍须释放已取得的响应。
+                    return responses.enter_context(response)
+
+                session.hooks["response"].append(retain_response)
+                response = session.get(result_url, stream=True, timeout=300)
+                if response.status_code != 200:
+                    raise MinerUError(f"下载结果 zip 失败: HTTP {response.status_code}")
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                with output_path.open("wb") as handle:
+                    for chunk in response.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            handle.write(chunk)
+        except requests.RequestException as exc:
+            if exc.response is not None:
+                exc.response.close()
+            raise MinerUError("下载 MinerU 结果失败：网络请求或响应读取失败") from None
+        except ValueError:
+            raise MinerUError("下载 MinerU 结果失败：结果地址不符合安全策略") from None
+        self.logger.info("MinerU 结果 zip 下载完成 path=%s", output_path)
         return output_path
 
     def query_batch_extract_results(self, batch_id: str) -> dict[str, Any]:

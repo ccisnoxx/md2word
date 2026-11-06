@@ -79,6 +79,55 @@ Resource snapshot failures use `JobResourceSnapshotError`, mapped through its ow
 
 Do not duplicate workflow state checks in routers when the rule already belongs in `workflow.py` or the owning service. Existing `JobStageService` applies transitions from `app/domains/jobs/workflow.py` instead of hand-building status patches in each stage branch.
 
+## MinerU 结果下载边界
+
+### 1. 范围与触发
+
+修改结果 ZIP 下载、callback URL guard 或两条客户端工厂时应用此合同。供应商 API 返回值、已入队消息和持久化结果 URL 均须在实际下载边界检查；入队时已验证不能代替发送前校验。
+
+### 2. 签名与 owner
+
+- 唯一策略：`app/clients/mineru_result_url.py::validate_mineru_result_url(full_zip_url: str, allowed_hosts: Sequence[str]) -> None`，非法时抛安全 `ValueError`。
+- `MinerUClient(*, api_token, result_host_allowlist, model_version="vlm", user_token="")`：结果名单为必传参数，由正式与 legacy 两个工厂从 `Settings.allowed_mineru_result_hosts` 注入。
+- `download_result_zip(result_url: str, output_path: Path) -> Path`：先检查初始 URL，再由下载专用 Session 在公开 `send` 边界检查每个实际请求。
+
+### 3. 合同
+
+仅允许 HTTPS，host 精确或点分隔子域命中非空名单，拒绝 URL userinfo 和无效端口；合法端口、签名 query 保持。复用 Requests 的重定向和跳转上限，不在下载后才检查最终 response，不因越界自动放宽名单或回退旧下载器。
+
+下载 Session 不复制 API Session 的 Authorization、token、auth 或 cookie；保持标准 TLS 验证与代理/CA 环境设置。标准 trust_env/netrc 行为不变，不能把 API 凭据隔离解释为禁用所有环境凭据。
+
+最终 200 后才创建/打开输出；非法初始 URL、越界跳转和非 200 不得截断已有文件。流读取开始后的失败沿用既有临时目录/Artifact 生命周期，不能登记部分 ZIP。Session 和已持有响应须释放；不新增无限重试。
+
+### 4. 校验与错误矩阵
+
+| 场景 | 结果 |
+|---|---|
+| callback 初始 URL 非法 | 安全 ValueError → HTTP 400，不入队。 |
+| 下载策略、Requests 传输/解析/流读取或跳转上限失败 | 安全 MinerUError，抑制原始异常链；违规目标零请求。 |
+| 最终非 200 | MinerUError，可保留状态码，不含完整 URL/上游异常。 |
+| 正式 Worker 下载失败 | parsing/mineru_failed；不登记成功原始 ZIP。 |
+| legacy parsed 恢复失败 | 保持 parsed_result_download_failed。 |
+| 本地文件 OSError | 保持原错误类别，不包装为供应商错误。 |
+
+应用主动记录的下载日志、外抛错误及格式化异常链不得包含原始 URL、Location、query、userinfo 或上游异常 repr。此合同不声明依赖库 DEBUG/代理日志已全面脱敏。
+
+### 5. 正常、基线与拒绝案例
+
+- 正常：名单内源站经相对 Location 或名单内 CDN HTTPS 跳转，最终 200 字节完整写入。
+- 基线：无跳转结果仍按原分块方式下载，状态/CAS/checksum/ZIP 校验不变。
+- 拒绝：合法首跳返回名单外 Location，先前合法请求可以发生，但违规目标收到零次请求，文件和状态不能伪装成功。
+
+### 6. 定向验证
+
+`tests.test_mineru_download_boundary` 保留真实客户端和 Requests 重定向流程，只替换网络发送端；检查请求目标、字节、资源关闭、错误/日志脱敏、两个工厂及正式轮询/回调/legacy 三入口。既有 callback checksum、入队、去重、取消和 legacy 下载失败按 B03 implement.md 中指定的 5 个方法执行；不运行整个大型 backend 测试模块或发布聚合脚本。
+
+### 7. 错误与正确做法
+
+错误：入口校验一次后调用无保护的 requests.get，或下载完成后检查 response.url；越界请求已经发出。
+
+正确：初始 URL 预检，并在实际 Session.send 前调用同一策略；校验通过才交给 Requests 发送，合法跳转沿用库流程。
+
 ## DocumentJob 转换失败定位投影
 
 - 唯一读侧 owner 为 `app/domains/document_jobs/failure_diagnostic.py::project_failure_diagnostic`；只读取当前代（`payload.retry_count == job.retry_count`）最新 `stage_failed` 事件中已脱敏的 `mineru_validation`，要求 `can_convert=false` 且有 `first_fatal.code`，否则为 `null`。缺代数的历史事件不猜。
