@@ -17,8 +17,8 @@ if root_path not in sys.path:
 
 from loguru import logger
 
-from app.conversion.runtime import llm_client, translation_runtime
-from app.conversion.runtime_config import APP_CONFIG
+from app.clients.openai_sdk import DEFAULT_MODEL
+from app.core.conversion_config import APP_CONFIG
 from scripts.dev import formal_mineru_conversion
 
 
@@ -65,7 +65,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--translation-trace-output", help="Write translation trace JSON evidence.")
     parser.add_argument(
         "--translation-model",
-        default=APP_CONFIG.openai_model or llm_client.DEFAULT_MODEL,
+        default=APP_CONFIG.openai_model or DEFAULT_MODEL,
         help="Translation model for en2zh mode.",
     )
     parser.add_argument("--translation-api-key", help="Optional translation API key.")

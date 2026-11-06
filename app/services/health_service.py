@@ -18,7 +18,7 @@ from app.api.v1.routers.health_schemas import (
     HealthOpsAlertSummary,
     HealthReadyResponse,
 )
-from app.conversion.runtime import llm_client
+from app.clients import openai_sdk
 from app.core.config import Settings
 from app.infrastructure.pdf_crop import poppler_tools_available
 from app.domains.audit.repository import AuditEventRepositoryProtocol
@@ -145,7 +145,7 @@ class HealthService:
         stage_spool_counts = self.stage_message_store.count_stage_messages_by_status()
         running_observation = self._build_running_stage_observation()
         translation_provider_enabled = ai_provider_config.backend == "openai_compatible"
-        translation_client_configured = bool(ai_provider_config.api_key) and llm_client.OpenAI is not None
+        translation_client_configured = bool(ai_provider_config.api_key) and openai_sdk.OpenAI is not None
         translation_available = translation_provider_enabled and translation_client_configured and translation_prompt_exists
         stage_spool_available = self.stage_message_store_backend in {"database", "mysql"} or self.settings.stage_messages_dir.exists()
         stage_spool_replayable_messages = (
@@ -308,7 +308,7 @@ class HealthService:
                 checks["translation_unavailable_reason"] = "OPENAI_API_KEY 未配置"
             elif checks["ai_provider_config_error"]:
                 checks["translation_unavailable_reason"] = "AI provider 配置文件不可读取"
-            elif llm_client.OpenAI is None:
+            elif openai_sdk.OpenAI is None:
                 checks["translation_unavailable_reason"] = "openai Python SDK 不可用"
             elif not checks["translation_prompt_exists"]:
                 checks["translation_unavailable_reason"] = "翻译 prompt 文件缺失"

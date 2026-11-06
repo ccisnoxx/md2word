@@ -1,0 +1,22 @@
+[
+  {
+    "path": "app/services/document_ir/artifact_validator.py",
+    "line": 26,
+    "import": "from app.conversion.runtime.table_html_parser import parse_html_table"
+  },
+  {
+    "path": "app/services/document_ir/logical_table_group.py",
+    "line": 15,
+    "import": "from app.conversion.runtime.table_html_parser import HtmlTable, parse_html_table"
+  },
+  {
+    "path": "app/services/renderer/evidence.py",
+    "line": 12,
+    "import": "from app.conversion.runtime.table_html_parser import parse_html_table"
+  },
+  {
+    "path": "app/services/renderer/table_renderer.py",
+    "line": 24,
+    "import": "from app.conversion.runtime.table_html_parser import HtmlCell, HtmlTable, parse_html_table"
+  }
+]

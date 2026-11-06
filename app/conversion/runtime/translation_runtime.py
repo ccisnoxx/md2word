@@ -9,12 +9,15 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
+from app.domains.translation.modes import (
+    DEFAULT_TARGET_LANGUAGE,
+    DEFAULT_TRANSLATION_DOMAIN,
+    TRANSLATION_PROMPT_VERSION,
+)
 
-DEFAULT_TARGET_LANGUAGE = "zh-CN"
-DEFAULT_TRANSLATION_DOMAIN = "electronics engineering technical document"
+
 DEFAULT_MAX_PAGES_PER_BATCH = 20
 DEFAULT_MAX_CHARS_PER_BATCH = 60000
-TRANSLATION_PROMPT_VERSION = "translation-minimal-v1"
 DEFAULT_FRONT_SECTION = "front-matter"
 SKIPPED_BLOCK_TYPES = {"page_header", "page_footer", "page_number", "table_placeholder"}
 

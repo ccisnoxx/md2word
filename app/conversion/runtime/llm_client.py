@@ -8,17 +8,11 @@ from typing import Any
 
 from loguru import logger
 
-from app.conversion.runtime_config import APP_CONFIG, ROOT_DIR
+from app.clients.openai_sdk import DEFAULT_MODEL, OpenAI
+from app.core.conversion_config import APP_CONFIG, ROOT_DIR
 from app.domains.translation.modes import translation_prompt_path
 
 
-try:
-    from openai import OpenAI
-except ImportError:  # pragma: no cover - exercised through runtime error path
-    OpenAI = None
-
-
-DEFAULT_MODEL = APP_CONFIG.openai_model or "deepseek-v4-flash"
 DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_MAX_OUTPUT_TOKENS = 12000
 SYSTEM_PROMPT_PATH = ROOT_DIR / "resources" / "prompts" / "translation_en2zh.md"
