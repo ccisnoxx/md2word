@@ -49,6 +49,51 @@ last_reviewed: 2026-06-29
 
 普通代码更新只动 `hostdzire`。只有域名、证书、WireGuard 或前置转发异常时才排查 `dmit`。
 
+> **当前生产实际运行方式（2026-11-06 核实）**：生产 api/worker 并非由仓库 `docker/prod/docker-compose.yml` 启动，而是由一个冻结的基础 compose 叠加多层 override 运行，MySQL/Redis 来自另一份历史 compose。直接在新 release 内执行下文 `build`/`up -d --no-build` 会丢失 override 中的环境变量与模板绑定挂载，并连带重建 MySQL/Redis。在统一编排之前，普通上线按下节[分层 override 上线](#分层-override-上线当前生产方式)执行；下文“快速上线命令骨架”中的 release 导出、wheel 核对与镜像构建步骤仍适用，`up` 步骤以下节为准。
+
+## 分层 override 上线（当前生产方式）
+
+现状（只记录结构，不记录变量值）：
+
+- api/worker：Compose 项目 `md2word-p0`，工作目录 `/root/md2word-releases/template-compat-c1f7e8a1468f-20261029`。基础文件为该目录的 `compose.yaml`（`env_file: ./.env`、`127.0.0.1:18000`、外部 volume `md2word-p0_md2word-var`、外部网络 `md2word-p0_default`、账号 JSON 与 `a1088a3` release 中 `datasheet_template.docx/.yaml` 的只读绑定挂载），之后按顺序叠加各次上线的 `compose.override.yaml`；每层 override 只替换 api/worker 的 `image` 以及 `APP_VERSION`/`DEPLOYMENT_ID`。
+- mysql/redis：同一项目名，但来自 `/root/md2word/docker-compose.p0.yml`；上线时不得重建。
+- 每次上线把完整 `-f` 文件清单写入新 release 的 `compose-files.txt`，下一次上线以最近一次成功 release 的清单为基础。
+
+上线步骤：
+
+1. 按“快速上线命令骨架”导出 release、补齐并核对 57 个 wheel（可从上一个 release 的 `requirements/wheels/` 复制后重新对锁核对哈希），用 `docker/prod/Dockerfile` 构建版本化镜像，并用 `--network none --read-only` 的临时容器做 `pip check` 与 `import app.main, app.workers.celery_app` 冒烟。
+2. 在新 release 写一层只替换镜像与发布标识的 override：
+
+```yaml
+services:
+  api:
+    image: md2word-p0:<short-sha>-<release-id>
+    environment:
+      APP_VERSION: <short-sha>
+      DEPLOYMENT_ID: hostdzire-<release-id>-<short-sha>
+  worker:
+    image: md2word-p0:<short-sha>-<release-id>
+    environment:
+      APP_VERSION: <short-sha>
+      DEPLOYMENT_ID: hostdzire-<release-id>-<short-sha>
+```
+
+3. 在基础工作目录下，用“上一次成功清单 + 新 override”只重建 api/worker：
+
+```bash
+cd /root/md2word-releases/template-compat-c1f7e8a1468f-20261029
+BASE="$(cat "${PREVIOUS_RELEASE_DIR:?}/compose-files.txt")"   # 首次按现状清单手工组装
+FILES="${BASE} -f ${RELEASE_DIR}/compose.override.yaml"
+echo "${FILES}" > "${RELEASE_DIR}/compose-files.txt"
+docker compose -p md2word-p0 ${FILES} config --quiet
+docker compose -p md2word-p0 ${FILES} up -d --no-deps --no-build api worker
+```
+
+4. 约 30 秒后核对：`/api/v1/health/live` 与 `/health/ready` 为 200、公网入口为 200、api/worker 的 `.Image` 相同、两者日志无 Traceback/ERROR、Celery worker 已 ready。任一项失败立即回滚。
+5. 回滚：用上一次成功清单（不含新 override）执行同一条 `up -d --no-deps --no-build api worker`。上一版镜像须仍在本机，回滚前不要清理。
+
+已知陷阱：模板 `default@2` 在库中登记于受管目录 `var/config/templates/default/v2/`，内容与绑定挂载的 seed 相同；早于 PR #28 的 11-01 后版本会在启动时误判 seed 冲突并全部返回 500（2026-11-06 首次部署 cc6d4dc 时触发并已回滚）。
+
 ## 快速上线命令骨架
 
 本节命令里的 `<hostdzire-ssh>` 是本机根据私密 VPS 文件临时组装的 SSH 目标，不要把真实地址、密钥或端口写入仓库。
