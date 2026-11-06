@@ -1,0 +1,12 @@
+{
+  "id": "template-seed-path-check",
+  "name": "template-seed-path-check",
+  "title": "修复 bundled seed 同版本受管路径身份误判",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-06",
+  "branch": "codex/template-seed-path-check",
+  "notes": "用户授权文档后直接实施；禁止提交、推送、发布、外部服务、仓库外写入及归档。"
+}

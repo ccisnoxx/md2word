@@ -68,7 +68,8 @@
 - `bootstrap_manifest_versions()` 只登记 manifest 中缺失的 published 版本；数据库已有默认指针时保持不变，空库才把 manifest 版本设为初始默认。
 - `Settings.layout_config_path`、legacy runtime helper 和本地正式转换工具的“当前内置配置”路径指向 v2；显式 Resource Version 读取始终以其持久化 payload 为 owner。
 - 同号冲突核对只适用于 `is_default_seed=true`、真实路径位于 `root_dir/resources/templates` 且不属于当前 `template_id/v{version}` 受管目录的内置 DOCX。自定义上传或替换默认模板的已有 draft 不纳入该核对，即使存储根位于 `resources/templates` 内。
-- 已有内置 seed 的 `payload.template_id/version`、`docx_path/docx_sha256` 必须与该 seed 身份一致，`snapshot_hash` 必须匹配持久化 payload 自身；同号 draft 或身份/完整性冲突抛出含 `template_id@version` 的 `ValueError`，不覆写该记录或移动其默认指针。
+- 已有内置 seed 的 `payload.template_id/version`、`docx_sha256` 必须与该 seed 一致；`docx_path` 按 `root_dir` 解析相对路径并规范化真实路径后，允许等于 seed 路径或位于 `settings.templates_storage_dir/<template_id>/v<version>/` 内。该规则允许同内容的受管上传记录与 bundled seed 共存，仅用于启动身份判定，不改登记路径、不探测备用文件。其他模板/版本目录或任意其他路径仍为冲突。
+- `snapshot_hash` 必须匹配持久化 payload 自身；同号 draft 或身份/完整性冲突抛出含 `template_id@version` 的 `ValueError`，不覆写该记录或移动其默认指针。
 - 不将新 manifest 的完整 payload hash 与旧记录直接比较；合法名称、描述等元数据变化不得覆写旧快照。身份有效的 disabled/superseded seed 保持关闭，不因初始化复活。
 - 生产迁移必须先分别读取并验证 `default@1` 与 `default@2`，再显式调用 set-default；若后续发布门禁失败，必须在新后端仍在线时先把默认指针恢复到 v1，读回成功后才能回滚旧代码。
 
@@ -100,6 +101,7 @@
 | 历史 payload 的资源 hash 不匹配 | 明确失败，不探测 v2 或其他路径 |
 | set-default 指向非 published 版本或理由为空 | 明确拒绝，不移动默认指针 |
 | 同号内置 seed 的 DOCX 身份或 payload 自洽性冲突 | 启动明确抛出 ValueError，不覆盖冲突记录/默认指针 |
+| 同号非 draft 记录使用同版本受管 DOCX 路径，内容 hash 相同且 payload 自洽 | 启动通过，保留登记记录及原默认指针语义 |
 | 默认模板已替换成受管目录的已有 draft | 初始化保留 draft，不误判内置冲突或自动发布 |
 | 历史 record 不在受管目录或当前 manifest | 按原 payload 补入版本列表 |
 | 登记文件丢失但目录/manifest 有其他 DOCX | 该版本显示 exists=false，不换件 |

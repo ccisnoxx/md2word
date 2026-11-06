@@ -1,13 +1,15 @@
-"""用独立文件快照验证模板 seed 身份与历史列表合同，不连接应用或数据库。"""
+"""用隔离文件与内存资源仓储验证模板 seed、历史列表和运行时启动，不连接外部服务。"""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from unittest import TestCase
+from unittest.mock import patch
 
 import yaml
 from docx import Document
@@ -260,6 +262,139 @@ class TemplateSeedHistoryTests(TestCase):
                     self.reader.bootstrap_manifest_versions()
 
                 self.assertEqual(self._repository_snapshot(), before)
+
+    def test_published_seed_accepts_managed_relative_path_without_writes(self) -> None:
+        self.settings = self.settings.model_copy(update={"templates_storage_path": str(self.root / "var/config/templates")})
+        self._reset_services()
+        managed_path = self.settings.templates_storage_dir / "default/v2/published.docx"
+        managed_path.parent.mkdir(parents=True)
+        managed_path.write_bytes(self.seed_path.read_bytes())
+        self._register(2, self._payload(2, managed_path, publish_reason="生产已发布副本"))
+        self.resources.set_default("template", "default", "2")
+        before = self._repository_snapshot()
+
+        self.reader.bootstrap_manifest_versions()
+        self.reader.bootstrap_manifest_versions()
+
+        self.assertEqual(self._repository_snapshot(), before)
+
+    def test_seed_identity_accepts_normalized_paths_and_preserves_status(self) -> None:
+        managed_path = self.settings.templates_storage_dir / "default/v2/published.docx"
+        managed_path.parent.mkdir(parents=True)
+        managed_path.write_bytes(self.seed_path.read_bytes())
+        paths = (
+            str(managed_path),
+            self._relative(managed_path.parent / "nested/../published.docx"),
+            str(managed_path.parent / "nested/../published.docx"),
+            str(self.seed_path.parent / "nested/../seed.docx"),
+        )
+        for docx_path in paths:
+            for status in (ResourceVersionStatus.PUBLISHED, ResourceVersionStatus.DISABLED, ResourceVersionStatus.SUPERSEDED):
+                with self.subTest(docx_path=docx_path, status=status):
+                    self._reset_services()
+                    self._register(1, self._payload(1, self.seed_path))
+                    self.resources.set_default("template", "default", "1")
+                    payload = self._payload(2, self.seed_path)
+                    payload["docx_path"] = docx_path
+                    self._register(2, payload, status=status)
+                    before = self._repository_snapshot()
+
+                    self.reader.bootstrap_manifest_versions()
+
+                    self.assertEqual(self._repository_snapshot(), before)
+
+    def test_managed_seed_rejects_identity_conflicts_and_path_escapes(self) -> None:
+        managed_path = self.settings.templates_storage_dir / "default/v2/published.docx"
+        managed_path.parent.mkdir(parents=True)
+        managed_path.write_bytes(self.seed_path.read_bytes())
+        outside = self._docx("outside.docx", "受管目录外的文件")
+        linked_path = managed_path.parent / "outside-link.docx"
+        linked_path.symlink_to(outside)
+        invalid_paths = (
+            "managed/default/v1/published.docx",
+            "managed/other/v2/published.docx",
+            "managed/default/v20/published.docx",
+            "managed/default/v2/../published.docx",
+            self._relative(linked_path),
+            self._relative(outside),
+            str(managed_path.parent),
+            "",
+            None,
+            42,
+        )
+        cases = [("docx_path", value) for value in invalid_paths] + [
+            ("docx_sha256", "sha256:" + "0" * 64),
+            ("template_id", "other"),
+            ("version", 3),
+            ("snapshot_hash", "sha256:" + "0" * 64),
+            ("status", ResourceVersionStatus.DRAFT),
+        ]
+        for field, value in cases:
+            with self.subTest(field=field, value=value):
+                self._reset_services()
+                self._register(1, self._payload(1, self.seed_path))
+                self.resources.set_default("template", "default", "1")
+                payload = self._payload(2, managed_path)
+                if field not in ("snapshot_hash", "status"):
+                    payload[field] = value
+                self._register(
+                    2,
+                    payload,
+                    status=value if field == "status" else ResourceVersionStatus.PUBLISHED,
+                    snapshot_hash=value if field == "snapshot_hash" else None,
+                )
+                before = self._repository_snapshot()
+
+                with self.assertRaisesRegex(ValueError, "模板 seed 版本与已登记资源冲突: default@2"):
+                    self.reader.bootstrap_manifest_versions()
+
+                self.assertEqual(self._repository_snapshot(), before)
+
+    def test_build_runtime_accepts_published_managed_seed(self) -> None:
+        from app.domains.translation.modes import TRANSLATION_MODE_SPECS, translation_prompt_path
+        from app.infrastructure.persistence.factory import build_file_persistence_adapters
+        from app.main import build_runtime
+
+        settings = self.settings.model_copy(update={
+            "app_env": "test",
+            "jobs_repository_backend": "file",
+            "jobs_artifact_storage_backend": "local_file",
+            "document_jobs_worker_backend": "disabled",
+            "translation_provider_backend": "disabled",
+            "word_preview_backend": "disabled",
+            "openai_api_key": "",
+            "mineru_api_token": "",
+        })
+        # 启动还会登记术语与翻译 seed；所有资源副本仍由临时 root_dir 隔离。
+        repo_root = Path(__file__).resolve().parents[1]
+        settings.term_rules_seed_file.parent.mkdir(parents=True)
+        settings.term_rules_seed_file.write_bytes((repo_root / settings.term_rules_seed_path).read_bytes())
+        for spec in TRANSLATION_MODE_SPECS.values():
+            if spec.language_pair is not None:
+                prompt_path = translation_prompt_path(settings.root_dir, spec.language_pair)
+                prompt_path.parent.mkdir(parents=True, exist_ok=True)
+                prompt_path.write_bytes(translation_prompt_path(repo_root, spec.language_pair).read_bytes())
+        managed_path = settings.templates_storage_dir / "default/v2/published.docx"
+        managed_path.parent.mkdir(parents=True)
+        managed_path.write_bytes(self.seed_path.read_bytes())
+        record = self._register(2, self._payload(2, managed_path))
+        self.resources.set_default("template", "default", "2")
+        before = self._repository_snapshot()
+        adapters = replace(
+            build_file_persistence_adapters(settings.data_path),
+            resource_version_repository=self.repository,
+        )
+
+        with patch("app.main.build_persistence_adapters", return_value=adapters) as build_adapters:
+            runtime = build_runtime(settings)
+
+        build_adapters.assert_called_once_with(settings)
+        self.assertIs(runtime.resource_version_service.repository, self.repository)
+        self.assertEqual(self.repository.get_resource_version("template", "default", "2"), record)
+        self.assertEqual(self.repository.get_default_resource_version("template", "default"), record)
+        self.assertEqual([write for write in self.repository.writes if write[1] == "template"], before[2])
+        self.assertEqual(runtime.template_read_service.get_default_template_id(), "default")
+        self.assertIsNone(runtime.document_job_task_queue)
 
     def test_metadata_and_publication_fields_do_not_replace_old_snapshot(self) -> None:
         payload = self._payload(
