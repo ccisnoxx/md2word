@@ -1,0 +1,12 @@
+{
+  "completed_at": "2026-11-06T17:53:40.574229+00:00",
+  "documents_sha256": {
+    "production-switch-plan.md": "7676626e955638aa6c45f78170caf3baa3b37e87dbe780b9dee99c902bced6b1",
+    "production-build.md": "5c90158cda8a87dda4e1c517126f5f8663ff7d9a69097c3439345da9874f9b1e",
+    "production-execution-plan.md": "031f35b06b436a8b58af1a81ffa6eb3216906e67c0144cbf98039ce88af2029e",
+    "release-ops-review.md": "4ac839a5981d146c21769a9e40f449355b11291439a787e01298e230fb1ee30f"
+  },
+  "protected_containers_unchanged": true,
+  "active_nginx_config_unchanged": true,
+  "production_stop_migration_cutover_executed": false
+}
