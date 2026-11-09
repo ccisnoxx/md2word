@@ -11,9 +11,9 @@
 - `document_jobs.list_query_json`存储版本3；`document_files.review_query_json`存储版本2；SQLite TEXT/MySQL LONGTEXT，payload权威，不新增索引。完整规范 key 已拆至独立列，查询 JSON 只保存其他事实；非generated_word的独立 key 为空串，不能与漏回填NULL混淆。
 - `is_document_job_table_evidence_snapshot_current(expected) -> bool`在每个原重核点独立读取最新事实，只返回结果，不返回完整payload；原archived/九字段tuple和deleted前提不增减。job ID仅用于原collation寻址。
 - 显式迁移保留dry-run/apply/verify，新增`--after-file-id`与原`--after-job-id`各自游标；报告`tables.document_files/document_jobs`各自计数/成功游标。apply先文件后任务；verify禁止非空游标，在同只读快照全量验证两表。
-- 任务内 `release/ops/migrate.py` 要求 `--expect-database/--expect-server-uuid`，仅取明确 `JOBS_MYSQL_*`，`initialize=False`；dry-run/verify 会话只读、两类锁等待均为 10 秒。`snapshot.py snapshot/compare` 仅核对双表原列；`query_diff.py` 要求独立冻结 O 源码/manifest 和 aware `--as-of`，只比较列表元数据，不扩写为完整 API/动作验收。
-- `ops_container.py --execute` 的固定一次性容器使用 uid0、`--cap-drop ALL --cap-add DAC_OVERRIDE`、NNP和只读rootfs/ops/baseline，仅证据目录与tmp可写。镜像应用用户所有的0600源码需要该单项能力；不恢复全套默认能力，不改镜像/业务文件权限或账号。
-- 任务专用 `evidence/v2-normal-session-client.py --control <本轮唯一0700目录>` 由用户在自己的 TTY 手动输入现有用户名和隐藏密码；固定 SSH `hostdzire`、后端 `127.0.0.1:18000`，使用正常 `auth/login` 与 `auth/me`。控制文件仅允许 `preflight/acceptance-start/acceptance-status/quit` 四动作，按 `request-NNNN.json` / `result-NNNN.json` 递增编号。
+- 本轮可用运维入口位于任务 `11-06-list-loading-performance/research/release_ops/`，不在生产镜像内。`migrate.py` 每条实际连接核对 `--expect-database/--expect-server-uuid`，仅取显式 `JOBS_MYSQL_HOST/PORT/USER/PASSWORD/DATABASE`，调用所选完整镜像的原 owner、`initialize=False`；dry-run/verify 会话只读，两类锁等待10秒。`snapshot.py snapshot/compare`核对整个业务库原列/结构，恢复验证必须用`--include-derived`比较全部列，scope混用失败；`query_diff.py capture`要求隔离UUID、`--deny-server-uuid`生产UUID、aware `--as-of`及审核的真实角色矩阵，比较完整router响应摘要，包括动作/统计/顺序，不是HTTP认证证明。真实入口、错误分类及已执行离线用例见该目录README；旧任务 `release/ops/` 引用不能当成本轮现成工具。
+- 历史任务 `10-30-document-job-query-pushdown` 的 `ops_container.py --execute` 固定一次性容器使用 uid0、`--cap-drop ALL --cap-add DAC_OVERRIDE`、NNP和只读rootfs/ops/baseline，仅证据目录与tmp可写。镜像应用用户所有的0600源码需要该单项能力；不恢复全套默认能力，不改镜像/业务文件权限或账号。
+- 历史任务 `10-30-document-job-query-pushdown` 专用 `evidence/v2-normal-session-client.py --control <本轮唯一0700目录>` 由用户在自己的 TTY 手动输入现有用户名和隐藏密码；固定 SSH `hostdzire`、后端 `127.0.0.1:18000`，使用正常 `auth/login` 与 `auth/me`。控制文件仅允许 `preflight/acceptance-start/acceptance-status/quit` 四动作，按 `request-NNNN.json` / `result-NNNN.json` 递增编号。
 
 ## 3. 合同与状态归属
 
@@ -84,11 +84,11 @@ SQL关联当前文件保留原寻址语义：MySQL按file_id列collation寻找�
 
 候选原生镜像使用冻结线上镜像基底，只在无网络/业务挂载的测试容器验证，不能据此启动业务API/Worker。业务双表历史预检、停写、备份、正式回填、切换和线上验收另行完成。
 
-发布运维验证须区分准备证据与窗口结果：预检核对镜像、Compose、运行态及挂载；备份演练覆盖整个库和实际对象/配置卷，精确 COUNT 与内容/元数据相符。双表 snapshot 不能证明其余表或对象卷未变。一次性 `query_diff.py` 复用同一数据库快照的 jobs/files、原列寻址和 publication 保护集合，将 raw 仅经内存管道交给独立 O；计数直接比较，页内有序 ID/review/quality 用 SHA-256 摘要比较。离线测试应捕获陈旧投影、错误分支、权限/全分页及快照变化；真实业务差分只能在授权窗口记录为通过。
+发布运维验证须区分准备证据与窗口结果：预检核对镜像、Compose、运行态及挂载；备份演练覆盖整个库和实际对象/配置/Redis恢复点，精确COUNT及全列内容/元数据相符。默认迁移snapshot排除获准派生值，不能替代恢复全列模式或对象卷核验。本轮完整router差分在同一T0的隔离实例顺序执行O旧2/1→C新3/2→R旧2/1，各阶段使用完整冻结镜像的独立进程、真实读取依赖和角色，固定aware时钟，比较完整响应摘要，先同侧双跑再跨阶段对照；不得以双方同错误、空case或少量角色样本证明通过。每阶段进程退出、对应owner全量verify、原列/其他表/对象保真均为门槛。离线用例应捕获UUID不符、恢复派生值损坏、scope混用、其他表/原payload改变、重复行丢失、写入被捕获及错误伪相等；真实差分/回退只能在授权窗口记录为通过。
 
-正常会话客户端的离线测试对照冻结实际路由/模型包装，覆盖正常登录/me/预检/上传创建/状态、身份与文件合同、无回显失败、凭据不泄漏、完整发送/响应截止、未知写不重试、阶段停止和原子发布权限。fake HTTP/SSH 不证明真实认证或受控通道可用；必须等用户手动输入后的 login/preflight 安全结果及新鲜线上核对通过，才能进入迁移窗口。
+历史正常会话客户端的离线测试对照冻结实际路由/模型包装，覆盖正常登录/me/预检/上传创建/状态、身份与文件合同、无回显失败、凭据不泄漏、完整发送/响应截止、未知写不重试、阶段停止和原子发布权限。fake HTTP/SSH 不证明真实认证或受控通道可用；必须等用户手动输入后的 login/preflight 安全结果及新鲜线上核对通过，才能进入迁移窗口。
 
-运维诊断测试用真实本地子进程生成合成失败，断言退出码、单JSON、脱敏/0600/独占、坏stdout丢弃及诊断保存失败保留主错；固定命令只增加DAC_OVERRIDE。真实无网原生探针须证实CapEff=0x2、NNP=1、受限源码SHA匹配和rootfs/ops写入EROFS，再复验只读snapshot；离线命令断言不能替代这些运行证据。
+历史ops_container运维诊断测试用真实本地子进程生成合成失败，断言退出码、单JSON、脱敏/0600/独占、坏stdout丢弃及诊断保存失败保留主错；固定命令只增加DAC_OVERRIDE。真实无网原生探针须证实CapEff=0x2、NNP=1、受限源码SHA匹配和rootfs/ops写入EROFS，再复验只读snapshot；离线命令断言不能替代这些运行证据。
 
 ## 7. 错误与正确做法
 
@@ -96,7 +96,7 @@ SQL关联当前文件保留原寻址语义：MySQL按file_id列collation寻找�
 
 错误：无JSON时丢弃全部失败线索，或为读0600代码恢复容器全部能力。正确：受限脱敏诊断明确失败，仅补实证所需能力并实际验证只读边界。[Docker运行约束](https://docs.docker.com/engine/containers/run/)与[Linux能力语义](https://man7.org/linux/man-pages/man7/capabilities.7.html)用于核对该合同，运行结果仍须本环境证明。
 
-## 8. 完整 key 拆列（2026-11-06 候选，未部署）
+## 8. 完整 key 拆列（2026-11-06 设计，2026-11-07 已验收）
 
 - job 独立列为 `list_descriptor_key/list_receipt_key/list_table_snapshot_key`；file 为 `review_descriptor_key/review_receipt_key`，类型 SQLite TEXT/MySQL LONGTEXT。原 `equality_key`、descriptor、receipt 与 table snapshot owner 不变，不截断或散列替代；MySQL CAST AS BINARY、SQLite COLLATE BINARY 保留尾随空格、大小写和完整文本相等。
 - `document_job_list_storage_from_raw` / `document_file_review_storage_from_raw` 从最终 payload 调用原完整语义投影，再拆出 key、更新存储版本。create、共享 writer、状态回填、正式复核导入和显式列表回填必须同行维护全部列；缺稳定时间时整组置 NULL。旧完整投影 builder 仍是内部语义事实，不可直接序列化回当前查询列。
@@ -104,4 +104,6 @@ SQL关联当前文件保留原寻址语义：MySQL按file_id列collation寻找�
 - 独立入口 `scripts/ops/migrate_document_job_list_keys.py` 复用原迁移流程，支持 dry-run/apply/verify、两表独立游标、逐列DDL前滚、批次提交后推进游标、整组比较和成功重跑零UPDATE。旧入口同步升级，不再写回旧布局；只改双表派生列，不改payload、时间或job_events等其他表。
 - 仅添加列而未回填时新版列表/窄guard失败关闭；新版API/Worker可正常维护其实际写到的行，但局部写入不代表全表就绪。全量回填并verify后新版正常；旧API/Worker不支持新JSON版本，禁止混部。旧写者一旦恢复，所有新列视为陈旧，再升级须两表空游标重建。
 - 当前schema仍走CREATE/ALTER + INFORMATION_SCHEMA/PRAGMA；B08只完成设计，不能声称已有版本账本。生产停写、备份恢复演练、执行顺序、代码回退须先重建旧JSON及再升级重建规则见[当前整合设计及冻结迁移方案](../../tasks/11-06-list-loading-performance/design.md)，所有生产操作需另行授权。
-- 定向证据涵盖大key体积、严格比较、file/SQLite列表与Python owner对照、writer原子性、干跑零写和中断恢复；MySQL SQL形状/fake不等于引擎性能。源候选此前未具备真实 MySQL 证据；当前整合任务使用独立 MySQL 8.4.13 做定向校验，结果以该任务 research 为准。生产为 8.4.9，迁移及线上性能验收仍待另行授权。
+- 定向证据涵盖大key体积、严格比较、file/SQLite列表与Python owner对照、writer原子性、干跑零写和中断恢复；MySQL SQL形状/fake不等于引擎性能。源候选此前未具备真实 MySQL 证据；当前整合任务使用独立 MySQL 8.4.13 做定向校验，结果以该任务 research 为准。生产引擎的本次验收环境为 8.4.9；本任务已于2026-11-07按后续明确授权完成生产迁移和线上性能验收，实际结果见[生产执行记录](../../tasks/11-06-list-loading-performance/production-execution.md)。这是该次发布的证据，未来生产操作仍须单独授权。
+
+本轮运维正确/错误示例：恢复验证误用默认snapshot会漏掉派生列损坏，正确做法是源/恢复均使用`--include-derived`且全列scope一致；迁移后才使用原列scope并配套owner全量verify。上线后已有合法新业务时，回退保真应比较再次停写后的当前基线，而不是T0。Celery空闲不证明外部MinerU回调结束，应先挡新业务并保留回调/Worker排空，再封回调停API、消费最后在途后停Worker。工具不替代这些外部执行门槛。
