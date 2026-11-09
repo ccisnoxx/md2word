@@ -1601,3 +1601,44 @@ Worker 失败消息只保留固定码构造的消息，其余输出异常类型�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 49: 前端链接修复与登录有效期 7 天上线
+
+**Date**: 2026-11-09
+**Task**: 前端链接修复与登录有效期 7 天上线
+**Branch**: `fix/frontend-links-and-login-ttl`
+
+### Summary
+
+排查掉登录与链接问题：登录凭证为 localStorage 中的 JWT，有效期 120 分钟；B07 按需加载后发布切换使旧标签页 chunk 404；下载 window.open 带 noopener 恒返回 null 导致误报拦截。用户反馈的 /login?redirect=... 地址经 vue-router 解析可正确回跳，属正常过期跳转。PR #36 修复 chunk 失败自动刷新（10 秒防循环）、下载拦截判断，登录有效期默认 7 天，并把 nginx 配置与线上对齐；PR #37 记录上线。hostdzire 上前端切换至 frontend-6d25b99-links-login-ttl，nginx 对 index.html 设 no-cache（保留 HSTS），基础目录 .env 改为 10080 后仅重建 api，镜像未变，内外网 live/ready 200。B07 已归档并补记后续变更。
+
+### Main Changes
+
+- router 识别 vite:preloadError 的页面 chunk 失败后整页刷新到目标一次，其他导航错误保持中文提示
+- download.ts 去掉 noopener 参数并手动置空 opener，正确判断弹窗拦截
+- auth_access_token_expire_minutes 默认 120 改为 10080；线上 .env 同步并仅重建 api
+- nginx index.html 设 expires -1；仓库配置补齐线上 HSTS include 与 add_header_inherit merge
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2f274109` | (see git log) |
+| `6d25b99f` | (see git log) |
+| `5c36d334` | (see git log) |
+| `94088455` | (see git log) |
+
+### Testing
+
+- [OK] router 与 download 定向测试 21 项通过；新增 chunk 刷新测试在撤销修复后失败
+- [OK] npm run build（含 vue-tsc）通过；未运行完整 unit/smoke、Python 全量或发布门禁
+- [OK] 线上：公网入口与新 chunk 200、index.html no-cache、容器 Settings 为 10080、live/ready 200、日志无异常
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用真实账号登录核对 expires_in 为 604800
