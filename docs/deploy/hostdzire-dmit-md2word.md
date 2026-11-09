@@ -5,7 +5,7 @@ component: pdf-to-word-backend
 status: current
 summary: md2word 在 dmit + WireGuard + hostdzire 结构下的实际部署和线上验证记录。
 tags: [deploy, nginx, docker, wireguard, hostdzire, dmit]
-last_reviewed: 2026-06-29
+last_reviewed: 2026-11-09
 ---
 
 # md2word 线上部署记录
@@ -91,6 +91,15 @@ docker compose -p md2word-p0 ${FILES} up -d --no-deps --no-build api worker
 
 4. 约 30 秒后核对：`/api/v1/health/live` 与 `/health/ready` 为 200、公网入口为 200、api/worker 的 `.Image` 相同、两者日志无 Traceback/ERROR、Celery worker 已 ready。任一项失败立即回滚。
 5. 回滚：用上一次成功清单（不含新 override）执行同一条 `up -d --no-deps --no-build api worker`。上一版镜像须仍在本机，回滚前不要清理。
+
+### 仅改运行配置（不发新镜像）
+
+只调整 `.env` 中的运行配置、代码与镜像不变时，不新建 release 目录，也不新增 override 层：
+
+1. api/worker 的 `env_file` 均指向基础工作目录的 `./.env`（`/root/md2word-releases/template-compat-c1f7e8a1468f-20261029/.env`）；先只读核对目标键在 `.env`、容器 `printenv` 及全部 `-f` 文件中的实际来源，确认没有 override 覆盖。
+2. 备份为 `.env.bak-<UTC 时间>-<用途>`，用精确匹配的 `sed` 只替换目标行；不打印其他配置。
+3. 以最近一次成功 release 的 `compose-files.txt` 执行 `config --quiet`，再按配置实际影响的服务执行 `up -d --no-deps --no-build --force-recreate <服务>`；镜像 ID 应保持不变且与另一服务一致。`compose-files.txt` 不变，下一次上线仍以该清单为基础。
+4. 回滚：恢复备份 `.env`，用同一清单重建同一服务。
 
 已知陷阱：模板 `default@2` 在库中登记于受管目录 `var/config/templates/default/v2/`，内容与绑定挂载的 seed 相同；早于 PR #28 的 11-01 后版本会在启动时误判 seed 冲突并全部返回 500（2026-11-06 首次部署 cc6d4dc 时触发并已回滚）。
 
@@ -208,6 +217,10 @@ docker compose --env-file .env -f docker/prod/docker-compose.yml up -d --no-buil
 - 复用现有 `/etc/nginx/snippets/cert-962850.xyz.conf`
 - 证书文件在 `/etc/nginx/ssl/962850.xyz/`
 - HTTP ACME 验证路径复用 `/etc/nginx/snippets/acme-challenge.conf`
+- HSTS 由 `/etc/nginx/snippets/962850-hsts-host.conf` 提供，并配合 `add_header_inherit merge;` 让 location 内的 `add_header` 不丢失 server 级响应头。
+- `index.html` 使用 `expires -1`（`Cache-Control: no-cache`），发布切换后浏览器能立即取得引用新 hash chunk 的入口页；`/assets/` 仍缓存 7 天。
+
+仓库中的 [deploy/nginx/md2word-api.962850.xyz.conf](/Users/sc/PycharmProjects/md2word/deploy/nginx/md2word-api.962850.xyz.conf) 已于 2026-11-09 与线上 `/etc/nginx/sites-enabled/md2word-api.962850.xyz.conf` 逐字节对齐。修改线上站点前仍须先 diff 线上文件与仓库版本：存在未入库差异时只在线上文件上追加本次改动并回写仓库，不直接覆盖；备份放在 `/root/nginx-backups/`，`nginx -t` 通过后再 reload。
 
 本机如果启用 `mosdns` + `sing-box` fakeip 分流，`md2word.962850.xyz` 可能解析成 `28.0.*`。这是本机代理接管国外域名的预期行为，不代表公网 DNS 或线上入口异常；排查公网入口时可用公共 DNS 查询或 `curl --resolve md2word.962850.xyz:443:<dmit-public-ip> ...` 强制验证 dmit 入口。真实公网 IP 只从私密 VPS 文件读取，不写入仓库文档。
 
@@ -239,3 +252,21 @@ MinerU 公开回调当前按下面约定配置：
 - ready health 显示 `translation_provider_backend=openai_compatible` 且 `translation_available=true` 时，`en2zh_pdf_to_word` 可用于线上实验
 
 即使翻译可用，默认任务模式仍保持 `direct`，避免普通 PDF 转 Word 请求默认消耗翻译额度。
+
+## 上线记录
+
+### 2026-11-09 前端链接修复与登录有效期 7 天（PR #36）
+
+代码：PR #36，合并提交 `0189a465`，含 `2f274109`（登录有效期默认 7 天）、`6d25b99f`（页面 chunk 加载失败自动刷新、下载窗口拦截误报）、`5c36d334`（nginx 配置与线上对齐）。后端镜像未重建，api/worker 仍为 `b8b2779a-list-loading` 层镜像。
+
+| 项目 | 变更 | 回滚点 |
+|---|---|---|
+| 前端 | 本地从 `6d25b99` 干净工作树构建，入口 `index-BU1O_VRb.js`；`current` → `/var/www/md2word-frontend/releases/frontend-6d25b99-links-login-ttl` | `releases/frontend-28cacd8a-table-diagnostics` |
+| nginx | 在线上文件上追加 `location = /index.html { expires -1; }`，`nginx -t` 后 reload | `/root/nginx-backups/md2word-api.962850.xyz.conf.20261109T133007Z` |
+| 登录有效期 | 基础工作目录 `.env`：`AUTH_ACCESS_TOKEN_EXPIRE_MINUTES` 120 → 10080；按 `b8b2779a-list-loading/compose-files.txt` 仅 `--force-recreate api` | 同目录 `.env.bak-20261109T131445Z-token-ttl` |
+
+验证：公网 `/`、深链接、新入口 chunk 返回 200；入口页 `cache-control: no-cache` 且 HSTS 保留，`/assets/` 为 `max-age=604800`；api 镜像未变且与 worker 一致，容器 `printenv` 与应用 `Settings` 均为 10080，内外网 `live`/`ready` 200，重建后日志无 Traceback/ERROR。
+
+未验证：未用真实账号登录核对 `expires_in`（应为 604800）。已签发的旧 token 仍按 120 分钟过期；切换时仍运行旧前端代码的标签页可能再出现一次“页面加载失败”，手动刷新即可，此后的发布由新前端自动刷新处理。
+
+对后续上线的影响：最近成功清单仍为 `b8b2779a-list-loading/compose-files.txt`；基础工作目录 `.env` 已含 10080，后续复制 `.env` 时会继承该值。
