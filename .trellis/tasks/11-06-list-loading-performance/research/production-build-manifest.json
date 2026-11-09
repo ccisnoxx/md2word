@@ -1,0 +1,653 @@
+{
+  "build-inputs.json": {
+    "source_commit": "b8b2779a9ee678f778ddb95890cebc3a0faff55e",
+    "source_tree": "f24c58bb6c0d593a96ba8cc37c50620053694e4c",
+    "release_dir": "/root/md2word-releases/b8b2779a-list-loading",
+    "image_tag": "md2word-p0:b8b2779a-list-loading",
+    "created_at": "2026-11-06T17:23:41.499508+00:00",
+    "protected_before": [
+      {
+        "name": "/md2word-p0-api-1",
+        "id": "70686271932f092715f4bb2e44abb0e4acf6f8dc0f073d103de90d1cdff11430",
+        "image": "sha256:77176d1903e9f266814b9ec3464551d1920c50b33683f3707889d570243dac7a",
+        "started_at": "2026-11-06T15:30:32.073824872Z",
+        "status": "running"
+      },
+      {
+        "name": "/md2word-p0-worker-1",
+        "id": "5e66c00988413ad19d49ba2622afba4ee51f0eecbd35c6cef79664aa0a008a4f",
+        "image": "sha256:77176d1903e9f266814b9ec3464551d1920c50b33683f3707889d570243dac7a",
+        "started_at": "2026-11-06T15:30:32.07461209Z",
+        "status": "running"
+      },
+      {
+        "name": "/md2word-p0-mysql-1",
+        "id": "56c40a62b9377e7cacb3a0e040a9865f4a7fef76df87e4502befe2e3a2454e96",
+        "image": "sha256:c36050afdca850f23cef85703f84c7531a5ae155a11b5ee1c60acb09937c4084",
+        "started_at": "2026-10-29T04:15:44.059421206Z",
+        "status": "running"
+      },
+      {
+        "name": "/md2word-p0-redis-1",
+        "id": "06f72de6f2e24e8890932df0e90ffbb1732c918a3cbb6eb6aa4639a80e088bef",
+        "image": "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+        "started_at": "2026-10-29T04:15:44.011312378Z",
+        "status": "running"
+      }
+    ],
+    "old_image_id": "sha256:77176d1903e9f266814b9ec3464551d1920c50b33683f3707889d570243dac7a",
+    "compose_project": "md2word-p0",
+    "compose_workdir": "/root/md2word-releases/template-compat-c1f7e8a1468f-20261029",
+    "compose_files": [
+      "/root/md2word-releases/template-compat-c1f7e8a1468f-20261029/compose.yaml",
+      "/root/md2word-releases/query-v2-preparation-20261030/v2/cutover/compose.override.yaml",
+      "/root/md2word-releases/mineru-merge-283d8af0a69b-20261030/compose.override.yaml",
+      "/root/md2word-releases/word-quality-c2e8b8b0f51c-20261030/compose.override.yaml",
+      "/root/md2word-releases/residual-quality-eb38dc0bd600-20261030/compose.override.yaml",
+      "/root/md2word-releases/table-crop-12188b04b7b4-20261030/compose.override.yaml",
+      "/root/md2word-releases/mixed-lines-d6cddcd5a9ba-20261031/compose.override.yaml",
+      "/root/md2word-releases/1da199f-20261106T114319Z/compose.override.yaml",
+      "/root/md2word-releases/28cacd8a-table-diagnostics/compose.override.yaml"
+    ],
+    "wheel_count": 57,
+    "wheel_sha256": {
+      "python_docx-1.2.0-py3-none-any.whl": "3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7",
+      "starlette-1.10.0-py3-none-any.whl": "478c0ab3b4ced6e82719849c118fa406f0278a3499c1a898cd15cd31bdc38ce4",
+      "charset_normalizer-3.5.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": "211d5a3eb6af8f513b8d4ca19a8c1b7accab1b5f0d3175f9826b03c1a920dc1f",
+      "prompt_toolkit-3.0.53-py3-none-any.whl": "01c0891d7f9237d5e339f7d3e42cdae80b7534abb1c7c0e3352efba6231492f2",
+      "pydantic-2.14.1-py3-none-any.whl": "9195d967ec791692a04438115466764fb8b9a27b31f14a760437694f40d6b454",
+      "billiard-4.3.1-py3-none-any.whl": "2c7075283191d9c0add66cf8fca8e06ba599e75fe7319b67186759f8877dfdaf",
+      "annotated_types-0.8.0-py3-none-any.whl": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+      "celery-5.6.3-py3-none-any.whl": "0808f42f80909c4d5833202360ffafb2a4f83f4d8e23e1285d926610e9a7afa6",
+      "cryptography-50.0.2-cp311-abi3-manylinux_2_28_x86_64.whl": "4061c0079120205fb760c58acab6443e217307dcf05e3702cf970e0689972856",
+      "sniffio-1.3.1-py3-none-any.whl": "2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2",
+      "vine-5.1.0-py3-none-any.whl": "40fdf3c48b2cfe1c38a49e9ae2da6fda88e4794c810050a728bd7413811fb1dc",
+      "tzdata-2026.5-py2.py3-none-any.whl": "b683bd1b6659ddcd810ff02ad09ba821d4bf1065072805063eb35c49617905ac",
+      "python_multipart-0.0.32-py3-none-any.whl": "ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23",
+      "idna-3.20-py3-none-any.whl": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
+      "loguru-0.7.3-py3-none-any.whl": "31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c",
+      "httpcore2-2.16.0-py3-none-any.whl": "5c4358319f2602d984ad93182c9fee5160f22e9da7babdda870a5e7c4e2dc34f",
+      "fastapi-0.136.3-py3-none-any.whl": "3d2a69bdf04b7e9f3afa292c3bc7a98816bbfafa10bc9b45f3f3700d2f761620",
+      "pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": "b8bb0864c5a28024fac8a632c443c87c5aa6f215c0b126c449ae1a150412f31d",
+      "requests-2.34.2-py3-none-any.whl": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+      "botocore-1.43.120-py3-none-any.whl": "7f54674f26f0d9a500bf44a1f858e88b70b03c82b2aca385ddf51f6e968bfd01",
+      "click-8.5.0-py3-none-any.whl": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+      "python_dotenv-1.2.4-py3-none-any.whl": "42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc",
+      "pydantic_settings-2.16.1-py3-none-any.whl": "30f5313340da4e8f1b440d1910b92a5bc3ccbb6b4ba70ec2b8395bc921f418f5",
+      "python_dateutil-2.9.0.post0-py2.py3-none-any.whl": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427",
+      "pillow-12.2.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": "e74473c875d78b8e9d5da2a70f7099549f9eb37ded4e2f6a463e60125bccd176",
+      "click_repl-0.4.1-py3-none-any.whl": "5cb10881d4c5ebaa8695eceb69911af3062ee78342812b713564b17aad333eb5",
+      "six-1.17.0-py2.py3-none-any.whl": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+      "boto3-1.43.120-py3-none-any.whl": "86978245a7b911549a44df3f805ae4ce94a8154f4ebe4a166631b8a6d7af2697",
+      "httpx2-2.16.0-py3-none-any.whl": "fd2c5d7909e8d86fe92d53020c310ca0e4e431b838c207c5754b9bbf0308d49a",
+      "jiter-0.18.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": "55f808bce951fae459fc916359cc54097d386bef3e72265ddf02b39ba3275118",
+      "anyio-4.15.1-py3-none-any.whl": "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101",
+      "soupsieve-2.10-py3-none-any.whl": "8596eb8967d744174820280fa62b4542a2e955bfaccca73ed8a13c6eb8e9b502",
+      "amqp-5.4.1-py3-none-any.whl": "ac2b816a14a380ed10c5ebbf85a334fd68111fa476496867a5ccd2fd09926d5e",
+      "pymysql-1.2.3-py3-none-any.whl": "14f1c68e2ed859243ae5ca41ffbe677027fc46bc136a9f0be8a4e928e5e7415a",
+      "redis-6.4.0-py3-none-any.whl": "f0544fa9604264e9464cdf4814e7d4830f74b165d52f2a330a760a88dd248b7f",
+      "pycparser-3.12-py3-none-any.whl": "a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e",
+      "h11-0.16.0-py3-none-any.whl": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+      "truststore-0.10.5-py3-none-any.whl": "9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c",
+      "kombu-5.6.2-py3-none-any.whl": "efcfc559da324d41d61ca311b0c64965ea35b4c55cc04ee36e55386145dace93",
+      "annotated_doc-0.0.5-py3-none-any.whl": "117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101",
+      "tzlocal-5.4.5-py3-none-any.whl": "ecab534f6d65d9deb4c4ea52c121ab6dd5958e9b878e71dcb102578269752454",
+      "typing_extensions-4.16.0-py3-none-any.whl": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "packaging-26.3-py3-none-any.whl": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+      "certifi-2026.10.23-py3-none-any.whl": "e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1",
+      "pydantic_core-2.50.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": "8812592c85d0edf423f10eadcef42716d71e8219085ad9e85b775057b7306133",
+      "click_plugins-1.1.1.2-py2.py3-none-any.whl": "008d65743833ffc1f5417bf0e78e8d2c23aab04d9745ba817bd3e71b0feb6aa6",
+      "uvicorn-0.47.0-py3-none-any.whl": "2c5715bc12d1892d84752049f400cd1c3cb018514967fdfeb97640443a6a9432",
+      "jmespath-1.1.0-py3-none-any.whl": "a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64",
+      "urllib3-2.8.0-py3-none-any.whl": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
+      "typing_inspection-0.4.4-py3-none-any.whl": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+      "cffi-2.1.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": "34e261f78cb6ceaaa36f42f2613f4380d94d9c759a9c73c769ee6e0247364632",
+      "openai-3.40.0-py3-none-any.whl": "dfcfd4f65ee5a8bb824da90c9ad7fa0dda7f3bd472a7c564dffc6183f0a0b55c",
+      "click_didyoumean-0.3.1-py3-none-any.whl": "5c4bb6007cfea5f2fd6583a2fb6701a22a41eb98957e63d0fac41c10e7c3117c",
+      "s3transfer-0.19.3-py3-none-any.whl": "24eb7535804306355e31c952a90022bf5b2f9d760f9a11062c7493a217c08553",
+      "wcwidth-0.9.4-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": "b185c8b927b23af2721be1783499d1cfa5c028b098b0858951b4ae224477f1c2",
+      "lxml-6.1.3-cp311-cp311-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl": "527195c188d7d0af748cd48d220ab8cdc5cb99be3d49ac4d9be7324d8abf9bc0",
+      "beautifulsoup4-4.15.0-py3-none-any.whl": "d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9"
+    },
+    "lock_sha256": "09676451b4382e8e443668a34be93e456345d39db2e06117205aa1056e623526"
+  },
+  "image-manifest.json": {
+    "source_commit": "b8b2779a9ee678f778ddb95890cebc3a0faff55e",
+    "tag": "md2word-p0:b8b2779a-list-loading",
+    "image_id": "sha256:cbab7900f5172e5d24bcd743e5a2e8fcc73fcc1adb79d42392504862084e0667",
+    "repo_digests": [
+      "md2word-p0@sha256:cbab7900f5172e5d24bcd743e5a2e8fcc73fcc1adb79d42392504862084e0667"
+    ],
+    "os": "linux",
+    "architecture": "amd64",
+    "size_bytes": 164037317,
+    "created": "2026-11-07T01:24:46.586364203+08:00",
+    "labels": {
+      "org.opencontainers.image.revision": "b8b2779a9ee678f778ddb95890cebc3a0faff55e",
+      "org.opencontainers.image.version": "b8b2779a-list-loading"
+    },
+    "build_completed_at": "2026-11-06T17:24:47.735255+00:00",
+    "smoke_passed": true,
+    "runtime_files": 341,
+    "runtime_files_manifest_sha256": "4b11672f55d2404c53eef1e1456e266e900537e65de2e7ddcf0530729b414353",
+    "validated_at": "2026-11-06T17:27:09.503601+00:00"
+  },
+  "database-identity.json": {
+    "server_uuid": "a40f680d-5c49-11f1-b3c3-56d31c1c325b",
+    "version": "8.4.9",
+    "database_name": "md2word",
+    "event_scheduler": "ON",
+    "tables": [
+      {
+        "TABLE_NAME": "acceptance_runs",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 3,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "audit_events",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 815,
+        "DATA_LENGTH": 425984,
+        "INDEX_LENGTH": 65536
+      },
+      {
+        "TABLE_NAME": "document_files",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 1754,
+        "DATA_LENGTH": 14106624,
+        "INDEX_LENGTH": 131072
+      },
+      {
+        "TABLE_NAME": "document_job_callback_messages",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 106,
+        "DATA_LENGTH": 163840,
+        "INDEX_LENGTH": 49152
+      },
+      {
+        "TABLE_NAME": "document_job_publications",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 49152
+      },
+      {
+        "TABLE_NAME": "document_job_review_records",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 32768
+      },
+      {
+        "TABLE_NAME": "document_job_translation_batches",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 25,
+        "DATA_LENGTH": 294912,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "document_jobs",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 77,
+        "DATA_LENGTH": 21430272,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "file_retention_cleanup_locks",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "file_retention_cleanup_runs",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "file_retention_policies",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "internal_users",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 3,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 32768
+      },
+      {
+        "TABLE_NAME": "job_events",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 2374,
+        "DATA_LENGTH": 7880704,
+        "INDEX_LENGTH": 180224
+      },
+      {
+        "TABLE_NAME": "job_files",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 0
+      },
+      {
+        "TABLE_NAME": "jobs",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 0
+      },
+      {
+        "TABLE_NAME": "resource_default_versions",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 6,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 0
+      },
+      {
+        "TABLE_NAME": "resource_version_sequences",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 1,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 0
+      },
+      {
+        "TABLE_NAME": "resource_versions",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 12,
+        "DATA_LENGTH": 180224,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "saved_views",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "stage_messages",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "term_rule_categories",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 15,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "term_rule_proposals",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 22,
+        "DATA_LENGTH": 49152,
+        "INDEX_LENGTH": 32768
+      },
+      {
+        "TABLE_NAME": "term_rule_review_batches",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "term_rule_review_items",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 32768
+      },
+      {
+        "TABLE_NAME": "term_rule_segments",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 400,
+        "DATA_LENGTH": 98304,
+        "INDEX_LENGTH": 0
+      },
+      {
+        "TABLE_NAME": "term_rule_versions",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 32768
+      },
+      {
+        "TABLE_NAME": "term_rules",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 202,
+        "DATA_LENGTH": 81920,
+        "INDEX_LENGTH": 65536
+      },
+      {
+        "TABLE_NAME": "terminology_releases",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "translation_term_match_traces",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 0,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "translation_term_proposal_changes",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 20,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "translation_term_proposals",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 20,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 32768
+      },
+      {
+        "TABLE_NAME": "translation_term_sets",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 3,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "translation_term_versions",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 5,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 16384
+      },
+      {
+        "TABLE_NAME": "translation_terms",
+        "ENGINE": "InnoDB",
+        "TABLE_ROWS": 32,
+        "DATA_LENGTH": 16384,
+        "INDEX_LENGTH": 49152
+      }
+    ],
+    "events": [],
+    "triggers": []
+  },
+  "writer-container-inventory.json": [
+    {
+      "name": "/md2word-p0-api-1",
+      "status": "running",
+      "command": "python",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/md2word-p0_md2word-var/_data",
+          "destination": "/app/var",
+          "rw": true
+        },
+        {
+          "type": "bind",
+          "source": "/root/md2word-releases/template-compat-c1f7e8a1468f-20261029/deploy/auth_internal_users.json",
+          "destination": "/app/deploy/auth_internal_users.json",
+          "rw": false
+        },
+        {
+          "type": "bind",
+          "source": "/root/md2word-releases/a1088a3/resources/templates/default/datasheet_template.docx",
+          "destination": "/app/resources/templates/default/datasheet_template.docx",
+          "rw": false
+        },
+        {
+          "type": "bind",
+          "source": "/root/md2word-releases/a1088a3/resources/template_configs/datasheet_template.yaml",
+          "destination": "/app/resources/template_configs/datasheet_template.yaml",
+          "rw": false
+        }
+      ]
+    },
+    {
+      "name": "/md2word-p0-worker-1",
+      "status": "running",
+      "command": "python",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/md2word-p0_md2word-var/_data",
+          "destination": "/app/var",
+          "rw": true
+        },
+        {
+          "type": "bind",
+          "source": "/root/md2word-releases/a1088a3/resources/templates/default/datasheet_template.docx",
+          "destination": "/app/resources/templates/default/datasheet_template.docx",
+          "rw": false
+        },
+        {
+          "type": "bind",
+          "source": "/root/md2word-releases/a1088a3/resources/template_configs/datasheet_template.yaml",
+          "destination": "/app/resources/template_configs/datasheet_template.yaml",
+          "rw": false
+        },
+        {
+          "type": "bind",
+          "source": "/root/md2word-releases/template-compat-c1f7e8a1468f-20261029/deploy/auth_internal_users.json",
+          "destination": "/app/deploy/auth_internal_users.json",
+          "rw": false
+        }
+      ]
+    },
+    {
+      "name": "/md2word-p0-redis-1",
+      "status": "running",
+      "command": "docker-entrypoint.sh",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/md2word-p0_md2word-redis/_data",
+          "destination": "/data",
+          "rw": true
+        }
+      ]
+    },
+    {
+      "name": "/md2word-p0-mysql-1",
+      "status": "running",
+      "command": "docker-entrypoint.sh",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/md2word-p0_md2word-mysql/_data",
+          "destination": "/var/lib/mysql",
+          "rw": true
+        }
+      ]
+    }
+  ],
+  "previous-compose-files.json": [
+    "/root/md2word-releases/template-compat-c1f7e8a1468f-20261029/compose.yaml",
+    "/root/md2word-releases/query-v2-preparation-20261030/v2/cutover/compose.override.yaml",
+    "/root/md2word-releases/mineru-merge-283d8af0a69b-20261030/compose.override.yaml",
+    "/root/md2word-releases/word-quality-c2e8b8b0f51c-20261030/compose.override.yaml",
+    "/root/md2word-releases/residual-quality-eb38dc0bd600-20261030/compose.override.yaml",
+    "/root/md2word-releases/table-crop-12188b04b7b4-20261030/compose.override.yaml",
+    "/root/md2word-releases/mixed-lines-d6cddcd5a9ba-20261031/compose.override.yaml",
+    "/root/md2word-releases/1da199f-20261106T114319Z/compose.override.yaml",
+    "/root/md2word-releases/28cacd8a-table-diagnostics/compose.override.yaml"
+  ],
+  "compose-files.json": [
+    "/root/md2word-releases/template-compat-c1f7e8a1468f-20261029/compose.yaml",
+    "/root/md2word-releases/query-v2-preparation-20261030/v2/cutover/compose.override.yaml",
+    "/root/md2word-releases/mineru-merge-283d8af0a69b-20261030/compose.override.yaml",
+    "/root/md2word-releases/word-quality-c2e8b8b0f51c-20261030/compose.override.yaml",
+    "/root/md2word-releases/residual-quality-eb38dc0bd600-20261030/compose.override.yaml",
+    "/root/md2word-releases/table-crop-12188b04b7b4-20261030/compose.override.yaml",
+    "/root/md2word-releases/mixed-lines-d6cddcd5a9ba-20261031/compose.override.yaml",
+    "/root/md2word-releases/1da199f-20261106T114319Z/compose.override.yaml",
+    "/root/md2word-releases/28cacd8a-table-diagnostics/compose.override.yaml",
+    "/root/md2word-releases/b8b2779a-list-loading/compose.override.yaml"
+  ],
+  "compose-review.json": {
+    "changed_paths": [
+      "services.api.environment.APP_VERSION",
+      "services.api.environment.DEPLOYMENT_ID",
+      "services.api.image",
+      "services.worker.environment.APP_VERSION",
+      "services.worker.environment.DEPLOYMENT_ID",
+      "services.worker.image"
+    ],
+    "old_rendered_environment_matches_running": true,
+    "old_mounts_match_running": true,
+    "old_files": 9,
+    "new_files": 10,
+    "image_ref": "md2word-p0@sha256:cbab7900f5172e5d24bcd743e5a2e8fcc73fcc1adb79d42392504862084e0667",
+    "image_id": "sha256:cbab7900f5172e5d24bcd743e5a2e8fcc73fcc1adb79d42392504862084e0667",
+    "app_version": "b8b2779a",
+    "deployment_id": "hostdzire-20261106T172447Z-b8b2779a-list-loading",
+    "applied": false
+  },
+  "rollback-image-verification.json": {
+    "old": {
+      "image_id": "sha256:77176d1903e9f266814b9ec3464551d1920c50b33683f3707889d570243dac7a",
+      "projection_versions": {
+        "document_files": 1,
+        "document_jobs": 2
+      },
+      "source_commit": "28cacd8a3afea2cd02fc36230ad9d6bc0e7b89e8",
+      "migration_sha256": "9483a390f4e228354afddb2e335b3884944dd93efc829bc530d50658933f7b54",
+      "runtime_files_matched": 340,
+      "runtime_files_manifest_sha256": "47552bca452ace5ab442b52cbd1a938ecaed8e820d22ed6aa314953a9282fcd8"
+    },
+    "new": {
+      "image_id": "sha256:cbab7900f5172e5d24bcd743e5a2e8fcc73fcc1adb79d42392504862084e0667",
+      "projection_versions": {
+        "document_files": 2,
+        "document_jobs": 3
+      }
+    },
+    "archive": {
+      "path": "/root/md2word-releases/b8b2779a-list-loading/release-preparation/release-images.tar",
+      "bytes": 165046272,
+      "sha256": "7a192020e3c94164b6f3b1673ee15411e87fa601313201245b25ca37b4096b83",
+      "tags": [
+        "md2word-p0:28cacd8a-table-diagnostics",
+        "md2word-p0:b8b2779a-list-loading"
+      ]
+    }
+  },
+  "runtime-storage.json": {
+    "backend": "local_object",
+    "data_dir": "/app/var",
+    "object_store_path": "/app/var/object_artifacts"
+  },
+  "redis-preparation.json": {
+    "persistence": {
+      "rdb_bgsave_in_progress": 0,
+      "rdb_last_bgsave_status": "ok",
+      "aof_enabled": 1,
+      "aof_rewrite_in_progress": 0,
+      "aof_last_write_status": "ok"
+    },
+    "config": {
+      "dir": "/data",
+      "dbfilename": "dump.rdb",
+      "appenddirname": "appendonlydir",
+      "appendonly": "yes",
+      "save": "3600 1 300 100 60 10000"
+    },
+    "db": 0,
+    "queue_lengths": {
+      "document-jobs": 0,
+      "document-translation-batches": 0
+    },
+    "unacked_type": "none",
+    "unacked_index_type": "none"
+  },
+  "preparation-final-state.json": {
+    "production_containers_unchanged": true,
+    "protected_after": [
+      {
+        "name": "/md2word-p0-api-1",
+        "id": "70686271932f092715f4bb2e44abb0e4acf6f8dc0f073d103de90d1cdff11430",
+        "image": "sha256:77176d1903e9f266814b9ec3464551d1920c50b33683f3707889d570243dac7a",
+        "started_at": "2026-11-06T15:30:32.073824872Z",
+        "status": "running"
+      },
+      {
+        "name": "/md2word-p0-worker-1",
+        "id": "5e66c00988413ad19d49ba2622afba4ee51f0eecbd35c6cef79664aa0a008a4f",
+        "image": "sha256:77176d1903e9f266814b9ec3464551d1920c50b33683f3707889d570243dac7a",
+        "started_at": "2026-11-06T15:30:32.07461209Z",
+        "status": "running"
+      },
+      {
+        "name": "/md2word-p0-mysql-1",
+        "id": "56c40a62b9377e7cacb3a0e040a9865f4a7fef76df87e4502befe2e3a2454e96",
+        "image": "sha256:c36050afdca850f23cef85703f84c7531a5ae155a11b5ee1c60acb09937c4084",
+        "started_at": "2026-10-29T04:15:44.059421206Z",
+        "status": "running"
+      },
+      {
+        "name": "/md2word-p0-redis-1",
+        "id": "06f72de6f2e24e8890932df0e90ffbb1732c918a3cbb6eb6aa4639a80e088bef",
+        "image": "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+        "started_at": "2026-10-29T04:15:44.011312378Z",
+        "status": "running"
+      }
+    ],
+    "production_network_members": [
+      "md2word-p0-api-1",
+      "md2word-p0-mysql-1",
+      "md2word-p0-redis-1",
+      "md2word-p0-worker-1"
+    ],
+    "volume_bytes": {
+      "md2word-p0_md2word-var": 459112448,
+      "md2word-p0_md2word-mysql": 723001344,
+      "md2word-p0_md2word-redis": 20152320
+    },
+    "disk_free_bytes": 63522017280
+  },
+  "nginx-review.json": {
+    "active_site": "/etc/nginx/sites-enabled/md2word-api.962850.xyz.conf",
+    "original_sha256": "b7ff404fa25dbfe8bc7801234248d5ca25c691cdc5a5530d8a37e3fe9aaa5b60",
+    "original_copy": "/root/md2word-releases/b8b2779a-list-loading/release-preparation/nginx/original.conf",
+    "candidates": {
+      "drain": {
+        "path": "/root/md2word-releases/b8b2779a-list-loading/release-preparation/nginx/drain.conf",
+        "sha256": "30b2d032b7ebded24bb8ed8596fcd0cc1a24799404f2e600980965afb8b92d04",
+        "syntax_exit_code": 0
+      },
+      "freeze": {
+        "path": "/root/md2word-releases/b8b2779a-list-loading/release-preparation/nginx/freeze.conf",
+        "sha256": "b00a6be38d67ff3f9bf20bcbeb007859feea87996d5c4e0bb49c7b65369803d6",
+        "syntax_exit_code": 0
+      }
+    },
+    "syntax_only": true,
+    "active_config_unchanged": true,
+    "reload_executed": false
+  },
+  "schema-preflight.json": {
+    "root_metadata_query_passed": true,
+    "type_and_object_counts": {
+      "bigint": 6,
+      "int": 15,
+      "longtext": 31,
+      "text": 10,
+      "tinyint": 8,
+      "varchar": 222,
+      "views": 0,
+      "routines": 0,
+      "events": 0,
+      "triggers": 0
+    },
+    "read_only_metadata_only": true
+  }
+}

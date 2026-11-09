@@ -1,0 +1,45 @@
+{
+  "archive_sha256": "63b2d9ec86bbf15eaf4c1bf3483d0dca745c1d807db4203e68fc89415d1d245a",
+  "files": {
+    "test_release_ops.py": "c408580e414a1a96584d99d0c6693d6b4517893ab99837cf1986bf030ec59b0c",
+    "README.md": "b347192f2c3c38cf31e2788f5abfe266073e4beafe4575e2e8ae4013a9359c63",
+    "common.py": "8e66c8838e6b13f5a6a6ad3042ba02b4406c23c5f3a0b5f22cb260da143282c7",
+    "migrate.py": "9c10ff2a0df34ff05763b018aeef39f020a3e99e601d4c8397f4314806f2909f",
+    "query_diff.py": "7768b47e176490b81354b6d109c19eca67003046c3a4b675602d862e47cd9cd8",
+    "snapshot.py": "b7252adc7775b36a0cc478db22da8555fd3bb3a90bdec641adbb673edb9fdacd"
+  },
+  "remote_directory": "/root/md2word-releases/b8b2779a-list-loading/release-ops",
+  "cli_import_smoke": [
+    {
+      "version": "old",
+      "entry": "migrate.py",
+      "exit_code": 0
+    },
+    {
+      "version": "old",
+      "entry": "snapshot.py",
+      "exit_code": 0
+    },
+    {
+      "version": "old",
+      "entry": "query_diff.py",
+      "exit_code": 0
+    },
+    {
+      "version": "new",
+      "entry": "migrate.py",
+      "exit_code": 0
+    },
+    {
+      "version": "new",
+      "entry": "snapshot.py",
+      "exit_code": 0
+    },
+    {
+      "version": "new",
+      "entry": "query_diff.py",
+      "exit_code": 0
+    }
+  ],
+  "production_execution": false
+}

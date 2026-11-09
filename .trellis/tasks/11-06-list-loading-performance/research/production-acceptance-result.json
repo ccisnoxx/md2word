@@ -1,0 +1,60 @@
+{
+  "accepted": true,
+  "cutover_at": "2026-11-07T01:18:34.979889+00:00",
+  "accepted_at": "2026-11-07T01:38:49.566242+00:00",
+  "browser_evidence_at": "2026-11-07T01:32:44.560Z",
+  "release": "b8b2779a-list-loading",
+  "image": "sha256:cbab7900f5172e5d24bcd743e5a2e8fcc73fcc1adb79d42392504862084e0667",
+  "runtime": {
+    "api": {
+      "running": true,
+      "image": "sha256:cbab7900f5172e5d24bcd743e5a2e8fcc73fcc1adb79d42392504862084e0667",
+      "id": "af0f6893ebc7d40d5c0da5024214508c7809d66ed598152f8cf9a04b4e5455d3"
+    },
+    "worker": {
+      "running": true,
+      "image": "sha256:cbab7900f5172e5d24bcd743e5a2e8fcc73fcc1adb79d42392504862084e0667",
+      "id": "9ab1165ed8a3595f8508f0abe41985d3386fb446ce1dfb4ab2129fb63dcdfbe5"
+    },
+    "mysql": {
+      "running": true,
+      "image": "sha256:c36050afdca850f23cef85703f84c7531a5ae155a11b5ee1c60acb09937c4084",
+      "id": "56c40a62b9377e7cacb3a0e040a9865f4a7fef76df87e4502befe2e3a2454e96"
+    },
+    "redis": {
+      "running": true,
+      "image": "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+      "id": "06f72de6f2e24e8890932df0e90ffbb1732c918a3cbb6eb6aa4639a80e088bef"
+    }
+  },
+  "api_stats": [
+    {
+      "page": "jobs",
+      "samples": 3,
+      "apiMedianMs": 1508.9000000953674,
+      "pageMinMs": 2060.399999976158,
+      "pageMaxMs": 2447,
+      "passed": true
+    },
+    {
+      "page": "incidents",
+      "samples": 3,
+      "apiMedianMs": 1022.7000000476837,
+      "pageMinMs": 1235,
+      "pageMaxMs": 1563.1999999284744,
+      "passed": true
+    }
+  ],
+  "source_data_and_objects_preserved": true,
+  "public_ready": true,
+  "public_host": "md2word.962850.xyz",
+  "probe_correction": "初次收尾探测误按文件名选旧子域；按实际server_name更正后公网ready200。",
+  "clones_stopped": [
+    "md2word-list-loading-rehearsal-mysql",
+    "md2word-list-loading-rehearsal-redis"
+  ],
+  "backup_dir": "/root/md2word-backups/list-loading-b8b2779a/20261107T000844Z",
+  "planned_deadline_utc": "2026-11-07T01:33:23.545271+00:00",
+  "browser_acceptance_before_deadline": true,
+  "full_database_restore_used": false
+}

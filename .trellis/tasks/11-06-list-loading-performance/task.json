@@ -2,8 +2,8 @@
   "id": "list-loading-performance",
   "name": "list-loading-performance",
   "title": "线上任务工作台与异常列表加载性能排查",
-  "description": "普通列表与异常列表的本地修复、定向验证、独立复核完成；未提交/推送/部署，线上验收待后续授权。",
-  "status": "in_progress",
+  "description": "已发布b8b2779a-list-loading；备份隔离O/C/R、生产五字段/双表迁移、统一API/Worker及正常认证页面验收全部通过。两个列表接口中位≤2秒、数据出现≤3秒；原目录/备份/回退证据保留。",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "document_jobs",
   "package": null,
@@ -11,12 +11,12 @@
   "creator": "777",
   "assignee": "777",
   "createdAt": "2026-11-06",
-  "completedAt": null,
+  "completedAt": "2026-11-07",
   "branch": "codex/list-loading-performance",
   "base_branch": "main",
   "worktree_path": "/Users/sc/PycharmProjects/md2word-wt/list-loading-performance",
-  "commit": null,
-  "pr_url": null,
+  "commit": "1a8211106fab865756cf090c7211d6008738e381",
+  "pr_url": "https://github.com/ccisnoxx/md2word/pull/34",
   "subtasks": [],
   "children": [],
   "parent": null,
@@ -27,6 +27,58 @@
     "app/domains/document_jobs/incidents.py",
     "app/infrastructure/persistence/document_job_list_query.py"
   ],
-  "notes": "2026-11-07 用户批准按既定计划核对并本地提交；当前执行提交与发布方案准备。推送、发布分支集成及生产变更仍按后续确认步骤执行，线上验收前保持in_progress。",
-  "meta": {}
+  "notes": "2026-11-07本地提交1a8211106fab865756cf090c7211d6008738e381，独立worktree干净；复用现有验证，未重跑应用检查。远端main只读核对仍25860865，远端无任务分支。未push/merge/build/部署；发布方案及尚需落实的备份/恢复/身份/保真/差分载体已记录。\n2026-11-07后续推送与集成：用户批准推送任务分支及main快进到1a8211106fab865756cf090c7211d6008738e381。任务分支推送成功，本地main已快进；原29份任务记录备份后恢复并逐文件校验。远端main推送被GH013拒绝（必须通过PR），仍25860865812ef5bb9159a449aaa7df0a6dfcb815。已创建草稿PR #34，源提交一致、MERGEABLE，无自动合并。PR合并会产生新SHA，待确认采用merge commit后继续。复用验证结果，未新增代码提交、应用测试、生产构建或切换。详见local-commit-handoff.md。\n2026-11-07 PR集成完成：用户另行批准merge commit后，将PR #34转为正式PR并以指定head保护合入。GitHub确认MERGED，合并提交b8b2779a9ee678f778ddb95890cebc3a0faff55e（北京时间2026-11-07 01:09:36）。本地main已快进同步；两个父提交为原main 25860865812ef5bb9159a449aaa7df0a6dfcb815与原候选1a8211106fab865756cf090c7211d6008738e381，合并tree与候选tree完全一致。同步前后29份任务记录SHA256一致。复用既有验证；待发布代码固定为合并提交，镜像未构建，生产未切换，任务保持in_progress。\n2026-11-07构建及审批材料完成：按用户授权从b8b2779a构建linux/amd64镜像cbab7900…，57wheel核验、依赖/import冒烟及341运行文件SHA通过；旧340文件与28cacd8a一致，旧2/1新3/2已核，双镜像归档保留。新10层Compose仅6处预期变化，nginx drain/freeze候选仅语法检查未应用。任务专用载体12项离线/5AST及新旧镜像6次无网CLI导入通过，独立复核闭合。方案包含全部写者/回调排空、全库对象Redis备份、隔离O→C→R演练、生产逐批迁移与旧JSON重建，线上门槛未执行。新增材料未提交，任务保持in_progress。\n2026-11-07后续用户批准生产停写、备份及隔离恢复/回退演练，全部门槛通过后迁移统一切换并验收；失败重建旧JSON回退，全库覆盖恢复仍另行确认。执行详情见production-execution.md；当前生产停写且源JSON未迁移。\n2026-11-07生产完成：API/Worker统一cbab7900镜像，01:18:34Z恢复入口；01:32:44Z浏览器验收证据完成，主机复核与专属隔离容器停止于01:38:49Z。普通API中位1.5089秒/页面2.0604–2.447秒；异常API中位1.0227秒/页面1.235–1.5632秒。O/C/R各双跑109完整响应稳定相等；生产files1928 v2/jobs119 v3全量verify及原列/其他表/对象保真通过。公网ready200版本b8b2779a，生产MySQL/Redis实例不变；没有全库恢复。任务completed，保留原目录，新增记录未提交。\n2026-11-09本地材料整理：保留2026-11-07验收事实和completed日期；补齐材料索引、独立待批准运维记录提交计划与输入清单，将原裁剪截图逐字节留存到任务research。历史冻结脚本/manifest不重写，已通过产品/运维验证按输入身份复用；本轮仅本地整理，无stage/commit/push/生产操作。\n2026-11-09用户批准按既定计划新建codex/list-loading-ops-records并形成两个本地提交，不推送、不归档、不改生产。批准清单35路径及34文件SHA预检一致；第一批16路径已提交38f686d0fcc6358a105e3f585212e9ae60219f73。第二批19路径包含本次交接说明，其完整SHA以Git提交记录为准；历史验收/冻结资产保持原字节，验证复用。",
+  "meta": {
+    "release_preparation": {
+      "source_commit": "b8b2779a9ee678f778ddb95890cebc3a0faff55e",
+      "image_id": "sha256:cbab7900f5172e5d24bcd743e5a2e8fcc73fcc1adb79d42392504862084e0667",
+      "image_ref": "md2word-p0@sha256:cbab7900f5172e5d24bcd743e5a2e8fcc73fcc1adb79d42392504862084e0667",
+      "release_dir": "/root/md2word-releases/b8b2779a-list-loading",
+      "ops_archive_sha256": "63b2d9ec86bbf15eaf4c1bf3483d0dca745c1d807db4203e68fc89415d1d245a",
+      "state": "released_accepted"
+    },
+    "production_acceptance": {
+      "result": "passed",
+      "version": "b8b2779a",
+      "image_id": "sha256:cbab7900f5172e5d24bcd743e5a2e8fcc73fcc1adb79d42392504862084e0667",
+      "cutover_at": "2026-11-07T01:18:34.979889+00:00",
+      "browser_evidence_at": "2026-11-07T01:32:44.560Z",
+      "accepted_at": "2026-11-07T01:38:49.566242+00:00",
+      "public_host": "md2word.962850.xyz",
+      "stats": [
+        {
+          "page": "jobs",
+          "samples": 3,
+          "apiMedianMs": 1508.9000000953674,
+          "pageMinMs": 2060.399999976158,
+          "pageMaxMs": 2447,
+          "passed": true
+        },
+        {
+          "page": "incidents",
+          "samples": 3,
+          "apiMedianMs": 1022.7000000476837,
+          "pageMinMs": 1235,
+          "pageMaxMs": 1563.1999999284744,
+          "passed": true
+        }
+      ],
+      "record": "production-execution.md",
+      "raw_evidence": "/root/md2word-releases/b8b2779a-list-loading/window",
+      "full_database_restore_used": false
+    },
+    "ops_records_submission": {
+      "prepared_on": "2026-11-09",
+      "status": "approved_for_local_commits",
+      "plan": "ops-records-commit-plan.md",
+      "inventory": "research/ops-materials-inventory.json",
+      "proposed_branch": "codex/list-loading-ops-records",
+      "push_authorized": false,
+      "production_changes_authorized": false,
+      "approved_on": "2026-11-09",
+      "branch": "codex/list-loading-ops-records",
+      "approved_local_commits": 2,
+      "first_commit": "38f686d0fcc6358a105e3f585212e9ae60219f73"
+    }
+  }
 }

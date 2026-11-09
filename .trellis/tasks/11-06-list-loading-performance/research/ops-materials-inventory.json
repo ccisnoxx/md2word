@@ -1,0 +1,350 @@
+{
+  "schema_version": 1,
+  "prepared_on": "2026-11-09",
+  "status": "approved_for_local_commits",
+  "base_head": "b8b2779a9ee678f778ddb95890cebc3a0faff55e",
+  "proposed_branch": "codex/list-loading-ops-records",
+  "commits": [
+    {
+      "order": 1,
+      "message": "chore: preserve list loading release tooling",
+      "paths": [
+        ".trellis/spec/backend/document-job-list-query-v2.md",
+        ".trellis/tasks/11-06-list-loading-performance/research/release_ops/README.md",
+        ".trellis/tasks/11-06-list-loading-performance/research/release_ops/common.py",
+        ".trellis/tasks/11-06-list-loading-performance/research/release_ops/migrate.py",
+        ".trellis/tasks/11-06-list-loading-performance/research/release_ops/query_diff.py",
+        ".trellis/tasks/11-06-list-loading-performance/research/release_ops/snapshot.py",
+        ".trellis/tasks/11-06-list-loading-performance/research/release_ops/test_release_ops.py",
+        ".trellis/tasks/11-06-list-loading-performance/research/release_ops/window_helpers.py",
+        ".trellis/tasks/11-06-list-loading-performance/research/release_ops/test_window_helpers.py",
+        ".trellis/tasks/11-06-list-loading-performance/research/release-ops-manifest.json",
+        ".trellis/tasks/11-06-list-loading-performance/research/release-ops-review.md",
+        ".trellis/tasks/11-06-list-loading-performance/research/window-lib.py",
+        ".trellis/tasks/11-06-list-loading-performance/research/window-production-switch.py",
+        ".trellis/tasks/11-06-list-loading-performance/research/window-helpers-review.md",
+        ".trellis/tasks/11-06-list-loading-performance/research/window-switch-review.md",
+        ".trellis/tasks/11-06-list-loading-performance/research/window-readiness.md"
+      ]
+    },
+    {
+      "order": 2,
+      "message": "docs: record list loading production acceptance",
+      "paths": [
+        ".trellis/tasks/11-06-list-loading-performance/design.md",
+        ".trellis/tasks/11-06-list-loading-performance/implement.md",
+        ".trellis/tasks/11-06-list-loading-performance/prd.md",
+        ".trellis/tasks/11-06-list-loading-performance/production-switch-plan.md",
+        ".trellis/tasks/11-06-list-loading-performance/task.json",
+        ".trellis/tasks/11-06-list-loading-performance/local-commit-handoff.md",
+        ".trellis/tasks/11-06-list-loading-performance/production-execution.md",
+        ".trellis/tasks/11-06-list-loading-performance/ops-records-commit-plan.md",
+        ".trellis/tasks/11-06-list-loading-performance/research/approval-package-manifest.json",
+        ".trellis/tasks/11-06-list-loading-performance/research/production-acceptance-result.json",
+        ".trellis/tasks/11-06-list-loading-performance/research/production-browser-acceptance.json",
+        ".trellis/tasks/11-06-list-loading-performance/research/production-build-manifest.json",
+        ".trellis/tasks/11-06-list-loading-performance/research/production-build.md",
+        ".trellis/tasks/11-06-list-loading-performance/research/production-execution-plan.md",
+        ".trellis/tasks/11-06-list-loading-performance/research/verification-summary.md",
+        ".trellis/tasks/11-06-list-loading-performance/research/ops-materials-index.md",
+        ".trellis/tasks/11-06-list-loading-performance/research/ops-materials-audit.md",
+        ".trellis/tasks/11-06-list-loading-performance/research/ops-materials-inventory.json",
+        ".trellis/tasks/11-06-list-loading-performance/research/production-acceptance.jpg"
+      ]
+    }
+  ],
+  "self_excluded_from_content_hashes": ".trellis/tasks/11-06-list-loading-performance/research/ops-materials-inventory.json",
+  "content_hashes": {
+    ".trellis/spec/backend/document-job-list-query-v2.md": {
+      "sha256": "3928c319ee4f15af233609f7a72b1a1d65ab12b9dc085c115e2698c2e0834794",
+      "bytes": 22144
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/release_ops/README.md": {
+      "sha256": "b347192f2c3c38cf31e2788f5abfe266073e4beafe4575e2e8ae4013a9359c63",
+      "bytes": 10606
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/release_ops/common.py": {
+      "sha256": "8e66c8838e6b13f5a6a6ad3042ba02b4406c23c5f3a0b5f22cb260da143282c7",
+      "bytes": 3333
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/release_ops/migrate.py": {
+      "sha256": "9c10ff2a0df34ff05763b018aeef39f020a3e99e601d4c8397f4314806f2909f",
+      "bytes": 1707
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/release_ops/query_diff.py": {
+      "sha256": "7768b47e176490b81354b6d109c19eca67003046c3a4b675602d862e47cd9cd8",
+      "bytes": 12374
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/release_ops/snapshot.py": {
+      "sha256": "b7252adc7775b36a0cc478db22da8555fd3bb3a90bdec641adbb673edb9fdacd",
+      "bytes": 9868
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/release_ops/test_release_ops.py": {
+      "sha256": "c408580e414a1a96584d99d0c6693d6b4517893ab99837cf1986bf030ec59b0c",
+      "bytes": 12707
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/release_ops/window_helpers.py": {
+      "sha256": "d16413a00d4f824adc53993060c964228cfa318f497e1791cc6c423812acee94",
+      "bytes": 15697
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/release_ops/test_window_helpers.py": {
+      "sha256": "303068675c3b63ddd3ea72b239b99405a48cd0416b821bde58d89068ae2c2b01",
+      "bytes": 14993
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/release-ops-manifest.json": {
+      "sha256": "c29e38c1583230d85231cf0c81094b63ce4ecacfa5131181d0850a673238ffbd",
+      "bytes": 1308
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/release-ops-review.md": {
+      "sha256": "4ac839a5981d146c21769a9e40f449355b11291439a787e01298e230fb1ee30f",
+      "bytes": 11801
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/window-lib.py": {
+      "sha256": "d333d98fabf995e1f9859371f16b0d3da06700fe52c37f0ed219b8eed6e9114a",
+      "bytes": 4027
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/window-production-switch.py": {
+      "sha256": "ddb9e4e3f5e845ad9a893c8d7fe5846437561790e20080257a1ca6b0e8754100",
+      "bytes": 11328
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/window-helpers-review.md": {
+      "sha256": "70ce0c90239b4add1a36cb8238f52b971cacf41c574ab99486355582d39dec04",
+      "bytes": 4994
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/window-switch-review.md": {
+      "sha256": "9eb3d5efa7c4d3843891d94256004591c25994730a01d1686ce557e02160948b",
+      "bytes": 6607
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/window-readiness.md": {
+      "sha256": "7602a23013f5dca52bd9a04c9be7fb4b9d082eb5876a8e18aaed883a602d7e9c",
+      "bytes": 16246
+    },
+    ".trellis/tasks/11-06-list-loading-performance/design.md": {
+      "sha256": "a77442356af18eaa8618e0b51a0a253bc81c67f0fbc226213a4180acc8e4fb81",
+      "bytes": 8349
+    },
+    ".trellis/tasks/11-06-list-loading-performance/implement.md": {
+      "sha256": "c3c5206e67982549d2998534c857cc2b26fc2ae2227744fb9e1304dbe40f5ed4",
+      "bytes": 8540
+    },
+    ".trellis/tasks/11-06-list-loading-performance/prd.md": {
+      "sha256": "3832caf13c7662990fe4e0a2c6b672d21c152f4ae5e4d5a3b50cd84035eb7900",
+      "bytes": 7801
+    },
+    ".trellis/tasks/11-06-list-loading-performance/production-switch-plan.md": {
+      "sha256": "3da5754a8424c6a2bb5cf6e89f9f8c28944e36a8d41cc52c9f59b2dd971bd82b",
+      "bytes": 19462
+    },
+    ".trellis/tasks/11-06-list-loading-performance/task.json": {
+      "sha256": "0b8ab3167be3a5b123c9ef4e37f9813b36e4a60426ddf339a71d7ac6bd167f84",
+      "bytes": 7008
+    },
+    ".trellis/tasks/11-06-list-loading-performance/local-commit-handoff.md": {
+      "sha256": "2c774fb630c27a2e56d8f7dc5a965f652e398fcab185cfc5c94ff927b4d5c943",
+      "bytes": 7235
+    },
+    ".trellis/tasks/11-06-list-loading-performance/production-execution.md": {
+      "sha256": "565ff6da0d68f1260e54b7e11f07465c8d14ff314690aa2c49a0c41e53406951",
+      "bytes": 7808
+    },
+    ".trellis/tasks/11-06-list-loading-performance/ops-records-commit-plan.md": {
+      "sha256": "0d2c46e27afcbba7218d9add9ce4a06ad05dcbc65457b4500dfcd6999a382755",
+      "bytes": 7507
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/approval-package-manifest.json": {
+      "sha256": "133b442860e73ee1805ae63e68dc4d7f3da8655863fe7f841271a5fa594fc174",
+      "bytes": 620
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/production-acceptance-result.json": {
+      "sha256": "c7e53a725c0855b17a98853d7e241a88286e0bd9875736d652b16a658d40954c",
+      "bytes": 2134
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/production-browser-acceptance.json": {
+      "sha256": "b5bea59921baafc23c6aa8ccec5f8f2037b6aaec7471b285e8f83f83445b3f09",
+      "bytes": 37556
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/production-build-manifest.json": {
+      "sha256": "45b2b0967cabbe334c04e85d42d82a38a29ba610d33c4f55c9a68c69f84ac398",
+      "bytes": 26800
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/production-build.md": {
+      "sha256": "5c90158cda8a87dda4e1c517126f5f8663ff7d9a69097c3439345da9874f9b1e",
+      "bytes": 5166
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/production-execution-plan.md": {
+      "sha256": "031f35b06b436a8b58af1a81ffa6eb3216906e67c0144cbf98039ce88af2029e",
+      "bytes": 40558
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/verification-summary.md": {
+      "sha256": "a5a4ed3e2b741e59547e639e85bee37d87a41113f9eccd7fe4df04a12fd20c69",
+      "bytes": 3350
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/ops-materials-index.md": {
+      "sha256": "a6c7db79c88b0bfe40d10c46fbfffd74d88135336972eb9f0387a51db208ba9a",
+      "bytes": 7371
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/ops-materials-audit.md": {
+      "sha256": "f7b04e6eeceea7dc1d66d543c17814e17c72d55a2fd31dfb0446ad0bbe745b02",
+      "bytes": 22687
+    },
+    ".trellis/tasks/11-06-list-loading-performance/research/production-acceptance.jpg": {
+      "sha256": "19fbc282a12488c928895420948794d758a699a2c1d04079e166692e2f67ee3b",
+      "bytes": 39340
+    }
+  },
+  "total_paths": 35,
+  "baseline_index_empty": true,
+  "unrecognized_dirty_paths": [],
+  "frozen_file_identity": {
+    "matched": 10,
+    "files": {
+      ".trellis/tasks/11-06-list-loading-performance/research/release_ops/test_release_ops.py": {
+        "recorded_sha256": "c408580e414a1a96584d99d0c6693d6b4517893ab99837cf1986bf030ec59b0c",
+        "matched": true
+      },
+      ".trellis/tasks/11-06-list-loading-performance/research/release_ops/README.md": {
+        "recorded_sha256": "b347192f2c3c38cf31e2788f5abfe266073e4beafe4575e2e8ae4013a9359c63",
+        "matched": true
+      },
+      ".trellis/tasks/11-06-list-loading-performance/research/release_ops/common.py": {
+        "recorded_sha256": "8e66c8838e6b13f5a6a6ad3042ba02b4406c23c5f3a0b5f22cb260da143282c7",
+        "matched": true
+      },
+      ".trellis/tasks/11-06-list-loading-performance/research/release_ops/migrate.py": {
+        "recorded_sha256": "9c10ff2a0df34ff05763b018aeef39f020a3e99e601d4c8397f4314806f2909f",
+        "matched": true
+      },
+      ".trellis/tasks/11-06-list-loading-performance/research/release_ops/query_diff.py": {
+        "recorded_sha256": "7768b47e176490b81354b6d109c19eca67003046c3a4b675602d862e47cd9cd8",
+        "matched": true
+      },
+      ".trellis/tasks/11-06-list-loading-performance/research/release_ops/snapshot.py": {
+        "recorded_sha256": "b7252adc7775b36a0cc478db22da8555fd3bb3a90bdec641adbb673edb9fdacd",
+        "matched": true
+      },
+      ".trellis/tasks/11-06-list-loading-performance/research/release_ops/window_helpers.py": {
+        "recorded_sha256": "d16413a00d4f824adc53993060c964228cfa318f497e1791cc6c423812acee94",
+        "matched": true
+      },
+      ".trellis/tasks/11-06-list-loading-performance/research/release_ops/test_window_helpers.py": {
+        "recorded_sha256": "303068675c3b63ddd3ea72b239b99405a48cd0416b821bde58d89068ae2c2b01",
+        "matched": true
+      },
+      ".trellis/tasks/11-06-list-loading-performance/research/window-lib.py": {
+        "recorded_sha256": "d333d98fabf995e1f9859371f16b0d3da06700fe52c37f0ed219b8eed6e9114a",
+        "matched": true
+      },
+      ".trellis/tasks/11-06-list-loading-performance/research/window-production-switch.py": {
+        "recorded_sha256": "ddb9e4e3f5e845ad9a893c8d7fe5846437561790e20080257a1ca6b0e8754100",
+        "matched": true
+      }
+    }
+  },
+  "historical_approval_documents": {
+    "matched": 3,
+    "total": 4,
+    "comparisons": {
+      ".trellis/tasks/11-06-list-loading-performance/production-switch-plan.md": {
+        "historical_sha256": "7676626e955638aa6c45f78170caf3baa3b37e87dbe780b9dee99c902bced6b1",
+        "current_sha256": "3da5754a8424c6a2bb5cf6e89f9f8c28944e36a8d41cc52c9f59b2dd971bd82b",
+        "matched": false
+      },
+      ".trellis/tasks/11-06-list-loading-performance/research/production-build.md": {
+        "historical_sha256": "5c90158cda8a87dda4e1c517126f5f8663ff7d9a69097c3439345da9874f9b1e",
+        "current_sha256": "5c90158cda8a87dda4e1c517126f5f8663ff7d9a69097c3439345da9874f9b1e",
+        "matched": true
+      },
+      ".trellis/tasks/11-06-list-loading-performance/research/production-execution-plan.md": {
+        "historical_sha256": "031f35b06b436a8b58af1a81ffa6eb3216906e67c0144cbf98039ce88af2029e",
+        "current_sha256": "031f35b06b436a8b58af1a81ffa6eb3216906e67c0144cbf98039ce88af2029e",
+        "matched": true
+      },
+      ".trellis/tasks/11-06-list-loading-performance/research/release-ops-review.md": {
+        "historical_sha256": "4ac839a5981d146c21769a9e40f449355b11291439a787e01298e230fb1ee30f",
+        "current_sha256": "4ac839a5981d146c21769a9e40f449355b11291439a787e01298e230fb1ee30f",
+        "matched": true
+      }
+    },
+    "note": "当前切换方案已演进；保留原审批SHA，未取得其原正文，不声称逐字还原。"
+  },
+  "reused_context_validation": {
+    ".trellis/tasks/11-06-list-loading-performance/implement.jsonl": {
+      "sha256": "cd27325d2becbecd80cf36f44f0aef9267b1a168e541d46001840f45145234de",
+      "entries": 6,
+      "matches_head": true,
+      "result": "复用既有通过结果"
+    },
+    ".trellis/tasks/11-06-list-loading-performance/check.jsonl": {
+      "sha256": "cd27325d2becbecd80cf36f44f0aef9267b1a168e541d46001840f45145234de",
+      "entries": 6,
+      "matches_head": true,
+      "result": "复用既有通过结果"
+    }
+  },
+  "evidence_consistency": {
+    "recorded_production_date": "2026-11-07",
+    "stats_recomputed_from_existing_json": [
+      {
+        "page": "jobs",
+        "samples": 3,
+        "apiMedianMs": 1508.9000000953674,
+        "pageMinMs": 2060.399999976158,
+        "pageMaxMs": 2447
+      },
+      {
+        "page": "incidents",
+        "samples": 3,
+        "apiMedianMs": 1022.7000000476837,
+        "pageMinMs": 1235,
+        "pageMaxMs": 1563.1999999284744
+      }
+    ],
+    "screenshot": {
+      "source_path": "/Users/sc/.codex/visualizations/2026/11/06/01a1b183-fc66-7bc1-b30a-9663a4e4cc1d/md2word-list-acceptance.png",
+      "committable_copy": ".trellis/tasks/11-06-list-loading-performance/research/production-acceptance.jpg",
+      "format": "JPEG",
+      "sha256": "19fbc282a12488c928895420948794d758a699a2c1d04079e166692e2f67ee3b",
+      "bytes_identical": true
+    }
+  },
+  "local_checks": {
+    "checked_on": "2026-11-09",
+    "scope": "本地材料身份与文档检查，未运行应用或运维脚本",
+    "exact_path_set": true,
+    "json_parse": true,
+    "local_markdown_links_checked": 49,
+    "missing_link_targets": [],
+    "trailing_whitespace": [],
+    "git_diff_check": true,
+    "index_empty": true,
+    "production_access_performed": false,
+    "application_or_ops_tests_rerun": false,
+    "execution_checkpoint": "before_second_commit",
+    "first_commit_paths": 16,
+    "remaining_uncommitted_paths": 19,
+    "head_when_last_checked": "38f686d0fcc6358a105e3f585212e9ae60219f73"
+  },
+  "approved_on": "2026-11-09",
+  "created_branch": "codex/list-loading-ops-records",
+  "first_commit": "38f686d0fcc6358a105e3f585212e9ae60219f73",
+  "administrative_updates_after_approval": [
+    {
+      "path": ".trellis/tasks/11-06-list-loading-performance/task.json",
+      "approved_sha256": "5a26a4ba4dc13ad7985abc326cd3ed1e8d9c29c43514b09b421db48f9d5cadfe",
+      "current_sha256": "0b8ab3167be3a5b123c9ef4e37f9813b36e4a60426ddf339a71d7ac6bd167f84",
+      "reason": "用户已批准后的本地提交授权/交接事实更新"
+    },
+    {
+      "path": ".trellis/tasks/11-06-list-loading-performance/local-commit-handoff.md",
+      "approved_sha256": "4f50d54d52663aa0fd67b9a2855b576c5cbe18e83df2236ae5b677f882694e4c",
+      "current_sha256": "2c774fb630c27a2e56d8f7dc5a965f652e398fcab185cfc5c94ff927b4d5c943",
+      "reason": "用户已批准后的本地提交授权/交接事实更新"
+    },
+    {
+      "path": ".trellis/tasks/11-06-list-loading-performance/ops-records-commit-plan.md",
+      "approved_sha256": "22b7f202668ffdb92e519740db2c640416a8d96dfe617ee14300e25748027c5c",
+      "current_sha256": "0d2c46e27afcbba7218d9add9ce4a06ad05dcbc65457b4500dfcd6999a382755",
+      "reason": "用户已批准后的本地提交授权/交接事实更新"
+    }
+  ]
+}
