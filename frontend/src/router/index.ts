@@ -148,8 +148,38 @@ const router = createRouter({
   ],
 });
 
+// 发布会原子切换静态目录，旧标签页按旧 hash 请求的页面 chunk 会 404；
+// Vite 对页面模块及其依赖的加载失败统一派发该事件，并随后抛出同一个错误对象。
+const chunkLoadErrors = new WeakSet<object>();
+const CHUNK_RELOAD_AT_KEY = "md2word.frontend.chunk_reload_at";
+// 窗口内再次失败说明不是旧版本问题（如网络中断），改为提示而不再刷新，避免循环。
+const CHUNK_RELOAD_WINDOW_MS = 10_000;
+
+if (typeof window !== "undefined") {
+  window.addEventListener("vite:preloadError", (event) => {
+    const payload: unknown = (event as Event & { payload?: unknown }).payload;
+    if (typeof payload === "object" && payload !== null) {
+      chunkLoadErrors.add(payload);
+    }
+  });
+}
+
+function reloadForStaleChunk(to: RouteLocationNormalized): boolean {
+  const now = Date.now();
+  const lastReloadAt = Number(window.sessionStorage.getItem(CHUNK_RELOAD_AT_KEY) ?? 0);
+  if (now - lastReloadAt < CHUNK_RELOAD_WINDOW_MS) {
+    return false;
+  }
+  window.sessionStorage.setItem(CHUNK_RELOAD_AT_KEY, String(now));
+  window.location.assign(router.resolve(to.fullPath).href);
+  return true;
+}
+
 // 首次深链接失败时尚无页面可展示错误，由全局消息保留可见反馈。
-router.onError((error) => {
+router.onError((error, to) => {
+  if (typeof error === "object" && error !== null && chunkLoadErrors.has(error) && reloadForStaleChunk(to)) {
+    return;
+  }
   ElMessage.error({
     message: "页面加载失败，请检查网络后重新打开此页面。",
     duration: 0,
