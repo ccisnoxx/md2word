@@ -41,9 +41,35 @@ function signIn(role = "operator", permissions = ["document_jobs:read"]): void {
   auth.user = user(role, permissions);
 }
 
+let browser: EventTarget & { sessionStorage: Pick<Storage, "getItem" | "setItem">; location: { assign: ReturnType<typeof vi.fn> } };
+
+// 路由模块导入时注册 vite:preloadError 监听，需先提供最小浏览器对象。
+function stubBrowser(): void {
+  const storage = new Map<string, string>();
+  browser = Object.assign(new EventTarget(), {
+    sessionStorage: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => { storage.set(key, value); },
+    },
+    location: { assign: vi.fn() },
+  });
+  vi.stubGlobal("window", browser);
+}
+
+function failingChunkLoader(failure: Error): () => Promise<RouteComponent> {
+  // 模拟 Vite preload 辅助函数：先派发事件，再抛出同一个错误对象。
+  return async () => {
+    const event = new Event("vite:preloadError", { cancelable: true });
+    Object.assign(event, { payload: failure });
+    window.dispatchEvent(event);
+    throw failure;
+  };
+}
+
 beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
+  stubBrowser();
   loadedPages.length = 0;
   for (const name of pageNames) {
     vi.doMock(`@/pages/${name}.vue`, () => {
@@ -60,6 +86,7 @@ beforeEach(async () => {
 afterEach(() => {
   router.options.history.destroy();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("按需加载的页面路由", () => {
@@ -155,6 +182,24 @@ describe("按需加载的页面路由", () => {
     expect(loadedPages).toEqual(["LoginPage"]);
   });
 
+  it("恢复令牌失效且 401 拦截器先触发时仍回跳原始深链接", async () => {
+    auth.token = "expired_token";
+    const handler = vi.mocked(setUnauthorizedHandler).mock.calls[0][0];
+    // 真实 apiClient 会在 me() 拒绝前同步调用未授权处理器。
+    vi.mocked(authApi.me).mockImplementation(async () => {
+      const error = { code: "token_expired", status: 401 } as Parameters<NonNullable<typeof handler>>[0];
+      handler?.(error);
+      throw error;
+    });
+    await router.push("/jobs/job_42?tab=events").catch(() => {});
+    await router.isReady().catch(() => {});
+    expect(auth.token).toBeNull();
+    expect(router.currentRoute.value.path).toBe("/login");
+    expect(router.currentRoute.value.query).toEqual({
+      redirect: "/jobs/job_42?tab=events", auth: "token_expired",
+    });
+  });
+
   it("运行中收到未授权响应时清理认证并保留回跳地址", async () => {
     signIn();
     await router.push("/jobs/job_42?tab=events");
@@ -198,5 +243,36 @@ describe("按需加载的页面路由", () => {
     expect(loader).toHaveBeenCalledTimes(2);
     expect(loadedPages).toContain("JobDetailPage");
     expect(ElMessage.error).toHaveBeenCalledTimes(1);
+  });
+
+  it("发布后旧页面 chunk 加载失败时整页刷新到目标地址一次", async () => {
+    signIn();
+    await router.push("/cockpit");
+    const record = router.getRoutes().find((route) => route.name === "job-detail")!;
+    const failure = new TypeError("Failed to fetch dynamically imported module");
+    record.components!.default = failingChunkLoader(failure);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(router.push("/jobs/job_42?tab=events")).rejects.toBe(failure);
+    expect(browser.location.assign).toHaveBeenCalledExactlyOnceWith("/jobs/job_42?tab=events");
+    expect(ElMessage.error).not.toHaveBeenCalled();
+  });
+
+  it("刷新后短时间内再次加载失败时改为提示，不再循环刷新", async () => {
+    signIn();
+    await router.push("/cockpit");
+    const record = router.getRoutes().find((route) => route.name === "job-detail")!;
+    const failure = new TypeError("Failed to fetch dynamically imported module");
+    record.components!.default = failingChunkLoader(failure);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(router.push("/jobs/job_42")).rejects.toBe(failure);
+    const secondFailure = new TypeError("Failed to fetch dynamically imported module");
+    record.components!.default = failingChunkLoader(secondFailure);
+    await expect(router.push("/jobs/job_42")).rejects.toBe(secondFailure);
+    expect(browser.location.assign).toHaveBeenCalledTimes(1);
+    expect(ElMessage.error).toHaveBeenCalledExactlyOnceWith({
+      message: "页面加载失败，请检查网络后重新打开此页面。",
+      duration: 0,
+      showClose: true,
+    });
   });
 });

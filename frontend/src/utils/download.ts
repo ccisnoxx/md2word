@@ -10,8 +10,13 @@ export type DownloadLinkNotice = {
 };
 
 export function openDownloadLink(url: string): boolean {
-  const opened = window.open(url, "_blank", "noopener");
-  return opened !== null;
+  // 带 noopener 时 window.open 按规范总是返回 null，无法判断是否被拦截；改为打开后手动断开 opener。
+  const opened = window.open(url, "_blank");
+  if (opened === null) {
+    return false;
+  }
+  opened.opener = null;
+  return true;
 }
 
 export async function copyDownloadLink(url: string): Promise<boolean> {

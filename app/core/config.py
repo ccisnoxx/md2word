@@ -121,7 +121,7 @@ class Settings(BaseSettings):
     files_quota_block_threshold_ratio: float = 1.0
     auth_jwt_secret_key: str = ""
     auth_jwt_algorithm: Literal["HS256"] = "HS256"
-    auth_access_token_expire_minutes: int = 120
+    auth_access_token_expire_minutes: int = 10080
     auth_internal_users_file: str = ""
     auth_internal_users_json: str = ""
     default_translation_mode: Literal["direct", "en2zh", "ru2zh", "zh2en", "zh2ru"] = "direct"
