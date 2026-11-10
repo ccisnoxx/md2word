@@ -1,0 +1,21 @@
+tests.test_fastapi_jobs_backend exit=1 seconds=30 Ran 207 tests in 28.926s FAILED (failures=3, errors=32) 
+tests.test_document_job_result_persistence exit=1 seconds=87 Ran 27 tests in 85.781s FAILED (failures=21, errors=50) 
+tests.test_translation_batch_failure_semantics exit=0 seconds=5 Ran 20 tests in 4.753s OK 
+tests.test_document_job_execution_stages exit=1 seconds=13 Ran 21 tests in 11.990s FAILED (failures=6, errors=5) 
+tests.test_database_job_repository exit=0 seconds=3 Ran 15 tests in 1.540s OK 
+tests.test_translation_integrity_execution exit=0 seconds=2 Ran 13 tests in 1.532s OK 
+tests.test_mineru_download_boundary exit=0 seconds=2 Ran 9 tests in 0.646s OK 
+tests.test_page_degradation exit=0 seconds=1 Ran 9 tests in 0.371s OK 
+tests.test_image_pdf_fallback exit=0 seconds=1 Ran 7 tests in 0.360s OK 
+tests.test_table_placeholder_failure_context exit=0 seconds=2 Ran 8 tests in 0.209s OK 
+tests.test_image_normalization_pipeline exit=0 seconds=1 Ran 2 tests in 0.633s OK 
+tests.test_document_job_delivery_state_api exit=1 seconds=13 Ran 12 tests in 11.913s FAILED (failures=4, errors=16) 
+tests.test_degraded_page_display exit=0 seconds=2 Ran 2 tests in 0.531s OK 
+tests.test_rnd503_dependency_integration exit=1 seconds=2 Ran 1 test in 1.808s FAILED (errors=12) 
+tests.test_render_page_degradation exit=0 seconds=4 Ran 16 tests in 2.792s OK 
+tests.test_document_job_modes exit=1 seconds=3 Ran 11 tests in 2.500s FAILED (failures=1) 
+tests.test_document_job_list_query_v2_service exit=0 seconds=2 Ran 13 tests in 1.433s OK 
+tests.test_document_job_failure_diagnostic exit=0 seconds=1 Ran 11 tests in 0.293s OK 
+tests.test_document_job_list_query_v2_writers exit=0 seconds=2 Ran 13 tests in 1.078s OK 
+tests.test_document_job_incident_publish_light_check exit=0 seconds=3 Ran 4 tests in 2.355s OK 
+tests.test_document_job_list_publish_light_check exit=0 seconds=3 Ran 3 tests in 2.258s OK 
