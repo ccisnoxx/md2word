@@ -393,7 +393,7 @@ def get_document_job_translation_batches(
 ) -> DocumentJobTranslationBatchListResponse:
     job, batches = runtime.document_job_service.get_translation_batch_snapshot(job_id, user=user)
     generation = job.retry_count
-    execution = runtime.document_job_execution_service.summarize_translation_generation(job, batches)
+    execution = runtime.document_job_execution_service.translation_batches.summarize_translation_generation(job, batches)
     row_dispositions = {
         row.batch_id: row for row in execution.rows
     } if execution is not None else {}

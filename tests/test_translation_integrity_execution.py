@@ -47,7 +47,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         runtime = build_test_runtime(self.root / str(self.counter), jobs_artifact_storage_backend="local_object")
         execution = runtime.document_job_execution_service
         provider = ControlledProvider()
-        execution.document_ir_translation_service = DocumentIRTranslationService(provider)
+        execution.translation_batches.document_ir_translation_service = DocumentIRTranslationService(provider)
         source_pdf = runtime.file_upload_service.register_generated_content(
             tenant_id="tenant", company_id="company", job_id="job", created_by="operator",
             file_type="source_pdf", filename="source.pdf", mime_type="application/pdf", content=b"source-pdf",
@@ -73,7 +73,7 @@ class TranslationIntegrityExecutionTests(TestCase):
             zip_path, job_id=job.id, source_file_id=job.source_file_id, document_language="en",
         ).document
         planning = (
-            patch.object(execution, "_ensure_translation_batches_and_enqueue", side_effect=lambda job, document, **kwargs: job)
+            patch.object(execution.translation_batches, "_ensure_translation_batches_and_enqueue", side_effect=lambda job, document, **kwargs: job)
             if defer_planning else nullcontext()
         )
         with planning:
@@ -92,13 +92,13 @@ class TranslationIntegrityExecutionTests(TestCase):
         return json.loads(runtime.file_upload_service.read_file_content(file))
 
     def persist_batch(self, runtime, execution, batch):
-        with patch.object(execution, "_finalize_translation_generation", return_value=None):
-            return execution.execute_translation_batch(batch.id)
+        with patch.object(execution.translation_batches, "_finalize_translation_generation", return_value=None):
+            return execution.translation_batches.execute_translation_batch(batch.id)
 
     def test_worker_restores_before_persistence_and_fan_in_revalidates(self):
         runtime, execution, provider, job, batch, document, _raw = self.make_case()
         with patch.object(execution, "_render_and_save_word", side_effect=lambda job, **kwargs: job):
-            completed = execution.execute_translation_batch(batch.id)
+            completed = execution.translation_batches.execute_translation_batch(batch.id)
         self.assertEqual(completed.status, "succeeded")
         result_file = runtime.document_file_repository.get_document_file(completed.result_file_id)
         result = self.payload(runtime, result_file)
@@ -129,8 +129,8 @@ class TranslationIntegrityExecutionTests(TestCase):
                 runtime, execution, provider, _job, batch, document, _raw = self.make_case()
                 before = document.model_dump_json()
                 provider.transform = transform
-                with patch.object(execution.document_ir_translation_service, "apply_replacements") as apply:
-                    failed = execution.execute_translation_batch(batch.id)
+                with patch.object(execution.translation_batches.document_ir_translation_service, "apply_replacements") as apply:
+                    failed = execution.translation_batches.execute_translation_batch(batch.id)
                 self.assertEqual((failed.status, failed.error_code, failed.attempt_count), ("failed", expected, 1))
                 self.assertTrue(failed.retryable)
                 self.assertIsNone(failed.result_file_id)
@@ -147,7 +147,7 @@ class TranslationIntegrityExecutionTests(TestCase):
                 self.assertNotIn("Model OPA228 uses 10 V.", diagnostics)
                 provider.transform = None
                 with patch.object(execution, "_render_and_save_word", side_effect=lambda job, **kwargs: job):
-                    recovered = execution.execute_translation_batch(batch.id)
+                    recovered = execution.translation_batches.execute_translation_batch(batch.id)
                 self.assertEqual((recovered.status, recovered.attempt_count), ("succeeded", 2))
                 self.assertEqual(len(self.files(runtime, "ai_call_log")), 2)
 
@@ -156,7 +156,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         def fail(_request, _items):
             raise RuntimeError("SENSITIVE_PROVIDER_BODY_MARKER Model OPA228 uses 10 V.")
         provider.transform = fail
-        failed = execution.execute_translation_batch(batch.id)
+        failed = execution.translation_batches.execute_translation_batch(batch.id)
         log = self.payload(runtime, self.files(runtime, "ai_call_log")[0])
         self.assertEqual(failed.error_code, "translation_provider_failed")
         self.assertEqual(log["integrity"]["stage"], "provider")
@@ -164,7 +164,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         self.assertNotIn("SENSITIVE_PROVIDER_BODY_MARKER", json.dumps([log, failed.model_dump(mode="json")]))
         runtime, execution, provider, _job, batch, _document, _raw = self.make_case()
         execution.settings.translation_max_chars = 2
-        failed = execution.execute_translation_batch(batch.id)
+        failed = execution.translation_batches.execute_translation_batch(batch.id)
         self.assertEqual(failed.error_code, "translation_request_budget_exceeded")
         self.assertEqual(provider.requests, [])
         self.assertEqual(self.files(runtime, "ai_call_log"), [])
@@ -172,7 +172,7 @@ class TranslationIntegrityExecutionTests(TestCase):
     def test_first_plan_budget_failure_keeps_translation_code_and_safe_evidence(self):
         runtime, execution, provider, job, _batch, _document, _raw = self.make_case(defer_planning=True)
         execution.settings.translation_max_chars = 10
-        with patch.object(execution.document_ir_translation_service, "apply_replacements") as apply:
+        with patch.object(execution.translation_batches.document_ir_translation_service, "apply_replacements") as apply:
             failed = execution.execute_job(job.id)
         self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "translating", "translation_failed"))
         failures = [event for event in runtime.document_job_event_repository.list_document_job_events(job.id) if event.event_type == "stage_failed"]
@@ -198,7 +198,7 @@ class TranslationIntegrityExecutionTests(TestCase):
             defer_planning=True,
             source_blocks=[{"type": "table", "table_body": f"<table><tr><td>{source}</td></tr></table>", "page_idx": 0}],
         )
-        with patch.object(execution.document_ir_translation_service, "apply_replacements") as apply:
+        with patch.object(execution.translation_batches.document_ir_translation_service, "apply_replacements") as apply:
             failed = execution.execute_job(job.id)
         self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "translating", "translation_failed"))
         failures = [event for event in runtime.document_job_event_repository.list_document_job_events(job.id) if event.event_type == "stage_failed"]
@@ -222,7 +222,7 @@ class TranslationIntegrityExecutionTests(TestCase):
             defer_planning=True,
             source_blocks=[{"type": "table", "table_body": f"<table><tr><td>Before<eq>{formula}</eq>After</td></tr></table>", "page_idx": 0}],
         )
-        current_plan = execution._build_expected_translation_plans(job, document)[0]
+        current_plan = execution.translation_batches._build_expected_translation_plans(job, document)[0]
         legacy_plan = replace(
             current_plan,
             item_ids=("block_0001.html.0000", "block_0001.html.0001", "block_0001.html.0002"),
@@ -231,7 +231,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         )
         repository = runtime.document_job_translation_batch_repository
         installed = repository.ensure_translation_batch_roots(job.id, generation=job.retry_count, expected_plans=[legacy_plan])
-        with patch.object(execution.document_ir_translation_service, "apply_replacements") as apply:
+        with patch.object(execution.translation_batches.document_ir_translation_service, "apply_replacements") as apply:
             failed = execution.execute_job(job.id)
         self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "translating", "translation_batch_tree_invalid"))
         remaining = repository.list_translation_batches(job.id)
@@ -250,7 +250,7 @@ class TranslationIntegrityExecutionTests(TestCase):
             runtime, execution, provider, job, batch, _document, _raw = self.make_case(
                 source_blocks=[{"type": "table", "table_body": r"<table><tr><td>Before \frac{High}{Low} After</td></tr></table>", "page_idx": 0}],
             )
-        execution.execute_translation_batch(batch.id)
+        execution.translation_batches.execute_translation_batch(batch.id)
         failed = runtime.document_job_repository.get_document_job(job.id)
         self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "translating", "translation_failed"))
         failures = [event for event in runtime.document_job_event_repository.list_document_job_events(job.id) if event.event_type == "stage_failed"]
@@ -264,11 +264,11 @@ class TranslationIntegrityExecutionTests(TestCase):
 
     def test_audit_failure_is_visible_and_never_recorded_twice(self):
         _runtime, execution, _provider, _job, batch, _document, _raw = self.make_case()
-        with patch.object(execution.translation_audit_service, "build_recorder") as build:
+        with patch.object(execution.translation_batches.translation_audit_service, "build_recorder") as build:
             recorder = build.return_value
             recorder.record_success.side_effect = OSError("audit write failed")
             with self.assertRaisesRegex(OSError, "audit write failed"):
-                execution.execute_translation_batch(batch.id)
+                execution.translation_batches.execute_translation_batch(batch.id)
         recorder.record_success.assert_called_once()
         recorder.record_failure.assert_not_called()
 
@@ -329,8 +329,8 @@ class TranslationIntegrityExecutionTests(TestCase):
                         mime_type="application/json", content=json.dumps(payload).encode(), metadata=result_file.metadata,
                     )
                     runtime.document_job_translation_batch_repository.update_translation_batch(batch.id, result_file_id=edited.id)
-                with patch.object(execution.document_ir_translation_service, "apply_replacements") as apply:
-                    final = execution._finalize_translation_generation(job.id, generation=0, trace_id=None)
+                with patch.object(execution.translation_batches.document_ir_translation_service, "apply_replacements") as apply:
+                    final = execution.translation_batches._finalize_translation_generation(job.id, generation=0, trace_id=None)
                 self.assertEqual((final.status, final.error_code), ("failed", "translation_failed"))
                 apply.assert_not_called()
                 self.assertIsNone(final.document_ir_file_id)
@@ -350,8 +350,8 @@ class TranslationIntegrityExecutionTests(TestCase):
             content=json.dumps(payload).encode(), metadata={**original.metadata, "batch_id": second_id},
         )
         runtime.document_job_translation_batch_repository.create_translation_batch(batch.model_copy(update={"id": second_id, "result_file_id": second.id}))
-        with patch.object(execution.document_ir_translation_service, "apply_replacements") as apply:
-            final = execution._finalize_translation_generation(job.id, generation=0, trace_id=None)
+        with patch.object(execution.translation_batches.document_ir_translation_service, "apply_replacements") as apply:
+            final = execution.translation_batches._finalize_translation_generation(job.id, generation=0, trace_id=None)
         self.assertEqual(final.status, "failed")
         self.assertIn("translation_batch_tree_invalid", final.error_message)
         apply.assert_not_called()
@@ -362,9 +362,9 @@ class TranslationIntegrityExecutionTests(TestCase):
             runtime.document_job_repository.update_document_job(job.id, retry_count=1)
             return items
         provider.transform = advance
-        with patch.object(execution.document_ir_translation_service, "apply_replacements") as apply:
-            execution.execute_translation_batch(batch.id)
-            execution._finalize_translation_generation(job.id, generation=0, trace_id=None)
+        with patch.object(execution.translation_batches.document_ir_translation_service, "apply_replacements") as apply:
+            execution.translation_batches.execute_translation_batch(batch.id)
+            execution.translation_batches._finalize_translation_generation(job.id, generation=0, trace_id=None)
         self.assertEqual(self.files(runtime, "translation_batch_result"), [])
         apply.assert_not_called()
         self.assertIsNone(runtime.document_job_repository.get_document_job(job.id).document_ir_file_id)
@@ -419,7 +419,7 @@ class TranslationIntegrityExecutionTests(TestCase):
                             new_job, raw_file=raw, document_ir=new_document, image_file_ids=[], image_archive_file=None, trace_id=None,
                         )
                         new_batch = runtime.document_job_translation_batch_repository.list_translation_batches(job.id, generation=1)[0]
-                        execution.execute_translation_batch(new_batch.id)
+                        execution.translation_batches.execute_translation_batch(new_batch.id)
                         winner = runtime.document_job_repository.get_document_job(job.id)
                         self.assertEqual((winner.status, winner.retry_count), ("succeeded", 1))
                         snapshots = self.snapshot_files(runtime)
@@ -451,7 +451,7 @@ class TranslationIntegrityExecutionTests(TestCase):
                             job, raw_file=raw, document_ir=document, image_file_ids=[], image_archive_file=None, trace_id=None,
                         )
                     else:
-                        execution.execute_translation_batch(batch.id)
+                        execution.translation_batches.execute_translation_batch(batch.id)
                 self.assertTrue(delayed)
                 self.assertTrue(rejected)
                 self.assert_stored_bytes(runtime, snapshots)
@@ -484,7 +484,7 @@ class TranslationIntegrityExecutionTests(TestCase):
                 delayed = True
                 # 模拟既有过期 lease 恢复后新尝试胜出；不增加 fencing 协议。
                 runtime.document_job_translation_batch_repository.update_translation_batch(batch.id, status="queued")
-                execution.execute_translation_batch(batch.id)
+                execution.translation_batches.execute_translation_batch(batch.id)
                 winner = runtime.document_job_translation_batch_repository.get_translation_batch(batch.id)
                 self.assertEqual((winner.status, winner.attempt_count), ("succeeded", 2))
                 winner_result_id = winner.result_file_id
@@ -494,7 +494,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         with patch.object(runtime.file_upload_service, "register_generated_content", side_effect=interleave), patch.object(
             runtime.document_job_translation_batch_repository, "update_translation_batch_if_current", side_effect=observe_cas,
         ):
-            execution.execute_translation_batch(batch.id)
+            execution.translation_batches.execute_translation_batch(batch.id)
         self.assertTrue(rejected)
         self.assert_stored_bytes(runtime, snapshots)
         winner = runtime.document_job_translation_batch_repository.get_translation_batch(batch.id)

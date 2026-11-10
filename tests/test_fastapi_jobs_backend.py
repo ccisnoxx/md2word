@@ -520,7 +520,7 @@ def build_test_runtime(
         if document_jobs_worker_backend == "eager"
         else None
     )
-    document_job_execution_service.set_translation_batch_task_queue(document_translation_batch_task_queue)
+    document_job_execution_service.translation_batches.set_translation_batch_task_queue(document_translation_batch_task_queue)
     document_job_recovery_service = DocumentJobRecoveryService(
         settings,
         document_job_repository,
@@ -9625,7 +9625,7 @@ class FastAPIJobsBackendTests(TestCase):
                 max_items_per_request=3,
                 max_chars_per_request=10_000,
             )
-            runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
 
@@ -9786,7 +9786,7 @@ class FastAPIJobsBackendTests(TestCase):
                 max_items_per_request=3,
                 max_chars_per_request=10_000,
             )
-            runtime.document_job_execution_service.document_ir_translation_service = (
+            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = (
                 runtime.document_ir_translation_service
             )
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = (
@@ -9855,7 +9855,7 @@ class FastAPIJobsBackendTests(TestCase):
                 translation_debug_archive_enabled=True,
             )
             runtime.document_ir_translation_service = DocumentIRTranslationService(FakeDocumentJobTranslationProvider())
-            runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
 
@@ -9888,7 +9888,7 @@ class FastAPIJobsBackendTests(TestCase):
             )
             provider = FakeDocumentJobTranslationProvider()
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
-            runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
 
@@ -10006,7 +10006,7 @@ class FastAPIJobsBackendTests(TestCase):
             )
             provider = FakeDocumentJobTranslationProvider(raise_error=True)
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
-            runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
 
@@ -10063,7 +10063,7 @@ class FastAPIJobsBackendTests(TestCase):
             )
             provider = TruncatingOnceDocumentJobTranslationProvider()
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
-            runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
 
@@ -10128,7 +10128,7 @@ class FastAPIJobsBackendTests(TestCase):
             )
             provider = FakeDocumentJobTranslationProvider(raise_error=True)
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
-            runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
 

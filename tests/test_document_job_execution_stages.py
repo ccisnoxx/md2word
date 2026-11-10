@@ -41,7 +41,7 @@ class DocumentJobExecutionStageTests(TestCase):
             execution = runtime.document_job_execution_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
             provider = provider or fixtures.FakeDocumentJobTranslationProvider()
-            execution.document_ir_translation_service = DocumentIRTranslationService(
+            execution.translation_batches.document_ir_translation_service = DocumentIRTranslationService(
                 provider, max_items_per_request=batch_items, max_chars_per_request=10_000,
             )
             with fixtures.TestClient(fixtures.create_app(runtime)) as client:
@@ -75,14 +75,14 @@ class DocumentJobExecutionStageTests(TestCase):
     def _completed_batches(self, runtime, execution, client, headers):
         """模拟批次已落成功结果、最后一次 fan-in 回调丢失的进程中断。"""
 
-        execution.translation_batch_task_queue = Mock()
+        execution.translation_batches.translation_batch_task_queue = Mock()
         job_id = self._create(client, headers, mode="en2zh", language="en")
         job = runtime.document_job_repository.get_document_job(job_id)
         self.assertEqual(job.stage, "translating")
         batches = runtime.document_job_translation_batch_repository.list_translation_batches(job_id)
-        with patch.object(execution, "_finalize_translation_generation", return_value=job):
+        with patch.object(execution.translation_batches, "_finalize_translation_generation", return_value=job):
             for batch in batches:
-                execution.execute_translation_batch(batch.id, trace_id="trace_batches")
+                execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_batches")
         batches = runtime.document_job_translation_batch_repository.list_translation_batches(job_id)
         self.assertTrue(all(batch.status == "succeeded" for batch in batches))
         return job, batches
@@ -267,17 +267,17 @@ class DocumentJobExecutionStageTests(TestCase):
                 files_before = self._files(runtime, job.id)
                 events_before = runtime.document_job_event_repository.list_document_job_events(job.id)
                 execution.execute_job(job.id)
-                execution.execute_translation_batch(batches[0].id)
+                execution.translation_batches.execute_translation_batch(batches[0].id)
                 self.assertEqual(self._files(runtime, job.id), files_before)
                 self.assertEqual(runtime.document_job_event_repository.list_document_job_events(job.id), events_before)
 
     def test_single_batch_completion_does_not_advance_the_main_translation_stage(self):
         with self._runtime() as (runtime, execution, provider, client, headers):
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
             job_id = self._create(client, headers, mode="en2zh", language="en")
             batches = runtime.document_job_translation_batch_repository.list_translation_batches(job_id)
             self.assertGreater(len(batches), 1)
-            execution.execute_translation_batch(batches[0].id)
+            execution.translation_batches.execute_translation_batch(batches[0].id)
             job = runtime.document_job_repository.get_document_job(job_id)
             self.assertEqual((job.status, job.stage, job.document_ir_file_id), ("running", "translating", None))
             self.assertFalse(self._files(runtime, job_id, "generated_word"))
@@ -299,7 +299,7 @@ class DocumentJobExecutionStageTests(TestCase):
     def test_provider_return_after_cancel_or_generation_change_cannot_finalize(self):
         for action, fails in (("cancel", False), ("retry", False), ("cancel", True), ("retry", True)):
             with self.subTest(action=action, fails=fails), self._runtime(batch_items=100) as (runtime, execution, provider, client, headers):
-                execution.translation_batch_task_queue = Mock()
+                execution.translation_batches.translation_batch_task_queue = Mock()
                 job_id = self._create(client, headers, mode="en2zh", language="en")
                 batch = runtime.document_job_translation_batch_repository.list_translation_batches(job_id)[0]
                 original = provider.translate
@@ -315,7 +315,7 @@ class DocumentJobExecutionStageTests(TestCase):
                     return original(request)
 
                 with patch.object(provider, "translate", side_effect=translate):
-                    execution.execute_translation_batch(batch.id)
+                    execution.translation_batches.execute_translation_batch(batch.id)
                 job = runtime.document_job_repository.get_document_job(job_id)
                 self.assertEqual(job.status, "canceled" if action == "cancel" else "running")
                 self.assertIsNone(job.document_ir_file_id)
@@ -502,15 +502,15 @@ class DocumentJobExecutionStageTests(TestCase):
                         ))
                     before = runtime.document_job_event_repository.list_document_job_events(job_id)
                     execution.execute_job(job_id)
-                    execution._finalize_translation_generation(job_id, generation=0, trace_id=None)
+                    execution.translation_batches._finalize_translation_generation(job_id, generation=0, trace_id=None)
                     self.assertEqual(runtime.document_job_event_repository.list_document_job_events(job_id), before)
         with self._runtime() as (runtime, execution, provider, client, headers):
             job, batches = self._completed_batches(runtime, execution, client, headers)
             runtime.document_job_repository.update_document_job(job.id, retry_count=1)
             before = runtime.document_job_repository.get_document_job(job.id)
             events = runtime.document_job_event_repository.list_document_job_events(job.id)
-            execution._finalize_translation_generation(job.id, generation=0, trace_id=None)
-            execution.execute_translation_batch(batches[0].id)
+            execution.translation_batches._finalize_translation_generation(job.id, generation=0, trace_id=None)
+            execution.translation_batches.execute_translation_batch(batches[0].id)
             self.assertEqual(runtime.document_job_repository.get_document_job(job.id), before)
             self.assertEqual(runtime.document_job_event_repository.list_document_job_events(job.id), events)
 
@@ -543,13 +543,13 @@ class DocumentJobExecutionStageTests(TestCase):
     def test_legacy_source_ir_preparation_failure_is_persisted_on_first_delivery(self):
         for failure in ("missing_translator", "missing_profile"):
             with self.subTest(failure=failure), self._runtime() as (runtime, execution, provider, client, headers):
-                with patch.object(execution, "_ensure_translation_batches_and_enqueue", side_effect=lambda job, *args, **kwargs: job):
+                with patch.object(execution.translation_batches, "_ensure_translation_batches_and_enqueue", side_effect=lambda job, *args, **kwargs: job):
                     job_id = self._create(client, headers, mode="en2zh", language="en")
                 job = runtime.document_job_repository.get_document_job(job_id)
                 self.assertEqual(job.stage, "ir_converting")
                 self.assertIsNotNone(job.source_document_ir_file_id)
                 if failure == "missing_translator":
-                    execution.document_ir_translation_service = None
+                    execution.translation_batches.document_ir_translation_service = None
                 else:
                     snapshot = {**job.request_snapshot, "resources": JobResourceSnapshot().model_dump(mode="json")}
                     runtime.document_job_repository.update_document_job(job.id, request_snapshot=snapshot)
@@ -582,7 +582,7 @@ class DocumentJobExecutionStageTests(TestCase):
                     job, _batches = self._completed_batches(runtime, execution, client, headers)
                     job_id = job.id
                 else:
-                    execution.translation_batch_task_queue = Mock()
+                    execution.translation_batches.translation_batch_task_queue = Mock()
                     job_id = self._create(client, headers, mode="en2zh", language="en")
                     batch = runtime.document_job_translation_batch_repository.list_translation_batches(job_id)[0]
                     if stage == "translating":
@@ -600,7 +600,7 @@ class DocumentJobExecutionStageTests(TestCase):
                     execution.word_renderer, "render_to_result", wraps=execution.word_renderer.render_to_result,
                 ) as render:
                     if entry == "batch":
-                        execution.execute_translation_batch(batch.id, trace_id="trace_stage_owner")
+                        execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_stage_owner")
                         failed = runtime.document_job_repository.get_document_job(job_id)
                     else:
                         failed = execution.execute_job(job_id, trace_id="trace_stage_owner")
@@ -619,7 +619,7 @@ class DocumentJobExecutionStageTests(TestCase):
 
     def test_legacy_batch_cannot_claim_new_generation_returned_after_stage_event_failure(self):
         with self._runtime(batch_items=100) as (runtime, execution, provider, client, headers):
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
             job_id = self._create(client, headers, mode="en2zh", language="en")
             batch_repository = runtime.document_job_translation_batch_repository
             batch = batch_repository.list_translation_batches(job_id)[0]
@@ -643,11 +643,11 @@ class DocumentJobExecutionStageTests(TestCase):
                     raise OSError("旧代阶段事件在换代后返回失败")
                 return append(event_job_id, event)
             with patch.object(runtime.document_job_event_repository, "append_document_job_event", side_effect=append_after_retry), patch.object(
-                execution, "_claim_translation_batch", wraps=execution._claim_translation_batch,
+                execution.translation_batches, "_claim_translation_batch", wraps=execution.translation_batches._claim_translation_batch,
             ) as claim, patch.object(
-                execution.translation_audit_service, "build_recorder", wraps=execution.translation_audit_service.build_recorder,
+                execution.translation_batches.translation_audit_service, "build_recorder", wraps=execution.translation_batches.translation_audit_service.build_recorder,
             ) as recorder:
-                returned = execution.execute_translation_batch(batch.id, trace_id="trace_old_attempt")
+                returned = execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_old_attempt")
             self.assertEqual(len(resumed), 1)
             with self.subTest(boundary="claim"):
                 claim.assert_not_called()

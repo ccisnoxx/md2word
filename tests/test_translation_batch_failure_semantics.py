@@ -87,8 +87,8 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             provider = fixtures.FakeDocumentJobTranslationProvider()
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.translation_batch_task_queue = Mock()
             source_file = runtime.file_upload_service.register_generated_content(
                 tenant_id="tenant",
                 company_id="company",
@@ -149,7 +149,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             batch = runtime.document_job_translation_batch_repository.list_translation_batches(job.id)[0]
             execution.settings.translation_max_chars = 26
 
-            claimed = execution._claim_translation_batch(batch, trace_id="trace_budget_preflight")
+            claimed = execution.translation_batches._claim_translation_batch(batch, trace_id="trace_budget_preflight")
 
             current_job = runtime.document_job_repository.get_document_job(job.id)
             current_batch = runtime.document_job_translation_batch_repository.get_translation_batch(batch.id)
@@ -178,9 +178,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             provider = fixtures.FakeDocumentJobTranslationProvider()
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -201,7 +201,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 raise TranslationBatchTreeInvalidError("旧代计划已失效")
 
             with patch.object(repository, "claim_translation_batch", side_effect=stale_claim):
-                execution.execute_translation_batch(batch.id, trace_id="trace_old_tree_error")
+                execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_old_tree_error")
 
             current = runtime.document_job_repository.get_document_job(job_id)
             self.assertEqual((current.retry_count, current.status, current.stage), (1, "running", "ir_converting"))
@@ -258,9 +258,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 max_chars_per_request=10_000,
             )
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -277,8 +277,8 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 self.assertEqual(created.status_code, 201, created.json())
                 job_id = created.json()["job_id"]
                 initial_batches = runtime.document_job_translation_batch_repository.list_translation_batches(job_id)
-                execution.execute_translation_batch(initial_batches[0].id, trace_id="trace_retry_snapshot")
-                execution.execute_translation_batch(initial_batches[1].id, trace_id="trace_retry_snapshot")
+                execution.translation_batches.execute_translation_batch(initial_batches[0].id, trace_id="trace_retry_snapshot")
+                execution.translation_batches.execute_translation_batch(initial_batches[1].id, trace_id="trace_retry_snapshot")
                 old_job = runtime.document_job_repository.get_document_job(job_id)
                 old_batches = runtime.document_job_translation_batch_repository.list_translation_batches(
                     job_id, generation=old_job.retry_count,
@@ -307,7 +307,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                     {batch.id for batch in new_batches}.isdisjoint({batch.id for batch in old_batches})
                 )
                 self.assertTrue(all(batch.result_file_id is None for batch in new_batches))
-                execution.execute_translation_batch(old_batches[0].id, trace_id="trace_old_generation_replay")
+                execution.translation_batches.execute_translation_batch(old_batches[0].id, trace_id="trace_old_generation_replay")
                 self.assertEqual(provider.calls, 2)
                 self.assertEqual(
                     runtime.document_job_translation_batch_repository.list_translation_batches(
@@ -349,7 +349,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                     provider, max_items_per_request=100, max_chars_per_request=10_000,
                 )
                 execution = runtime.document_job_execution_service
-                execution.document_ir_translation_service = runtime.document_ir_translation_service
+                execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
                 execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
 
                 with TestClient(fixtures.create_app(runtime)) as client:
@@ -394,7 +394,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 provider, max_items_per_request=2, max_chars_per_request=10_000,
             )
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = _make_public_opa228_mineru_zip_bytes()
 
             with TestClient(fixtures.create_app(runtime)) as client:
@@ -445,7 +445,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                     provider, max_items_per_request=2, max_chars_per_request=10_000,
                 )
                 execution = runtime.document_job_execution_service
-                execution.document_ir_translation_service = runtime.document_ir_translation_service
+                execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
                 source = io.BytesIO(fixtures.make_semantic_mineru_zip_bytes())
                 protected = io.BytesIO()
                 # 此用例验证批次成功/失败；为源表格公式给出原 Codec 已支持的完整边界。
@@ -521,9 +521,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 provider, max_items_per_request=3, max_chars_per_request=10_000,
             )
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -543,13 +543,13 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 first, second = batches[:2]
 
                 worker = threading.Thread(
-                    target=execution.execute_translation_batch,
+                    target=execution.translation_batches.execute_translation_batch,
                     args=(first.id,),
                     kwargs={"trace_id": "trace_running_sibling"},
                 )
                 worker.start()
                 self.assertTrue(provider.first_started.wait(timeout=5))
-                execution.execute_translation_batch(second.id, trace_id="trace_running_sibling")
+                execution.translation_batches.execute_translation_batch(second.id, trace_id="trace_running_sibling")
                 failed_while_first_running = runtime.document_job_repository.get_document_job(job_id)
                 self.assertEqual(
                     (failed_while_first_running.status, failed_while_first_running.stage),
@@ -586,9 +586,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 provider, max_items_per_request=3, max_chars_per_request=10_000,
             )
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -622,7 +622,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             self.assertEqual(provider.requests, [])
             self.assertIsNone(failed.document_ir_file_id)
             self.assertIsNone(failed.result_file_id)
-            execution.execute_translation_batch(batches_after[0].id, trace_id="trace_partial_root_replay")
+            execution.translation_batches.execute_translation_batch(batches_after[0].id, trace_id="trace_partial_root_replay")
             self.assertEqual(provider.requests, [])
 
     def test_same_batch_claim_competition_has_one_provider_call_without_false_failure(self) -> None:
@@ -641,9 +641,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 provider, max_items_per_request=3, max_chars_per_request=10_000,
             )
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -660,10 +660,10 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 self.assertEqual(created.status_code, 201, created.json())
                 job_id = created.json()["job_id"]
                 batch = runtime.document_job_translation_batch_repository.list_translation_batches(job_id)[0]
-                first = threading.Thread(target=execution.execute_translation_batch, args=(batch.id,))
+                first = threading.Thread(target=execution.translation_batches.execute_translation_batch, args=(batch.id,))
                 first.start()
                 self.assertTrue(provider.first_started.wait(timeout=5))
-                second = threading.Thread(target=execution.execute_translation_batch, args=(batch.id,))
+                second = threading.Thread(target=execution.translation_batches.execute_translation_batch, args=(batch.id,))
                 second.start()
                 second.join(timeout=5)
                 self.assertFalse(second.is_alive())
@@ -696,9 +696,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             )
             execution = runtime.document_job_execution_service
             runtime.settings.translation_provider_batch_max_attempts = 1
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -719,8 +719,8 @@ class TranslationBatchFailureSemanticsTests(TestCase):
 
                 first = batches[0]
                 second = batches[1]
-                execution.execute_translation_batch(first.id, trace_id="trace_partial")
-                execution.execute_translation_batch(second.id, trace_id="trace_partial")
+                execution.translation_batches.execute_translation_batch(first.id, trace_id="trace_partial")
+                execution.translation_batches.execute_translation_batch(second.id, trace_id="trace_partial")
 
                 failed_job = runtime.document_job_repository.get_document_job(job_id)
                 self.assertIsNotNone(failed_job)
@@ -735,7 +735,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 self.assertEqual(queued_sibling.status, "queued")
                 events_before = runtime.document_job_event_repository.list_document_job_events(job_id)
                 failed_events_before = [event for event in events_before if event.event_type == "stage_failed"]
-                execution.execute_translation_batch(queued_sibling.id, trace_id="trace_replay")
+                execution.translation_batches.execute_translation_batch(queued_sibling.id, trace_id="trace_replay")
                 events_after = runtime.document_job_event_repository.list_document_job_events(job_id)
                 self.assertEqual(provider.calls, 2)
                 self.assertEqual(
@@ -793,9 +793,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 max_chars_per_request=10_000,
             )
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -815,13 +815,13 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             job = runtime.document_job_repository.get_document_job(job_id)
             self.assertIsNotNone(job)
             batch = runtime.document_job_translation_batch_repository.list_translation_batches(job_id)[0]
-            claimed = execution._claim_translation_batch(batch, trace_id="trace_lease")
+            claimed = execution.translation_batches._claim_translation_batch(batch, trace_id="trace_lease")
             self.assertIsNotNone(claimed)
             self.assertEqual(claimed.attempt_count, 1)
             self.assertTrue(claimed.lease_owner)
 
-            _source_file, source_ir = execution._read_translation_source(job, batch.source_document_ir_file_id)
-            expected_plans = execution._build_expected_translation_plans(job, source_ir)
+            _source_file, source_ir = execution.translation_batches._read_translation_source(job, batch.source_document_ir_file_id)
+            expected_plans = execution.translation_batches._build_expected_translation_plans(job, source_ir)
             expired = runtime.document_job_translation_batch_repository.release_translation_batch_lease(
                 claimed.id,
                 expected_generation=claimed.generation,
@@ -838,7 +838,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             self.assertEqual(expired.status, "failed")
             self.assertTrue(expired.retryable)
 
-            reclaimed = execution._claim_translation_batch(expired, trace_id="trace_reclaim")
+            reclaimed = execution.translation_batches._claim_translation_batch(expired, trace_id="trace_reclaim")
             self.assertIsNotNone(reclaimed)
             self.assertEqual(reclaimed.attempt_count, 2)
             self.assertTrue(reclaimed.lease_owner)
@@ -870,9 +870,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             provider = fixtures.FakeDocumentJobTranslationProvider()
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -916,7 +916,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 return real_claim(*args, **kwargs)
 
             with patch.object(repository, "claim_translation_batch", side_effect=claim_then_terminal):
-                result = execution.execute_translation_batch(batch.id, trace_id="trace_claim_none_terminal")
+                result = execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_claim_none_terminal")
 
             failed_job = runtime.document_job_repository.get_document_job(job_id)
             self.assertTrue(rejected)
@@ -942,9 +942,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 runtime.settings.translation_provider_batch_max_attempts = 1
                 runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
                 execution = runtime.document_job_execution_service
-                execution.document_ir_translation_service = runtime.document_ir_translation_service
+                execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
                 execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-                execution.translation_batch_task_queue = Mock()
+                execution.translation_batches.translation_batch_task_queue = Mock()
 
                 with TestClient(fixtures.create_app(runtime)) as client:
                     headers = fixtures.build_auth_header(client)
@@ -980,7 +980,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                     return real_update(*args, **kwargs)
 
                 with patch.object(repository, "update_translation_batch_if_current", side_effect=update_then_terminal):
-                    execution.execute_translation_batch(batch.id, trace_id="trace_result_none_terminal")
+                    execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_result_none_terminal")
 
                 failed_job = runtime.document_job_repository.get_document_job(job_id)
                 events_before = runtime.document_job_event_repository.list_document_job_events(job_id)
@@ -988,7 +988,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                     event for event in events_before
                     if event.event_type in {"stage_failed", "translation_batch_failed"}
                 ])
-                execution.execute_translation_batch(batch.id, trace_id="trace_result_none_replay")
+                execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_result_none_replay")
                 events_after = runtime.document_job_event_repository.list_document_job_events(job_id)
 
                 self.assertTrue(rejected)
@@ -1024,9 +1024,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             runtime.settings.translation_provider_batch_max_attempts = 1
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -1056,7 +1056,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 "register_generated_content",
                 side_effect=fail_batch_result_write,
             ):
-                execution.execute_translation_batch(batch.id, trace_id="trace_artifact_io")
+                execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_artifact_io")
 
             failed_job = runtime.document_job_repository.get_document_job(job_id)
             files = [
@@ -1089,9 +1089,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             runtime.settings.translation_provider_batch_max_attempts = 1
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -1120,7 +1120,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 "create_document_file",
                 side_effect=fail_result_metadata_write,
             ):
-                execution.execute_translation_batch(batch.id, trace_id="trace_result_sqlite")
+                execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_result_sqlite")
 
             failed_job = runtime.document_job_repository.get_document_job(job_id)
             files = [
@@ -1153,9 +1153,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             runtime.settings.translation_provider_batch_max_attempts = 1
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -1181,7 +1181,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 return real_update(*args, **kwargs)
 
             with patch.object(repository, "update_translation_batch_if_current", side_effect=fail_success_commit):
-                execution.execute_translation_batch(batch.id, trace_id="trace_success_commit_io")
+                execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_success_commit_io")
 
             failed_job = runtime.document_job_repository.get_document_job(job_id)
             audit_files = [
@@ -1212,9 +1212,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             runtime.settings.translation_provider_batch_max_attempts = 1
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -1243,7 +1243,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 "update_translation_batch_if_current",
                 side_effect=fail_success_commit,
             ):
-                execution.execute_translation_batch(batch.id, trace_id="trace_success_tree")
+                execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_success_tree")
 
             failed_job = runtime.document_job_repository.get_document_job(job_id)
             audit_files = [
@@ -1275,9 +1275,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
             runtime.settings.translation_provider_batch_max_attempts = 1
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -1302,7 +1302,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 return real_update(*args, **kwargs)
 
             with patch.object(repository, "update_translation_batch_if_current", side_effect=fail_success_commit):
-                execution.execute_translation_batch(batch.id, trace_id="trace_sqlite_storage_error")
+                execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_sqlite_storage_error")
 
             failed_job = runtime.document_job_repository.get_document_job(job_id)
             self.assertEqual(
@@ -1330,9 +1330,9 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 max_chars_per_request=10_000,
             )
             execution = runtime.document_job_execution_service
-            execution.document_ir_translation_service = runtime.document_ir_translation_service
+            execution.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
             execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            execution.translation_batch_task_queue = Mock()
+            execution.translation_batches.translation_batch_task_queue = Mock()
 
             with TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
@@ -1351,7 +1351,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 batches = runtime.document_job_translation_batch_repository.list_translation_batches(job_id)
                 first, second, queued = batches[:3]
 
-                execution.execute_translation_batch(first.id, trace_id="trace_window")
+                execution.translation_batches.execute_translation_batch(first.id, trace_id="trace_window")
                 real_update = runtime.document_job_translation_batch_repository.update_translation_batch_if_current
                 injected = False
 
@@ -1366,8 +1366,8 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                     runtime.document_job_translation_batch_repository,
                     "update_translation_batch_if_current",
                     side_effect=update_and_fail_job,
-                ), patch.object(execution, "_finalize_translation_generation", return_value=None):
-                    execution.execute_translation_batch(second.id, trace_id="trace_window")
+                ), patch.object(execution.translation_batches, "_finalize_translation_generation", return_value=None):
+                    execution.translation_batches.execute_translation_batch(second.id, trace_id="trace_window")
 
                 self.assertTrue(injected)
                 self.assertEqual(provider.calls, 2)
@@ -1378,10 +1378,10 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                     event for event in events_before
                     if event.event_type in {"translation_batch_failed", "stage_failed"}
                 ]
-                execution.execute_translation_batch(second.id, trace_id="trace_terminal_replay")
+                execution.translation_batches.execute_translation_batch(second.id, trace_id="trace_terminal_replay")
                 failed_job = runtime.document_job_repository.get_document_job(job_id)
                 self.assertEqual((failed_job.status, failed_job.stage), ("failed", "failed"))
-                execution.execute_translation_batch(queued.id, trace_id="trace_queued_replay")
+                execution.translation_batches.execute_translation_batch(queued.id, trace_id="trace_queued_replay")
                 events_after = runtime.document_job_event_repository.list_document_job_events(job_id)
 
             self.assertEqual(provider.calls, 2)

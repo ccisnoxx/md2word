@@ -72,7 +72,7 @@ class DegradedSourceTranslationTests(TestCase):
             runtime = fixtures.build_test_runtime(root / "runtime", jobs_artifact_storage_backend="local_object")
             execution = runtime.document_job_execution_service
             provider = ControlledProvider()
-            execution.document_ir_translation_service = DocumentIRTranslationService(provider)
+            execution.translation_batches.document_ir_translation_service = DocumentIRTranslationService(provider)
             pdf = b"%PDF-1.4 degradation-source"
             source_pdf = runtime.file_upload_service.register_generated_content(
                 tenant_id="tenant", company_id="company", job_id="job", created_by="operator",
@@ -100,7 +100,7 @@ class DegradedSourceTranslationTests(TestCase):
                 job, raw_file=raw, document_ir=document, image_file_ids=[], image_archive_file=None, trace_id=None)
             batch = runtime.document_job_translation_batch_repository.list_translation_batches(job.id)[0]
             with patch.object(execution, "_render_and_save_word", side_effect=lambda job, **kwargs: job):
-                completed = execution.execute_translation_batch(batch.id)
+                completed = execution.translation_batches.execute_translation_batch(batch.id)
             target_file = runtime.document_file_repository.get_document_file(
                 runtime.document_job_repository.get_document_job(job.id).document_ir_file_id)
             target = json.loads(runtime.file_upload_service.read_file_content(target_file))
