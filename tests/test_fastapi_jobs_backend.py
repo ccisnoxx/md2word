@@ -10540,7 +10540,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
             )
-            runtime.document_job_execution_service.word_renderer = BrokenRenderer()
+            runtime.document_job_execution_service.rendering.word_renderer = BrokenRenderer()
             app = create_app(runtime)
             with TestClient(app) as client:
                 headers = build_auth_header(client)
@@ -10577,7 +10577,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
             )
-            runtime.document_job_execution_service.word_renderer = UnexpectedRenderer()
+            runtime.document_job_execution_service.rendering.word_renderer = UnexpectedRenderer()
             app = create_app(runtime)
             with TestClient(app) as client:
                 headers = build_auth_header(client)
@@ -10674,7 +10674,7 @@ class FastAPIJobsBackendTests(TestCase):
             )
             app = create_app(runtime)
             with patch(
-                "app.domains.document_jobs.execution.ensure_renderer_integrity",
+                "app.domains.document_jobs.render_execution.ensure_renderer_integrity",
                 side_effect=blocking_error,
             ), TestClient(app) as client:
                 headers = build_auth_header(client)

@@ -82,7 +82,7 @@ class DegradedSourceTranslationTests(TestCase):
                 id="job", tenant_id="tenant", company_id="company", created_by="operator",
                 source_file_id=source_pdf.id, mode="en2zh_pdf_to_word", document_language="en",
                 status="running", stage="ir_converting",
-                template_version_id=execution.template_read_service.resolve_template_version(None).template_version_id,
+                template_version_id=execution.rendering.template_read_service.resolve_template_version(None).template_version_id,
             ))
             content = _zip(_three_pages())
             raw = runtime.file_upload_service.register_generated_content(
@@ -99,7 +99,7 @@ class DegradedSourceTranslationTests(TestCase):
             job = execution._register_source_ir_and_enqueue_translation(
                 job, raw_file=raw, document_ir=document, image_file_ids=[], image_archive_file=None, trace_id=None)
             batch = runtime.document_job_translation_batch_repository.list_translation_batches(job.id)[0]
-            with patch.object(execution, "_render_and_save_word", side_effect=lambda job, **kwargs: job):
+            with patch.object(execution.rendering, "_render_and_save_word", side_effect=lambda job, **kwargs: job):
                 completed = execution.translation_batches.execute_translation_batch(batch.id)
             target_file = runtime.document_file_repository.get_document_file(
                 runtime.document_job_repository.get_document_job(job.id).document_ir_file_id)

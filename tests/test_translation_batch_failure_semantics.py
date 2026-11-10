@@ -109,7 +109,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 document_language="en",
                 status="running",
                 stage="ir_converting",
-                template_version_id=execution.template_read_service.resolve_template_version(None).template_version_id,
+                template_version_id=execution.rendering.template_read_service.resolve_template_version(None).template_version_id,
             ))
             buffer = io.BytesIO()
             with zipfile.ZipFile(buffer, "w") as archive:

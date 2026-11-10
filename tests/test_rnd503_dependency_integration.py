@@ -25,7 +25,7 @@ class Rnd503DependencyIntegrationTests(TestCase):
                                 payload["metadata"].pop(key, None)
                             else:
                                 payload["metadata"][key] = None
-                    original = execution._get_document_ir_file(job)
+                    original = execution.rendering._get_document_ir_file(job)
                     ir_file = runtime.file_upload_service.register_generated_content(
                         tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id,
                         created_by=job.created_by, file_type="document_ir", filename="history.document-ir.json",
@@ -34,10 +34,10 @@ class Rnd503DependencyIntegrationTests(TestCase):
                     )
                     job = runtime.document_job_repository.update_document_job(job.id, document_ir_file_id=ir_file.id)
                     ir = DocumentIR.model_validate(payload)
-                    template = execution.template_read_service.resolve_template_version(job.template_version_id)
-                    rendered = execution.word_renderer.render_to_result(
+                    template = execution.rendering.template_read_service.resolve_template_version(job.template_version_id)
+                    rendered = execution.rendering.word_renderer.render_to_result(
                         ir, template_path=template.template_path, config_path=template.layout_config_path,
-                        image_loader=execution._build_image_loader(job),
+                        image_loader=execution.rendering._build_image_loader(job),
                     )
                     content = base.legacy_image_docx(rendered.content)
                     evidence = build_renderer_evidence(ir, content, formula_report=rendered.formula_report)
@@ -62,7 +62,7 @@ class Rnd503DependencyIntegrationTests(TestCase):
                             job.id, expected_retry_count=job.retry_count,
                             expected_document_ir_file_id=job.document_ir_file_id, candidate=word,
                         )
-                    with patch.object(execution.word_renderer, "render_to_result") as render:
+                    with patch.object(execution.rendering.word_renderer, "render_to_result") as render:
                         result = execution.execute_job(job.id)
                     render.assert_not_called()
                     self.assertEqual((result.status, result.result_file_id), ("succeeded", word.id), result.error_message)
