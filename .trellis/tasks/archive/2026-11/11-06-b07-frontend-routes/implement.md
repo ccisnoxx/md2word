@@ -63,3 +63,7 @@ gzip 使用 Node zlib 默认压缩级别，与 Vite 输出口径一致；基线 
 Trellis check 子代理只读复核最终算法、状态归属、模板、scoped CSS/Teleport、迁移断言和最小导出，未发现新增缺陷；现有 specs 继续适用，无需修改。未运行完整 unit/smoke、Python discover、聚合发布门禁、生产或真实 Provider/MinerU。无关测试没有运行，不宣称其通过。
 
 取消、归档、重试等动作完成后直接回写 job 的既有行为原样保留，未扩展为动作跨路由竞态修复；读请求仍以轮次/disposed 失效，不中止底层网络。第三方 PURE 注释及入口仍超过 500 kB 的已知构建警告保留。未提交、推送、发布、archive/add_session；这些是本地实现与验证结果，不代表设计方已验收。
+
+## 后续变更（2026-11-09）
+
+本任务以 `abd004a7` 合入 main 并上线。按需加载后，发布切换会让旧标签页请求的旧 hash chunk 返回 404，出现“页面加载失败”。PR #36 据此调整了上文“导入失败不自动刷新”的约定：对 Vite `vite:preloadError` 标记的页面 chunk 失败整页刷新到导航目标一次，10 秒内再次失败恢复原中文提示；其他导航错误行为不变。nginx 同时对 `index.html` 设置 `Cache-Control: no-cache`。
