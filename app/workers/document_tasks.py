@@ -35,7 +35,7 @@ def run_document_translation_batch(_task, batch_id: str, *, trace_id: str | None
     """按 batch_id 执行 translation provider 批次任务。"""
 
     runtime = build_runtime()
-    batch = runtime.document_job_execution_service.execute_translation_batch(batch_id, trace_id=trace_id)
+    batch = runtime.document_job_execution_service.translation_batches.execute_translation_batch(batch_id, trace_id=trace_id)
     if batch is None:
         return None
     return batch.model_dump(mode="json")

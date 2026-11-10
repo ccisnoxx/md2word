@@ -215,7 +215,8 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         resolved_settings,
         document_job_execution_service,
     )
-    document_job_execution_service.set_translation_batch_task_queue(document_translation_batch_task_queue)
+    document_job_execution_service.translation_batches.set_translation_batch_task_queue(
+        document_translation_batch_task_queue)
     document_job_recovery_service = DocumentJobRecoveryService(
         resolved_settings,
         document_job_repository,

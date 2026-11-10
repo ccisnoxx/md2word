@@ -148,7 +148,9 @@ class V2PublicationFixture:
         snapshot = JobResourceSnapshot(template=resources.resolve_version("template", selection.template_id, str(selection.version)),
             term_rule_set=resources.resolve_version("term_rule_set", "publication-rules", "1"))
         snapshots = JobResourceSnapshotService(runtime.settings, resources)
+        # 快照服务是宿主（渲染）与翻译批次协作者共用的依赖，替换时两侧要一起换。
         execution.job_resource_snapshot_service = snapshots if complete else None
+        execution.translation_batches.job_resource_snapshot_service = execution.job_resource_snapshot_service
         runtime.document_job_service.job_resource_snapshot_service = snapshots
         job = runtime.document_job_repository.update_document_job(job.id,
             request_snapshot={**job.request_snapshot, "resources": snapshot.model_dump(mode="json")})

@@ -44,7 +44,7 @@ class DocumentJobDeliveryStateApiTests(TestCase):
                 document_jobs_worker_backend="eager" if eager else "disabled",
             )
             translator = DocumentIRTranslationService(fixtures.FakeDocumentJobTranslationProvider())
-            runtime.document_job_execution_service.document_ir_translation_service = translator
+            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = translator
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
             with TestClient(create_app(runtime), raise_server_exceptions=raise_server_exceptions) as client:
                 yield runtime, client, fixtures.build_auth_header(client)
