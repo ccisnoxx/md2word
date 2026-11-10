@@ -3,9 +3,10 @@
 # 用法：run_targeted.sh <标签>，例如 baseline / stage1 / stage2。
 set -u
 label="$1"
-# 脚本位于 <仓库>/.trellis/tasks/<任务>/validation/，向上五级即仓库根目录。
-root="${0:A:h:h:h:h:h}"
-out="$root/.trellis/tasks/11-10-translation-batch-extraction/validation/$label"
+# 任务目录归档后位置会变，因此结果目录取脚本所在目录，仓库根目录由 git 定位。
+here="${0:A:h}"
+root="$(git -C "$here" rev-parse --show-toplevel)" || exit 2
+out="$here/$label"
 mkdir -p "$out"
 cd "$root" || exit 2
 targets=(
@@ -30,5 +31,5 @@ for module in "${targets[@]}"; do
   code=$?
   echo "$module exit=$code seconds=$(( $(date +%s) - start )) $(grep -E '^(Ran |OK|FAILED)' "$out/$module.log" | tr '\n' ' ')" >> "$out/summary.txt"
 done
-"$root/.venv/bin/python" "$root/.trellis/tasks/11-10-translation-batch-extraction/validation/summarize.py" "$out"
+"$root/.venv/bin/python" "$here/summarize.py" "$out"
 cat "$out/summary.txt"

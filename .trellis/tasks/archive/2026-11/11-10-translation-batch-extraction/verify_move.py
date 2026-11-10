@@ -15,7 +15,11 @@ import pathlib
 import subprocess
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+# 任务目录归档后层级会变，仓库根目录由 git 定位。
+ROOT = pathlib.Path(subprocess.run(
+    ["git", "rev-parse", "--show-toplevel"], cwd=pathlib.Path(__file__).resolve().parent,
+    check=True, capture_output=True, text=True,
+).stdout.strip())
 HOST_PATH = "app/domains/document_jobs/execution.py"
 MOVED_PATH = "app/domains/document_jobs/translation_execution.py"
 HOST_CLASS = "DocumentJobExecutionService"
