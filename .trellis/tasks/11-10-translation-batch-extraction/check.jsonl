@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/translation-batch-lifecycle.md", "reason": "翻译批次生命周期与原子边界：迁出代码必须保持的合同，owner 表述需更新"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "document_jobs 目录约定：新增 translation_execution.py 的归属与文件列表"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "失败收口与错误码合同：宿主 7 个回调方法的行为不得变化"}
+{"file": ".trellis/spec/backend/translation-integrity-validator.md", "reason": "汇合回填与完整性证据合同：搬移后保持"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "代码质量与注释约定"}
+{"file": ".trellis/tasks/11-10-translation-batch-extraction/research/current-state.md", "reason": "迁出集合、双向耦合与测试耦合的度量"}
