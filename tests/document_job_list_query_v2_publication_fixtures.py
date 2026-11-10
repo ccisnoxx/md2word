@@ -94,9 +94,9 @@ class V2PublicationFixture:
             # 在 HTTP 创建前给外部 fake 固定真实源；基础贡献由原转换/渲染/receipt 完成。
             execution.fake_mineru_client.result_zip_bytes = natural_package(table=True) if source_package is None else source_package
             provider = RecordingPreviewProvider(outcomes)
-            execution.word_preview_service.provider = provider
-            execution.word_preview_service.audit_service = runtime.audit_service
-            runtime.document_job_service.word_preview_service = execution.word_preview_service
+            execution.rendering.word_preview_service.provider = provider
+            execution.rendering.word_preview_service.audit_service = runtime.audit_service
+            runtime.document_job_service.word_preview_service = execution.rendering.word_preview_service
             with fixtures.TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
                 job = self._pause_after_ir(runtime, execution, client, headers)
@@ -148,9 +148,9 @@ class V2PublicationFixture:
         snapshot = JobResourceSnapshot(template=resources.resolve_version("template", selection.template_id, str(selection.version)),
             term_rule_set=resources.resolve_version("term_rule_set", "publication-rules", "1"))
         snapshots = JobResourceSnapshotService(runtime.settings, resources)
-        # 快照服务是宿主（渲染）与翻译批次协作者共用的依赖，替换时两侧要一起换。
-        execution.job_resource_snapshot_service = snapshots if complete else None
-        execution.translation_batches.job_resource_snapshot_service = execution.job_resource_snapshot_service
+        # 快照服务由渲染与翻译批次两个协作者共用，替换时两侧要一起换。
+        execution.rendering.job_resource_snapshot_service = snapshots if complete else None
+        execution.translation_batches.job_resource_snapshot_service = execution.rendering.job_resource_snapshot_service
         runtime.document_job_service.job_resource_snapshot_service = snapshots
         job = runtime.document_job_repository.update_document_job(job.id,
             request_snapshot={**job.request_snapshot, "resources": snapshot.model_dump(mode="json")})

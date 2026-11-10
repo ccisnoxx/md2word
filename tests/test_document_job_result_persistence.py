@@ -98,7 +98,7 @@ class DocumentJobResultPersistenceTests(TestCase):
 
     def _install_formula_ir(self, runtime, execution, job, source=r"$\unknown{VOUT}$"):
         """登记新的合成最终 IR，保留源清单与现有结构，不覆写历史文件。"""
-        original = execution._get_document_ir_file(job)
+        original = execution.rendering._get_document_ir_file(job)
         ir = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(original))
         block = next(block for block in ir.blocks if block.type == "paragraph")
         ir = ir.model_copy(update={"blocks": [
@@ -146,8 +146,8 @@ class DocumentJobResultPersistenceTests(TestCase):
             config.write_text("schema_version: template-config/v1\npage_setup:\n  page_width_cm: 19\n  left_margin: 1\n  right_margin: 1\n", encoding="utf-8")
             rules.write_text("subscript_rules:\n  symbols:\n    DemoToken: PRIVATE_FORMAT_SENTINEL\n", encoding="utf-8")
             with patch.object(image_evidence, "IMAGE_GENERATION_POLICY", writer_policy):
-                rendered = execution.word_renderer.render_to_result(ir, template_path=None, config_path=config,
-                    image_loader=execution._build_image_loader(job), options=DocumentIRRenderOptions(
+                rendered = execution.rendering.word_renderer.render_to_result(ir, template_path=None, config_path=config,
+                    image_loader=execution.rendering._build_image_loader(job), options=DocumentIRRenderOptions(
                         subscript_config_path=rules, template_version_id=job.template_version_id))
             metadata = build_renderer_evidence(ir, rendered.content, formula_report=rendered.formula_report,
                 image_layout_report=rendered.image_layout_report, expected_template_version_id=job.template_version_id,
@@ -192,8 +192,8 @@ class DocumentJobResultPersistenceTests(TestCase):
             elif entry == "receipt":
                 job = runtime.document_job_repository.prepare_document_job_result(job.id,
                     expected_retry_count=job.retry_count, expected_document_ir_file_id=job.document_ir_file_id, candidate=word)
-            with patch.object(execution.word_renderer, "render_to_result") as rerender, patch.object(
-                execution.template_read_service, "resolve_template_version", side_effect=AssertionError("恢复不得读取当前模板")):
+            with patch.object(execution.rendering.word_renderer, "render_to_result") as rerender, patch.object(
+                execution.rendering.template_read_service, "resolve_template_version", side_effect=AssertionError("恢复不得读取当前模板")):
                 result = execution.execute_job(job.id)
             rerender.assert_not_called()
             if damage:
@@ -224,8 +224,8 @@ class DocumentJobResultPersistenceTests(TestCase):
         with self._runtime() as (_root, runtime, execution, job, _client, _headers):
             job, ir = self._install_image_ir(runtime, execution, job, image_count=image_count, annotations=False)
             with patch.object(image_evidence, "IMAGE_GENERATION_POLICY", writer_policy):
-                rendered = execution.word_renderer.render_to_result(
-                    ir, template_path=None, config_path=None, image_loader=execution._build_image_loader(job),
+                rendered = execution.rendering.word_renderer.render_to_result(
+                    ir, template_path=None, config_path=None, image_loader=execution.rendering._build_image_loader(job),
                     options=DocumentIRRenderOptions(template_version_id=job.template_version_id),
                 )
             metadata = build_renderer_evidence(ir, rendered.content, formula_report=rendered.formula_report,
@@ -257,7 +257,7 @@ class DocumentJobResultPersistenceTests(TestCase):
             ):
                 self.assertIsNone(job.prepared_result)
                 with self.assertRaisesRegex(ValueError, "图片布局标记"):
-                    execution._get_existing_result_file(job)
+                    execution.rendering._get_existing_result_file(job)
                 self.assertIsNone(runtime.document_job_repository.get_document_job(job.id).prepared_result)
 
     def test_missing_all_reports_three_recovery_entries_preserve_receipt_and_do_not_rerender(self):
@@ -272,7 +272,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                         job = runtime.document_job_repository.prepare_document_job_result(job.id,
                             expected_retry_count=job.retry_count, expected_document_ir_file_id=job.document_ir_file_id,
                             candidate=word)
-                    with patch.object(execution.word_renderer, "render_to_result") as render, patch.object(
+                    with patch.object(execution.rendering.word_renderer, "render_to_result") as render, patch.object(
                         runtime.document_job_repository, "prepare_document_job_result",
                         wraps=runtime.document_job_repository.prepare_document_job_result,
                     ) as select, patch.object(runtime.document_file_repository, "materialize_prepared_result",
@@ -294,8 +294,8 @@ class DocumentJobResultPersistenceTests(TestCase):
             with self.subTest(policy=policy), self._image_result_without_report_fields(policy, count, marker_free=True) as (
                 runtime, execution, job, word,
             ):
-                self.assertEqual(execution._get_existing_result_file(job).id, word.id)
-                with patch.object(execution.word_renderer, "render_to_result") as render:
+                self.assertEqual(execution.rendering._get_existing_result_file(job).id, word.id)
+                with patch.object(execution.rendering.word_renderer, "render_to_result") as render:
                     result = execution.execute_job(job.id)
                 self.assertEqual((result.status, result.result_file_id), ("succeeded", word.id), result.error_message)
                 self.assertEqual(result.prepared_result.file.id, word.id)
@@ -330,10 +330,10 @@ class DocumentJobResultPersistenceTests(TestCase):
             for corrupt in (False, True):
                 with self.subTest(entry=entry, corrupt=corrupt), self._runtime() as (root, runtime, execution, job, client, headers):
                     job, ir = self._install_formula_ir(runtime, execution, job, source="$x^2+3$")
-                    template = execution.template_read_service.resolve_template_version(job.template_version_id)
-                    rendered = execution.word_renderer.render_to_result(
+                    template = execution.rendering.template_read_service.resolve_template_version(job.template_version_id)
+                    rendered = execution.rendering.word_renderer.render_to_result(
                         ir, template_path=template.template_path, config_path=template.layout_config_path,
-                        image_loader=execution._build_image_loader(job),
+                        image_loader=execution.rendering._build_image_loader(job),
                     )
                     content = legacy_image_docx(rendered.content)
                     evidence = build_renderer_evidence(ir, content, formula_report=rendered.formula_report)
@@ -370,7 +370,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                             job.id, expected_retry_count=job.retry_count,
                             expected_document_ir_file_id=job.document_ir_file_id, candidate=word,
                         )
-                    with patch.object(execution.word_renderer, "render_to_result") as render:
+                    with patch.object(execution.rendering.word_renderer, "render_to_result") as render:
                         result = execution.execute_job(job.id)
                     render.assert_not_called()
                     if corrupt:
@@ -426,7 +426,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                     entered, release = Event(), Event()
                     original_write = runtime.file_upload_service._write_object
                     original_materialize = runtime.document_file_repository.materialize_prepared_result
-                    original_render = execution.word_renderer.render_to_result
+                    original_render = execution.rendering.word_renderer.render_to_result
 
                     def render(*args, **kwargs):
                         rendered = original_render(*args, **kwargs)
@@ -449,7 +449,7 @@ class DocumentJobResultPersistenceTests(TestCase):
 
                     with patch.object(runtime.file_upload_service, "_write_object", side_effect=write), patch.object(
                         runtime.document_file_repository, "materialize_prepared_result", side_effect=materialize,
-                    ), patch.object(execution.word_renderer, "render_to_result", side_effect=render), ThreadPoolExecutor(max_workers=1, thread_name_prefix="late-uploader") as pool:
+                    ), patch.object(execution.rendering.word_renderer, "render_to_result", side_effect=render), ThreadPoolExecutor(max_workers=1, thread_name_prefix="late-uploader") as pool:
                         late = pool.submit(execution.execute_job, job.id)
                         try:
                             self.assertTrue(entered.wait(15))
@@ -501,7 +501,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                     self.assertEqual(len(before_files), 1)
                     restarted = self._build_runtime(root, kind)
                     new_execution = restarted.document_job_execution_service
-                    with patch.object(new_execution.word_renderer, "render_to_result", wraps=new_execution.word_renderer.render_to_result) as render, patch.object(
+                    with patch.object(new_execution.rendering.word_renderer, "render_to_result", wraps=new_execution.rendering.word_renderer.render_to_result) as render, patch.object(
                         restarted.file_upload_service, "_write_object", wraps=restarted.file_upload_service._write_object,
                     ) as write:
                         result = new_execution.execute_job(job.id)
@@ -540,20 +540,20 @@ class DocumentJobResultPersistenceTests(TestCase):
                     error_code="oss_failed", error_message="落选候选的迟到失败", trace_id=None)
                 self.assertEqual(failed.prepared_result, selected.prepared_result)
                 self.assertEqual(failed.status, "running")
-                self._assert_result_bytes(runtime, execution._render_and_save_word(job, trace_id=None))
+                self._assert_result_bytes(runtime, execution.rendering._render_and_save_word(job, trace_id=None))
 
     def test_late_outer_exception_does_not_fail_another_attempts_stage(self):
         with self._runtime() as (root, runtime, execution, job, client, headers):
             def fail_after_other_attempt(snapshot, **kwargs):
-                with patch.object(execution, "_render_and_save_word", wraps=real_render):
+                with patch.object(execution.rendering, "_render_and_save_word", wraps=real_render):
                     runtime.document_job_repository.update_document_job(job.id, stage="uploading")
                     with patch.object(runtime.document_file_repository, "materialize_prepared_result", side_effect=SimulatedProcessExit):
                         with self.assertRaises(SimulatedProcessExit):
                             real_render(runtime.document_job_repository.get_document_job(job.id), trace_id=None)
                 raise RuntimeError("旧调用退出时的迟到异常")
 
-            real_render = execution._render_and_save_word
-            with patch.object(execution, "_render_and_save_word", side_effect=fail_after_other_attempt):
+            real_render = execution.rendering._render_and_save_word
+            with patch.object(execution.rendering, "_render_and_save_word", side_effect=fail_after_other_attempt):
                 result = execution.execute_job(job.id)
             self.assertEqual(result.status, "running")
             self.assertIsNotNone(result.prepared_result)
@@ -825,7 +825,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                 else:
                     runtime.document_file_repository.update_document_file(original.id, metadata={
                         "retry_count": 0, "document_ir_file_id": job.document_ir_file_id})
-                with patch.object(execution.word_renderer, "render_to_result") as render:
+                with patch.object(execution.rendering.word_renderer, "render_to_result") as render:
                     failed = execution.execute_job(job.id)
                 self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "uploading", "oss_failed"))
                 self.assertIsNone(failed.prepared_result)
@@ -962,9 +962,9 @@ class DocumentJobResultPersistenceTests(TestCase):
                 repository = runtime.document_job_repository
                 uploading = repository.update_document_job(stale.id, stage="uploading", progress=85)
                 # B 已回到 rendering，但内存渲染中断；A 仍拿着先前 60% 的同代快照。
-                with patch.object(execution.word_renderer, "render_to_result", side_effect=SimulatedProcessExit):
+                with patch.object(execution.rendering.word_renderer, "render_to_result", side_effect=SimulatedProcessExit):
                     with self.assertRaises(SimulatedProcessExit):
-                        execution._render_and_save_word(uploading, trace_id=None)
+                        execution.rendering._render_and_save_word(uploading, trace_id=None)
                 self.assertEqual((repository.get_document_job(stale.id).stage, repository.get_document_job(stale.id).progress),
                                  ("rendering", 85))
                 observed = []
@@ -975,7 +975,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                         observed.append((result.stage, result.progress))
                     return result
                 with patch.object(repository, "update_document_job_if_current", side_effect=record_progress):
-                    result = execution._render_and_save_word(stale, trace_id=None)
+                    result = execution.rendering._render_and_save_word(stale, trace_id=None)
                 self._assert_result_bytes(runtime, result)
                 self.assertEqual(observed[0], ("quality_checking", 85))
                 self.assertTrue(all(progress >= 85 for stage, progress in observed))

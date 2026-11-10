@@ -55,7 +55,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         job = runtime.document_job_repository.create_document_job(DocumentJobRecord(
             id="job", tenant_id="tenant", company_id="company", created_by="operator",
             source_file_id=source_pdf.id, mode="en2zh_pdf_to_word", document_language="en",
-            status="running", stage="ir_converting", template_version_id=execution.template_read_service.resolve_template_version(None).template_version_id,
+            status="running", stage="ir_converting", template_version_id=execution.rendering.template_read_service.resolve_template_version(None).template_version_id,
         ))
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
@@ -97,7 +97,7 @@ class TranslationIntegrityExecutionTests(TestCase):
 
     def test_worker_restores_before_persistence_and_fan_in_revalidates(self):
         runtime, execution, provider, job, batch, document, _raw = self.make_case()
-        with patch.object(execution, "_render_and_save_word", side_effect=lambda job, **kwargs: job):
+        with patch.object(execution.rendering, "_render_and_save_word", side_effect=lambda job, **kwargs: job):
             completed = execution.translation_batches.execute_translation_batch(batch.id)
         self.assertEqual(completed.status, "succeeded")
         result_file = runtime.document_file_repository.get_document_file(completed.result_file_id)
@@ -146,7 +146,7 @@ class TranslationIntegrityExecutionTests(TestCase):
                 self.assertNotIn("UNTRUSTED_BODY_MARKER", diagnostics)
                 self.assertNotIn("Model OPA228 uses 10 V.", diagnostics)
                 provider.transform = None
-                with patch.object(execution, "_render_and_save_word", side_effect=lambda job, **kwargs: job):
+                with patch.object(execution.rendering, "_render_and_save_word", side_effect=lambda job, **kwargs: job):
                     recovered = execution.translation_batches.execute_translation_batch(batch.id)
                 self.assertEqual((recovered.status, recovered.attempt_count), ("succeeded", 2))
                 self.assertEqual(len(self.files(runtime, "ai_call_log")), 2)

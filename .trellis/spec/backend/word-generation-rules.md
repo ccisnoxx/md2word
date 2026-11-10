@@ -6,7 +6,8 @@
 `scripts/dev/formal_mineru_conversion.py::run_conversion`，实际执行函数是同文件的
 `::convert_formal_mineru_package`；线上入口由
 `app/domains/document_jobs/execution.py::DocumentJobExecutionService` 调用
-`app/services/document_ir/mineru_converter.py::MinerUToDocumentIRService`，再由
+`app/services/document_ir/mineru_converter.py::MinerUToDocumentIRService`，再由其持有的
+`app/domains/document_jobs/render_execution.py::WordRenderExecution` 调用
 `app/services/renderer/word_renderer.py::DocumentIRWordRenderer` 生成 DOCX。
 
 `full.md` 不属于正式输入；正式链路只从 MinerU content list JSON 构造 DocumentIR。旧
@@ -39,7 +40,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：本地 MinerU 目录/ZIP，或线上任务已下载的 MinerU 结果 ZIP。
-- 正式 owner：`scripts/dev/formal_mineru_conversion.py::run_conversion`、`::convert_formal_mineru_package`；`app/domains/document_jobs/execution.py::DocumentJobExecutionService._convert_and_save_document_ir`、`._render_and_save_word`。
+- 正式 owner：`scripts/dev/formal_mineru_conversion.py::run_conversion`、`::convert_formal_mineru_package`；`app/domains/document_jobs/execution.py::DocumentJobExecutionService._convert_and_save_document_ir`；`app/domains/document_jobs/render_execution.py::WordRenderExecution._render_and_save_word`（由 `DocumentJobExecutionService.rendering` 持有）。
 - 预期输出：先由 `MinerUToDocumentIRService.convert_zip()` 生成并持久化 DocumentIR，再由 `DocumentIRWordRenderer.render_to_result()` 一次生成 DOCX 和完整 `WordRenderResult`；线上 Worker 与本地 adapter 均须将该结果通过 `render_result=` 传给 `build_renderer_evidence`，保留内容合同版本、公式来源覆盖和执行 trace，不得仅抽取公式/图片报告误入历史聚合路径（旧 `render_to_bytes()` 保持 bytes 兼容）；所有正式修复都落在该链路的唯一 owner。
 - 冲突/例外：调试脚本可以包装正式 adapter，但不得切换到旧 runtime；`document-ir/v1` 的 renderer 顺序回退仍属于正式 renderer 内部兼容路径。
 - 资产消费：本地 adapter 与 Worker 均须消费 converter 返回的普通图片、表格参考图和派生占位图三类资产；不能仅接 `image_assets` 而让已认证的表格来源在 writer 阶段丢失。统计字段 `image_assets` 仍保持普通图片计数语义。
@@ -585,7 +586,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 正式 owner：`tests/fixtures/golden_samples/manifest.yaml`、`tests/fixtures/component_pdf_samples/manifest.yaml` 的治理合同；执行入口 `scripts/dev/run_component_pdf_regression.py::run_regression`。
 - 预期输出：明确区分 committed runnable fixture、committed PDF 但执行依赖外部环境、external evidence 和 historical evidence；空验收模板不算验收记录，旧 commit 的 signoff 不证明当前版本。
 - 冲突/例外：Golden governance tests 证明清单库存和签字协议，不证明 4 个 PDF 已被当前 renderer 转换；component runner 只证明最小包成功/可打开。`external`/`historical` 的分类目前仍依赖规范和 reviewer 纪律，没有自动化 owner 阻止错误升级证据层级。
-- 禁止：把 `/Users/...` 文件、`tests/tmp` 未跟踪报告或历史哈希写成长期门禁；把 manifest 的 acceptance focus 写成已通过断言。
+- 禁止：把 `${DEVELOPER_HOME}` 文件、`tests/tmp` 未跟踪报告或历史哈希写成长期门禁；把 manifest 的 acceptance focus 写成已通过断言。
 - 自动验证：`tests.test_component_pdf_sample_governance.ComponentPdfRegressionRunnerTests.test_regression_runner_converts_committed_minimal_mineru_sample`；`tests.test_golden_sample_manifest.GoldenSampleManifestTests.test_manifest_defines_required_sample_coverage`、`.test_current_sample_inventory_reports_four_runnable_samples`、`.test_admin_manual_signoff_requires_matching_job_and_docx_hash`。
 - 样本证据：committed：OPA228 P1/P2/P6/P7 PDF、OPA228 P1 最小 MinerU 包；external：SC2167、CM4112/CM4114、TPL51200、BL0942、RS2G04；historical Golden 4/4 绑定旧 commit `20d496e...`。
 - 来源/取代：Golden/component 样本 README、manifest 和归档 acceptance audit；取代把一次性本地结果写成当前回归通过。

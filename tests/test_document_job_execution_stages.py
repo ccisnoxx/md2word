@@ -64,7 +64,7 @@ class DocumentJobExecutionStageTests(TestCase):
         ]
 
     def _pause_after_ir(self, runtime, execution, client, headers, *, mode="direct"):
-        with patch.object(execution, "_render_and_save_word", side_effect=lambda job, **kwargs: job):
+        with patch.object(execution.rendering, "_render_and_save_word", side_effect=lambda job, **kwargs: job):
             job_id = self._create(client, headers, mode=mode)
         job = runtime.document_job_repository.get_document_job(job_id)
         self.assertEqual(job.stage, "rendering")
@@ -89,11 +89,11 @@ class DocumentJobExecutionStageTests(TestCase):
 
     def _register_word(self, runtime, job, *, metadata, job_id=None, file_type="generated_word"):
         execution = runtime.document_job_execution_service
-        ir = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(execution._get_document_ir_file(job)))
-        template = execution.template_read_service.resolve_template_version(job.template_version_id)
-        content = execution.word_renderer.render_to_bytes(
+        ir = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(execution.rendering._get_document_ir_file(job)))
+        template = execution.rendering.template_read_service.resolve_template_version(job.template_version_id)
+        content = execution.rendering.word_renderer.render_to_bytes(
             ir, template_path=template.template_path, config_path=template.layout_config_path,
-            image_loader=execution._build_image_loader(job),
+            image_loader=execution.rendering._build_image_loader(job),
         )
         metadata = {**build_renderer_evidence(ir, content), **metadata}
         return runtime.file_upload_service.register_generated_content(
@@ -189,7 +189,7 @@ class DocumentJobExecutionStageTests(TestCase):
                     self.assertIsNotNone(job.prepared_result)
                 ensure_renderer_integrity(evidence)
 
-            with patch("app.domains.document_jobs.execution.ensure_renderer_integrity", side_effect=ensure):
+            with patch("app.domains.document_jobs.render_execution.ensure_renderer_integrity", side_effect=ensure):
                 job_id = self._create(client, headers)
             events = runtime.document_job_event_repository.list_document_job_events(job_id)
             self.assertEqual(observed, ["quality_checking", "uploading"])
@@ -423,8 +423,8 @@ class DocumentJobExecutionStageTests(TestCase):
                             progress.append(result.progress)
                         return result
 
-                    with patch.object(execution.word_renderer, "render_to_result", wraps=execution.word_renderer.render_to_result) as render, patch(
-                        "app.domains.document_jobs.execution.build_renderer_evidence", wraps=build_renderer_evidence,
+                    with patch.object(execution.rendering.word_renderer, "render_to_result", wraps=execution.rendering.word_renderer.render_to_result) as render, patch(
+                        "app.domains.document_jobs.render_execution.build_renderer_evidence", wraps=build_renderer_evidence,
                     ) as evidence, patch.object(runtime.document_job_repository, "update_document_job_if_current", side_effect=update):
                         result = execution.execute_job(job.id, trace_id="trace_quality_replay")
                     self.assertEqual(result.status, "succeeded", result.error_message)
@@ -457,7 +457,7 @@ class DocumentJobExecutionStageTests(TestCase):
                 "retry_count": job.retry_count, "document_ir_file_id": job.document_ir_file_id,
             })
             runtime.document_job_repository.update_document_job(job.id, stage="uploading")
-            with patch.object(execution.word_renderer, "render_to_result") as render:
+            with patch.object(execution.rendering.word_renderer, "render_to_result") as render:
                 result = execution.execute_job(job.id)
             self.assertEqual((result.status, result.result_file_id), ("succeeded", word.id))
             render.assert_not_called()
@@ -522,7 +522,7 @@ class DocumentJobExecutionStageTests(TestCase):
                 runtime.document_job_repository.update_document_job(job.id, retry_count=1)
                 raise RuntimeError("旧代渲染调用返回失败")
 
-            with patch.object(execution.word_renderer, "render_to_result", side_effect=render):
+            with patch.object(execution.rendering.word_renderer, "render_to_result", side_effect=render):
                 result = execution.execute_job(job.id)
             self.assertEqual((result.status, result.stage, result.retry_count), ("running", "rendering", 1))
             self.assertIsNone(result.error_code)
@@ -531,7 +531,7 @@ class DocumentJobExecutionStageTests(TestCase):
         for target in ("build_renderer_evidence", "ensure_renderer_integrity"):
             with self.subTest(target=target), self._runtime() as (runtime, execution, provider, client, headers):
                 error = DocumentIntegrityError("DocumentIR→DOCX", {"blocking_quality_flags": ["ir_docx_integrity:missing"]})
-                with patch(f"app.domains.document_jobs.execution.{target}", side_effect=error):
+                with patch(f"app.domains.document_jobs.render_execution.{target}", side_effect=error):
                     job_id = self._create(client, headers)
                 job = runtime.document_job_repository.get_document_job(job_id)
                 self.assertEqual((job.status, job.failed_stage, job.error_code), ("failed", "quality_checking", "render_failed"))
@@ -553,7 +553,7 @@ class DocumentJobExecutionStageTests(TestCase):
                 else:
                     snapshot = {**job.request_snapshot, "resources": JobResourceSnapshot().model_dump(mode="json")}
                     runtime.document_job_repository.update_document_job(job.id, request_snapshot=snapshot)
-                with patch.object(execution.word_renderer, "render_to_result", wraps=execution.word_renderer.render_to_result) as render:
+                with patch.object(execution.rendering.word_renderer, "render_to_result", wraps=execution.rendering.word_renderer.render_to_result) as render:
                     failed = execution.execute_job(job.id, trace_id="trace_stage_owner")
                 self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "translating", "translation_failed"))
                 self.assertTrue(failed.error_message)
@@ -597,7 +597,7 @@ class DocumentJobExecutionStageTests(TestCase):
                         raise OSError("阶段已推进后的事件追加失败")
                     return original_append(job_id, event)
                 with patch.object(runtime.document_job_event_repository, "append_document_job_event", side_effect=append), patch.object(
-                    execution.word_renderer, "render_to_result", wraps=execution.word_renderer.render_to_result,
+                    execution.rendering.word_renderer, "render_to_result", wraps=execution.rendering.word_renderer.render_to_result,
                 ) as render:
                     if entry == "batch":
                         execution.translation_batches.execute_translation_batch(batch.id, trace_id="trace_stage_owner")
