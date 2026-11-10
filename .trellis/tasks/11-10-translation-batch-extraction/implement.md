@@ -92,3 +92,18 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest \
 | 阶段二定向测试 | `results.tsv` 与基线逐行一致 |
 
 未执行：全仓测试、真实 Celery Worker 与 MySQL 环境的端到端运行。Celery 任务名与参数未改，Worker 入口只改了访问路径，由 `test_fastapi_jobs_backend` 的 eager 队列路径覆盖。
+
+## 独立复核
+
+2026-11-10，由只读子代理复核提交 `396a8476`（基线 `d45e46e1`），结论：未发现确认或高度可信的问题。
+
+| 核查项 | 结论与证据 |
+|---|---|
+| 共用依赖分叉 | 构造后替换执行服务共用依赖的只有夹具 `document_job_list_query_v2_publication_fixtures.py:152-153`，两侧同步为同一对象；宿主与协作者在 `__init__` 之外都不重新赋值这 4 个属性 |
+| 静默失效 | `translation_execution.py` 之外 179 行相关引用逐行核对，无宿主或其别名上对迁出名字的读写；测试中同步翻译服务的写法共 31 处，与基线逐文件一一对应 |
+| 补丁拦截 | `self._host.` 共 56 处、仅 7 个白名单名字；无不带调用的引用，即未捕获绑定方法 |
+| 循环导入 | 分别以 `translation_execution`、`app.workers.document_tasks`、`execution`、`app.main` 为首个导入模块，独立进程导入均成功 |
+| 其他调用方 | `app/`、`scripts/` 无遗漏；`recovery`、`incidents` 不经执行服务访问迁出名字 |
+| 并发与失败收口 | 重跑 `verify_move.py --stage 2` 通过；`test_provider_return_after_cancel_or_generation_change_cannot_finalize` 通过 |
+
+遗留风险（设计取舍，非缺陷）：4 个共用依赖由宿主和协作者各持一份引用，今后若只替换一侧会悄然分叉且不报错。复核未覆盖：逐行通读迁出代码（依赖 AST 等价核对）、字符串拼接的动态属性名、全量与 MySQL 用例、仓库外调用方。
