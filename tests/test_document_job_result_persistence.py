@@ -536,7 +536,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                 self.assertIsNone(repo.update_document_job_if_current(job.id, allowed_statuses={"running"},
                     allowed_stages={"uploading"}, expected_retry_count=0,
                     expected_document_ir_file_id=job.document_ir_file_id, require_no_prepared_result=True, stage="rendering"))
-                failed = execution._mark_failed(selected.model_copy(update={"prepared_result": None}), failed_stage="uploading",
+                failed = execution.lifecycle.mark_failed(selected.model_copy(update={"prepared_result": None}), failed_stage="uploading",
                     error_code="oss_failed", error_message="落选候选的迟到失败", trace_id=None)
                 self.assertEqual(failed.prepared_result, selected.prepared_result)
                 self.assertEqual(failed.status, "running")

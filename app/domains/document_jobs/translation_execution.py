@@ -7,11 +7,17 @@ import json
 import sqlite3
 import time
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any
+from typing import Any, Callable, Protocol
 from uuid import uuid4
 
+from app.core.config import Settings
 from app.core.errors import ApiError
 from app.domains.document_jobs import _failure_policy as failure_policy
+from app.domains.document_jobs.execution_support import (
+    DocumentJobLifecycle,
+    document_ir_layout_metadata,
+    require_uploaded_file,
+)
 from app.domains.document_jobs.models import DocumentJobRecord, DocumentJobTranslationBatchRecord
 from app.domains.document_jobs.publication_provenance import (
     actual_call_fact,
@@ -19,6 +25,7 @@ from app.domains.document_jobs.publication_provenance import (
     save_translation_publication_provenance,
 )
 from app.domains.document_jobs.repository import (
+    DocumentJobRepositoryProtocol,
     DocumentJobTranslationBatchRepositoryProtocol,
     TranslationBatchTreeInvalidError,
 )
@@ -28,9 +35,11 @@ from app.domains.document_jobs.workflow import (
     TranslationRootPlan,
     reduce_translation_generation,
 )
+from app.domains.files import FileUploadService
 from app.domains.files.models import DocumentFileRecord
+from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.jobs.models import JobResourceSnapshot
-from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotError, JobResourceSnapshotService
 from app.domains.resources.models import utc_now
 from app.domains.translation.audit import TranslationAuditService, TranslationCallAuditRecorder
 from app.domains.translation.document_ir_translator import (
@@ -59,14 +68,6 @@ from app.domains.translation.provider import (
 from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.table_reference_assets import decode_table_references
 
-if TYPE_CHECKING:
-    # execution.py 在运行时导入本模块；这里只为类型标注引用，避免循环导入。
-    from app.domains.document_jobs.execution import (
-        DocumentJobExecutionService,
-        DocumentTranslationBatchTaskQueueProtocol,
-    )
-
-
 class _TranslationBatchStorageError(RuntimeError):
     """翻译成功响应已审计，但批次结果或状态提交写入失败。"""
 
@@ -78,27 +79,43 @@ def _is_metadata_storage_error(error: Exception) -> bool:
     return isinstance(error, (OSError, sqlite3.Error)) or error_module.startswith("pymysql.")
 
 
+class DocumentTranslationBatchTaskQueueProtocol(Protocol):
+    """translation provider batch task 投递端口；批次记录负责幂等和 fan-in。"""
+
+    def enqueue(self, batch_id: str, *, trace_id: str | None, run_inline: bool = True) -> str | None:
+        """投递一个按 batch_id 执行的后台任务，返回底层队列任务 ID。"""
+
+
 class TranslationBatchExecution:
     """翻译批次执行：由 DocumentJobExecutionService 构造并持有，负责批次计划、领取、调用、失败收口与汇合回填。
 
-    任务级状态与事件仍由宿主收口。对宿主只允许调用 _record_event、_mark_failed、
-    _fail_stage_attempt、_mark_timed_out_if_needed、execute_job、_get_uploaded_file、
-    _document_ir_layout_metadata，且必须在调用时经 self._host 查找，不得在构造时捕获绑定方法，
-    否则对宿主方法的替换（例如测试中的 patch.object）不会作用到翻译收口后的续跑。
-    settings、job_repository 等共用依赖只由宿主持有，同样在使用时经 self._host 读取，本类只保存专属依赖。
+    任务级状态推进与事件记录统一经注入的 DocumentJobLifecycle 完成；翻译收口后的续跑经注入的
+    resume_job 回到宿主执行骨架。settings、job_repository 等共用依赖与宿主引用同一对象。
     """
 
     def __init__(
         self,
-        host: DocumentJobExecutionService,
         *,
+        settings: Settings,
+        job_repository: DocumentJobRepositoryProtocol,
+        file_repository: DocumentFileRepositoryProtocol,
+        file_service: FileUploadService,
+        job_resource_snapshot_service: JobResourceSnapshotService | None,
+        lifecycle: DocumentJobLifecycle,
+        resume_job: Callable[..., DocumentJobRecord | None],
         translation_batch_repository: DocumentJobTranslationBatchRepositoryProtocol,
         document_ir_translation_service: DocumentIRTranslationService | None,
         translation_audit_service: TranslationAuditService | None,
         term_version_service: Any | None,
         translation_batch_task_queue: DocumentTranslationBatchTaskQueueProtocol | None,
     ) -> None:
-        self._host = host
+        self.settings = settings
+        self.job_repository = job_repository
+        self.file_repository = file_repository
+        self.file_service = file_service
+        self.job_resource_snapshot_service = job_resource_snapshot_service
+        self.lifecycle = lifecycle
+        self.resume_job = resume_job
         self.translation_batch_repository = translation_batch_repository
         self.document_ir_translation_service = document_ir_translation_service
         self.translation_audit_service = translation_audit_service
@@ -122,7 +139,7 @@ class TranslationBatchExecution:
     ) -> DocumentJobRecord:
         generation = job.retry_count
         if job.stage == "ir_converting":
-            transitioned = self._host.job_repository.update_document_job_if_current(
+            transitioned = self.job_repository.update_document_job_if_current(
                 job.id,
                 allowed_statuses={"running"},
                 allowed_stages={"ir_converting"},
@@ -131,10 +148,10 @@ class TranslationBatchExecution:
                 updated_at=utc_now(),
             )
             if transitioned is None:
-                return self._host.job_repository.get_document_job(job.id) or job
+                return self.job_repository.get_document_job(job.id) or job
             job = transitioned
             try:
-                self._host._record_event(
+                self.lifecycle.record_event(
                     job,
                     event_type="stage_started",
                     stage="translating",
@@ -143,7 +160,7 @@ class TranslationBatchExecution:
                     trace_id=trace_id,
                 )
             except Exception as exc:
-                return self._host._fail_stage_attempt(job, exc, trace_id=trace_id)
+                return self.lifecycle.fail_stage_attempt(job, exc, trace_id=trace_id)
         if job.status != "running" or job.stage != "translating" or job.retry_count != generation:
             return job
         try:
@@ -162,7 +179,7 @@ class TranslationBatchExecution:
                     expected_plans=expected_plans,
                 )
             except TranslationBatchTreeInvalidError as exc:
-                return self._host._mark_failed(
+                return self.lifecycle.mark_failed(
                     job,
                     failed_stage="translating",
                     error_code=exc.code,
@@ -170,7 +187,7 @@ class TranslationBatchExecution:
                     trace_id=trace_id,
                 )
             except TranslationIntegrityError as exc:
-                return self._host._mark_failed(
+                return self.lifecycle.mark_failed(
                     job,
                     failed_stage="translating",
                     error_code="translation_failed",
@@ -186,7 +203,7 @@ class TranslationBatchExecution:
             self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
             return self._finalize_translation_generation(job.id, generation=generation, trace_id=trace_id) or job
         except Exception as exc:
-            return self._host._fail_stage_attempt(job, exc, trace_id=trace_id)
+            return self.lifecycle.fail_stage_attempt(job, exc, trace_id=trace_id)
 
     def _get_translation_execution_snapshot(
         self,
@@ -269,7 +286,7 @@ class TranslationBatchExecution:
             batch_id_prefix=f"{job.id}_retry{job.retry_count}_translation_batch",
         )
         provider_call_budget = min(200, len(plans) * 12)
-        max_attempts = max(1, self._host.settings.translation_provider_batch_max_attempts)
+        max_attempts = max(1, self.settings.translation_provider_batch_max_attempts)
         return [
             TranslationRootPlan(
                 batch_id=plan.batch_id,
@@ -304,7 +321,7 @@ class TranslationBatchExecution:
         batch = self.translation_batch_repository.get_translation_batch(batch_id)
         if batch is None:
             return None
-        job = self._host.job_repository.get_document_job(batch.job_id)
+        job = self.job_repository.get_document_job(batch.job_id)
         if job is None:
             return batch
         if job.status == "canceled":
@@ -404,7 +421,7 @@ class TranslationBatchExecution:
                 recorder.record_success(request, result, duration_ms=duration_ms, integrity=integrity)
                 self._record_translation_audit_events(job, recorder, trace_id=trace_id)
                 audit_completed = True
-            current = self._host.job_repository.get_document_job(job.id)
+            current = self.job_repository.get_document_job(job.id)
             if current is None or current.retry_count != claimed.generation or current.status != "running" or current.stage != "translating":
                 return self.translation_batch_repository.get_translation_batch(claimed.id)
             current_summary = self.summarize_translation_generation(current)
@@ -472,7 +489,7 @@ class TranslationBatchExecution:
                 return self._reconcile_translation_batch_atomic_rejection(
                     claimed, generation=claimed.generation, trace_id=trace_id,
                 )
-            self._host._record_event(
+            self.lifecycle.record_event(
                 job,
                 event_type="translation_batch_succeeded",
                 stage="translating",
@@ -492,10 +509,10 @@ class TranslationBatchExecution:
             return succeeded
         except TranslationBatchTreeInvalidError:
             # 权威 source/config 与持久化批次树不一致时，不能把它伪装成 Provider 失败。
-            current = self._host.job_repository.get_document_job(claimed.job_id)
+            current = self.job_repository.get_document_job(claimed.job_id)
             if current is None or current.retry_count != claimed.generation:
                 return self.translation_batch_repository.get_translation_batch(claimed.id) or claimed
-            self._host._mark_failed(
+            self.lifecycle.mark_failed(
                 job,
                 failed_stage="translating",
                 error_code="translation_batch_tree_invalid",
@@ -532,10 +549,10 @@ class TranslationBatchExecution:
                     duration_ms=duration_ms,
                 )
             except TranslationBatchTreeInvalidError:
-                current = self._host.job_repository.get_document_job(claimed.job_id)
+                current = self.job_repository.get_document_job(claimed.job_id)
                 if current is None or current.retry_count != claimed.generation:
                     return self.translation_batch_repository.get_translation_batch(claimed.id) or claimed
-                self._host._mark_failed(
+                self.lifecycle.mark_failed(
                     job,
                     failed_stage="translating",
                     error_code="translation_batch_tree_invalid",
@@ -550,7 +567,7 @@ class TranslationBatchExecution:
         *,
         trace_id: str | None,
     ) -> DocumentJobTranslationBatchRecord | None:
-        current_job = self._host.job_repository.get_document_job(batch.job_id)
+        current_job = self.job_repository.get_document_job(batch.job_id)
         if (
             current_job is None
             or current_job.status != "running"
@@ -561,7 +578,7 @@ class TranslationBatchExecution:
         try:
             summary = self.summarize_translation_generation(current_job)
         except TranslationBatchTreeInvalidError:
-            self._host._mark_failed(
+            self.lifecycle.mark_failed(
                 current_job,
                 failed_stage="translating",
                 error_code="translation_batch_tree_invalid",
@@ -570,7 +587,7 @@ class TranslationBatchExecution:
             )
             return None
         except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, sqlite3.Error, ValueError) as exc:
-            self._host._mark_failed(
+            self.lifecycle.mark_failed(
                 current_job,
                 failed_stage="translating",
                 error_code="oss_failed" if _is_metadata_storage_error(exc) else "translation_failed",
@@ -615,7 +632,7 @@ class TranslationBatchExecution:
                     retryable=False,
                     updated_at=utc_now(),
                 )
-                self._host._mark_failed(
+                self.lifecycle.mark_failed(
                     current_job,
                     failed_stage="translating",
                     error_code="translation_failed",
@@ -623,7 +640,7 @@ class TranslationBatchExecution:
                     trace_id=trace_id,
                 )
                 return None
-            self._host._mark_failed(
+            self.lifecycle.mark_failed(
                 current_job,
                 failed_stage="translating",
                 error_code="oss_failed" if _is_metadata_storage_error(exc) else "translation_failed",
@@ -641,12 +658,12 @@ class TranslationBatchExecution:
                 expected_attempt_count=batch.attempt_count,
                 lease_owner=lease_owner,
                 leased_at=now,
-                lease_expires_at=now + timedelta(seconds=self._host.settings.translation_provider_batch_lease_seconds),
+                lease_expires_at=now + timedelta(seconds=self.settings.translation_provider_batch_lease_seconds),
                 provider_call_budget=batch.provider_call_budget,
                 expected_plans=expected_plans,
             )
         except TranslationBatchTreeInvalidError:
-            self._host._mark_failed(
+            self.lifecycle.mark_failed(
                 current_job,
                 failed_stage="translating",
                 error_code="translation_batch_tree_invalid",
@@ -655,7 +672,7 @@ class TranslationBatchExecution:
             )
             return None
         except (FileNotFoundError, OSError, sqlite3.Error) as exc:
-            self._host._mark_failed(
+            self.lifecycle.mark_failed(
                 current_job,
                 failed_stage="translating",
                 error_code="oss_failed" if _is_metadata_storage_error(exc) else "translation_failed",
@@ -666,7 +683,7 @@ class TranslationBatchExecution:
         except Exception as exc:
             if not _is_metadata_storage_error(exc):
                 raise
-            self._host._mark_failed(
+            self.lifecycle.mark_failed(
                 current_job,
                 failed_stage="translating",
                 error_code="oss_failed",
@@ -679,9 +696,9 @@ class TranslationBatchExecution:
                 batch, generation=batch.generation, trace_id=trace_id,
             )
             return None
-        job = self._host.job_repository.get_document_job(batch.job_id)
+        job = self.job_repository.get_document_job(batch.job_id)
         if job is not None:
-            self._host._record_event(
+            self.lifecycle.record_event(
                 job,
                 event_type="translation_batch_running",
                 stage="translating",
@@ -723,7 +740,7 @@ class TranslationBatchExecution:
         try:
             summary = self.summarize_translation_generation(current_job, current_batches)
         except TranslationBatchTreeInvalidError:
-            self._host._mark_failed(
+            self.lifecycle.mark_failed(
                 current_job,
                 failed_stage=current_job.stage,
                 error_code="translation_batch_tree_invalid",
@@ -751,10 +768,10 @@ class TranslationBatchExecution:
     ) -> DocumentJobTranslationBatchRecord:
         """批次结果或状态写入失败时，以原代次安全收口且不重调 Provider。"""
 
-        current = self._host.job_repository.get_document_job(batch.job_id)
+        current = self.job_repository.get_document_job(batch.job_id)
         if current is None or current.retry_count != batch.generation:
             return self.translation_batch_repository.get_translation_batch(batch.id) or batch
-        self._host._mark_failed(
+        self.lifecycle.mark_failed(
             job,
             failed_stage="translating",
             error_code="oss_failed",
@@ -786,7 +803,7 @@ class TranslationBatchExecution:
 
         if job.stage != "ir_converting":
             return job
-        translating = self._host.job_repository.update_document_job_if_current(
+        translating = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"running"},
             allowed_stages={"ir_converting"},
@@ -796,9 +813,9 @@ class TranslationBatchExecution:
             updated_at=utc_now(),
         )
         if translating is None:
-            return self._host.job_repository.get_document_job(job.id) or job
+            return self.job_repository.get_document_job(job.id) or job
         try:
-            self._host._record_event(
+            self.lifecycle.record_event(
                 translating,
                 event_type="stage_succeeded",
                 stage="ir_converting",
@@ -806,7 +823,7 @@ class TranslationBatchExecution:
                 payload={"source_document_ir_file_id": translating.source_document_ir_file_id},
                 trace_id=trace_id,
             )
-            self._host._record_event(
+            self.lifecycle.record_event(
                 translating,
                 event_type="stage_started",
                 stage="translating",
@@ -815,7 +832,7 @@ class TranslationBatchExecution:
                 trace_id=trace_id,
             )
         except Exception as exc:
-            return self._host._fail_stage_attempt(translating, exc, trace_id=trace_id)
+            return self.lifecycle.fail_stage_attempt(translating, exc, trace_id=trace_id)
         return translating
 
     def _handle_translation_batch_failure(
@@ -830,7 +847,7 @@ class TranslationBatchExecution:
     ) -> DocumentJobTranslationBatchRecord:
         error_code = self._translation_batch_error_code(error)
         error_message = str(error) if isinstance(error, TranslationIntegrityError) else "翻译 Provider 调用或批次处理失败。"
-        current = self._host.job_repository.get_document_job(job.id)
+        current = self.job_repository.get_document_job(job.id)
         if current is None or current.retry_count != batch.generation or current.status != "running" or current.stage != "translating":
             return self.translation_batch_repository.get_translation_batch(batch.id) or batch
         try:
@@ -839,7 +856,7 @@ class TranslationBatchExecution:
             )
             expected_plans = self._build_expected_translation_plans(current, source_document_ir)
         except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError) as exc:
-            self._host._mark_failed(
+            self.lifecycle.mark_failed(
                 current,
                 failed_stage="translating",
                 error_code="oss_failed" if isinstance(exc, (FileNotFoundError, OSError)) else "translation_failed",
@@ -861,10 +878,10 @@ class TranslationBatchExecution:
                     duration_ms=duration_ms,
                 )
             except TranslationBatchTreeInvalidError:
-                latest = self._host.job_repository.get_document_job(batch.job_id)
+                latest = self.job_repository.get_document_job(batch.job_id)
                 if latest is None or latest.retry_count != batch.generation:
                     return self.translation_batch_repository.get_translation_batch(batch.id) or batch
-                self._host._mark_failed(
+                self.lifecycle.mark_failed(
                     job,
                     failed_stage="translating",
                     error_code="translation_batch_tree_invalid",
@@ -907,7 +924,7 @@ class TranslationBatchExecution:
         except Exception as exc:
             if not _is_metadata_storage_error(exc):
                 raise
-            self._host._mark_failed(
+            self.lifecycle.mark_failed(
                 current,
                 failed_stage="translating",
                 error_code="oss_failed",
@@ -919,7 +936,7 @@ class TranslationBatchExecution:
             return self._reconcile_translation_batch_atomic_rejection(
                 batch, generation=batch.generation, trace_id=trace_id,
             )
-        self._host._record_event(
+        self.lifecycle.record_event(
             job,
             event_type="translation_batch_failed",
             stage="translating",
@@ -1044,7 +1061,7 @@ class TranslationBatchExecution:
             return self._reconcile_translation_batch_atomic_rejection(
                 split, generation=split.generation, trace_id=trace_id,
             )
-        self._host._record_event(
+        self.lifecycle.record_event(
             job,
             event_type="translation_batch_split",
             stage="translating",
@@ -1070,7 +1087,7 @@ class TranslationBatchExecution:
         generation: int,
         trace_id: str | None,
     ) -> DocumentJobRecord | None:
-        job = self._host.job_repository.get_document_job(job_id)
+        job = self.job_repository.get_document_job(job_id)
         if job is None or job.status in {"succeeded", "failed", "canceled"}:
             return job
         if job.status != "running" or job.stage not in {"translating", "translation_validating"} or job.retry_count != generation:
@@ -1087,7 +1104,7 @@ class TranslationBatchExecution:
         try:
             summary = self.summarize_translation_generation(job, batches)
         except TranslationBatchTreeInvalidError:
-            return self._host._mark_failed(
+            return self.lifecycle.mark_failed(
                 job,
                 failed_stage=failure_stage,
                 error_code="translation_batch_tree_invalid",
@@ -1095,7 +1112,7 @@ class TranslationBatchExecution:
                 trace_id=trace_id,
             )
         except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError) as exc:
-            return self._host._mark_failed(
+            return self.lifecycle.mark_failed(
                 job,
                 failed_stage=failure_stage,
                 error_code="translation_failed",
@@ -1121,7 +1138,7 @@ class TranslationBatchExecution:
                     formula_protection = exc.formula_protection
                 except (TranslationIntegrityError, ValueError):
                     error_code = "translation_failed"
-            return self._host._mark_failed(
+            return self.lifecycle.mark_failed(
                 job,
                 failed_stage=failure_stage,
                 error_code=error_code,
@@ -1131,7 +1148,7 @@ class TranslationBatchExecution:
             )
         leaf_batches = [batch for batch in batches if batch.status != "split"]
         if summary.outcome == "failed":
-            return self._host._mark_failed(
+            return self.lifecycle.mark_failed(
                 job,
                 failed_stage=failure_stage,
                 error_code="translation_failed",
@@ -1143,7 +1160,7 @@ class TranslationBatchExecution:
             )
         if summary.outcome in {"not_started", "running", "retrying"}:
             self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
-            return self._host.job_repository.get_document_job(job.id) or job
+            return self.job_repository.get_document_job(job.id) or job
         if summary.outcome == "canceled":
             return job
         if summary.outcome not in {"completed", "validating"}:
@@ -1151,7 +1168,7 @@ class TranslationBatchExecution:
         if all(batch.status == "succeeded" for batch in leaf_batches):
             if job.stage == "translating":
                 stage_started_at = time.perf_counter()
-                validating = self._host.job_repository.update_document_job_if_current(
+                validating = self.job_repository.update_document_job_if_current(
                     job.id,
                     allowed_statuses={"running"},
                     allowed_stages={"translating"},
@@ -1161,9 +1178,9 @@ class TranslationBatchExecution:
                     updated_at=utc_now(),
                 )
                 if validating is None:
-                    return self._host.job_repository.get_document_job(job.id) or job
+                    return self.job_repository.get_document_job(job.id) or job
                 try:
-                    self._host._record_event(
+                    self.lifecycle.record_event(
                         validating,
                         event_type="stage_succeeded",
                         stage="translating",
@@ -1172,7 +1189,7 @@ class TranslationBatchExecution:
                         trace_id=trace_id,
                         duration_ms=int((time.perf_counter() - stage_started_at) * 1000),
                     )
-                    self._host._record_event(
+                    self.lifecycle.record_event(
                         validating,
                         event_type="stage_started",
                         stage="translation_validating",
@@ -1181,7 +1198,7 @@ class TranslationBatchExecution:
                         trace_id=trace_id,
                     )
                 except Exception as exc:
-                    return self._host._fail_stage_attempt(validating, exc, trace_id=trace_id)
+                    return self.lifecycle.fail_stage_attempt(validating, exc, trace_id=trace_id)
                 job = validating
             started_at = time.perf_counter()
             try:
@@ -1195,7 +1212,7 @@ class TranslationBatchExecution:
                     "oss_failed" if isinstance(exc, (ApiError, FileNotFoundError, OSError))
                     else "translation_failed"
                 )
-                return self._host._mark_failed(
+                return self.lifecycle.mark_failed(
                     job,
                     failed_stage="translation_validating",
                     error_code=error_code,
@@ -1206,7 +1223,7 @@ class TranslationBatchExecution:
             if updated.status != "running" or updated.stage != "rendering" or updated.retry_count != generation:
                 return updated
             try:
-                self._host._record_event(
+                self.lifecycle.record_event(
                     updated,
                     event_type="stage_succeeded",
                     stage="translation_validating",
@@ -1216,8 +1233,8 @@ class TranslationBatchExecution:
                     duration_ms=int((time.perf_counter() - started_at) * 1000),
                 )
             except Exception as exc:
-                return self._host._fail_stage_attempt(updated, exc, trace_id=trace_id)
-            return self._host.execute_job(updated.id, trace_id=trace_id) or updated
+                return self.lifecycle.fail_stage_attempt(updated, exc, trace_id=trace_id)
+            return self.resume_job(updated.id, trace_id=trace_id) or updated
         return job
 
     def _register_translated_document_ir_and_continue(
@@ -1227,7 +1244,7 @@ class TranslationBatchExecution:
         succeeded_batches: list[DocumentJobTranslationBatchRecord],
         trace_id: str | None,
     ) -> DocumentJobRecord:
-        current = self._host.job_repository.get_document_job(job.id)
+        current = self.job_repository.get_document_job(job.id)
         if current is None or current.retry_count != job.retry_count or current.status != "running" or current.stage != "translation_validating":
             return current or job
         job = current
@@ -1235,7 +1252,7 @@ class TranslationBatchExecution:
         try:
             source_file, source_document_ir = self._read_translation_source(job, job.source_document_ir_file_id)
         except (DocumentIRTranslationError, TranslationIntegrityError, ValueError) as exc:
-            return self._host._mark_failed(
+            return self.lifecycle.mark_failed(
                 job,
                 failed_stage="translation_validating",
                 error_code="translation_failed",
@@ -1245,7 +1262,7 @@ class TranslationBatchExecution:
                 duration_ms=int((time.perf_counter() - started_at) * 1000),
             )
         except (FileNotFoundError, OSError) as exc:
-            return self._host._mark_failed(
+            return self.lifecycle.mark_failed(
                 job,
                 failed_stage="translation_validating",
                 error_code="oss_failed",
@@ -1265,7 +1282,7 @@ class TranslationBatchExecution:
                 else "translation_fan_in_mismatch" if getattr(exc, "code", None) == "translation_fan_in_mismatch"
                 else "translation_failed"
             )
-            return self._host._mark_failed(
+            return self.lifecycle.mark_failed(
                 job,
                 failed_stage="translation_validating",
                 error_code=error_code,
@@ -1278,7 +1295,7 @@ class TranslationBatchExecution:
         missing_ids = [item_id for item_id in expected_ids if item_id not in replacements]
         extra_ids = sorted(set(replacements) - set(expected_ids))
         if missing_ids or extra_ids:
-            return self._host._mark_failed(
+            return self.lifecycle.mark_failed(
                 job,
                 failed_stage="translation_validating",
                 error_code="translation_fan_in_mismatch",
@@ -1315,12 +1332,12 @@ class TranslationBatchExecution:
             "skipped_degraded_page_numbers": sorted(record["page_index"] + 1
                                                     for record in translated.metadata.degraded_pages),
         }
-        translation_provenance = save_translation_publication_provenance(job, publication_calls, file_service=self._host.file_service)
+        translation_provenance = save_translation_publication_provenance(job, publication_calls, file_service=self.file_service)
         translation_metadata["publication_provenance_file_id"] = translation_provenance.id
         decode_table_references(translated, require_bound=True)
         ir_content = translated.model_dump_json(indent=2).encode("utf-8")
         try:
-            ir_file = self._host.file_service.register_generated_content(
+            ir_file = self.file_service.register_generated_content(
                 tenant_id=job.tenant_id,
                 company_id=job.company_id,
                 job_id=job.id,
@@ -1336,12 +1353,12 @@ class TranslationBatchExecution:
                     "image_asset_count": len(job.image_asset_file_ids),
                     "retry_count": job.retry_count,
                     "translation": translation_metadata,
-                    **self._host._document_ir_layout_metadata(translated),
+                    **document_ir_layout_metadata(translated),
                 },
             )
         except (RuntimeError, ValueError) as exc:
             raise OSError(str(exc)) from exc
-        updated = self._host.job_repository.update_document_job_if_current(
+        updated = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"running"},
             allowed_stages={"translation_validating"},
@@ -1353,8 +1370,8 @@ class TranslationBatchExecution:
             updated_at=utc_now(),
         )
         if updated is None:
-            return self._host.job_repository.get_document_job(job.id) or job
-        self._host._record_event(
+            return self.job_repository.get_document_job(job.id) or job
+        self.lifecycle.record_event(
             updated,
             event_type="file_registered",
             stage="translation_validating",
@@ -1363,7 +1380,7 @@ class TranslationBatchExecution:
                 "file_id": ir_file.id,
                 "file_type": ir_file.file_type,
                 "object_key": ir_file.object_key,
-                **self._host._document_ir_layout_metadata(translated),
+                **document_ir_layout_metadata(translated),
             },
             trace_id=trace_id,
         )
@@ -1373,7 +1390,7 @@ class TranslationBatchExecution:
         self, job: DocumentJobRecord, file_id: str, *, file_type: str,
     ) -> tuple[DocumentFileRecord, bytes]:
         """按已登记的对象读取并验证字节；路径模板和 payload 不能自证归属。"""
-        record = self._host._get_uploaded_file(file_id)
+        record = require_uploaded_file(self.file_repository, file_id)
         if (
             record.job_id != job.id or record.tenant_id != job.tenant_id
             or record.company_id != job.company_id or record.file_type != file_type
@@ -1383,7 +1400,7 @@ class TranslationBatchExecution:
             ))
         ):
             raise DocumentIRTranslationError("翻译 Artifact 来源或代次不一致。", code="translation_integrity_evidence_mismatch")
-        content = self._host.file_service.read_file_content(record)
+        content = self.file_service.read_file_content(record)
         checksum = "sha256:" + hashlib.sha256(content).hexdigest()
         if record.checksum_sha256 != checksum or record.size_bytes != len(content):
             raise DocumentIRTranslationError("翻译 Artifact 字节校验失败。", code="translation_integrity_evidence_mismatch")
@@ -1452,8 +1469,8 @@ class TranslationBatchExecution:
                 or batch.char_count != sum(len(item.text) for item in local_items)
             ):
                 raise DocumentIRTranslationError("翻译批次有序源项边界不一致。", code="translation_integrity_evidence_mismatch")
-            candidate = self._host._get_uploaded_file(batch.result_file_id)
-            candidate_payload = json.loads(self._host.file_service.read_file_content(candidate))
+            candidate = require_uploaded_file(self.file_repository, batch.result_file_id)
+            candidate_payload = json.loads(self.file_service.read_file_content(candidate))
             candidate_items = candidate_payload.get("items") if isinstance(candidate_payload, dict) else None
             if isinstance(candidate_items, list):
                 candidate_ids = [item.get("id") for item in candidate_items if isinstance(item, dict)]
@@ -1538,7 +1555,7 @@ class TranslationBatchExecution:
             },
         }
         try:
-            return self._host.file_service.register_generated_content(
+            return self.file_service.register_generated_content(
                 tenant_id=job.tenant_id,
                 company_id=job.company_id,
                 job_id=job.id,
@@ -1585,7 +1602,7 @@ class TranslationBatchExecution:
             if (
                 current is None or current.status != "running" or current.stage != "translating"
                 or current.retry_count != generation
-                or self._host._mark_timed_out_if_needed(current, trace_id=trace_id) is not None
+                or self.lifecycle.mark_timed_out_if_needed(current, trace_id=trace_id) is not None
             ):
                 return
             job = current
@@ -1595,7 +1612,7 @@ class TranslationBatchExecution:
                 return
             leaf_batches = [batch for batch in batches if batch.status != "split"]
             active_count = sum(1 for batch in leaf_batches if batch.status in {"queued", "running"})
-            max_active = max(1, self._host.settings.translation_provider_batch_max_concurrency_per_job)
+            max_active = max(1, self.settings.translation_provider_batch_max_concurrency_per_job)
             if active_count >= max_active:
                 return
             candidate = self._next_runnable_translation_batch(job, leaf_batches)
@@ -1618,7 +1635,7 @@ class TranslationBatchExecution:
                     expected_plans=expected_plans,
                 )
             except TranslationBatchTreeInvalidError:
-                self._host._mark_failed(
+                self.lifecycle.mark_failed(
                     job,
                     failed_stage=job.stage,
                     error_code="translation_batch_tree_invalid",
@@ -1627,7 +1644,7 @@ class TranslationBatchExecution:
                 )
                 return
             except (FileNotFoundError, OSError):
-                self._host._mark_failed(
+                self.lifecycle.mark_failed(
                     job,
                     failed_stage=job.stage,
                     error_code="oss_failed",
@@ -1640,7 +1657,7 @@ class TranslationBatchExecution:
                     candidate, generation=generation, trace_id=trace_id,
                 )
                 return
-            self._host._record_event(
+            self.lifecycle.record_event(
                 job,
                 event_type="translation_batch_queued",
                 stage="translating",
@@ -1722,7 +1739,7 @@ class TranslationBatchExecution:
                     batch, generation=generation, trace_id=trace_id,
                 )
                 continue
-            self._host._record_event(
+            self.lifecycle.record_event(
                 job,
                 event_type="translation_batch_failed",
                 stage="translating",
@@ -1760,9 +1777,9 @@ class TranslationBatchExecution:
         )
         if canceled is None:
             return self.translation_batch_repository.get_translation_batch(batch.id) or batch
-        job = self._host.job_repository.get_document_job(batch.job_id)
+        job = self.job_repository.get_document_job(batch.job_id)
         if job is not None:
-            self._host._record_event(
+            self.lifecycle.record_event(
                 job,
                 event_type="translation_batch_failed",
                 stage="translating",
@@ -1804,8 +1821,8 @@ class TranslationBatchExecution:
     ) -> tuple[int, int]:
         if profile is None:
             return (
-                max(1, int(self._host.settings.translation_max_pages)),
-                max(1, int(self._host.settings.translation_max_chars)),
+                max(1, int(self.settings.translation_max_pages)),
+                max(1, int(self.settings.translation_max_chars)),
             )
         return (
             max(1, int(profile.max_pages_per_batch)),
@@ -1831,12 +1848,12 @@ class TranslationBatchExecution:
             raise DocumentIRTranslationError(f"任务资源快照格式非法: {exc}") from exc
         if snapshot.translation_profile is None:
             raise DocumentIRTranslationError("翻译任务缺少绑定的 Translation Profile。")
-        if self._host.job_resource_snapshot_service is None:
+        if self.job_resource_snapshot_service is None:
             raise DocumentIRTranslationError(
                 "当前 Worker 缺少 resource snapshot service。"
             )
         try:
-            profile = self._host.job_resource_snapshot_service.materialize_translation_profile(
+            profile = self.job_resource_snapshot_service.materialize_translation_profile(
                 snapshot.translation_profile
             )
         except (JobResourceSnapshotError, FileNotFoundError, ValueError) as exc:
@@ -1922,7 +1939,7 @@ class TranslationBatchExecution:
             ),
             "debug_full_text_enabled": job.debug_full_text_enabled,
         }
-        self._host._record_event(
+        self.lifecycle.record_event(
             job,
             event_type="stage_started",
             stage="ir_converting",
@@ -1946,7 +1963,7 @@ class TranslationBatchExecution:
             self._record_translation_audit_events(job, recorder, trace_id=trace_id)
             raise
         self._record_translation_audit_events(job, recorder, trace_id=trace_id)
-        self._host._record_event(
+        self.lifecycle.record_event(
             job,
             event_type="stage_succeeded",
             stage="ir_converting",
@@ -1984,7 +2001,7 @@ class TranslationBatchExecution:
         debug_archive_file_ids = self._recorder_debug_archive_file_ids(recorder)
         for index, call_log_file_id in enumerate(self._recorder_call_log_file_ids(recorder)):
             debug_archive_file_id = debug_archive_file_ids[index] if index < len(debug_archive_file_ids) else None
-            self._host._record_event(
+            self.lifecycle.record_event(
                 job,
                 event_type="ai_call_logged",
                 stage="translating",
@@ -1997,7 +2014,7 @@ class TranslationBatchExecution:
                 trace_id=trace_id,
             )
         for debug_archive_file_id in debug_archive_file_ids:
-            self._host._record_event(
+            self.lifecycle.record_event(
                 job,
                 event_type="debug_archive_saved",
                 stage="translating",
@@ -2005,7 +2022,7 @@ class TranslationBatchExecution:
                 payload={
                     "file_id": debug_archive_file_id,
                     "file_type": "ai_debug_archive",
-                    "retention_days": max(1, self._host.settings.translation_debug_archive_retention_days),
+                    "retention_days": max(1, self.settings.translation_debug_archive_retention_days),
                 },
                 trace_id=trace_id,
             )

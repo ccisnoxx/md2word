@@ -225,7 +225,7 @@ class DocumentJobExecutionStageTests(TestCase):
                             (OSError(private), "render_failed")):
             with self.subTest(error=type(error).__name__), self._runtime() as (runtime, execution, provider, client, headers):
                 job = self._pause_after_ir(runtime, execution, client, headers)
-                failed = execution._fail_stage_attempt(job, error, trace_id="trace_failure_policy")
+                failed = execution.lifecycle.fail_stage_attempt(job, error, trace_id="trace_failure_policy")
                 self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "rendering", code))
                 events = runtime.document_job_event_repository.list_document_job_events(job.id)
                 failures = [event for event in events if event.event_type == "stage_failed"]
@@ -235,7 +235,7 @@ class DocumentJobExecutionStageTests(TestCase):
                 serialized = json.dumps([event.model_dump(mode="json") for event in events], ensure_ascii=False)
                 for secret in ("正文-B04", "B04-secret", "user:pass", "/private", "B04-token"):
                     self.assertNotIn(secret, serialized + failed.error_message)
-                execution._fail_stage_attempt(job, error, trace_id="trace_replay")
+                execution.lifecycle.fail_stage_attempt(job, error, trace_id="trace_replay")
                 self.assertEqual(runtime.document_job_event_repository.list_document_job_events(job.id), events)
                 self.assertFalse(provider.requests)
                 self.assertFalse(self._files(runtime, job.id, "generated_word"))
@@ -633,7 +633,7 @@ class DocumentJobExecutionStageTests(TestCase):
                     # 旧 helper 的 CAS 已提交；在它尚未返回时，另一 API 调用完成失败和显式换代。
                     current = runtime.document_job_repository.get_document_job(job_id)
                     self.assertEqual((current.retry_count, current.stage), (0, "translating"))
-                    execution._mark_failed(current, failed_stage="translating", error_code="translation_failed",
+                    execution.lifecycle.mark_failed(current, failed_stage="translating", error_code="translation_failed",
                         error_message="交错中的另一调用确认本代失败", trace_id="trace_new_attempt")
                     response = client.post(f"/api/v1/document-jobs/{job_id}/retry", headers=headers, json={"reason": "显式重试下一代"})
                     self.assertEqual(response.status_code, 200, response.json())

@@ -149,6 +149,9 @@ class V2PublicationFixture:
             term_rule_set=resources.resolve_version("term_rule_set", "publication-rules", "1"))
         snapshots = JobResourceSnapshotService(runtime.settings, resources)
         execution.job_resource_snapshot_service = snapshots if complete else None
+        # 协作者在构造时显式持有该依赖，构造后替换必须同步到实际消费方。
+        execution.rendering.job_resource_snapshot_service = execution.job_resource_snapshot_service
+        execution.translation_batches.job_resource_snapshot_service = execution.job_resource_snapshot_service
         runtime.document_job_service.job_resource_snapshot_service = snapshots
         job = runtime.document_job_repository.update_document_job(job.id,
             request_snapshot={**job.request_snapshot, "resources": snapshot.model_dump(mode="json")})

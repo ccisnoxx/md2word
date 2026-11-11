@@ -12,21 +12,22 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 from uuid import uuid4
 
-from billiard.exceptions import SoftTimeLimitExceeded
-
 from app.core.config import Settings
 from app.domains.document_jobs import _failure_policy as failure_policy
+from app.domains.document_jobs.execution_support import (
+    DocumentJobLifecycle,
+    document_ir_layout_metadata,
+    require_uploaded_file,
+)
 from app.domains.document_jobs.preview import DocumentJobPreviewService
 from app.domains.document_jobs.mineru_execution import MinerUExecution
 from app.domains.document_jobs.render_execution import WordRenderExecution
-from app.domains.document_jobs.translation_execution import TranslationBatchExecution
-from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
-from app.domains.document_jobs.models import (
-    DocumentJobEventRecord,
-    DocumentJobEventType,
-    DocumentJobRecord,
-    DocumentJobStage,
+from app.domains.document_jobs.translation_execution import (
+    DocumentTranslationBatchTaskQueueProtocol,
+    TranslationBatchExecution,
 )
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
+from app.domains.document_jobs.models import DocumentJobRecord
 from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.artifact_validator import MinerUArtifactValidationError
 from app.services.document_ir.integrity import DocumentIntegrityError
@@ -47,17 +48,9 @@ from app.domains.document_jobs.repository import (
 )
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRWordRenderer
-from app.services.renderer.evidence import build_renderer_event_summary
 from app.domains.translation.audit import TranslationAuditService
 from app.domains.translation.modes import is_translation_document_job_mode
-from app.domains.translation.document_ir_translator import (
-    DocumentIRTranslationError,
-    DocumentIRTranslationService,
-)
-from app.domains.translation.integrity import (
-    TranslationIntegrityError,
-    TranslationIntegrityEvidence,
-)
+from app.domains.translation.document_ir_translator import DocumentIRTranslationService
 
 
 class DocumentJobTaskQueueProtocol(Protocol):
@@ -65,13 +58,6 @@ class DocumentJobTaskQueueProtocol(Protocol):
 
     def enqueue(self, job_id: str, *, trace_id: str | None, run_inline: bool = True) -> str | None:
         """投递一个按 job_id 执行的后台任务，返回底层队列任务 ID。"""
-
-
-class DocumentTranslationBatchTaskQueueProtocol(Protocol):
-    """translation provider batch task 投递端口；批次记录负责幂等和 fan-in。"""
-
-    def enqueue(self, batch_id: str, *, trace_id: str | None, run_inline: bool = True) -> str | None:
-        """投递一个按 batch_id 执行的后台任务，返回底层队列任务 ID。"""
 
 
 class DocumentJobExecutionService:
@@ -112,22 +98,40 @@ class DocumentJobExecutionService:
         self.document_ir_service = document_ir_service
         self.job_resource_snapshot_service = job_resource_snapshot_service
         self.logger = logging.getLogger("business")
-        # 共用依赖只由宿主持有，协作者经 _host 读取；以下只传各协作者的专属依赖。
+        self.lifecycle = DocumentJobLifecycle(settings, job_repository, event_repository, self.logger)
+        # 协作者与宿主共享同一批依赖对象；状态推进与事件记录统一经 self.lifecycle。
         # 未传入 MinerU 客户端工厂时由协作者取默认构造。
         self.mineru = MinerUExecution(
-            self,
+            settings=settings,
+            job_repository=job_repository,
+            file_repository=file_repository,
+            file_service=file_service,
+            lifecycle=self.lifecycle,
             callback_message_store=callback_message_store,
             mineru_config_resolver=mineru_config_resolver,
             mineru_client_factory=mineru_client_factory,
         )
         self.rendering = WordRenderExecution(
-            self,
+            settings=settings,
+            job_repository=job_repository,
+            file_repository=file_repository,
+            file_service=file_service,
+            document_ir_service=document_ir_service,
+            job_resource_snapshot_service=job_resource_snapshot_service,
+            lifecycle=self.lifecycle,
             template_read_service=template_read_service,
             word_renderer=word_renderer,
             word_preview_service=word_preview_service,
         )
         self.translation_batches = TranslationBatchExecution(
-            self,
+            settings=settings,
+            job_repository=job_repository,
+            file_repository=file_repository,
+            file_service=file_service,
+            job_resource_snapshot_service=job_resource_snapshot_service,
+            lifecycle=self.lifecycle,
+            # 延迟到调用时再查找 execute_job，保证对宿主方法的替换（如测试 patch）作用到翻译收口后的续跑。
+            resume_job=lambda job_id, *, trace_id: self.execute_job(job_id, trace_id=trace_id),
             translation_batch_repository=translation_batch_repository,
             document_ir_translation_service=document_ir_translation_service,
             translation_audit_service=translation_audit_service,
@@ -147,7 +151,7 @@ class DocumentJobExecutionService:
             latest = job
             if job.status in {"succeeded", "failed", "canceled"}:
                 return job
-            timed_out = self._mark_timed_out_if_needed(job, trace_id=trace_id)
+            timed_out = self.lifecycle.mark_timed_out_if_needed(job, trace_id=trace_id)
             if timed_out is not None:
                 return timed_out
             if job.status == "running" and job.stage not in {
@@ -188,7 +192,7 @@ class DocumentJobExecutionService:
             return latest
         except Exception as exc:
             # latest 是本次阶段调用实际接收的快照，不能拿事后读到的新代归属旧错误。
-            return self._fail_stage_attempt(latest, exc, trace_id=trace_id)
+            return self.lifecycle.fail_stage_attempt(latest, exc, trace_id=trace_id)
 
     def mark_job_timed_out(self, job_id: str, *, trace_id: str | None = None) -> DocumentJobRecord | None:
         """供 Worker 超时保护调用，保证 Celery 超时时 MySQL/file 状态也落到 failed。"""
@@ -196,7 +200,7 @@ class DocumentJobExecutionService:
         job = self.job_repository.get_document_job(job_id)
         if job is None or job.status in {"succeeded", "failed", "canceled"}:
             return job
-        return self._mark_timed_out(job, trace_id=trace_id)
+        return self.lifecycle.mark_timed_out(job, trace_id=trace_id)
 
     def _mark_queued_from_worker(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         now = utc_now()
@@ -212,7 +216,7 @@ class DocumentJobExecutionService:
         )
         if queued is None:
             return self.job_repository.get_document_job(job.id) or job
-        self._record_event(
+        self.lifecycle.record_event(
             queued,
             event_type="stage_started",
             stage="uploaded",
@@ -243,7 +247,7 @@ class DocumentJobExecutionService:
         if running is None:
             return self.job_repository.get_document_job(job.id) or job
         try:
-            self._record_event(
+            self.lifecycle.record_event(
                 running,
                 event_type="stage_started",
                 stage="parsing",
@@ -252,7 +256,7 @@ class DocumentJobExecutionService:
                 trace_id=trace_id,
             )
         except Exception as exc:
-            return self._fail_stage_attempt(running, exc, trace_id=trace_id)
+            return self.lifecycle.fail_stage_attempt(running, exc, trace_id=trace_id)
         return running
 
     def _mark_ir_converting_started(
@@ -275,7 +279,7 @@ class DocumentJobExecutionService:
         if converting is None:
             return self.job_repository.get_document_job(job.id) or job
         try:
-            self._record_event(
+            self.lifecycle.record_event(
                 converting,
                 event_type="stage_started",
                 stage="ir_converting",
@@ -284,7 +288,7 @@ class DocumentJobExecutionService:
                 trace_id=trace_id,
             )
         except Exception as exc:
-            return self._fail_stage_attempt(converting, exc, trace_id=trace_id)
+            return self.lifecycle.fail_stage_attempt(converting, exc, trace_id=trace_id)
         return converting
 
     def _convert_and_save_document_ir(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
@@ -323,7 +327,7 @@ class DocumentJobExecutionService:
                 )
             except (MinerUArtifactValidationError, DocumentIntegrityError, TablePlaceholderError) as error:
                 error.mineru_validation_input = validation_input
-                return self._fail_stage_attempt(job, error, trace_id=trace_id)
+                return self.lifecycle.fail_stage_attempt(job, error, trace_id=trace_id)
             result.document.metadata.mineru_validation_input = validation_input
 
         image_file_ids: list[str] = []
@@ -415,7 +419,7 @@ class DocumentJobExecutionService:
 
         translation_metadata: dict[str, Any] = {"applied": False}
         ir_content = document_ir.model_dump_json(indent=2).encode("utf-8")
-        ir_layout_metadata = self._document_ir_layout_metadata(document_ir)
+        ir_layout_metadata = document_ir_layout_metadata(document_ir)
         ir_file = self.file_service.register_generated_content(
             tenant_id=job.tenant_id,
             company_id=job.company_id,
@@ -452,7 +456,7 @@ class DocumentJobExecutionService:
             return self.job_repository.get_document_job(job.id) or job
         try:
             if image_file_ids:
-                self._record_event(
+                self.lifecycle.record_event(
                     updated,
                     event_type="file_registered",
                     stage="ir_converting",
@@ -465,7 +469,7 @@ class DocumentJobExecutionService:
                     trace_id=trace_id,
                 )
             if image_archive_file is not None:
-                self._record_event(
+                self.lifecycle.record_event(
                     updated,
                     event_type="file_registered",
                     stage="ir_converting",
@@ -477,7 +481,7 @@ class DocumentJobExecutionService:
                     },
                     trace_id=trace_id,
                 )
-            self._record_event(
+            self.lifecycle.record_event(
                 updated,
                 event_type="file_registered",
                 stage="ir_converting",
@@ -490,7 +494,7 @@ class DocumentJobExecutionService:
                 },
                 trace_id=trace_id,
             )
-            self._record_event(
+            self.lifecycle.record_event(
                 updated,
                 event_type="stage_succeeded",
                 stage="ir_converting",
@@ -511,7 +515,7 @@ class DocumentJobExecutionService:
                 len(image_file_ids),
             )
         except Exception as exc:
-            return self._fail_stage_attempt(updated, exc, trace_id=trace_id)
+            return self.lifecycle.fail_stage_attempt(updated, exc, trace_id=trace_id)
         return updated
 
     def _register_source_ir_and_enqueue_translation(
@@ -544,7 +548,7 @@ class DocumentJobExecutionService:
                 "image_assets_archive_file_id": image_archive_file.id if image_archive_file is not None else None,
                 "retry_count": job.retry_count,
                 "translation": {"applied": False, "role": "source"},
-                **self._document_ir_layout_metadata(document_ir),
+                **document_ir_layout_metadata(document_ir),
             },
         )
         updated = self.job_repository.update_document_job_if_current(
@@ -582,7 +586,7 @@ class DocumentJobExecutionService:
         trace_id: str | None,
     ) -> None:
         if image_file_ids:
-            self._record_event(
+            self.lifecycle.record_event(
                 job,
                 event_type="file_registered",
                 stage="ir_converting",
@@ -595,7 +599,7 @@ class DocumentJobExecutionService:
                 trace_id=trace_id,
             )
         if image_archive_file is not None:
-            self._record_event(
+            self.lifecycle.record_event(
                 job,
                 event_type="file_registered",
                 stage="ir_converting",
@@ -607,7 +611,7 @@ class DocumentJobExecutionService:
                 },
                 trace_id=trace_id,
             )
-        self._record_event(
+        self.lifecycle.record_event(
             job,
             event_type="file_registered",
             stage="ir_converting",
@@ -616,7 +620,7 @@ class DocumentJobExecutionService:
                 "file_id": source_ir_file.id,
                 "file_type": source_ir_file.file_type,
                 "object_key": source_ir_file.object_key,
-                **self._document_ir_layout_metadata(document_ir),
+                **document_ir_layout_metadata(document_ir),
             },
             trace_id=trace_id,
         )
@@ -673,81 +677,9 @@ class DocumentJobExecutionService:
             },
         )
 
-    def _document_ir_layout_metadata(self, document_ir: DocumentIR) -> dict[str, Any]:
-        """保存私有 IR 诊断；事件出口另行投影。"""
-
-        return {
-            "schema_version": document_ir.schema_version,
-            "page_count": len(document_ir.pages),
-            "layout_page_count": len(document_ir.pages),
-            "block_count": len(document_ir.blocks),
-            "layout_block_count": sum(1 for block in document_ir.blocks if block.layout is not None),
-            "quality_flags": document_ir.quality_flags,
-            "mineru_validation": (document_ir.metadata.mineru_validation.model_dump(mode="json")
-                                  if document_ir.metadata.mineru_validation is not None else None),
-            "mineru_validation_input": document_ir.metadata.mineru_validation_input,
-            "table_reference_asset_count": sum(item.asset is not None for item in decode_table_references(document_ir)),
-        }
-
-    def _record_event(
-        self,
-        job: DocumentJobRecord,
-        *,
-        event_type: DocumentJobEventType,
-        stage: DocumentJobStage,
-        message: str,
-        payload: dict,
-        trace_id: str | None,
-        level: str = "info",
-        duration_ms: int | None = None,
-    ) -> None:
-        # renderer 事件只允许固定外层身份与安全摘要；未知新字段不能借嵌套值透传。
-        if (payload.get("file_type") == "generated_word"
-                or any(key in payload for key in ("renderer_content_contract_version", "formula_source_coverage",
-                    "render_plan", "block_render_evidence", "block_anchor_evidence", "page_mapping"))):
-            outer_keys = {"file_id", "file_type", "document_ir_file_id", "result_file_id", "template_version_id",
-                "error_code", "error_message", "prepared_result_file_id"}
-            payload = {**{key: value for key, value in payload.items() if key in outer_keys},
-                **build_renderer_event_summary(payload)}
-        if payload.get("schema_version") in {"document-ir/v1", "document-ir/v2"}:
-            outer_keys = {
-                "file_id", "file_type", "document_ir_file_id", "source_document_ir_file_id",
-                "image_asset_file_ids", "image_assets_archive_file_id", "image_asset_count",
-                "translation", "translation_batch_count", "translation_item_count",
-            }
-            payload = {
-                **{key: value for key, value in payload.items() if key in outer_keys},
-                **build_renderer_event_summary(payload),
-            }
-        if payload.get("mineru_validation") is not None or payload.get("failure_context") is not None:
-            payload = {**payload, "retry_count": job.retry_count}
-        event = DocumentJobEventRecord(
-            id=f"event_{uuid4().hex[:12]}",
-            tenant_id=job.tenant_id,
-            company_id=job.company_id,
-            job_id=job.id,
-            created_by=job.created_by,
-            stage=stage,
-            level=level,
-            event_type=event_type,
-            message=message,
-            payload={"retry_count": job.retry_count, "generation": job.retry_count, **payload},
-            duration_ms=duration_ms,
-            trace_id=trace_id,
-        )
-        self.event_repository.append_document_job_event(job.id, event)
-
-    def _get_uploaded_file(self, file_id: str) -> DocumentFileRecord:
-        record = self.file_repository.get_document_file(file_id)
-        if record is None:
-            raise FileNotFoundError(f"文件不存在: {file_id}")
-        if record.status != "uploaded":
-            raise ValueError(f"文件尚未完成上传: {file_id}")
-        return record
-
     def _get_mineru_raw_result_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
         if job.mineru_raw_result_file_id:
-            return self._get_uploaded_file(job.mineru_raw_result_file_id)
+            return require_uploaded_file(self.file_repository, job.mineru_raw_result_file_id)
         candidates = [
             file
             for file in self.file_repository.list_document_files()
@@ -757,150 +689,6 @@ class DocumentJobExecutionService:
             raise FileNotFoundError(f"任务缺少 MinerU 原始结果文件: {job.id}")
         return sorted(candidates, key=lambda item: (item.created_at, item.id))[-1]
 
-    def _mark_succeeded(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
-        # legacy 明确主件可下载，但无 receipt 不能生成或伪造与当前来源绑定的预览。
-        preview_contribution = None
-        if "word_preview" in job.request_snapshot:
-            from app.services.preview.models import PreviewPolicy
-            policy = PreviewPolicy.model_validate(job.request_snapshot["word_preview"])
-            preview_contribution = {"quality_status": "blocked" if policy.required else "pending",
-                "status": "unavailable", "error_code": "preview_provider_unavailable",
-                "source_generation": job.retry_count, "source_result_file_id": job.result_file_id,
-                "profile_id": policy.profile_id, "profile_sha256": policy.profile_sha256,
-                "manifest_file_id": None}
-        completed = self.job_repository.update_document_job_if_current(
-            job.id,
-            allowed_statuses={"running"},
-            allowed_stages={"uploading"},
-            expected_retry_count=job.retry_count,
-            expected_document_ir_file_id=job.document_ir_file_id, require_no_prepared_result=True,
-            preview_contribution=preview_contribution,
-            status="succeeded",
-            stage="completed",
-            progress=100,
-            completed_at=job.completed_at or utc_now(),
-            updated_at=utc_now(),
-        )
-        if completed is None:
-            return self.job_repository.get_document_job(job.id) or job
-        self._record_event(
-            completed,
-            event_type="stage_succeeded",
-            stage="completed",
-            message="文档任务已确认完成。",
-            payload={"result_file_id": completed.result_file_id},
-            trace_id=trace_id,
-        )
-        return completed
-
-    def _mark_timed_out_if_needed(
-        self,
-        job: DocumentJobRecord,
-        *,
-        trace_id: str | None,
-    ) -> DocumentJobRecord | None:
-        if job.status in {"succeeded", "failed", "canceled"} or job.timeout_at is None or utc_now() < job.timeout_at:
-            return None
-        return self._mark_timed_out(job, trace_id=trace_id)
-
-    def _mark_timed_out(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
-        return self._mark_failed(
-            job,
-            failed_stage=failure_policy.failed_stage_for_current_stage(job.stage),
-            error_code="document_job_timeout",
-            allow_prepared_result=True,
-            error_message=f"P0 文档任务超过 {self.settings.p0_document_job_timeout_seconds} 秒超时限制。",
-            trace_id=trace_id,
-        )
-
-    def _fail_stage_attempt(
-        self, job: DocumentJobRecord, error: Exception, *, trace_id: str | None,
-    ) -> DocumentJobRecord:
-        """只使用本调用已接收的阶段快照归类失败，持久化仍核对代数、IR 和结果空槽。"""
-
-        if isinstance(error, SoftTimeLimitExceeded):
-            self.logger.error(
-                "[trace_id=%s job_id=%s generation=%s stage=%s status=failure_observed error_code=document_job_timeout]",
-                trace_id, job.id, job.retry_count, job.stage,
-            )
-            return self._mark_timed_out(job, trace_id=trace_id)
-        failed_stage, error_code, error_message = failure_policy.stage_attempt_failure(error, job.stage)
-        # CAS 落败也保留原调用的安全诊断；外端异常正文和异常链不进入普通日志。
-        self.logger.error(
-            "[trace_id=%s job_id=%s generation=%s stage=%s status=failure_observed error_code=%s error_type=%s]",
-            trace_id, job.id, job.retry_count, failed_stage, error_code, type(error).__name__,
-        )
-        return self._mark_failed(
-            job, failed_stage=failed_stage, error_code=error_code,
-            error_message=error_message, trace_id=trace_id,
-            integrity=error.evidence if isinstance(error, (DocumentIRTranslationError, TranslationIntegrityError)) else None,
-            formula_protection=error.formula_protection if isinstance(error, DocumentIRTranslationError) else None,
-            failure_evidence=failure_policy.worker_failure_evidence(error),
-        )
-
-    def _mark_failed(
-        self,
-        job: DocumentJobRecord,
-        *,
-        failed_stage: DocumentJobStage,
-        error_code: str,
-        error_message: str,
-        trace_id: str | None,
-        integrity: TranslationIntegrityEvidence | None = None,
-        formula_protection: dict[str, str | int] | None = None,
-        duration_ms: int | None = None,
-        expected_prepared_result_file_id: str | None = None,
-        allow_prepared_result: bool = False,
-        failure_evidence: dict[str, Any] | None = None,
-    ) -> DocumentJobRecord:
-        now = utc_now()
-        # 同代另一执行可能已经提交目标 IR；失败 CAS 不能跨过其原子 rendering 推进。
-        failed = self.job_repository.update_document_job_if_current(
-            job.id,
-            allowed_statuses={"pending", "queued", "running"},
-            allowed_stages={job.stage},
-            expected_retry_count=job.retry_count,
-            expected_document_ir_file_id=job.document_ir_file_id,
-            require_no_prepared_result=not allow_prepared_result and expected_prepared_result_file_id is None,
-            expected_prepared_result_file_id=expected_prepared_result_file_id,
-            status="failed",
-            stage="failed",
-            failed_stage=failed_stage,
-            error_code=error_code,
-            error_message=error_message,
-            completed_at=now,
-            updated_at=now,
-        )
-        if failed is None:
-            return self.job_repository.get_document_job(job.id) or job
-        payload = {
-            "error_code": error_code,
-            "error_message": error_message,
-            **build_renderer_event_summary(failure_evidence or {}),
-            **({"prepared_result_file_id": failed.prepared_result.file.id} if failed.prepared_result else {}),
-        }
-        if integrity is not None:
-            payload["integrity"] = integrity.to_dict()
-        if formula_protection is not None:
-            payload["formula_protection"] = formula_protection
-        self._record_event(
-            failed,
-            event_type="stage_failed",
-            stage=failed_stage,
-            message="document_jobs Worker 执行失败。",
-            payload=payload,
-            trace_id=trace_id,
-            level="error",
-            duration_ms=duration_ms,
-        )
-        self.logger.error(
-            "[trace_id=%s job_id=%s stage=%s status=failed] %s",
-            trace_id,
-            job.id,
-            failed_stage,
-            error_message,
-        )
-        return failed
 
 class EagerDocumentJobTaskQueue:
     """测试/本地可用的同步队列 adapter，复用同一幂等执行骨架。"""
