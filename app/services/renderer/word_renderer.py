@@ -19,7 +19,9 @@ from docx.shared import Cm, Twips
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.failure_context import FAILURE_CONTEXT_ATTRIBUTE, attach_failure_context
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
+from app.services.renderer.formula_renderer import WordFormulaRendererMixin
 from app.services.renderer.image_renderer import WordImageRendererMixin
+from app.services.renderer.list_numbering import WordListNumberingMixin
 from app.services.renderer.page_layout_renderer import WordPageLayoutMixin
 from app.services.renderer.image_evidence import caption_bookmark_inventory, new_image_report, finish_image_report
 from app.services.renderer.layout_plan import build_image_plan
@@ -78,7 +80,8 @@ class _RenderContext:
     image_loader: Any = None
 
 
-class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, WordImageRendererMixin, WordPageLayoutMixin):
+class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, WordListNumberingMixin, WordTableRendererMixin,
+                             WordImageRendererMixin, WordPageLayoutMixin):
     """P0 Word 渲染器：覆盖标题、段落、基础表格和图片。"""
 
     def render_to_bytes(
