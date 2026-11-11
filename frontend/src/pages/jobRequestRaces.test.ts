@@ -1,10 +1,10 @@
-import { computed, reactive, ref } from "vue";
+import { computed, reactive } from "vue";
 import { documentJobsApi } from "@/api/documentJobs";
 import { useJobDetailData } from "@/features/job-detail/useJobDetailData";
+import { useJobsList } from "@/features/jobs/useJobsList";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { normalizeApiError } from "@/utils/errors";
-import { deferred, executePageRequests } from "./pageRequestTestSupport";
+import { deferred } from "./pageRequestTestSupport";
 
 const hooks = vi.hoisted(() => ({
   mounted: [] as Array<() => Promise<void>>,
@@ -18,7 +18,7 @@ vi.mock("vue", async (importOriginal) => ({
   watch: (_source: unknown, callback: (...args: any[]) => any) => hooks.watches.push(callback),
 }));
 vi.mock("@/api/documentJobs", () => ({ documentJobsApi: {
-  get: vi.fn(), listEvents: vi.fn(), listFiles: vi.fn(), getCallbackMessageSummary: vi.fn(),
+  list: vi.fn(), get: vi.fn(), listEvents: vi.fn(), listFiles: vi.fn(), getCallbackMessageSummary: vi.fn(),
   listTranslationBatches: vi.fn(), listReviewBlocks: vi.fn(),
 } }));
 
@@ -27,31 +27,22 @@ afterEach(() => vi.unstubAllGlobals());
 type Request = (...args: any[]) => Promise<any>;
 
 function setupJobs() {
-  const state = {
-    jobs: ref<unknown[]>([]), selectedJobs: ref<unknown[]>(["selected"]), total: ref(0),
-    filteredSummary: ref({}), translationQaSummary: ref({}), lastRefreshedAt: ref<string | null>(null),
-    loading: ref(false), backgroundRefreshing: ref(false), error: ref<unknown>(null),
-    page: ref(1), pageSize: ref(20), statusFilter: ref(""), statusGroupFilter: ref(""),
-    qaStatusFilter: ref(""), searchKeyword: ref("old"), sortFilter: ref("created_at_desc"),
-    includeArchived: ref(false), createdRange: ref(null),
-  };
-  const list = vi.fn<Request>();
-  let unmount!: () => void;
-  const page = executePageRequests<{ loadJobs: Request }>(new URL("./JobsPage.vue", import.meta.url), [
-    "loadJobs", "jobsRequestRound", "disposed", "refreshTimer",
-  ], {
-    ...state, documentJobsApi: { list }, normalizeApiError,
-    onBeforeUnmount: (callback: () => void) => { unmount = callback; },
-    window: { clearInterval: vi.fn() },
-  });
-  return { ...state, ...page, list, unmount: () => unmount() };
+  hooks.unmount.length = 0;
+  const route = reactive({ query: {}, fullPath: "/jobs" });
+  const router = { push: vi.fn(), replace: vi.fn() };
+  const list = vi.mocked(documentJobsApi).list as unknown as ReturnType<typeof vi.fn<Request>>;
+  list.mockReset();
+  const state = useJobsList(route as never, router as never, { onResultReset: vi.fn() });
+  state.selectedJobs.value = ["selected"] as never;
+  state.searchKeyword.value = "old";
+  return { ...state, list, unmount: () => hooks.unmount.forEach((callback) => callback()) };
 }
 
 function listResponse(id: string) {
   return { items: [id], total: 1, summary: { [id]: 1 }, translation_qa_summary: { approved: 1 } };
 }
 
-describe("JobsPage 请求轮次", () => {
+describe("useJobsList 请求轮次", () => {
   it.each([false, true])("加载期间接受新筛选，后台请求=%s", async (background) => {
     const page = setupJobs();
     const older = deferred<unknown>();
@@ -66,7 +57,7 @@ describe("JobsPage 请求轮次", () => {
     newer.resolve(listResponse("new"));
     await second;
     const refreshedAt = page.lastRefreshedAt.value;
-    page.selectedJobs.value = ["new selection"];
+    page.selectedJobs.value = ["new selection"] as never;
     older.resolve(listResponse("old"));
     await first;
     expect(page.jobs.value).toEqual(["new"]);

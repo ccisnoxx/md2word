@@ -3,7 +3,7 @@
   "name": "sr-5-vue-pages",
   "title": "拆分大型 Vue 页面组件",
   "description": "四个 2000+ 行页面拆为 features 区块组件与 composable",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
