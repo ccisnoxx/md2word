@@ -7,6 +7,7 @@ from typing import Annotated, ClassVar, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, ModelWrapValidatorHandler, ValidationError, ValidationInfo, model_validator
 from pydantic_core import PydanticCustomError
 
+from app.services.document_ir.table_header_review import TableHeaderReview
 from app.services.tables.models import (
     CellId, FragmentId, NonNegativeInt, PositiveInt, RunId, RunType, Sha256,
     TableQualityFlag, canonical_sha256, make_cell_id, make_run_id,
@@ -144,11 +145,17 @@ class TableFragmentReference(_QualityModel):
     row_start: NonNegativeInt
     row_count: NonNegativeInt
     columns: NonNegativeInt
+    header_review: TableHeaderReview | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _check_state(self) -> Self:
         if ((self.html_state == "missing") != (self.raw_html_sha256 is None) or
                 (self.html_state != "present" and (self.row_count or self.columns))):
+            _invalid()
+        review = self.header_review
+        if review is not None and (self.html_state != "present" or review.header_row_count > self.row_count or
+                (review.json_pointer, review.page_index, review.raw_html_sha256) !=
+                (self.json_pointer, self.page_index, self.raw_html_sha256)):
             _invalid()
         return self
 
@@ -311,8 +318,11 @@ class TableValidationReport(_QualityModel):
         fragments = {item.fragment_id: item for item in self.fragments}
         related = {item.fragment_id: item for item in self.related_fragments}
         all_fragments = {**fragments, **related}
+        reviewed = [item.header_review for item in all_fragments.values() if item.header_review is not None]
         if (len(fragments) != len(self.fragments) or len(related) != len(self.related_fragments) or
                 fragments.keys() & related.keys() or
+                len({review.source_pdf_sha256 for review in reviewed}) > 1 or
+                any(review.content_list_sha256 != self.source_content_sha256 for review in reviewed) or
                 len({item.json_pointer for item in all_fragments.values()}) != len(all_fragments) or
                 len({item.source_index for item in all_fragments.values()}) != len(all_fragments) or
                 [item.source_index for item in self.fragments] != sorted(item.source_index for item in self.fragments) or

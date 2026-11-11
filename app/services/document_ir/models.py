@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from app.services.document_ir.artifact_validator import MinerUValidationReport
+from app.services.document_ir.table_header_review import TableHeaderReview
 from app.services.document_ir.table_placeholder import TablePlaceholderBinding
 
 
@@ -50,6 +51,7 @@ class TableFragment(BaseModel):
     raw_html_sha256: str | None = None
     header_signature: str | None = None
     repeated_header_hint: RepeatedHeaderHint | None = None
+    header_review: TableHeaderReview | None = Field(default=None, exclude_if=lambda value: value is None)
     normalization_rule_id: str | None = None
     normalization_reason: Literal["explicit_table_placeholder", "strict_empty_table_placeholder"] | None = None
 

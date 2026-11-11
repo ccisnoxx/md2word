@@ -57,6 +57,7 @@ from app.services.document_ir.page_degradation import (
     PAGE_RASTER_SOURCE_PATH, PageDegradationPolicy, degradation_closure, replace_degraded_pages,
 )
 from app.services.document_ir.table_annotations import split_table_annotation_texts
+from app.services.document_ir.table_header_review import TableHeaderReview, attach_table_header_reviews
 from app.services.document_ir.table_reference_assets import RASTER_EXTENSIONS, TableReferenceAsset, attach_table_references
 from app.services.document_ir.table_placeholder import (
     PdfCropRequest, PdfCropSource, PdfPageRasterizer, PdfTableCropProvider, PlaceholderAsset, TablePlaceholderError, checksum,
@@ -119,6 +120,7 @@ class MinerUToDocumentIRService:
         source_file_id: str,
         document_language: str,
         placeholder_source_loader: Callable[[], PdfCropSource] | None = None,
+        table_header_reviews: tuple[TableHeaderReview, ...] = (),
     ) -> MinerUToDocumentIRResult:
         """读取 MinerU 结果 zip，生成 DocumentIR v2 和待登记图片资产。"""
 
@@ -147,6 +149,7 @@ class MinerUToDocumentIRService:
                     table_sources=table_sources,
                     table_references=validated.table_references,
                     placeholder_source_loader=placeholder_source_loader,
+                    table_header_reviews=table_header_reviews,
                 )
             except MinerUPackageError as error:
                 validator.add_package_error(error)
@@ -165,6 +168,7 @@ class MinerUToDocumentIRService:
         table_sources: TableSourceLedger,
         table_references: dict[str, ValidatedTableReference],
         placeholder_source_loader: Callable[[], PdfCropSource] | None,
+        table_header_reviews: tuple[TableHeaderReview, ...],
     ) -> MinerUToDocumentIRResult:
         """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
         validation_report = validator.report
@@ -354,6 +358,8 @@ class MinerUToDocumentIRService:
                                             image_assets, source_file_id=source_file_id)
         # 在来源账本/ref owner 上准备事实，再一次验证最终模型与源清单；不输出半合法 IR。
         attach_logical_table_groups(document, table_sources)
+        if table_header_reviews:
+            attach_table_header_reviews(document, table_header_reviews, table_sources.checksum, source_loader)
         reference_assets = attach_table_references(document, table_references)
         try:
             placeholder_assets = prepare_placeholders(document, table_references,

@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pydantic import TypeAdapter, ValidationError
+
 from app.core.config import Settings
 from app.domains.translation.document_ir_translator import DocumentIRTranslationBatchPlan, DocumentIRTranslationService
 from app.domains.translation.models import TranslationProviderRequest, TranslationProviderResult
@@ -19,6 +21,7 @@ from app.domains.translation.provider_config import EffectiveAiProviderConfig
 from app.infrastructure.pdf_crop import PopplerPdfTableCropProvider
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset
+from app.services.document_ir.table_header_review import TableHeaderReview
 from app.services.document_ir.table_placeholder import PdfCropSource
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
 from app.services.renderer.block_evidence import WordRenderResult
@@ -54,6 +57,15 @@ class FormalMinerUConversionRequest:
     job_id: str = LOCAL_JOB_ID
     source_file_id: str = LOCAL_SOURCE_FILE_ID
     placeholder_source: PdfCropSource | None = field(default=None, repr=False)
+    table_header_reviews: tuple[TableHeaderReview, ...] = ()
+
+
+def parse_table_header_reviews(content: bytes) -> tuple[TableHeaderReview, ...]:
+    """解析显式传入的校核文件内容。来源绑定由转换器校验。"""
+    try:
+        return TypeAdapter(tuple[TableHeaderReview, ...]).validate_json(content)
+    except ValidationError as error:
+        raise ValueError("表头校核文件应为符合合同的 JSON 数组。") from error
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +168,7 @@ def run_conversion(
     translation_trace_output: str | None = None,
     job_id: str | None = None,
     placeholder_source: PdfCropSource | None = None,
+    table_header_reviews: tuple[TableHeaderReview, ...] = (),
     **_ignored: Any,
 ) -> FormalMinerUConversionResult:
     """以兼容参数形状调用正式 DocumentIR renderer 的本地入口。"""
@@ -191,6 +204,7 @@ def run_conversion(
         translation_max_chars=max(1, int(translation_max_chars)),
         job_id=str(job_id or LOCAL_JOB_ID),
         placeholder_source=placeholder_source,
+        table_header_reviews=table_header_reviews,
     )
     return convert_formal_mineru_package(request)
 
@@ -215,6 +229,7 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
             source_file_id=request.source_file_id,
             document_language=request.document_language,
             placeholder_source_loader=(lambda: source) if source is not None else None,
+            table_header_reviews=request.table_header_reviews,
         )
         source_document_ir = result.document
         document_ir = _translate_if_needed(source_document_ir, request)

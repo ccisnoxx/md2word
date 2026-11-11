@@ -1,0 +1,312 @@
+{
+  "schema_version": "datasheet-quality-observations/v1",
+  "metadata": {
+    "manifest_sha256": "15b58c3f01ff6cff4e95532c40b80918af87f844ad42b71635d689bdd0bee74a",
+    "annotation_version": "source-pdf-layout/v1",
+    "git_commit": "d88ddb11b4e8f2a2e070596170183d7da2c148e2",
+    "tracked_code_diff_sha256": "a1f5877adbcdd1d4dc0679f6b6695ab728412272f40668910dbb05d3be76c351",
+    "collector_sha256": "3f4041956f13ea2b79dcec46b936325e3c2db65576b9eee54917800649856b36",
+    "resource_sha256": {
+      "template_path": "7b3efd9ce7f19f19ed3a667d10d34995cc6a5b574b24abd85c52a23901577a88",
+      "layout_config_path": "132d0bb76e71c807912031199e894dfc0e3d50bd7534180f8ceaba7a5fa20b4d",
+      "subscript_config": "080166e1efc1907964183d6e877f30d1702714347b2992ec129b72192dfe8ae3"
+    },
+    "platform": "macOS-27.2.1-arm64-arm-64bit",
+    "python_version": "3.11.15",
+    "visual_tools": {
+      "soffice": "LibreOffice 26.2.4.2 0229ac93fcf0d7cbc6376066c6f35021cef002dc",
+      "pdftotext": "pdftotext version 26.06.0"
+    },
+    "table_header_reviews_sha256": "5924a077d34078072b108ae842dffa896b80063381ee08bee2edd53fcea01400"
+  },
+  "plan": [
+    {
+      "sample_id": "gs-003",
+      "cohort": "opa228-reference",
+      "mode": "direct",
+      "evidence_level": "local_replay_with_header_review",
+      "expected_outcome": "normal",
+      "expected_tables": 1,
+      "expected_tokens": {
+        "model": 2
+      },
+      "expected_visual_pages": 1,
+      "expected_visual_regions": 1
+    },
+    {
+      "sample_id": "gsx-rs2g04",
+      "cohort": "extended",
+      "mode": "direct",
+      "evidence_level": "local_replay_with_header_review",
+      "expected_outcome": "normal",
+      "expected_tables": 1,
+      "expected_tokens": {
+        "number": 3
+      },
+      "expected_visual_pages": 1,
+      "expected_visual_regions": 1
+    },
+    {
+      "sample_id": "gsx-sn74ac244-specs",
+      "cohort": "extended",
+      "mode": "direct",
+      "evidence_level": "local_replay_with_header_review",
+      "expected_outcome": "normal",
+      "expected_tables": 1,
+      "expected_tokens": {
+        "model": 2,
+        "unit": 1
+      },
+      "expected_visual_pages": 1,
+      "expected_visual_regions": 1
+    }
+  ],
+  "observations": [
+    {
+      "sample_id": "gs-003",
+      "mode": "direct",
+      "missing": {
+        "cost": "offline_replay_no_provider_invoice",
+        "edits": "no_human_signoff",
+        "review_time": "no_human_signoff"
+      },
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 0.1575
+      },
+      "artifacts": {
+        "docx_sha256": "0b944e1d4b25b02ea407ce584769ac48997ff177e1113c3cc7e7a95b3a931391",
+        "source_pages": 1,
+        "pdf_sha256": "87a2d0ce714c36f11d3afde48a0c95d1013dd93455ceab43f0538aff409386aa",
+        "content_list_v2_sha256": "73b97fdf26c2b2f51553d3d6152c196261842f7f03451552fda642ac7240c108",
+        "mineru_package_sha256": "bbe931458beb56fd2769f6f101f4023ad4eeb50f7d06cc95c4796f0eb3bd976c",
+        "table_quality_status": "passed",
+        "quality_flags": [
+          "docx_unstyled_heading_candidates:1"
+        ],
+        "table_placeholders": [],
+        "applied_table_header_reviews": [
+          {
+            "source_pdf_sha256": "87a2d0ce714c36f11d3afde48a0c95d1013dd93455ceab43f0538aff409386aa",
+            "content_list_sha256": "73b97fdf26c2b2f51553d3d6152c196261842f7f03451552fda642ac7240c108",
+            "json_pointer": "/0/12",
+            "page_index": 0,
+            "raw_html_sha256": "9775b5462a8dd3b23689f76787a3b61d8f0adfafc9301e34d22b4d5010b0d2c6",
+            "header_row_count": 1
+          }
+        ]
+      },
+      "table": {
+        "matched": 1,
+        "duplicate": 0,
+        "reasons": []
+      },
+      "tokens": {
+        "matched": {
+          "model": 2
+        },
+        "assessed": {
+          "model": 2
+        },
+        "extras": {
+          "model": 0
+        },
+        "reasons": []
+      },
+      "visual": {
+        "matched_pages": 1,
+        "regions": [
+          {
+            "id": "device-information-heading",
+            "source_page": 1,
+            "result_page": 1,
+            "source_bbox": [
+              0.6374836601307189,
+              0.5919583333333334,
+              0.7845751633986928,
+              0.6060492424242424
+            ],
+            "result_bbox": [
+              0.6675581586150335,
+              0.8040313505937815,
+              0.7935089466744112,
+              0.8159616536209602
+            ]
+          }
+        ],
+        "reason": null
+      }
+    },
+    {
+      "sample_id": "gsx-rs2g04",
+      "mode": "direct",
+      "missing": {
+        "cost": "offline_replay_no_provider_invoice",
+        "edits": "no_human_signoff",
+        "review_time": "no_human_signoff"
+      },
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 1.2685
+      },
+      "artifacts": {
+        "docx_sha256": "765fbebed19585de96df53ad95937283162c2068dd78f7b1dd856384eb268820",
+        "source_pages": 13,
+        "pdf_sha256": "52aad9f6373a02114a6418142dacfc3a7d844558e1c4be7c61b92b192cb34ece",
+        "content_list_v2_sha256": "b3d715a62015945bab6d3b43d330652de8b5f5624f234bcbf60f1578acd223be",
+        "mineru_package_sha256": "cb25187cbf40636b9c19b783b77d1ffb0d6972b572fd29c4f86080d307f0b339",
+        "table_quality_status": "passed",
+        "quality_flags": [
+          "docx_unstyled_heading_candidates:6",
+          "formula_text_fallback",
+          "image_group_uncertain"
+        ],
+        "table_placeholders": [],
+        "applied_table_header_reviews": [
+          {
+            "source_pdf_sha256": "52aad9f6373a02114a6418142dacfc3a7d844558e1c4be7c61b92b192cb34ece",
+            "content_list_sha256": "b3d715a62015945bab6d3b43d330652de8b5f5624f234bcbf60f1578acd223be",
+            "json_pointer": "/5/4",
+            "page_index": 5,
+            "raw_html_sha256": "ff42d39615d55077c4ff396ef3647977d20788a0aac1301084c3598280fe3631",
+            "header_row_count": 1
+          }
+        ]
+      },
+      "table": {
+        "matched": 1,
+        "duplicate": 0,
+        "reasons": []
+      },
+      "tokens": {
+        "matched": {
+          "number": 3
+        },
+        "assessed": {
+          "number": 3
+        },
+        "extras": {
+          "number": 0
+        },
+        "reasons": []
+      },
+      "visual": {
+        "matched_pages": 1,
+        "regions": [
+          {
+            "id": "esd-ratings-heading",
+            "source_page": 6,
+            "result_page": 7,
+            "source_bbox": [
+              0.102,
+              0.5051338383838383,
+              0.2417058823529412,
+              0.5230429292929293
+            ],
+            "result_bbox": [
+              0.06971228883372897,
+              0.6918907782325763,
+              0.21127191033510667,
+              0.7064722597102392
+            ]
+          }
+        ],
+        "reason": null
+      }
+    },
+    {
+      "sample_id": "gsx-sn74ac244-specs",
+      "mode": "direct",
+      "missing": {
+        "cost": "offline_replay_no_provider_invoice",
+        "edits": "no_human_signoff",
+        "review_time": "no_human_signoff"
+      },
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 1.088
+      },
+      "artifacts": {
+        "docx_sha256": "374e0277fcc34833f1877199f3e4c38190c74d023960bb96661ce931029dc2be",
+        "source_pages": 4,
+        "pdf_sha256": "04c5b23af2877ebd686b032caa25c9f0d2ace7b123fb0d013c83cc562285fc74",
+        "content_list_v2_sha256": "ce67f934da47b4abbccd127fe20c9bd16193ea86dcd3b0ddcf02cb50667c6595",
+        "mineru_package_sha256": "5948c56f58e12be24a6c4501753abdaacdf436f9a07befb396c618114042d833",
+        "table_quality_status": "passed",
+        "quality_flags": [
+          "formula_text_fallback",
+          "image_group_uncertain"
+        ],
+        "table_placeholders": [],
+        "applied_table_header_reviews": [
+          {
+            "source_pdf_sha256": "04c5b23af2877ebd686b032caa25c9f0d2ace7b123fb0d013c83cc562285fc74",
+            "content_list_sha256": "ce67f934da47b4abbccd127fe20c9bd16193ea86dcd3b0ddcf02cb50667c6595",
+            "json_pointer": "/1/6",
+            "page_index": 1,
+            "raw_html_sha256": "55cc0241248b7c3fe943702d2b48c991421bd05a1991e4d617c6b4efdafa52ef",
+            "header_row_count": 2
+          }
+        ]
+      },
+      "table": {
+        "matched": 1,
+        "duplicate": 0,
+        "reasons": []
+      },
+      "tokens": {
+        "matched": {
+          "model": 2,
+          "unit": 1
+        },
+        "assessed": {
+          "model": 2,
+          "unit": 1
+        },
+        "extras": {
+          "model": 0,
+          "unit": 0
+        },
+        "reasons": []
+      },
+      "visual": {
+        "matched_pages": 1,
+        "regions": [
+          {
+            "id": "recommended-operating-conditions-heading",
+            "source_page": 2,
+            "result_page": 2,
+            "source_bbox": [
+              0.09263562091503268,
+              0.38123611111111116,
+              0.44019607843137254,
+              0.39673611111111107
+            ],
+            "result_bbox": [
+              0.06971228883372897,
+              0.603577553414701,
+              0.4267803120542776,
+              0.6181590348923639
+            ]
+          }
+        ],
+        "reason": null
+      }
+    }
+  ]
+}

@@ -69,6 +69,7 @@ def _fragment_references(result: TableBuildResult) -> tuple[TableFragmentReferen
             fragment_id=source.fragment_id, source_index=span.source_index, json_pointer=span.json_pointer,
             page_index=span.page_index, bbox=span.bbox, html_state=source.html_state,
             raw_html_sha256=source.raw_html_sha256, row_start=offset, row_count=rows, columns=columns,
+            header_review=source.header_review,
         ))
         offset += rows
     if offset != result.grid.rows:

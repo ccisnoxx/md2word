@@ -9,6 +9,7 @@ from app.services.document_ir.integrity import is_visible_body_block
 from app.services.document_ir.logical_table_group import VERSION as LOGICAL_TABLE_GROUPS_VERSION, validate_logical_table_groups
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock, LogicalTableGroup, TableFragment
 from app.services.document_ir.table_annotations import is_table_context_annotation
+from app.services.document_ir.table_header_review import TableHeaderReview
 from app.services.renderer.layout_plan import LayoutPage, LayoutPlan, LayoutRegion, split_two_col_blocks
 from app.services.renderer.table_renderer import TableRenderError, iter_grid_rows
 from app.services.renderer.text_renderer import CAPTION_RE
@@ -99,7 +100,10 @@ def _unique(values: list[str]) -> tuple[str, ...]:
 
 
 def _header_prefix(grid: TableGrid, *, block_index: int) -> int:
-    """只承认从首行开始、整行显式 th 且 span 闭合的连续前缀。"""
+    """读取单片 Grid 的人工前缀，或确定 span 闭合的显式上游前缀。"""
+    review = grid.source_fragments[0].header_review
+    if review is not None:
+        return review.header_row_count
     count = 0
     for row, owners in iter_grid_rows(grid, block_index=block_index):
         if (not owners or any(not cell.is_header for cell in owners)
@@ -154,9 +158,11 @@ def _layout_positions(layout: LayoutPlan) -> dict[int, tuple[int, tuple[Any, ...
     return result
 
 
-def _build_current(block: DocumentIRBlock, index: int) -> RenderTableBuildResult:
+def _build_current(
+    block: DocumentIRBlock, index: int, header_review: TableHeaderReview | None = None,
+) -> RenderTableBuildResult:
     try:
-        result = build_render_table_grid(block, block_index=index)
+        result = build_render_table_grid(block, block_index=index, header_review=header_review)
     except TableBuildError as error:
         raise TableRenderError(error.code, block_index=index) from error
     if (result.grid.rows <= 0 or result.grid.columns <= 0 or any(
@@ -184,7 +190,7 @@ def _build_group_current(
             raise TableRenderError("table_html_encoding", block_index=index) from None
         if html_bytes > MAX_RAW_HTML_BYTES:
             raise TableRenderError("table_build_limit", block_index=index)
-        current = _build_current(document.blocks[index], index)
+        current = _build_current(document.blocks[index], index, fragment.header_review)
         cells += len(current.grid.cells)
         slots += current.grid.rows * current.grid.columns
         checks += sum(cell.rowspan * cell.colspan for cell in current.grid.cells)
@@ -263,7 +269,9 @@ def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan) ->
                 removed = 0
                 if member_index:
                     hint = fragment.repeated_header_hint
-                    if (hint is not None and hint.row_count == header_rows and
+                    # 人工校核只声明表头行，不为续表删行提供新证据。
+                    if (batch[0][0].header_review is None and fragment.header_review is None and
+                            hint is not None and hint.row_count == header_rows and
                             _header_signature(current.grid, hint.row_count) == _header_signature(first_grid, header_rows)
                             and header_rows > 0):
                         removed = header_rows

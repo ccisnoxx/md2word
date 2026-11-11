@@ -14,6 +14,7 @@ from pydantic import (
 from pydantic_core import PydanticCustomError
 
 from app.services.document_ir.models import RepeatedHeaderHint, SourceSpan
+from app.services.document_ir.table_header_review import TableHeaderReview
 
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -152,6 +153,7 @@ class TableSourceFragment(_TableModel):
     raw_html: str | None
     raw_html_sha256: Sha256 | None
     repeated_header_hint: RepeatedHeaderHint | None = None
+    header_review: TableHeaderReview | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("source_span", "repeated_header_hint", mode="before")
     @classmethod

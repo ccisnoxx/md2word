@@ -264,9 +264,17 @@ class TableEvidence(EvidenceModel):
 
 
 def source_grid_summary(report: TableValidationReport) -> SourceGridSummary:
+    reviewed = {}
+    for fragment in report.fragments:
+        review = fragment.header_review
+        if review is not None:
+            reviewed[fragment.fragment_id] = range(fragment.row_start, fragment.row_start + review.header_row_count)
+    header_rows = {cell.row for cell in report.cells if cell.is_header and cell.fragment_id not in reviewed}
+    for rows in reviewed.values():
+        header_rows.update(rows)
     return SourceGridSummary(rows=sum(f.row_count for f in report.fragments),
         columns=max((f.columns for f in report.fragments), default=0),
-        header_rows=sorted({c.row for c in report.cells if c.is_header}),
+        header_rows=sorted(header_rows),
         raw_html_sha256=report.raw_html_sha256, source_binding_sha256=report.source_binding_sha256)
 
 

@@ -26,9 +26,10 @@ if str(ROOT) not in sys.path:
 
 from app.services.document_ir.artifact_validator import MinerUArtifactValidationError
 from app.services.document_ir.integrity import DocumentIntegrityError
+from app.services.document_ir.table_header_review import TableHeaderReview, TableHeaderReviewError
 from app.services.document_ir.table_placeholder import PdfCropSource, TablePlaceholderError
 from app.services.renderer.table_renderer import TableRenderError
-from scripts.dev.formal_mineru_conversion import LOCAL_SOURCE_FILE_ID, run_conversion
+from scripts.dev.formal_mineru_conversion import LOCAL_SOURCE_FILE_ID, parse_table_header_reviews, run_conversion
 from scripts.ops.datasheet_quality_metrics import OBSERVATION_VERSION, build_report
 
 MANIFEST = ROOT / "tests/fixtures/datasheet_quality/local_baseline_manifest.json"
@@ -204,7 +205,8 @@ def visual_observation(annotations: list[dict], source: Path, docx: Path, output
             "reason": "anchor_missing_or_ambiguous" if len(pairs) != len(annotations) else None}
 
 
-def observation(sample: dict, package: Path, output: Path) -> dict:
+def observation(sample: dict, package: Path, output: Path, *,
+                table_header_reviews: tuple[TableHeaderReview, ...] = ()) -> dict:
     sample_id = sample["sample_id"]
     row = {"sample_id": sample_id, "mode": "direct",
            "missing": {"cost": "offline_replay_no_provider_invoice", "edits": "no_human_signoff",
@@ -224,15 +226,18 @@ def observation(sample: dict, package: Path, output: Path) -> dict:
             no_template=False, use_mineru_header_footer=False, document_language="en", job_id=sample_id,
             placeholder_source=PdfCropSource(LOCAL_SOURCE_FILE_ID, "sha256:" + sample["pdf_sha256"],
                                              source.read_bytes()),
+            table_header_reviews=table_header_reviews,
         )
         doc = Document(docx)
-    except (MinerUArtifactValidationError, TablePlaceholderError, TableRenderError,
+    except (MinerUArtifactValidationError, TableHeaderReviewError, TablePlaceholderError, TableRenderError,
             DocumentIntegrityError, PackageNotFoundError) as error:
         reason = getattr(error, "code", type(error).__name__)
         if isinstance(error, MinerUArtifactValidationError) and error.report.first_fatal is not None:
             reason = error.report.first_fatal.code
         if isinstance(error, DocumentIntegrityError):
             reason = ",".join(error.evidence["blocking_quality_flags"])
+        if isinstance(error, TableHeaderReviewError):
+            reason = f"{error.code}:{error.reason}"
         row["conversion"] = {"status": "failed", "reason": reason}
     else:
         row["conversion"] = {"status": "succeeded", "docx_available": True, "docx_openable": True}
@@ -253,6 +258,13 @@ def observation(sample: dict, package: Path, output: Path) -> dict:
                         "mineru_package_sha256": result.renderer_metadata["mineru_validation"]["package_sha256"],
                         "table_quality_status": table_evidence["status"], "quality_flags": result.quality_flags,
                         "table_placeholders": placeholders}
+    if table_header_reviews:
+        row["artifacts"]["applied_table_header_reviews"] = [
+            fragment["header_review"]
+            for table in table_evidence["tables"]
+            for fragment in table["validation"]["fragments"]
+            if "header_review" in fragment
+        ]
     if "tables" in sample:
         row["table"], row["tokens"] = table_and_token_observations(sample["tables"], doc, result)
     if "visual" in sample:
@@ -264,6 +276,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path, help="新建本地输出目录")
     parser.add_argument("--package", action="append", default=[], metavar="SAMPLE_ID=DIR", help="绑定本地结果包")
+    parser.add_argument("--table-header-reviews", type=Path, help="仅回放与该校核文件绑定的样本。")
     args = parser.parse_args()
     packages = {}
     manifest = json.loads(MANIFEST.read_text())
@@ -273,6 +286,28 @@ def main() -> None:
         if not separator or not directory or sample_id not in ids or sample_id in packages:
             parser.error("--package 需要唯一的已登记样本 ID 和目录")
         packages[sample_id] = Path(directory).expanduser().resolve()
+    samples = manifest["samples"]
+    reviews_by_sample: dict[str, list[TableHeaderReview]] = {}
+    reviews_sha256 = None
+    if args.table_header_reviews is not None:
+        try:
+            reviews_content = args.table_header_reviews.expanduser().read_bytes()
+            reviews = parse_table_header_reviews(reviews_content)
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+        reviews_sha256 = hashlib.sha256(reviews_content).hexdigest()
+        if not reviews:
+            parser.error("校核文件必须包含至少一条记录。")
+        for review in reviews:
+            matches = [sample["sample_id"] for sample in samples
+                       if (sample["pdf_sha256"], sample["content_list_v2_sha256"])
+                       == (review.source_pdf_sha256, review.content_list_sha256)]
+            if len(matches) != 1 or matches[0] not in packages:
+                parser.error("每条校核记录须绑定到唯一且提供了结果包的样本。")
+            reviews_by_sample.setdefault(matches[0], []).append(review)
+        if set(packages) != set(reviews_by_sample):
+            parser.error("校核回放提供的结果包必须与校核文件的样本一致。")
+        samples = [sample for sample in samples if sample["sample_id"] in reviews_by_sample]
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     visual_tools = {}
@@ -292,10 +327,15 @@ def main() -> None:
                      "resource_sha256": {key: sha256(value) for key, value in RESOURCES.items()},
                      "platform": platform.platform(), "python_version": platform.python_version(),
                      "visual_tools": visual_tools},
-        "plan": [plan_row(sample) for sample in manifest["samples"]],
-        "observations": [observation(sample, packages[sample["sample_id"]], output)
-                         for sample in manifest["samples"] if sample["sample_id"] in packages],
+        "plan": [plan_row(sample) for sample in samples],
+        "observations": [observation(sample, packages[sample["sample_id"]], output,
+                                     table_header_reviews=tuple(reviews_by_sample.get(sample["sample_id"], ())))
+                         for sample in samples if sample["sample_id"] in packages],
     }
+    if reviews_sha256 is not None:
+        payload["metadata"]["table_header_reviews_sha256"] = reviews_sha256
+        for planned in payload["plan"]:
+            planned["evidence_level"] = "local_replay_with_header_review"
     for name, data in (("observations.json", payload), ("metrics.json", build_report(payload))):
         (output / name).write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

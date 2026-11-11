@@ -10,7 +10,9 @@ from bs4.element import Tag
 
 from app.domains.translation.models import TranslationTableContext, TranslationTextItem
 from app.domains.translation.protected_tokens import EncodedTokenBatch, encode
+from app.services.document_ir.logical_table_group import validate_logical_table_groups
 from app.services.document_ir.models import DocumentIR
+from app.services.document_ir.table_header_review import TableHeaderReviewError
 from app.services.tables.grid_builder import build_render_table_grid
 from app.services.tables.html_normalizer import TableBuildError
 
@@ -50,6 +52,11 @@ class TableContextBuilder:
     def build(self, document_ir: DocumentIR, items: tuple[TranslationTextItem, ...]) -> dict[str, TranslationTableContext]:
         requested = {item.id for item in items}
         contexts: dict[str, TranslationTableContext] = {}
+        reviews = {fragment.block_id: fragment.header_review
+                   for group in document_ir.metadata.logical_table_groups for fragment in group.fragments
+                   if fragment.header_review is not None}
+        if reviews:
+            validate_logical_table_groups(document_ir)
         for block_index, block in enumerate(document_ir.blocks):
             if block.type != "table" or not block.html or not any(
                 item_id.startswith(f"{block.id}.html.") for item_id in requested
@@ -64,8 +71,8 @@ class TableContextBuilder:
                 node.extract()
             grid_block = block.model_copy(update={"html": str(grid_soup)}) if outside_text else block
             try:
-                built = build_render_table_grid(grid_block, block_index=block_index)
-            except TableBuildError:
+                built = build_render_table_grid(grid_block, block_index=block_index, header_review=reviews.get(block.id))
+            except (TableBuildError, TableHeaderReviewError):
                 raise TableContextMappingError() from None
             # 两种 parser 的隐式闭合可能不同，不能按 zip 静默截断或改变原节点归属。
             rows = soup.find_all("tr")

@@ -396,6 +396,11 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
     identities = [fragment.fragment_id for fragment in fragments]
     if len(set(pointers)) != len(pointers) or len(set(identities)) != len(identities):
         _fail("duplicate_source")
+    reviewed_pdf_digests = {
+        fragment.header_review.source_pdf_sha256 for fragment in fragments if fragment.header_review is not None
+    }
+    if len(reviewed_pdf_digests) > 1:
+        _fail("header_review_pdf_fingerprint")
     indices = [fragment.source_span.source_index for fragment in fragments]
     if len(set(indices)) != len(indices):
         _fail("duplicate_source_index")
@@ -465,6 +470,8 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
             if (fragment.html_state != state or fragment.raw_html_sha256 != checksum or
                     fragment.header_signature != shape.signature or span.bbox != parse_bbox(fragment.raw_fragment.get("bbox"))):
                 _fail("raw_projection")
+            if fragment.header_review is not None:
+                fragment.header_review.verify_fragment(fragment, report.content_list_sha256)
             if fragment.repeated_header_hint is not None:
                 hint = fragment.repeated_header_hint
                 previous = next((item for item in group.continuation_relations

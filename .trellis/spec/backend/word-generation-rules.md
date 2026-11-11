@@ -393,9 +393,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：Word table 首行/后续 `th`、列数、配置的 border/header fill/font 和表格规模。
 - 正式 owner：`app/services/renderer/table_renderer.py::_configure_data_table_rows`、`::_table_column_widths`、`::_template_config_for_table_columns`、`::_set_table_borders`。
 - 预期输出：表头行标记 `tblHeader`，所有行标记 `cantSplit`；5 列数据手册表优先给描述列宽度，6 列及以上使用紧凑字号/等宽策略；应用配置边框与表头样式。
+- 表头校核：`MinerUToDocumentIRService.convert_zip(..., table_header_reviews=...)` 通过可信 PDF loader 核对 PDF SHA-256，并通过原始表账本核对 content list SHA-256、源 Pointer、零基页号和原 HTML SHA-256。完整且跨度闭合的上游 `<th>` 首部优先。采用人工校核时，`header_row_count` 指定零基首部连续范围，跨度不得越过该范围，单元格占位须完整。位置、指纹或行范围无效时拒绝校核。
+- 来源与写入：已采用的 `header_review` 进入来源片段和表格验证证据。Grid、Word 及翻译表上下文复用这份记录。实际 `tblHeader` 范围以已校核首部为准。下方的 `<th>` 仍具原单元格语义。人工校核不授予续表去重权限，原 HTML 与无校核历史序列保持原值。验证见 [表头来源与本地校核](../../tasks/11-11-datasheet-quality-baseline-contracts/table-header-review.md)。
 - 冲突/例外：XML 结构不能证明 Word/WPS 实际无挤压；整文档视觉门禁见 QUALITY-003。
 - 禁止：把 `cantSplit` 写成“表格不会挤压”的证明；按源页缩放整表；为一个器件硬编码列宽。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_styles_later_th_cells_as_table_headers`、`.test_datasheet_five_column_table_widths_prioritize_description_column`、`.test_render_to_bytes_uses_configured_long_table_caption_and_border_color`。
+- 自动验证：`tests.test_table_header_review`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_styles_later_th_cells_as_table_headers`、`.test_datasheet_five_column_table_widths_prioritize_description_column`、`.test_render_to_bytes_uses_configured_long_table_caption_and_border_color`。
 - 样本证据：OPA228 P6/P7 与 CM4112 均缺当前排版后的自动/人工闭环。
 - 来源/取代：commit `32edca58` 与两个 08-18 归档任务；明确不继承 legacy 页高估算器的已实现声明。
 

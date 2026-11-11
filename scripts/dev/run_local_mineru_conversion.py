@@ -19,6 +19,7 @@ from loguru import logger
 
 from app.clients.openai_sdk import DEFAULT_MODEL
 from app.core.conversion_config import APP_CONFIG
+from app.services.document_ir.table_placeholder import PdfCropSource, checksum
 from scripts.dev import formal_mineru_conversion
 
 
@@ -39,6 +40,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=f"MinerU output directory or zip. If omitted, {DEFAULT_INPUT_ENV} is used.",
     )
     parser.add_argument("--output", help="Output DOCX path. Defaults to the runtime output rule.")
+    parser.add_argument("--source-pdf", type=Path, help="用于校核或裁图的原始 PDF。")
+    parser.add_argument("--table-header-reviews", type=Path, help="绑定当前 PDF 和 MinerU 结果的表头校核 JSON。")
     parser.add_argument("--template", help="Optional Word template path.")
     parser.add_argument("--layout-config", help="Optional template layout YAML path.")
     parser.add_argument("--subscript-config", help="Optional term/subscript YAML path.")
@@ -111,7 +114,7 @@ def resolve_input_path(raw_input_path: str | None, *, environ: dict[str, str] | 
 
 
 def build_conversion_kwargs(args: argparse.Namespace, *, environ: dict[str, str] | None = None) -> dict[str, object]:
-    return {
+    kwargs: dict[str, object] = {
         "input_path": resolve_input_path(args.input_path, environ=environ),
         "output_path": args.output,
         "template_path": args.template,
@@ -130,6 +133,18 @@ def build_conversion_kwargs(args: argparse.Namespace, *, environ: dict[str, str]
         "translation_max_pages": args.translation_max_pages,
         "translation_max_chars": args.translation_max_chars,
     }
+    if args.table_header_reviews is not None:
+        if args.source_pdf is None:
+            raise ValueError("使用表头校核记录时必须提供 --source-pdf。")
+        kwargs["table_header_reviews"] = formal_mineru_conversion.parse_table_header_reviews(
+            args.table_header_reviews.expanduser().read_bytes()
+        )
+    if args.source_pdf is not None:
+        content = args.source_pdf.expanduser().read_bytes()
+        kwargs["placeholder_source"] = PdfCropSource(
+            formal_mineru_conversion.LOCAL_SOURCE_FILE_ID, checksum(content), content
+        )
+    return kwargs
 
 
 def configure_logging(level_name: str) -> None:
@@ -153,7 +168,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     configure_logging(args.log_level)
     try:
         formal_mineru_conversion.run_conversion(**build_conversion_kwargs(args))
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
 
 
