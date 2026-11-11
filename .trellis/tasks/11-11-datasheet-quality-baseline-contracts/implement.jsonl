@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/index.md","reason":"定位正式流水线、领域边界和开发指南"}
+{"file":".trellis/spec/backend/word-generation-rules.md","reason":"约束正式 Word 输出、表格结构、证据与样本分层"}
+{"file":".trellis/spec/backend/protected-token-codec.md","reason":"复用技术 Token 识别和精确保留合同"}
+{"file":".trellis/spec/backend/translation-integrity-validator.md","reason":"约束翻译完整性证据、绑定与隐私"}
+{"file":".trellis/spec/backend/document-job-mode-contract.md","reason":"确认 direct、阶段、主件与代次边界"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"选择与实际影响相称的定向验证"}

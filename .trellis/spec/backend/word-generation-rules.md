@@ -105,6 +105,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：v2 `content` 节点、inline equation、显式 `list_items`、以列表标记起始的多行文本、目录点线和碎片化脚注。
 - 正式 owner：`app/conversion/docx_rules/mineru_content.py::join_text_fragments`、`::split_multiline_list_items`、`::split_toc_like_lines`、`::merge_footnote_fragments`；`app/services/document_ir/mineru_converter.py::_list_items`、`::_rich_text_nodes`。
 - 预期输出：保留 inline equation 数学边界；多行列表拆成独立 item，未标记续行仍保留在同一 item；目录样式文本仅在足够高比例点线项时拆分；脚注按明确连续信号合并。`paragraph` 且 `role=body` 的正文按权威 text/runs 保留显式换行和连续空行，仍保持 paragraph 类型；数学源串内部的空白与 CRLF 原样保留，普通文本行尾 CRLF 归一为 LF。
+- 页级脚注：MinerU v2 `page_footnote.content.page_footnote_content` 使用正文 runs 的校验与解析，按原页位置作为 body paragraph 一次写入。源类型、源指针、页号及 bbox 保留。空 runs、错误容器、非法 typed run 及无法消费的语义旁支仍失败关闭。页级脚注与页脚或表注分别消费。回归见 `tests.test_mineru_artifact_validator` 的页级脚注用例。
 - 正文行结构 owner：`mineru_converter._text_for_block` 只对上述正文调用 `_raw_text(..., preserve_line_breaks=True)`；共享 `mineru_content.clean_text`、`clean_markdown_document`、`mineru_raw_text_preserving_lines` 的保留参数默认关闭，标题、页眉页脚、题注与表注不因此改变清洗语义。Word writer 的 `_apply_document_settings` 在正文存在显式换行时，为新件设置 `w:compat/w:doNotExpandShiftReturn=true`，使两端对齐段落的手动换行行不被拉满词距；保留其他兼容节点和原模板字节，不修改 normal alignment。该行为依据 [OOXML 官方定义](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.donotexpandshiftreturn?view=openxml-3.0.1)，仍需以真客户端验证显示。
 - 冲突/例外：普通多行正文不拆列表；单行负温度或减号文本不得当作列表。
 - 禁止：对所有换行统一空格化；只保留列表第一行；在普通正文全局执行无差别或破坏性的 TeX 清理。
@@ -404,6 +405,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：不可支持的 HTML，或可信表格来源账本中的 missing/empty HTML 片段。
 - 正式 owner：`logical_table_plan.build_content_table_plan` 的原生输入规划；`document_ir.table_placeholder.prepare_placeholders` 的来源绑定；`infrastructure.pdf_crop.PopplerPdfTableCropProvider` 的受控裁图；`table_placeholder_evidence` 与 `base_quality` 的占位认证及质量分级。
 - 预期输出：不可支持的 HTML 在输入/规划边界明确拒绝；missing/empty 片段须有可验证参考图，或原 PDF loader 与裁图 provider。后者核对文件身份/checksum、页码、有限 bbox、明确 frame 和实际 PDF 页面边界。没有图片/PDF 来源时保持 `table_placeholder_source_unavailable`，不得用题注或空表冒充表体。
+- 裁图几何：`PopplerPdfTableCropProvider.crop(PdfCropRequest)` 校验 PDF 字节身份、零原点、未旋转以及相同的完整 MediaBox 与 CropBox。声明 frame 须等于 Poppler 报告的点框。已确认的归一化坐标经 `from_normalized_bbox=True` 标识时，声明 frame 也可逐轴恰等于该点框向下取整后的整数尺寸。整数截断情形按报告宽高重映射 bbox，重检边界和预算，结果仍携带原声明 frame。其它偏差返回 `table_placeholder_geometry_invalid`。本地正式适配器通过显式 `placeholder_source: PdfCropSource` 复用同一裁图器，未传入时沿用参考图路径。真实裁图等价与非法几何回归见 `tests.test_pdf_crop`。
 - 运行依赖：API/Worker 共用镜像及开发镜像均安装 `poppler-utils`，提供 `pdfinfo` 和 `pdftoppm`；只有 Python provider 接线而缺 CLI 不构成可用裁图。不得在请求中临时安装或改用未认证服务。
 - 冲突/例外：有来源的非编辑占位可以生成完整候选 Word；`table_evidence` 中必须保留 `table_noneditable_placeholder`、producer=`table_placeholder`、severity=`blocker`，由正式质量分级阻止交付。完好占位不是确定性内容丢失，不能混入 renderer 的 `blocking_quality_flags`；也不能因 renderer 完整就声明质量通过。
 - 禁止：放宽 HTML/图片/来源校验使旧夹具通过；为空路径/目录路径猜图；静默丢正文；将占位图片算作可编辑原生数据表；以整体 DOCX hash 失败代替缺图/缺表专用验证。

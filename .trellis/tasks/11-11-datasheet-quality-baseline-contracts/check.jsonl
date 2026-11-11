@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"核对 DOCX、审核夹具、接口及真实验证证据"}
+{"file":".trellis/spec/backend/word-generation-rules.md","reason":"核对原生表格、版式和正式产物证据"}
+{"file":".trellis/spec/backend/translation-integrity-validator.md","reason":"核对技术 Token、翻译证据及存储身份"}
+{"file":".trellis/spec/backend/document-job-mode-contract.md","reason":"核对旧代次回流、下载可见性与模式隔离"}

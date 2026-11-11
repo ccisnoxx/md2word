@@ -36,7 +36,7 @@ def _run_poppler(args, output, *, timeout: float) -> None:
 
 
 class PopplerPdfTableCropProvider:
-    """首版仅接受与实际 PDF 点空间一致、原点为零且未旋转的 frame。"""
+    """归一化 bbox 可使用已核验点框的整数截断，绝对点 bbox 要求声明框精确一致。"""
     def __init__(self, *, pdfinfo: str | None = None, pdftoppm: str | None = None, timeout: float = 20):
         self.pdfinfo = pdfinfo or shutil.which("pdfinfo")
         self.pdftoppm = pdftoppm or shutil.which("pdftoppm")
@@ -73,9 +73,21 @@ class PopplerPdfTableCropProvider:
                 return result
             media, crop = values("MediaBox", 4), values("CropBox", 4)
             rotation = re.search(r"^(?:Page\s+\d+\s+rot|Page rot):\s*(-?\d+)", text, re.M)
-            if rotation is None or int(rotation.group(1)) != 0 or media != crop or media != (0, 0, *request.frame):
+            if rotation is None or int(rotation.group(1)) != 0 or media != crop or media[:2] != (0, 0):
                 raise TablePlaceholderError("table_placeholder_geometry_invalid")
             x0, y0, x1, y1 = request.bbox
+            actual_frame = media[2:]
+            if request.frame != actual_frame:
+                actual_width, actual_height = actual_frame
+                if (not request.from_normalized_bbox
+                        or request.frame != (math.floor(actual_width), math.floor(actual_height))
+                        or actual_width * actual_height * 4 > MAX_PIXELS):
+                    raise TablePlaceholderError("table_placeholder_geometry_invalid")
+                # MinerU 给出逐轴截断的点框时，按同一归一化位置换算到实测点框。
+                width, height = request.frame
+                x0, x1 = x0 / width * actual_width, x1 / width * actual_width
+                y0, y1 = y0 / height * actual_height, y1 / height * actual_height
+                validate_geometry(request.page_index, (x0, y0, x1, y1), actual_frame)
             left, top, right, bottom = math.floor(x0 * 2), math.floor(y0 * 2), math.ceil(x1 * 2), math.ceil(y1 * 2)
             prefix = root / "crop"
             self._run([self.pdftoppm, "-f", page, "-l", page, "-singlefile", "-r", "144",

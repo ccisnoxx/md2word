@@ -1,5 +1,6 @@
 """列表仅判断发布状态，详情、发布前检查及提交仍认证真实证据。"""
 
+import hashlib
 from unittest import TestCase
 from unittest.mock import patch
 from uuid import uuid4
@@ -12,6 +13,69 @@ from tests import test_document_job_list_query_v2_service as service_fixtures
 
 
 class DocumentJobListPublishLightCheckTests(V2PublicationFixture, TestCase):
+    def test_publication_replay_preserves_one_protected_final_file(self):
+        for kind in ("file", "sqlite"):
+            with self.subTest(kind=kind), self.publication_runtime(kind=kind) as (
+                runtime, job, _, _, client, headers, _,
+            ):
+                repository = runtime.document_job_repository
+                files = runtime.document_file_repository
+                file = files.get_document_file(job.result_file_id)
+                original = runtime.file_upload_service.read_file_content(file)
+                checksum = "sha256:" + hashlib.sha256(original).hexdigest()
+                admin_headers = support.build_auth_header(client, "admin", "admin-pass")
+                base_url = f"/api/v1/document-jobs/{job.id}"
+                payload = {
+                    "request_id": str(uuid4()),
+                    "note": "首次批准交付",
+                    "expected_source": observed_publication_source(job, file).model_dump(mode="json"),
+                }
+                draft_delete = client.post(f"{base_url}/delete-preview", headers=admin_headers)
+                self.assertEqual(draft_delete.status_code, 200, draft_delete.text)
+                created = client.post(f"{base_url}/publish", headers=admin_headers, json=payload)
+                self.assertEqual(created.status_code, 201, created.text)
+                publication = created.json()["publication"]
+                publication_id = publication["publication_id"]
+                self.assertEqual((publication["result_file_id"], publication["result_sha256"]), (file.id, checksum))
+
+                replay = client.post(f"{base_url}/publish", headers=admin_headers, json=payload)
+                self.assertEqual(replay.status_code, 200, replay.text)
+                self.assertEqual(replay.json()["publication"], publication)
+                for changed, reason in (
+                    ({"note": "更改同一请求的交付备注"}, "publication_request_conflict"),
+                    ({"request_id": str(uuid4())}, "publication_already_exists"),
+                ):
+                    rejected = client.post(f"{base_url}/publish", headers=admin_headers, json={**payload, **changed})
+                    self.assertEqual(rejected.status_code, 409, rejected.text)
+                    self.assertEqual(rejected.json()["error"]["reason_code"], reason)
+
+                record, = repository.list_document_job_publications(job.id)
+                self.assertEqual((record.id, record.result_sha256), (publication_id, checksum))
+                current = repository.get_document_job(job.id)
+                self.assertEqual((current.current_publication_id, current.delivery_status), (record.id, "published"))
+                rejected_delete = client.post(f"{base_url}/delete", headers=admin_headers,
+                    json={"preview_hash": draft_delete.json()["preview_hash"]})
+                self.assertEqual(rejected_delete.status_code, 409, rejected_delete.text)
+                self.assertTrue(files.is_document_file_protected(file.id))
+                with self.assertRaisesRegex(ValueError, "不可变发布记录"):
+                    files.update_document_file(file.id, checksum_sha256="sha256:" + "0" * 64)
+                self.assertEqual(files.get_document_file(file.id), file)
+
+                archive = client.delete(base_url, headers=admin_headers)
+                self.assertEqual(archive.status_code, 200, archive.text)
+                self.assertEqual(archive.json()["job"]["delivery_status"], "published")
+                issued = client.get(f"{base_url}/publications/{publication_id}/download-url", headers=headers)
+                self.assertEqual(issued.status_code, 200, issued.text)
+                delivery = issued.json()
+                self.assertEqual(
+                    (delivery["publication_id"], delivery["result_file_id"], delivery["result_sha256"],
+                     delivery["classification"]),
+                    (publication_id, file.id, checksum, "final_delivery"),
+                )
+                download = client.get(delivery["download_url"])
+                self.assertEqual(download.status_code, 200, download.text[:300] if download.is_error else "")
+                self.assertEqual(download.content, original)
+
     def test_admin_list_skips_evidence_but_default_read_views_verify(self):
         for kind in ("file", "sqlite"):
             with self.subTest(kind=kind), self.publication_runtime(kind=kind) as (

@@ -16,8 +16,10 @@ from app.domains.translation.models import TranslationProviderRequest, Translati
 from app.domains.translation.modes import is_translation_mode, language_pair_for_translation_mode, normalize_translation_mode
 from app.domains.translation.provider import OpenAICompatibleTranslationProvider, TranslationProviderResponseError
 from app.domains.translation.provider_config import EffectiveAiProviderConfig
+from app.infrastructure.pdf_crop import PopplerPdfTableCropProvider
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset
+from app.services.document_ir.table_placeholder import PdfCropSource
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
 from app.services.renderer.block_evidence import WordRenderResult
 from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
@@ -30,7 +32,7 @@ LOCAL_SOURCE_FILE_ID = "local_mineru_input"
 
 @dataclass(frozen=True, slots=True)
 class FormalMinerUConversionRequest:
-    """正式 DocumentIR 转换核心的本地文件请求。"""
+    """正式 DocumentIR 转换核心的本地文件请求，裁图来源由调用者显式绑定。"""
 
     input_path: Path
     output_path: Path
@@ -51,6 +53,7 @@ class FormalMinerUConversionRequest:
     translation_max_chars: int = 60_000
     job_id: str = LOCAL_JOB_ID
     source_file_id: str = LOCAL_SOURCE_FILE_ID
+    placeholder_source: PdfCropSource | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +155,7 @@ def run_conversion(
     translation_max_chars: int = 60_000,
     translation_trace_output: str | None = None,
     job_id: str | None = None,
+    placeholder_source: PdfCropSource | None = None,
     **_ignored: Any,
 ) -> FormalMinerUConversionResult:
     """以兼容参数形状调用正式 DocumentIR renderer 的本地入口。"""
@@ -186,6 +190,7 @@ def run_conversion(
         translation_max_pages=max(1, int(translation_max_pages)),
         translation_max_chars=max(1, int(translation_max_chars)),
         job_id=str(job_id or LOCAL_JOB_ID),
+        placeholder_source=placeholder_source,
     )
     return convert_formal_mineru_package(request)
 
@@ -200,11 +205,16 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
 
     with tempfile.TemporaryDirectory(prefix="formal_local_mineru_") as temp_dir:
         zip_path = _materialize_mineru_zip(request.input_path, Path(temp_dir))
-        result = MinerUToDocumentIRService().convert_zip(
+        source = request.placeholder_source
+        converter = MinerUToDocumentIRService(
+            pdf_crop_provider=PopplerPdfTableCropProvider() if source is not None else None,
+        )
+        result = converter.convert_zip(
             zip_path,
             job_id=request.job_id,
             source_file_id=request.source_file_id,
             document_language=request.document_language,
+            placeholder_source_loader=(lambda: source) if source is not None else None,
         )
         source_document_ir = result.document
         document_ir = _translate_if_needed(source_document_ir, request)

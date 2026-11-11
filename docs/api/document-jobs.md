@@ -106,6 +106,16 @@ direct：uploaded → parsing → parsed → ir_converting
 
 质量、复核和交付状态（CON-103）分别为 `pending/passed/warning/blocked`、`unreviewed/approved/needs_fix/blocked`、`internal_draft/ready_to_publish/published`，摘要默认 `{}`。旧 QA 原值保留但未绑定当前结果时只作历史记录，不自动成为批准证据。合法成功主件可内部下载，`approved` 不授予发布资格；retry 新代、clone 或结果换件使旧证据失效。
 
+#### 质量、审核与正式交付的证据绑定
+
+| 对象 | 写入边界与可追溯性 |
+| --- | --- |
+| 质量结论 | 各质量生产者提交当前代次的归属贡献。后端按 `blocked > pending > warning > passed` 聚合。执行成功可以同时存在质量阻断，合法主件仍按内部草稿权限签发。 |
+| 审核记录 | 审核端口追加 `document-review/v1`，保存代次、主件、回执身份及审核时质量快照。结果或有效绑定变化时重新计算当前审核，已追加的记录仍保留。 |
+| 发布提交 | 内部 Admin 用户 JWT 提交 `request_id`、`note` 和 `expected_source`。新发布要求本代成功、质量 `passed/warning`、有效批准及确认过的预览、产物和配置证据。仓储原子保存 `document-publication/v1`、发布指针和文件保护。首次成功返回 `201`，同一请求与载荷重放返回原记录及 `200`。同一请求 ID 改载荷或对已发布结果发起新发布返回 `409`。 |
+| 交付投影 | `ready_to_publish` 表示按当前读入口观察到的发布资格。列表执行轻量检查，发布提交以实时证据为准。只有原子发布提交可设置 `published`。发布后归档只更新归档元数据，主件、快照和历史记录继续绑定原版本。 |
+| 最终下载 | `GET /api/v1/document-jobs/{job_id}/publications/{publication_id}/download-url` 按任务访问权限签发，最终下载再次验证当前发布指针、文件保护、对象身份、文件长度和 SHA-256。验证失败返回对应的错误，历史发布记录保持原值。 |
+
 恢复保留最终IR和资源快照，不重复已完成的解析或翻译。`quality_checking` 或尚未选定结果的 `uploading` 在现有replay触发时，可条件回到 `rendering` 重建丢失的字节并重新检查；恢复事件记录来源阶段，进度不下降。质量通过后，每次尝试先登记内部pending候选，再写独立对象路径；仓储原子选定第一份有效结果凭据，所有恢复者只登记其同一个文件并完成任务。已有凭据时不再重渲染、换件或重写对象。此机制不增加持续扫描器、租约或公开状态字段。
 
 候选不是用户主件。任务文件列表、按文件ID签发和技术Token消费均只允许合法完成任务的当前结果指针；pending、落选或取消后未绑定的候选不能下载。既有租户/公司/owner、Token签名/过期和文件有效期校验保持。自动发现legacy主件必须是唯一可核验的当前generation/最终IR文件；无generation、旧代、不同IR或矛盾多件不自动晋升。明确绑定的 `result_file_id` 按既有重试语义验证和复用，历史文件/审计保留。

@@ -19,7 +19,7 @@ from docx.image.image import Image as WordImage
 from pydantic import BaseModel, Field
 
 from app.conversion.docx_rules.mineru_content import (
-    classify_mineru_block, coerce_text_list, collect_text_from_fields, looks_like_asset_path,
+    MINERU_BLOCK_TEXT_RUN_FIELDS, classify_mineru_block, coerce_text_list, collect_text_from_fields, looks_like_asset_path,
     mineru_list_items, mineru_raw_text_preserving_lines, select_mineru_list_source, select_mineru_table_html,
     select_mineru_text_source,
 )
@@ -33,10 +33,10 @@ ALLOWED_RASTER_FORMATS = frozenset({"PNG", "JPEG", "GIF", "BMP", "TIFF", "WEBP"}
 # 可推迟到 converter 结算的页级问题：P0-4 图片回退与第三批整页降级。
 DEFERRABLE_ISSUE_CODES = frozenset({"missing_image_asset", "invalid_image_asset", "invalid_table_html"})
 SEMANTIC_TEXT_FIELDS = frozenset({"text", "latex", "math_content", "equation_content", "description", "alt"})
-SEMANTIC_RUN_FIELDS = frozenset({"title_content", "paragraph_content", "page_header_content", "page_footer_content", "page_number_content", "item_content"})
+SEMANTIC_RUN_FIELDS = frozenset({*MINERU_BLOCK_TEXT_RUN_FIELDS, "item_content"})
 ANNOTATION_FIELDS = frozenset({"caption", "footnote", "captions", "footnotes", "table_caption", "table_footnote",
                                "image_caption", "image_footnote", "chart_caption", "chart_footnote", "figure_caption", "figure_footnote"})
-KNOWN_SOURCE_TYPES = frozenset({"text", "paragraph", "para", "title", "heading", "header", "footer", "page_header", "page_footer",
+KNOWN_SOURCE_TYPES = frozenset({"text", "paragraph", "para", "title", "heading", "header", "footer", "page_header", "page_footer", "page_footnote",
                                "page_number", "table", "table_placeholder", "image", "chart", "figure", "list", "index",
                                "equation", "formula", "interline_equation", "inline_equation", "equation_interline"})
 REPORT_FIELD_NAMES = (SEMANTIC_TEXT_FIELDS | SEMANTIC_RUN_FIELDS | ANNOTATION_FIELDS | {

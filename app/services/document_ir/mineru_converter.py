@@ -225,7 +225,7 @@ class MinerUToDocumentIRService:
             source_type = str(raw_block.get("type") or raw_block.get("block_type") or "text").strip().lower()
             block_type = classify_mineru_block(raw_block, source_type)
             block_role = role_for_source_type(source_type)
-            if block_type == "paragraph" and block_role == "body" and source_type not in {"", "text", "paragraph", "para"}:
+            if block_type == "paragraph" and block_role == "body" and source_type not in {"", "text", "paragraph", "para", "page_footnote"}:
                 unsupported_types.add(raw_block["_mineru_source"]["source_type"])
             page_index = parse_page_index(raw_block)
             page_width = page_width_by_index.get(page_index)
@@ -475,7 +475,9 @@ class MinerUToDocumentIRService:
                  and len(raw_size) == 2 else None)
         crop_box = pdf_point_bbox(raw_block.get("bbox"), page)
         validate_geometry(page.index, crop_box, frame)
-        result = self.pdf_crop_provider.crop(PdfCropRequest(source, page.index, crop_box, frame))
+        result = self.pdf_crop_provider.crop(PdfCropRequest(
+            source, page.index, crop_box, frame, from_normalized_bbox=True,
+        ))
         if result.frame != frame:
             raise TablePlaceholderError("table_placeholder_geometry_invalid")
         validate_image(result.content)

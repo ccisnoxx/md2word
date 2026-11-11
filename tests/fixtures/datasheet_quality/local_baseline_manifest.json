@@ -1,0 +1,372 @@
+{
+  "schema_version": "datasheet-quality-local-plan/v1",
+  "annotation_version": "source-pdf-layout/v1",
+  "samples": [
+    {
+      "sample_id": "gs-003",
+      "title": "OPA228 P1",
+      "cohort": "opa228-reference",
+      "pdf_sha256": "87a2d0ce714c36f11d3afde48a0c95d1013dd93455ceab43f0538aff409386aa",
+      "content_list_v2_sha256": "73b97fdf26c2b2f51553d3d6152c196261842f7f03451552fda642ac7240c108",
+      "tables": [
+        {
+          "id": "device-information",
+          "source_pointers": [
+            "/0/12"
+          ],
+          "columns": 3,
+          "rows": 7,
+          "header_rows": [
+            0
+          ],
+          "merges": [
+            [
+              1,
+              0,
+              2,
+              1
+            ],
+            [
+              1,
+              1,
+              2,
+              1
+            ],
+            [
+              3,
+              0,
+              2,
+              1
+            ],
+            [
+              3,
+              1,
+              2,
+              1
+            ],
+            [
+              5,
+              0,
+              2,
+              1
+            ],
+            [
+              5,
+              1,
+              2,
+              1
+            ]
+          ],
+          "tokens": [
+            [
+              1,
+              0,
+              "model",
+              "OPA227"
+            ],
+            [
+              1,
+              0,
+              "model",
+              "OPA228"
+            ]
+          ]
+        }
+      ],
+      "visual": [
+        {
+          "id": "device-information-heading",
+          "source_page": 1,
+          "text": "Device Information"
+        }
+      ]
+    },
+    {
+      "sample_id": "gs-004",
+      "title": "OPA228 P2",
+      "cohort": "opa228-reference",
+      "pdf_sha256": "ca4c67cc140729a9d044007e803e14cb5e60d226d163b0204a388126c2286db4",
+      "content_list_v2_sha256": "8f6c48e0823d3bd5a1e330e9b52d0c9f77fe0271529a9065bae2a91068d207a3"
+    },
+    {
+      "sample_id": "gs-006",
+      "title": "OPA228 P6",
+      "cohort": "opa228-reference",
+      "pdf_sha256": "671568fbf10ddb9c3f94a5c33b18a56c8eee8b215aec3ff62a099680f7afe824",
+      "content_list_v2_sha256": "bf190e2d49d82e8d5dea7dc07e97fc5205c410033b0525a5fa26d13fbaf2b29e"
+    },
+    {
+      "sample_id": "gs-008",
+      "title": "OPA228 P7",
+      "cohort": "opa228-reference",
+      "pdf_sha256": "24f724cf0e795f6afeb6fec5c72ff8f144085c59d57fbf0a5c9efbf1808b1eb3",
+      "content_list_v2_sha256": "fdc0ea4050914df39ce7d3e9e42798164d32d1f04b82bd9dff4d2ffc1e9e98c3"
+    },
+    {
+      "sample_id": "gsx-sn74ac244",
+      "title": "TI SN54AC244/SN74AC244 SCAS514H",
+      "cohort": "extended",
+      "pdf_sha256": "158bc0aa0bb84d2a059367a111e1e349515cb10cb952fac9600cc3fb741088c3",
+      "content_list_v2_sha256": "5d40ccf0072bca0e597ddae28b3ac03d337f893e2a20e80341dc6b59f614bf81"
+    },
+    {
+      "sample_id": "gsx-rs2g04",
+      "title": "RS2G04 RevA.4",
+      "cohort": "extended",
+      "pdf_sha256": "52aad9f6373a02114a6418142dacfc3a7d844558e1c4be7c61b92b192cb34ece",
+      "content_list_v2_sha256": "b3d715a62015945bab6d3b43d330652de8b5f5624f234bcbf60f1578acd223be",
+      "tables": [
+        {
+          "id": "esd-ratings",
+          "source_pointers": [
+            "/5/4"
+          ],
+          "columns": 4,
+          "rows": 4,
+          "header_rows": [
+            0
+          ],
+          "merges": [
+            [
+              0,
+              0,
+              1,
+              2
+            ],
+            [
+              1,
+              0,
+              3,
+              1
+            ]
+          ],
+          "tokens": [
+            [
+              1,
+              2,
+              "number",
+              "±4000"
+            ],
+            [
+              2,
+              2,
+              "number",
+              "±1500"
+            ],
+            [
+              3,
+              2,
+              "number",
+              "±200"
+            ]
+          ]
+        }
+      ],
+      "visual": [
+        {
+          "id": "esd-ratings-heading",
+          "source_page": 6,
+          "text": "8.2 ESD Ratings"
+        }
+      ]
+    },
+    {
+      "sample_id": "gsx-sn74ac244-specs",
+      "title": "TI SN74AC244 SCAS514H 规格表页段",
+      "cohort": "extended",
+      "derived_from": "gsx-sn74ac244",
+      "source_pages": [
+        3,
+        6
+      ],
+      "pdf_sha256": "04c5b23af2877ebd686b032caa25c9f0d2ace7b123fb0d013c83cc562285fc74",
+      "content_list_v2_sha256": "ce67f934da47b4abbccd127fe20c9bd16193ea86dcd3b0ddcf02cb50667c6595",
+      "tables": [
+        {
+          "id": "recommended-operating-conditions",
+          "source_pointers": [
+            "/1/6"
+          ],
+          "columns": 8,
+          "rows": 19,
+          "header_rows": [
+            0,
+            1
+          ],
+          "merges": [
+            [
+              0,
+              0,
+              2,
+              3
+            ],
+            [
+              0,
+              3,
+              1,
+              2
+            ],
+            [
+              0,
+              5,
+              1,
+              2
+            ],
+            [
+              0,
+              7,
+              2,
+              1
+            ],
+            [
+              2,
+              1,
+              1,
+              2
+            ],
+            [
+              3,
+              0,
+              3,
+              1
+            ],
+            [
+              3,
+              1,
+              3,
+              1
+            ],
+            [
+              3,
+              7,
+              3,
+              1
+            ],
+            [
+              6,
+              0,
+              3,
+              1
+            ],
+            [
+              6,
+              1,
+              3,
+              1
+            ],
+            [
+              6,
+              7,
+              3,
+              1
+            ],
+            [
+              11,
+              0,
+              3,
+              1
+            ],
+            [
+              11,
+              1,
+              3,
+              1
+            ],
+            [
+              11,
+              7,
+              3,
+              1
+            ],
+            [
+              14,
+              0,
+              3,
+              1
+            ],
+            [
+              14,
+              1,
+              3,
+              1
+            ],
+            [
+              14,
+              7,
+              3,
+              1
+            ],
+            [
+              9,
+              1,
+              1,
+              2
+            ],
+            [
+              10,
+              1,
+              1,
+              2
+            ],
+            [
+              17,
+              1,
+              1,
+              2
+            ],
+            [
+              18,
+              1,
+              1,
+              2
+            ]
+          ],
+          "tokens": [
+            [
+              0,
+              3,
+              "model",
+              "SN54AC244"
+            ],
+            [
+              0,
+              5,
+              "model",
+              "SN74AC244"
+            ],
+            [
+              2,
+              7,
+              "unit",
+              "V"
+            ]
+          ]
+        }
+      ],
+      "visual": [
+        {
+          "id": "recommended-operating-conditions-heading",
+          "source_page": 2,
+          "text": "5.2 Recommended Operating Conditions"
+        }
+      ]
+    },
+    {
+      "sample_id": "gsx-sn74ac244-packaging",
+      "title": "TI SN74AC244 SCAS514H 跨页缺表 HTML 负例",
+      "cohort": "extended",
+      "derived_from": "gsx-sn74ac244",
+      "source_pages": [
+        11,
+        12
+      ],
+      "pdf_sha256": "3d23d7e9ae3da3607942bc6cdc4b705c32a0c27a6323d875c0562dbb198d024d",
+      "content_list_v2_sha256": "98273dedc954bdce4d0d461cda6c1ad00558624622394f0f660a1188be8ddde9",
+      "expected_blocker": {
+        "code": "table_noneditable_placeholder",
+        "scope": "/1/0",
+        "delivery_status": "internal_draft"
+      }
+    }
+  ]
+}

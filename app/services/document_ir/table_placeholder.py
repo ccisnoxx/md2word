@@ -76,6 +76,7 @@ class PdfCropRequest:
     page_index: int
     bbox: tuple[float, float, float, float]
     frame: tuple[float, float]
+    from_normalized_bbox: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,10 +193,13 @@ def prepare_placeholders(document, references, *, source_loader: Callable[[], Pd
                     frame = tuple(raw_size)
                 # 来源 bbox 是 MinerU 原始坐标（通常为 0–1000 归一化），裁切只接受换算后的 PDF 点；无法确认坐标空间时失败关闭。
                 # 绑定仍记录原始 span.bbox，解码时与来源片段逐值核对。
-                from app.services.document_ir.layout_signals import pdf_point_bbox
+                from app.services.document_ir.layout_signals import NORMALIZED_BBOX_SPACE, pdf_point_bbox
                 crop_box = pdf_point_bbox(span.bbox, page)
                 validate_geometry(span.page_index, crop_box, frame)
-                result = crop_provider.crop(PdfCropRequest(source, span.page_index, crop_box, frame))
+                result = crop_provider.crop(PdfCropRequest(
+                    source, span.page_index, crop_box, frame,
+                    from_normalized_bbox=page.metadata.get("bbox_coordinate_space") == NORMALIZED_BBOX_SPACE,
+                ))
                 if result.frame != frame or result.provider != "poppler-pdftoppm/v1":
                     raise TablePlaceholderError("table_placeholder_geometry_invalid")
                 content = result.content

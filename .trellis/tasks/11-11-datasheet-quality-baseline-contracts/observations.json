@@ -1,0 +1,489 @@
+{
+  "schema_version": "datasheet-quality-observations/v1",
+  "metadata": {
+    "manifest_sha256": "15b58c3f01ff6cff4e95532c40b80918af87f844ad42b71635d689bdd0bee74a",
+    "annotation_version": "source-pdf-layout/v1",
+    "git_commit": "0c9a7923a24591dcb2f7e3db370a75370ceceb65",
+    "tracked_code_diff_sha256": "5bdc1d790530aff94d98b752acc9ba269b0b0f6db7b045e0c03339970977b7c6",
+    "collector_sha256": "822a97394dc66b835169772fd6806191d4dd54a49e132b22268e74a713249e39",
+    "resource_sha256": {
+      "template_path": "7b3efd9ce7f19f19ed3a667d10d34995cc6a5b574b24abd85c52a23901577a88",
+      "layout_config_path": "132d0bb76e71c807912031199e894dfc0e3d50bd7534180f8ceaba7a5fa20b4d",
+      "subscript_config": "080166e1efc1907964183d6e877f30d1702714347b2992ec129b72192dfe8ae3"
+    },
+    "platform": "macOS-27.2.1-arm64-arm-64bit",
+    "python_version": "3.11.15",
+    "visual_tools": {
+      "soffice": "LibreOffice 26.2.4.2 0229ac93fcf0d7cbc6376066c6f35021cef002dc",
+      "pdftotext": "pdftotext version 26.06.0"
+    }
+  },
+  "plan": [
+    {
+      "sample_id": "gs-003",
+      "cohort": "opa228-reference",
+      "mode": "direct",
+      "evidence_level": "local_replay",
+      "expected_outcome": "normal",
+      "expected_tables": 1,
+      "expected_tokens": {
+        "model": 2
+      },
+      "expected_visual_pages": 1,
+      "expected_visual_regions": 1
+    },
+    {
+      "sample_id": "gs-004",
+      "cohort": "opa228-reference",
+      "mode": "direct",
+      "evidence_level": "local_replay",
+      "expected_outcome": "normal"
+    },
+    {
+      "sample_id": "gs-006",
+      "cohort": "opa228-reference",
+      "mode": "direct",
+      "evidence_level": "local_replay",
+      "expected_outcome": "normal"
+    },
+    {
+      "sample_id": "gs-008",
+      "cohort": "opa228-reference",
+      "mode": "direct",
+      "evidence_level": "local_replay",
+      "expected_outcome": "normal"
+    },
+    {
+      "sample_id": "gsx-sn74ac244",
+      "cohort": "extended",
+      "mode": "direct",
+      "evidence_level": "local_replay",
+      "expected_outcome": "normal"
+    },
+    {
+      "sample_id": "gsx-rs2g04",
+      "cohort": "extended",
+      "mode": "direct",
+      "evidence_level": "local_replay",
+      "expected_outcome": "normal",
+      "expected_tables": 1,
+      "expected_tokens": {
+        "number": 3
+      },
+      "expected_visual_pages": 1,
+      "expected_visual_regions": 1
+    },
+    {
+      "sample_id": "gsx-sn74ac244-specs",
+      "cohort": "extended",
+      "mode": "direct",
+      "evidence_level": "local_replay",
+      "expected_outcome": "normal",
+      "expected_tables": 1,
+      "expected_tokens": {
+        "model": 2,
+        "unit": 1
+      },
+      "expected_visual_pages": 1,
+      "expected_visual_regions": 1
+    },
+    {
+      "sample_id": "gsx-sn74ac244-packaging",
+      "cohort": "extended",
+      "mode": "direct",
+      "evidence_level": "local_replay",
+      "expected_outcome": "blocked",
+      "expected_blocker": {
+        "code": "table_noneditable_placeholder",
+        "scope": "/1/0",
+        "delivery_status": "internal_draft"
+      }
+    }
+  ],
+  "observations": [
+    {
+      "sample_id": "gs-003",
+      "mode": "direct",
+      "missing": {
+        "cost": "offline_replay_no_provider_invoice",
+        "edits": "no_human_signoff",
+        "review_time": "no_human_signoff"
+      },
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 0.179
+      },
+      "artifacts": {
+        "docx_sha256": "dbfb7c4c13631fa259f818750a1aca42f57191dc62c765b0848977c70fa4cda0",
+        "source_pages": 1,
+        "pdf_sha256": "87a2d0ce714c36f11d3afde48a0c95d1013dd93455ceab43f0538aff409386aa",
+        "content_list_v2_sha256": "73b97fdf26c2b2f51553d3d6152c196261842f7f03451552fda642ac7240c108",
+        "mineru_package_sha256": "bbe931458beb56fd2769f6f101f4023ad4eeb50f7d06cc95c4796f0eb3bd976c",
+        "table_quality_status": "passed",
+        "quality_flags": [
+          "docx_unstyled_heading_candidates:1"
+        ],
+        "table_placeholders": []
+      },
+      "table": {
+        "matched": 0,
+        "duplicate": 0,
+        "reasons": [
+          {
+            "id": "device-information",
+            "reason": "header_rows",
+            "actual_columns": 3,
+            "actual_rows": 7,
+            "actual_header_rows": [],
+            "source_grid_matches": false,
+            "source_header_rows": []
+          }
+        ]
+      },
+      "tokens": {
+        "matched": {
+          "model": 2
+        },
+        "assessed": {
+          "model": 2
+        },
+        "extras": {
+          "model": 0
+        },
+        "reasons": []
+      },
+      "visual": {
+        "matched_pages": 1,
+        "regions": [
+          {
+            "id": "device-information-heading",
+            "source_page": 1,
+            "result_page": 1,
+            "source_bbox": [
+              0.6374836601307189,
+              0.5919583333333334,
+              0.7845751633986928,
+              0.6060492424242424
+            ],
+            "result_bbox": [
+              0.6675581586150335,
+              0.8004679386979694,
+              0.7935089466744112,
+              0.8123982417251482
+            ]
+          }
+        ],
+        "reason": null
+      }
+    },
+    {
+      "sample_id": "gs-004",
+      "mode": "direct",
+      "missing": {
+        "cost": "offline_replay_no_provider_invoice",
+        "edits": "no_human_signoff",
+        "review_time": "no_human_signoff"
+      },
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 0.1182
+      },
+      "artifacts": {
+        "docx_sha256": "b18ac4afe5f4bf535852afc01e837b26bde8716decc9e199b42c35c3706d8141",
+        "source_pages": 1,
+        "pdf_sha256": "ca4c67cc140729a9d044007e803e14cb5e60d226d163b0204a388126c2286db4",
+        "content_list_v2_sha256": "8f6c48e0823d3bd5a1e330e9b52d0c9f77fe0271529a9065bae2a91068d207a3",
+        "mineru_package_sha256": "e5f652f921ea9319e22f140ea4ee8ec2f0e9b6300987fc9c5694442af37d46d6",
+        "table_quality_status": "passed",
+        "quality_flags": [],
+        "table_placeholders": []
+      }
+    },
+    {
+      "sample_id": "gs-006",
+      "mode": "direct",
+      "missing": {
+        "cost": "offline_replay_no_provider_invoice",
+        "edits": "no_human_signoff",
+        "review_time": "no_human_signoff"
+      },
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 0.2464
+      },
+      "artifacts": {
+        "docx_sha256": "9ef4d320d8cf0ce2e9d9d61ddb4863f4886e39e6db26d344cbe1bc6069ed00bb",
+        "source_pages": 1,
+        "pdf_sha256": "671568fbf10ddb9c3f94a5c33b18a56c8eee8b215aec3ff62a099680f7afe824",
+        "content_list_v2_sha256": "bf190e2d49d82e8d5dea7dc07e97fc5205c410033b0525a5fa26d13fbaf2b29e",
+        "mineru_package_sha256": "e04581febd7b1867d66556f3302fb14bf24681b7d54fa23489032e768fa6fec9",
+        "table_quality_status": "passed",
+        "quality_flags": [
+          "docx_unstyled_heading_candidates:3"
+        ],
+        "table_placeholders": []
+      }
+    },
+    {
+      "sample_id": "gs-008",
+      "mode": "direct",
+      "missing": {
+        "cost": "offline_replay_no_provider_invoice",
+        "edits": "no_human_signoff",
+        "review_time": "no_human_signoff"
+      },
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 0.255
+      },
+      "artifacts": {
+        "docx_sha256": "29a3acd0a3c808100afe3b14256a6087a0a4949b021a121edb1697349ec48c85",
+        "source_pages": 1,
+        "pdf_sha256": "24f724cf0e795f6afeb6fec5c72ff8f144085c59d57fbf0a5c9efbf1808b1eb3",
+        "content_list_v2_sha256": "fdc0ea4050914df39ce7d3e9e42798164d32d1f04b82bd9dff4d2ffc1e9e98c3",
+        "mineru_package_sha256": "17844feac6ba90a8e140e30cd1bdbc71dcd67724db5c3d95bc2d91d714201486",
+        "table_quality_status": "passed",
+        "quality_flags": [],
+        "table_placeholders": []
+      }
+    },
+    {
+      "sample_id": "gsx-sn74ac244",
+      "mode": "direct",
+      "missing": {
+        "cost": "offline_replay_no_provider_invoice",
+        "edits": "no_human_signoff",
+        "review_time": "no_human_signoff"
+      },
+      "conversion": {
+        "status": "failed",
+        "reason": "ir_render_evidence:target_mismatch"
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 1.3866
+      }
+    },
+    {
+      "sample_id": "gsx-rs2g04",
+      "mode": "direct",
+      "missing": {
+        "cost": "offline_replay_no_provider_invoice",
+        "edits": "no_human_signoff",
+        "review_time": "no_human_signoff"
+      },
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 1.419
+      },
+      "artifacts": {
+        "docx_sha256": "6f0abe8d738d824361372a3d2ba6c2b76384d66cb6a9bf8e2d428765ca1da343",
+        "source_pages": 13,
+        "pdf_sha256": "52aad9f6373a02114a6418142dacfc3a7d844558e1c4be7c61b92b192cb34ece",
+        "content_list_v2_sha256": "b3d715a62015945bab6d3b43d330652de8b5f5624f234bcbf60f1578acd223be",
+        "mineru_package_sha256": "cb25187cbf40636b9c19b783b77d1ffb0d6972b572fd29c4f86080d307f0b339",
+        "table_quality_status": "passed",
+        "quality_flags": [
+          "docx_unstyled_heading_candidates:6",
+          "formula_text_fallback",
+          "image_group_uncertain"
+        ],
+        "table_placeholders": []
+      },
+      "table": {
+        "matched": 0,
+        "duplicate": 0,
+        "reasons": [
+          {
+            "id": "esd-ratings",
+            "reason": "header_rows",
+            "actual_columns": 4,
+            "actual_rows": 4,
+            "actual_header_rows": [],
+            "source_grid_matches": false,
+            "source_header_rows": []
+          }
+        ]
+      },
+      "tokens": {
+        "matched": {
+          "number": 3
+        },
+        "assessed": {
+          "number": 3
+        },
+        "extras": {
+          "number": 0
+        },
+        "reasons": []
+      },
+      "visual": {
+        "matched_pages": 1,
+        "regions": [
+          {
+            "id": "esd-ratings-heading",
+            "source_page": 6,
+            "result_page": 7,
+            "source_bbox": [
+              0.102,
+              0.5051338383838383,
+              0.2417058823529412,
+              0.5230429292929293
+            ],
+            "result_bbox": [
+              0.06971228883372897,
+              0.6954541901283884,
+              0.21127191033510667,
+              0.7100356716060512
+            ]
+          }
+        ],
+        "reason": null
+      }
+    },
+    {
+      "sample_id": "gsx-sn74ac244-specs",
+      "mode": "direct",
+      "missing": {
+        "cost": "offline_replay_no_provider_invoice",
+        "edits": "no_human_signoff",
+        "review_time": "no_human_signoff"
+      },
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 1.1941
+      },
+      "artifacts": {
+        "docx_sha256": "0d983d1d8ecea00c5b0b45414cf5224fc7a781325982dfdc7a35229feb5b38c7",
+        "source_pages": 4,
+        "pdf_sha256": "04c5b23af2877ebd686b032caa25c9f0d2ace7b123fb0d013c83cc562285fc74",
+        "content_list_v2_sha256": "ce67f934da47b4abbccd127fe20c9bd16193ea86dcd3b0ddcf02cb50667c6595",
+        "mineru_package_sha256": "5948c56f58e12be24a6c4501753abdaacdf436f9a07befb396c618114042d833",
+        "table_quality_status": "passed",
+        "quality_flags": [
+          "formula_text_fallback",
+          "image_group_uncertain"
+        ],
+        "table_placeholders": []
+      },
+      "table": {
+        "matched": 0,
+        "duplicate": 0,
+        "reasons": [
+          {
+            "id": "recommended-operating-conditions",
+            "reason": "header_rows",
+            "actual_columns": 8,
+            "actual_rows": 19,
+            "actual_header_rows": [],
+            "source_grid_matches": false,
+            "source_header_rows": []
+          }
+        ]
+      },
+      "tokens": {
+        "matched": {
+          "model": 2,
+          "unit": 1
+        },
+        "assessed": {
+          "model": 2,
+          "unit": 1
+        },
+        "extras": {
+          "model": 0,
+          "unit": 0
+        },
+        "reasons": []
+      },
+      "visual": {
+        "matched_pages": 1,
+        "regions": [
+          {
+            "id": "recommended-operating-conditions-heading",
+            "source_page": 2,
+            "result_page": 2,
+            "source_bbox": [
+              0.09263562091503268,
+              0.38123611111111116,
+              0.44019607843137254,
+              0.39673611111111107
+            ],
+            "result_bbox": [
+              0.06971228883372897,
+              0.603577553414701,
+              0.4267803120542776,
+              0.6181590348923639
+            ]
+          }
+        ],
+        "reason": null
+      }
+    },
+    {
+      "sample_id": "gsx-sn74ac244-packaging",
+      "mode": "direct",
+      "missing": {
+        "cost": "offline_replay_no_provider_invoice",
+        "edits": "no_human_signoff",
+        "review_time": "no_human_signoff",
+        "blocker": "delivery_not_observed_in_local_replay"
+      },
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 0.7707
+      },
+      "artifacts": {
+        "docx_sha256": "67f6d8925143fbf955d26ae5e68eeedb104002ae160008f696ccdaba22b378c6",
+        "source_pages": 2,
+        "pdf_sha256": "3d23d7e9ae3da3607942bc6cdc4b705c32a0c27a6323d875c0562dbb198d024d",
+        "content_list_v2_sha256": "98273dedc954bdce4d0d461cda6c1ad00558624622394f0f660a1188be8ddde9",
+        "mineru_package_sha256": "50ae05f2f5e53a54cfc6b05600a33f42cf43a2d66cfa906ec4ef237988ee4f92",
+        "table_quality_status": "blocked",
+        "quality_flags": [],
+        "table_placeholders": [
+          {
+            "source_pointer": "/1/0",
+            "source_kind": "source_pdf_crop",
+            "issue_code": "table_noneditable_placeholder"
+          }
+        ]
+      }
+    }
+  ]
+}
