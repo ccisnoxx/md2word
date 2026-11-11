@@ -1,0 +1,2110 @@
+{
+  "date": "2026-11-10",
+  "source_head": "d45e46e1233c3f173fa1d738cf75b3ef7a393eb9",
+  "index_entries_sha256": "1552991ae88d79c5b5fbc5c839b62cc3ea57eb7f7c800c455dea435c64344e31",
+  "snapshot_scope": "实施前当前工作区；原正文副本仅在本机临时目录用于逐文件差异复核",
+  "documents": [
+    {
+      "path": "DOCUMENTATION-MANIFEST.md",
+      "proposed_batch": "B1",
+      "sha256": "0ed1cdb46f16bb90b47cb58f4f0c8266f5ca59ce1fdcffefc1cb39374ef0b0af",
+      "body_sha256": "0ed1cdb46f16bb90b47cb58f4f0c8266f5ca59ce1fdcffefc1cb39374ef0b0af",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "README.md",
+      "proposed_batch": "B1",
+      "sha256": "a19626a1912481c75ccd31ee624fd158d5efa339b3002ddf667b9f9abd49a28d",
+      "body_sha256": "a19626a1912481c75ccd31ee624fd158d5efa339b3002ddf667b9f9abd49a28d",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docker/README.md",
+      "proposed_batch": "B1",
+      "sha256": "9094a9d26e6ebb4de5126d1bce81819d03f55f2fa4bb2d39ce83a23cbc4d7091",
+      "body_sha256": "9094a9d26e6ebb4de5126d1bce81819d03f55f2fa4bb2d39ce83a23cbc4d7091",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/README.md",
+      "proposed_batch": "B1",
+      "sha256": "bffc01f46dff8ad76fcfdc15ff2e2f56b61f4dcddd4a8f838f3a72b92f984b5f",
+      "body_sha256": "bffc01f46dff8ad76fcfdc15ff2e2f56b61f4dcddd4a8f838f3a72b92f984b5f",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/acceptance.md",
+      "proposed_batch": "B3",
+      "sha256": "7108b1d94222cc70816b9bdacd924f60262d8d3ca37706fdda726efe96896c33",
+      "body_sha256": "c602e664bb10f7784fa0d12fac8536295b204e5fecebd755c50188cfaa048bde",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "acceptance",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/acceptance/router.py",
+          "app/domains/acceptance/schemas.py",
+          "app/domains/acceptance/service.py",
+          "app/domains/acceptance/repository.py",
+          "app/domains/acceptance/defaults.py"
+        ],
+        "summary": "Acceptance API 提供 Admin-only P0/P1/P2 验收证据摘要、最新状态派生和复核记录。",
+        "tags": [
+          "acceptance",
+          "ops",
+          "api",
+          "admin"
+        ],
+        "last_reviewed": "2026-06-21"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/auth.md",
+      "proposed_batch": "B3",
+      "sha256": "bae2a610ff791ed8f2f16b3fcfb21e9e95bda2e327e3906c830da2216e34703b",
+      "body_sha256": "5f36a2d4c8c9b5a13d7833212956d80b3c31c5038d80302a81ba08382c9c4a00",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "auth",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/api/v1/routers/auth.py",
+          "app/api/v1/routers/auth_schemas.py",
+          "app/services/auth/service.py",
+          "app/services/auth/permissions.py"
+        ],
+        "summary": "Auth API 提供内部账号登录、当前用户查询和当前用户自助修改密码。",
+        "tags": [
+          "auth",
+          "users",
+          "api"
+        ],
+        "last_reviewed": "2026-06-21"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/config-workbench.md",
+      "proposed_batch": "B3",
+      "sha256": "85a21b204a0b7361cea9a536ee2f262b23a66d073d8ae0ab590849146cbb7317",
+      "body_sha256": "05115b0cd9d251b6789697e1bf87171dc3bb746699c94d0a8731a48332c3f6d4",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "config-workbench",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/config_workbench/router.py",
+          "app/domains/config_workbench/schemas.py",
+          "app/domains/config_workbench/summary.py",
+          "app/services/health_service.py"
+        ],
+        "summary": "Config Workbench API 为配置中心提供只读总览、发布门禁和按组深度检查。",
+        "tags": [
+          "config",
+          "governance",
+          "api",
+          "readiness"
+        ],
+        "last_reviewed": "2026-06-10"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/document-jobs.md",
+      "proposed_batch": "B3",
+      "sha256": "ef5bfbb5f81c29e4dba48b35b213ed3332367fbe1ab1f19eaab32b5c8fc23da0",
+      "body_sha256": "411409254476d64cc329345953c819d56334acf3f8f9ae6ff1c7e692fff1980b",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "document-jobs",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/document_jobs/router.py",
+          "app/domains/document_jobs/schemas.py",
+          "app/domains/document_jobs/models.py",
+          "app/domains/document_jobs/service.py",
+          "app/domains/document_jobs/execution.py"
+        ],
+        "summary": "Document Jobs API 提供 P0 PDF -> Word 任务创建、查询、事件、重试、clone、取消、归档、删除和下载入口。",
+        "tags": [
+          "document-jobs",
+          "api",
+          "pdf",
+          "word"
+        ],
+        "last_reviewed": "2026-10-22"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/files.md",
+      "proposed_batch": "B3",
+      "sha256": "dcfc5a4b27d921be9011d90101fd487ea6bde3e62257d4f7ea510c953128888a",
+      "body_sha256": "18d9f0921485ba7b9b3ea21396e57c930f578bb3558e730a737994cb951f58db",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "files",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/files/router.py",
+          "app/domains/files/schemas.py",
+          "app/domains/files/models.py",
+          "app/domains/files/cleanup_lock.py",
+          "app/domains/files/library_search.py",
+          "app/domains/files/retention.py",
+          "app/domains/files/cleanup_execution.py",
+          "app/domains/files/cleanup_history.py",
+          "app/domains/files/scheduled_cleanup.py",
+          "app/domains/files/quota_policy.py",
+          "app/domains/files/storage_usage.py",
+          "app/domains/files/service.py"
+        ],
+        "summary": "Files API 提供 PDF 上传授权、后端代理上传、文件 metadata 查询、Admin-only 文件库搜索、metadata 保留期管理、quota policy dry-run、受保护的过期文件物理删除、signed cleanup run 执行合同、手动 scheduler dry-run 和 durable run history。",
+        "tags": [
+          "files",
+          "api",
+          "pdf",
+          "upload",
+          "retention",
+          "search",
+          "quota"
+        ],
+        "last_reviewed": "2026-06-07"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/health.md",
+      "proposed_batch": "B3",
+      "sha256": "1fb1248d7cda91ee47bfea9f81f7403fdba4822307cbee51046579474f7a9128",
+      "body_sha256": "064a2965034f3e3f331cd557e6ca72142e164a80dcf18a2711dd11bc83670971",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "health",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/api/v1/routers/health.py",
+          "app/api/v1/routers/health_schemas.py",
+          "app/services/health_service.py"
+        ],
+        "summary": "Health API 提供 liveness、readiness、运行时依赖状态检查、JSON metrics 和 Admin-only 运维告警 readiness。",
+        "tags": [
+          "health",
+          "api",
+          "ops"
+        ],
+        "last_reviewed": "2026-06-06"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/jobs.md",
+      "proposed_batch": "B3",
+      "sha256": "4e6cf9fe84764048984588b7b0e62081d63f447ed97f681b330059c75b939015",
+      "body_sha256": "0a3b36c353b7f853b55f1ecea6dd644d7e441768d2f8ece0ba0126b32f358dd4",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "jobs",
+        "category": "endpoint",
+        "status": "removed",
+        "source_files": [
+          "app/api/v1/router.py",
+          "docs/api/openapi.json"
+        ],
+        "summary": "Legacy `/api/v1/jobs` endpoint family has been removed from the public v1 API. Use Files + Document Jobs instead.",
+        "tags": [
+          "jobs",
+          "api",
+          "legacy",
+          "removed"
+        ],
+        "last_reviewed": "2026-06-11"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/manifest.yaml",
+      "proposed_batch": "B3",
+      "sha256": "d593caf8f33bf42e0be774065edf79f8aef3a4ce775cb24d0cd564b8bb9b929d",
+      "body_sha256": "d593caf8f33bf42e0be774065edf79f8aef3a4ce775cb24d0cd564b8bb9b929d",
+      "original_fields": {
+        "doc_type": "api-manifest",
+        "status": "current",
+        "project": "md2word_file",
+        "entry_type": "endpoint",
+        "source_root": "app",
+        "last_scanned": "2026-07-10",
+        "openapi": {
+          "doc_path": "docs/api/openapi.json",
+          "generated_by": "scripts/ops/export_openapi.py",
+          "release_check": ".venv/bin/python scripts/ops/check_release.py",
+          "status": "current",
+          "note": "提交版 OpenAPI JSON 快照；发布前检查必须与当前代码生成结果一致。"
+        },
+        "guides": [
+          {
+            "slug": "backend-dev-docs-index",
+            "category": "dev-guide",
+            "doc_path": "docs/dev/backend-dev-docs-index.md",
+            "status": "current",
+            "note": "后端开发文档索引页。"
+          },
+          {
+            "slug": "backend-local-setup-and-architecture",
+            "category": "dev-guide",
+            "doc_path": "docs/dev/backend-local-setup-and-architecture.md",
+            "status": "current",
+            "note": "后端最小架构和本地启动说明。"
+          },
+          {
+            "slug": "backend-architecture-baseline-and-issues",
+            "category": "dev-guide",
+            "doc_path": "docs/dev/backend-architecture-baseline-and-issues.md",
+            "status": "draft",
+            "note": "后端现状架构基线、job 生命周期视图和优先级问题清单。"
+          },
+          {
+            "slug": "backend-pdf-online-completion-change-summary",
+            "category": "dev-guide",
+            "doc_path": "docs/dev/backend-pdf-online-completion-change-summary.md",
+            "status": "current",
+            "note": "PDF 在线链路从 callback 停在 parsed 演进到自动 completed 的对外变更摘要与已拍板 API 选择。"
+          },
+          {
+            "slug": "backend-local-minimal-env-and-commands",
+            "category": "dev-guide",
+            "doc_path": "docs/dev/backend-local-minimal-env-and-commands.md",
+            "status": "current",
+            "note": "本地最小 .env 和启动命令速查版。"
+          },
+          {
+            "slug": "runtime-observability-and-health",
+            "category": "dev-guide",
+            "doc_path": "docs/dev/runtime-observability-and-health.md",
+            "status": "current",
+            "note": "日志分层、health readiness 和 JSON metrics 说明。"
+          },
+          {
+            "slug": "term-rule-set-versioning-guide",
+            "category": "dev-guide",
+            "doc_path": "docs/dev/term-rule-set-versioning-guide.md",
+            "status": "current",
+            "note": "Term Rule Set 草稿、发布、设默认和回滚使用指南。"
+          },
+          {
+            "slug": "term-assets-sql-versioning",
+            "category": "dev-guide",
+            "doc_path": "docs/dev/term-assets-sql-versioning.md",
+            "status": "approved",
+            "note": "术语规则和翻译术语 SQL 唯一真源、proposal、版本发布、job 绑定和导入导出设计。"
+          },
+          {
+            "slug": "term-assets-sql-versioning-tasks",
+            "category": "implementation-plan",
+            "doc_path": "docs/dev/term-assets-sql-versioning-tasks.md",
+            "status": "approved",
+            "note": "术语资产 SQL 版本化实施任务清单。"
+          },
+          {
+            "slug": "translation-profile-and-segment-trace-guide",
+            "category": "dev-guide",
+            "doc_path": "docs/dev/translation-profile-and-segment-trace-guide.md",
+            "status": "current",
+            "note": "Translation Profile 草稿、发布、设默认、回滚和 translation_trace 读取指南。"
+          },
+          {
+            "slug": "backend-design-implementation-plan",
+            "category": "dev-guide",
+            "doc_path": "docs/dev/backend-design-implementation-plan.md",
+            "status": "draft",
+            "note": "后端设计分阶段实现计划。"
+          },
+          {
+            "slug": "runbook",
+            "category": "dev-guide",
+            "doc_path": "docs/runbooks/backend.md",
+            "status": "current",
+            "note": "本地运维与联调 runbook。"
+          },
+          {
+            "slug": "openapi-export",
+            "category": "ops-script",
+            "doc_path": "scripts/ops/export_openapi.py",
+            "status": "current",
+            "note": "OpenAPI 快照导出和发布前一致性检查脚本。"
+          },
+          {
+            "slug": "release-check",
+            "category": "ops-script",
+            "doc_path": "scripts/ops/check_release.py",
+            "status": "current",
+            "note": "发布前聚合检查入口；当前包含 OpenAPI 快照一致性和 targeted unittest smoke。"
+          }
+        ]
+      },
+      "business_sha256": "ba07cb8a8e8ccf498558fffb8556223ddc2a619dfc32c827cddf99885f6b80e2"
+    },
+    {
+      "path": "docs/api/mineru-callbacks.md",
+      "proposed_batch": "B3",
+      "sha256": "bde29f985a87f7fc19be3a3bf8d715654b9fdc80a2cb2a7eea29b403a8315bc3",
+      "body_sha256": "edb52ea26f6b615fdc3bf1865b9f2d73bd47d5ea1f0a2f1d3bc205a65fea4753",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "mineru-callbacks",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/jobs/mineru_callbacks_router.py",
+          "app/api/dependencies.py",
+          "app/api/mineru_callback_guards.py",
+          "app/clients/mineru_result_url.py",
+          "app/clients/mineru_client.py",
+          "app/domains/document_jobs/execution.py",
+          "app/domains/document_jobs/schemas.py",
+          "app/core/config.py"
+        ],
+        "summary": "MinerU callback API 提供 document_jobs 的 callback ingress、payload 归一化、checksum 验签和结果 URL 安全校验。",
+        "tags": [
+          "mineru",
+          "callback",
+          "api",
+          "guards"
+        ],
+        "last_reviewed": "2026-11-06"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/mineru-config.md",
+      "proposed_batch": "B3",
+      "sha256": "7710e3f68d7e561e76e37c8462c6869c21f62c4b8844e76810f8494e9d23231f",
+      "body_sha256": "ee4c7a33a8f92c226c10fc51299aa5d9e5605ac5f299d84dcbf492fd78bbbad7",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "mineru-config",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/mineru/config.py",
+          "app/domains/mineru/router.py",
+          "app/domains/mineru/schemas.py"
+        ],
+        "summary": "管理员读取 MinerU 账号与密钥安全状态并原子轮换运行时绑定。",
+        "tags": [
+          "config",
+          "mineru",
+          "secret",
+          "admin"
+        ],
+        "last_reviewed": "2026-07-10"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/ops.md",
+      "proposed_batch": "B3",
+      "sha256": "4d7f12dce6faf29cb3b721f4534e78abcbf2734cd86f129ae1fd80cad3a8fdf9",
+      "body_sha256": "4d7f12dce6faf29cb3b721f4534e78abcbf2734cd86f129ae1fd80cad3a8fdf9",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/templates.md",
+      "proposed_batch": "B3",
+      "sha256": "c8239460b086e64cf2627f1bd87da24998076e65d429b23e98c2dbbc483e40b1",
+      "body_sha256": "e7fb3bb3adfb631c5755e3d0222bc9f8c4c630fdd1ba8f1de79d220542d238e7",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "templates",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/templates/router.py",
+          "app/api/dependencies.py",
+          "app/domains/audit/models.py",
+          "app/domains/audit/service.py",
+          "app/domains/templates/read_service.py",
+          "app/domains/templates/layout_config_schema.py",
+          "app/domains/resources/service.py",
+          "app/domains/templates/schemas.py"
+        ],
+        "summary": "Templates API 提供多模板清单、详情、下载、默认模板切换、模板 CRUD、文件替换、版式配置 draft version、Template Version 发布管理和成功动作审计。",
+        "tags": [
+          "templates",
+          "api",
+          "manifest",
+          "audit"
+        ],
+        "last_reviewed": "2026-07-11"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/term-rule-categories.md",
+      "proposed_batch": "B3",
+      "sha256": "28c0890488ee0ce068c02609f162c8b6fd0086478fdeb1a450db5ced5cfa1109",
+      "body_sha256": "be85b2cf533e5e74772ee032e2e63c77700977eb0c7097466ba954033e731a5d",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "term-rule-categories",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/term_rules/categories_router.py",
+          "app/domains/term_rules/write_guard.py",
+          "app/domains/term_rules/service.py",
+          "app/domains/term_rules/file_repository.py",
+          "app/domains/term_rules/schemas.py"
+        ],
+        "summary": "Term-rule-categories API 提供分类元数据、规则计数和分类增量写接口；MySQL versioned mode 下写入交给 Term Rule Set 发布流程。",
+        "tags": [
+          "term-rules",
+          "categories",
+          "api"
+        ],
+        "last_reviewed": "2026-05-31"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/term-rule-sets.md",
+      "proposed_batch": "B3",
+      "sha256": "67fcf9d836d2f601d1558d30b56d9d8308983eca46b9488015888896a8047a09",
+      "body_sha256": "1e7d050db3f8be886c7ebe74bcba1e7fcb5ed5fd445d401880948012ffd0233f",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "term-rule-sets",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/term_rules/sets_router.py",
+          "app/domains/term_rules/write_guard.py",
+          "app/api/dependencies.py",
+          "app/domains/audit/models.py",
+          "app/domains/audit/service.py",
+          "app/domains/term_rules/versioning_service.py",
+          "app/domains/resources/service.py",
+          "app/domains/term_rules/schemas.py"
+        ],
+        "summary": "Term-rule-sets API 在 MySQL resource service 下提供术语规则集 draft、结构化 draft rule CRUD、diff/preflight、import/export、publish、set-default、rollback 和成功动作审计。",
+        "tags": [
+          "term-rules",
+          "resource-versioning",
+          "api",
+          "audit"
+        ],
+        "last_reviewed": "2026-06-21"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/term-rules.md",
+      "proposed_batch": "B3",
+      "sha256": "1a9c1c03bcb6a27be0fc36599971b247f35f06b0365613432e8a510d98d4c3d7",
+      "body_sha256": "78f9a5acebb3657e8a0cb09e9cf845634148835ddbef096c84722915f760d04e",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "term-rules",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/term_rules/router.py",
+          "app/domains/term_rules/proposals_router.py",
+          "app/domains/term_rules/proposals_service.py",
+          "app/domains/term_rules/write_guard.py",
+          "app/domains/term_rules/service.py",
+          "app/domains/term_rules/import_validation.py",
+          "app/domains/term_rules/sync_files.py",
+          "app/domains/term_rules/yaml_codec.py",
+          "app/domains/term_rules/file_repository.py",
+          "app/domains/term_rules/schemas.py"
+        ],
+        "summary": "Term-rules API 以 v2 manifest 为版本化 seed，以 live runtime store 为可变真源，并在 MySQL versioned mode 下把写入交给 Term Rule Set 发布流程。",
+        "tags": [
+          "term-rules",
+          "api",
+          "runtime-store"
+        ],
+        "last_reviewed": "2026-06-04"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/translation-profiles.md",
+      "proposed_batch": "B3",
+      "sha256": "9eeb69cc405f224768217a2e8cf1adaebd1883260334c7d9357f5050ef5707e7",
+      "body_sha256": "1eb4b2ba505754649ae7267b9237f9a10780dce26fdda16c20263e8cbf5cdf8e",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "translation-profiles",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/translation/router.py",
+          "app/api/dependencies.py",
+          "app/domains/audit/models.py",
+          "app/domains/audit/service.py",
+          "app/domains/translation/profiles_service.py",
+          "app/domains/resources/service.py",
+          "app/domains/translation/schemas.py"
+        ],
+        "summary": "Translation Profiles API 在 MySQL resource service 下提供翻译配置与命名 Prompt 的草稿编辑、发布、默认切换、回滚和成功动作审计。",
+        "tags": [
+          "translation",
+          "resource-versioning",
+          "api",
+          "audit"
+        ],
+        "last_reviewed": "2026-07-23"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/translation-term-proposals.md",
+      "proposed_batch": "B3",
+      "sha256": "d27e3986b3f5edb536295c12924e271e8084c0dd051cf17509f890e161b64395",
+      "body_sha256": "9df38100dbee81b404ed0c2843f165ac6bfec35738498e4aef11024dc8cb5629",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "translation-term-proposals",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/translation/proposals_router.py",
+          "app/api/dependencies.py",
+          "app/domains/audit/models.py",
+          "app/domains/audit/service.py",
+          "app/domains/translation/proposals_service.py",
+          "app/domains/translation/term_set_version_service.py",
+          "app/domains/translation/repository.py",
+          "app/domains/translation/schemas.py"
+        ],
+        "summary": "Translation Term Proposals API 提供 operator 翻译术语建议提交、admin 审核、拒绝和一键审核发布。",
+        "tags": [
+          "translation",
+          "terminology",
+          "proposal",
+          "api",
+          "audit"
+        ],
+        "last_reviewed": "2026-06-02"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/translation-term-sets.md",
+      "proposed_batch": "B3",
+      "sha256": "4b244f6b4bdbf4ff2c32c135dc89a424e349a40062d58fe042d84d20f7d714e6",
+      "body_sha256": "a331ea528ac36577c1817fc0ea219e88552a8c1b11b12ac3d986c618bcfe604a",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "translation-term-sets",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/translation/sets_router.py",
+          "app/api/dependencies.py",
+          "app/domains/audit/models.py",
+          "app/domains/audit/service.py",
+          "app/domains/translation/term_set_version_service.py",
+          "app/domains/translation/repository.py",
+          "app/domains/translation/schemas.py"
+        ],
+        "summary": "Translation Term Sets API 在 MySQL resource service 下提供翻译术语 CSV 导入、导出和版本化默认集管理。",
+        "tags": [
+          "translation",
+          "terminology",
+          "resource-versioning",
+          "api",
+          "audit"
+        ],
+        "last_reviewed": "2026-06-04"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/api/users.md",
+      "proposed_batch": "B3",
+      "sha256": "2df56ba0f1e53bbffeb14109e580806fdc074c567665e5c8c794d7ad0b19c985",
+      "body_sha256": "66152d4d64134cda05113c0e08471d8eccce10025075e7779769e4807e89c5c6",
+      "original_fields": {
+        "doc_type": "lib-api-ref",
+        "entry": "users",
+        "category": "endpoint",
+        "status": "current",
+        "source_files": [
+          "app/api/v1/router.py",
+          "app/domains/users/router.py",
+          "app/domains/users/schemas.py",
+          "app/domains/users/service.py",
+          "app/domains/users/repository.py",
+          "app/services/auth/service.py"
+        ],
+        "summary": "Users API 提供 Admin-only 托管内部用户生命周期管理。",
+        "tags": [
+          "users",
+          "auth",
+          "api",
+          "admin"
+        ],
+        "last_reviewed": "2026-06-21"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/architecture/business-architecture.md",
+      "proposed_batch": "B2",
+      "sha256": "615e5fab8070ae88e5c2ea5de235b8301aeed5b6a0589b8d35904fec0a5a358c",
+      "body_sha256": "253d91bb5384bc9dd70c711caf878d58dc56084cf469ca6743eb95d61272168e",
+      "original_fields": {
+        "doc_type": "business-architecture",
+        "status": "target",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/architecture/domain-model.md",
+      "proposed_batch": "B2",
+      "sha256": "a988ea1e062e612bf00dfee7f93792b5a92dcd47c0d3a66042d0d0775f2c963e",
+      "body_sha256": "9d7cdce57d1ea5ea400e7f37bb27f76467ebbaf6ff73ddc117727c8eec0ead71",
+      "original_fields": {
+        "doc_type": "domain-model",
+        "status": "target",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/architecture/system-architecture.md",
+      "proposed_batch": "B2",
+      "sha256": "55197878ae79849b183169773d088e05d52eef01fd2d938040ea30ae85e086cf",
+      "body_sha256": "f8b0fd2a7aee4df4a99cca8c15aae570dcbd5a73e6fd9af1b26518f27da00b1a",
+      "original_fields": {
+        "doc_type": "system-architecture",
+        "status": "target-with-current-baseline",
+        "baseline_commit": "e51e6ccd129f59d1b372dfc6907def1fd6bb5cd8",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/architecture/technology-stack.md",
+      "proposed_batch": "B2",
+      "sha256": "50eb3aca562b356abb44bd3d5a004c7f2d6cc0e732badbaf6c380b9299b5e2b1",
+      "body_sha256": "2fd46451ef50ee0b228ccec46a56db01e1641b6676bae02da66bc99a3daaf0ec",
+      "original_fields": {
+        "doc_type": "technology-stack",
+        "status": "current-and-target",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/architecture/workflows-and-state-machines.md",
+      "proposed_batch": "B2",
+      "sha256": "3b334b856c26104e44c58ac0a38efb27a15272e7cd3d61417c534c6ce064def1",
+      "body_sha256": "5c9be5a08f77a06dbe04af1c6013452a69caf6b15477700fb0e857c7fc2c120e",
+      "original_fields": {
+        "doc_type": "workflow-spec",
+        "status": "target",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/contracts/document-ir-contract.md",
+      "proposed_batch": "B2",
+      "sha256": "eb2018c1115934055af49de1b7f09ca4c446405b2c053a6295cb5433fee230b7",
+      "body_sha256": "2ba572066231567c576ade942273f7414b1713b7e1175c9aa45f709539938796",
+      "original_fields": {
+        "doc_type": "data-contract",
+        "status": "target-compatible-extension",
+        "contract": "document-ir",
+        "current_schema": "document-ir/v2",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/contracts/mineru-artifact-contract.md",
+      "proposed_batch": "B2",
+      "sha256": "0cd875f26ff1a6c70e375a6fd3845a8e385ef87839788dc388979d9485a3c20b",
+      "body_sha256": "141f3e87073dbba7efd3f66f49bb6de54c1b311f58b0fcd2e39c4c48de847508",
+      "original_fields": {
+        "doc_type": "data-contract",
+        "status": "target",
+        "contract": "mineru-artifact-package",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/decisions/architecture-decisions.md",
+      "proposed_batch": "B2",
+      "sha256": "4943945bad2e7ff863b6c2876076295f727df769575080bdf3b4e59430b94a65",
+      "body_sha256": "0dc77c10e9d4bfa3812e34a747e5fbd255da83a04e753dfca9ecfb32513e3349",
+      "original_fields": {
+        "doc_type": "architecture-decision-index",
+        "status": "accepted",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/deploy/hostdzire-dmit-md2word.md",
+      "proposed_batch": "B1",
+      "sha256": "c7aae9f31265a7b86ba3bb13e1767915cdf7ea55ba222a6445321f191c2534ca",
+      "body_sha256": "2b6c4e90cf2dfdbca382b92ecec86ebcc2c44c3205088b59e5a18d185d6b09ce",
+      "original_fields": {
+        "doc_type": "deploy-guide",
+        "slug": "hostdzire-dmit-md2word",
+        "component": "pdf-to-word-backend",
+        "status": "current",
+        "summary": "md2word 在 dmit + WireGuard + hostdzire 结构下的实际部署和线上验证记录。",
+        "tags": [
+          "deploy",
+          "nginx",
+          "docker",
+          "wireguard",
+          "hostdzire",
+          "dmit"
+        ],
+        "last_reviewed": "2026-11-09"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/deploy/online-first-validation-workflow.md",
+      "proposed_batch": "B1",
+      "sha256": "675d8423485d6c80069d956ceea0d4e0478c2740d99b65fbb2917af3076d7fb2",
+      "body_sha256": "3d2689ce30dd3fb69875118d7245be0dbec1bf7c4d7e2dbcc3667de4ad9b813c",
+      "original_fields": {
+        "doc_type": "deploy-guide",
+        "slug": "online-first-validation-workflow",
+        "component": "md2word-deploy-validation",
+        "status": "current",
+        "summary": "md2word 本地改写、上传 hostdzire、线上验证和 Golden Sample 签字的标准流程。",
+        "tags": [
+          "deploy",
+          "validation",
+          "hostdzire",
+          "golden-sample",
+          "mysql",
+          "celery"
+        ],
+        "last_reviewed": "2026-07-22"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/deploy/p0-docker-deployment.md",
+      "proposed_batch": "B1",
+      "sha256": "2e9fcdfdfa78a9ee44d2b3f7ebc0a0d96bf89d374ceb45d1a2293f664f7ea96d",
+      "body_sha256": "6ce8339eacc98cebc192364d6188c734b8c1da2feb6804b1c79f38333cd5fcfd",
+      "original_fields": {
+        "doc_type": "deploy-guide",
+        "slug": "p0-docker-deployment",
+        "component": "pdf-to-word-backend",
+        "status": "current",
+        "summary": "P0 API 与 document_jobs Worker 共用镜像和根目录 .env 的 Docker Compose 部署说明。",
+        "tags": [
+          "deploy",
+          "docker",
+          "api",
+          "worker",
+          "mysql",
+          "redis"
+        ],
+        "last_reviewed": "2026-11-06"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/design/docx-rendering-template-design.md",
+      "proposed_batch": "B2",
+      "sha256": "59219e54d620823a76f65d2de47a258099bfca05ba810607afb81f47576a5076",
+      "body_sha256": "d3e72318aa7ff69809e113cde801a3bc918a2c68ae4653498b79a7fa32fbdce7",
+      "original_fields": {
+        "doc_type": "technical-design",
+        "status": "target",
+        "component": "docx-renderer-template",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/design/quality-review-release-design.md",
+      "proposed_batch": "B2",
+      "sha256": "c24d15b40c854c140b0d07c170f54bd56ea10b47fa04a1268305f58e09dee4a1",
+      "body_sha256": "cd3856089e60f52fb3115d026f043aff91042d24e115e333a32f24863cb90b4b",
+      "original_fields": {
+        "doc_type": "technical-design",
+        "status": "target",
+        "component": "quality-review-release",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/design/table-processing-design.md",
+      "proposed_batch": "B2",
+      "sha256": "58e9affde65acb831f2baae92828761bdfc37fe4006d1f66d0edacde333e79f8",
+      "body_sha256": "06cf153434560cefc6eb05ffed3595a767108e3cbe48b516de14fe7d58e26300",
+      "original_fields": {
+        "doc_type": "technical-design",
+        "status": "target",
+        "component": "table-pipeline",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/design/translation-design.md",
+      "proposed_batch": "B2",
+      "sha256": "98277216808ca4c2e88172ab69d0df8e9627638d17619e68f39848a7090356e1",
+      "body_sha256": "4f3e8c0b132ae31ed00560ff709b314f7bf66ecd7d402fe45c09cd3589b0fe84",
+      "original_fields": {
+        "doc_type": "technical-design",
+        "status": "target",
+        "component": "translation",
+        "last_reviewed": "2026-10-21"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/backend-architecture-baseline-and-issues.md",
+      "proposed_batch": "B3",
+      "sha256": "0d64d2ea70ee3d34487b28b2ad6bd71dbb7fd4a994a3e05cecbeccc33651dff4",
+      "body_sha256": "c80a04e11f668d5697e6f3e9a3c0e78667ab617f84cfdf18db830e3d0f0c5c2c",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "backend-architecture-baseline-and-issues",
+        "component": "backend-architecture",
+        "status": "draft",
+        "summary": "正式整理当前 md2word 后端的现状架构基线、job 生命周期视图和待收口结构问题。",
+        "tags": [
+          "backend",
+          "architecture",
+          "baseline",
+          "jobs"
+        ],
+        "last_reviewed": "2026-05-28"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/backend-design-implementation-plan.md",
+      "proposed_batch": "B3",
+      "sha256": "8059462f15d202614dc38448ceeadcfe1f96bc06e40221bfc7a28a2bad213ccf",
+      "body_sha256": "0efd846d66d116ff58cebdc224e7a579b9fc8cf00fccab341397cee204d9cfc5",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "backend-design-implementation-plan",
+        "component": "backend-implementation-plan",
+        "status": "draft",
+        "summary": "基于当前 FastAPI 后端现状，把后端设计草案拆成可逐步执行的阶段计划。",
+        "tags": [
+          "backend",
+          "implementation-plan",
+          "architecture",
+          "jobs"
+        ],
+        "last_reviewed": "2026-05-28"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/backend-dev-docs-index.md",
+      "proposed_batch": "B3",
+      "sha256": "c4162eab9a7e3ccc2d8ed1b7c90a379888ff4afeaa8bbedcd12ad5636e5dfb8c",
+      "body_sha256": "47d63b6bc056a0a7cd24c3de57030d3677abef69ace3662e35716d763053cae0",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "backend-dev-docs-index",
+        "component": "backend-docs",
+        "status": "current",
+        "summary": "当前 md2word 后端开发文档索引，区分可直接依赖的现行文档与仅保留占位的 deferred 主题。",
+        "tags": [
+          "backend",
+          "docs",
+          "onboarding",
+          "index"
+        ],
+        "last_reviewed": "2026-06-30"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/backend-local-minimal-env-and-commands.md",
+      "proposed_batch": "B3",
+      "sha256": "6d47bd04803c40e7320ee40fa0cbaeb42060986507a8ce7ec0e0b5bae84ed91e",
+      "body_sha256": "b7587dffce0f6ed4c49e1f4c77db7009f1d9dd9ced9dc89ac06059d8bf67b669",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "backend-local-minimal-env-and-commands",
+        "component": "backend-setup",
+        "status": "current",
+        "summary": "当前后端最小 .env 模板和启动命令速查版。",
+        "tags": [
+          "backend",
+          "setup",
+          "quickstart",
+          "env"
+        ],
+        "last_reviewed": "2026-05-29"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/backend-local-setup-and-architecture.md",
+      "proposed_batch": "B3",
+      "sha256": "fdcd99b94502353a080a473f81aefbb1cd4443a450e6af3fb1832d817ce8aa42",
+      "body_sha256": "95157c6bb37d92f5d9b772e4984be54dbc0b8e385ed25f9b5c79b4eb0f1e2ecc",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "backend-local-setup-and-architecture",
+        "component": "backend-setup",
+        "status": "current",
+        "summary": "说明如何启动当前 FastAPI 后端，以及如何理解项目结构和主链路。",
+        "tags": [
+          "backend",
+          "setup",
+          "architecture",
+          "onboarding"
+        ],
+        "last_reviewed": "2026-05-31"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/backend-pdf-online-completion-change-summary.md",
+      "proposed_batch": "B3",
+      "sha256": "c7b67c736a56b29cbb5168f6355191e64a85e749ee3c517ceaac7c78b5c11c10",
+      "body_sha256": "2e662a998957be906f5f0ade57475798d52665b6453ff8820a7607a5139e6ec4",
+      "original_fields": {
+        "doc_type": "dev-note",
+        "slug": "backend-pdf-online-completion-change-summary",
+        "component": "backend-docs",
+        "status": "deferred",
+        "summary": "历史主题占位。当前仓库没有维护这份独立变更总结，请改看 backend 架构和 runbook 文档。",
+        "tags": [
+          "backend",
+          "deferred",
+          "historical"
+        ],
+        "last_reviewed": "2026-06-30"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/component-pdf-regression-governance.md",
+      "proposed_batch": "B3",
+      "sha256": "a82166ec204cc278f532f2685a1cf9e7611197d888601b30302695e2572de61f",
+      "body_sha256": "cf598e4febfca87cd512d4c16ea0265e550fdea52af60ffc849f3ad3e448c737",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "component-pdf-regression-governance",
+        "component": "conversion-runtime",
+        "status": "current",
+        "summary": "电子元器件 PDF 的品牌/分类样例治理与本地回归流程。",
+        "tags": [
+          "conversion",
+          "mineru",
+          "regression",
+          "samples",
+          "datasheet"
+        ],
+        "last_reviewed": "2026-06-26"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/document-ir-v1.md",
+      "proposed_batch": "B3",
+      "sha256": "42e9d9a05e4a0f4e9b8db1141755e7ee4d351cc0b9e95d00a9ddba9798364d99",
+      "body_sha256": "3d6a482813f1a2d5bed9582feeba919d3afc9b4ba3f581ba90a502fbd8d25983",
+      "original_fields": {
+        "doc_type": "dev-note",
+        "slug": "document-ir-v1",
+        "component": "backend-docs",
+        "status": "deferred",
+        "summary": "历史 v1 主题占位。当前仓库只维护 v2 作为现行参考。",
+        "tags": [
+          "document-ir",
+          "deferred",
+          "historical"
+        ],
+        "last_reviewed": "2026-06-30"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/document-ir-v2.md",
+      "proposed_batch": "B3",
+      "sha256": "433f9e67daa9c28f3e556301d2a99789668c1e7d8ba05344c9b51fbfe3f4f1cc",
+      "body_sha256": "060ad0ae6f053afd8f67b9af495ac5fdecf2ca8feb415578445205a94c4954a1",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "document-ir-v2",
+        "component": "pdf-to-word-backend",
+        "status": "current",
+        "summary": "DocumentIR v2 layout-aware schema contract for MinerU to Word rendering.",
+        "tags": [
+          "document-ir",
+          "mineru",
+          "parser",
+          "renderer",
+          "layout"
+        ],
+        "last_reviewed": "2026-06-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/local-component-pdf-debugging-implementation-plan.md",
+      "proposed_batch": "B3",
+      "sha256": "02bd6f1ea6698dd636a3e8560b06519226e18c8b977e6009849f3f7c295696b1",
+      "body_sha256": "c5757a0741435e36766187fb606756202a4629b588f14f2fe26016a6ef2a9a8f",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "local-component-pdf-debugging-implementation-plan",
+        "component": "conversion-runtime",
+        "status": "current",
+        "summary": "md2word 本地电子元器件 PDF direct/en2zh 调试第一阶段实施计划和运行闭环。",
+        "tags": [
+          "conversion",
+          "mineru",
+          "regression",
+          "pycharm",
+          "translation"
+        ],
+        "last_reviewed": "2026-06-26"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/local-conversion-sandbox.md",
+      "proposed_batch": "B3",
+      "sha256": "7f0f68b3efb960e8d0ae9531249c573d4145255786bcba3079dea07f48d87544",
+      "body_sha256": "a9c4a83c3f335d38276f6649aafa3ff8be8a91844e7132468739578fb0f976a5",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "local-conversion-sandbox",
+        "component": "conversion-runtime",
+        "status": "current",
+        "summary": "在正式项目中用 PyCharm 运行本地 MinerU 转 DOCX 调试。",
+        "tags": [
+          "conversion",
+          "mineru",
+          "sandbox",
+          "regression",
+          "pycharm"
+        ],
+        "last_reviewed": "2026-10-21"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/repository-hygiene.md",
+      "proposed_batch": "B3",
+      "sha256": "ee255a925be7fde0e0589bdd767958a42e384cfa8bedbdea9311e3dcfd8fe8d4",
+      "body_sha256": "ee255a925be7fde0e0589bdd767958a42e384cfa8bedbdea9311e3dcfd8fe8d4",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/runtime-observability-and-health.md",
+      "proposed_batch": "B3",
+      "sha256": "40fa134f7a37b3d40f53e491ec40b89d6dc4b169bfa7245c4b2c45b348549e34",
+      "body_sha256": "408fc7880608a362c6f8eaa347bcc46c2ac9756b364aaab13acab6877b4c31a9",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "runtime-observability-and-health",
+        "component": "runtime-observability",
+        "status": "current",
+        "summary": "说明当前后端的 access/business/system 日志分层和 health readiness 字段。",
+        "tags": [
+          "backend",
+          "logging",
+          "health",
+          "observability"
+        ],
+        "last_reviewed": "2026-05-28"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/template-config-package-v1.md",
+      "proposed_batch": "B3",
+      "sha256": "c9f9b4384b11e0bc32782cf0df88f01a18533795c017c4a80b5b19fb2a2d3fee",
+      "body_sha256": "0d390c3bf4d0d44e6a3fb0ec8593039a1d899f2110f25edbd6bef421ec6a5ccb",
+      "original_fields": {
+        "doc_type": "dev-note",
+        "slug": "template-config-package-v1",
+        "component": "backend-docs",
+        "status": "deferred",
+        "summary": "模板配置包历史主题占位。当前请改看 Word 页面样式和模板管理相关页面/接口文档。",
+        "tags": [
+          "template-config",
+          "deferred",
+          "historical"
+        ],
+        "last_reviewed": "2026-06-30"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/term-assets-sql-versioning-tasks.md",
+      "proposed_batch": "B3",
+      "sha256": "19f233615a5b04cef7e6503450c751a97b3b4f7b5f37fce9e9e46fb6a10f65b4",
+      "body_sha256": "177ac410e17b679aa1087c02416f72f11f1ca818aefd1138fde9e80b8be9a974",
+      "original_fields": {
+        "doc_type": "dev-note",
+        "slug": "term-assets-sql-versioning-tasks",
+        "component": "backend-docs",
+        "status": "deferred",
+        "summary": "术语资产 SQL 版本化任务拆分历史占位。当前没有现行任务说明内容。",
+        "tags": [
+          "term-assets",
+          "deferred",
+          "historical"
+        ],
+        "last_reviewed": "2026-06-30"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/term-assets-sql-versioning.md",
+      "proposed_batch": "B3",
+      "sha256": "98cf1d99e5fe715b73336e1f85600388f7a3a539318934ed3c222c41df6b7ade",
+      "body_sha256": "cbf6f976a5c4b05081d89dab32c61717d4222438c31ed1b955a3fd0c0aaa8ae0",
+      "original_fields": {
+        "doc_type": "dev-note",
+        "slug": "term-assets-sql-versioning",
+        "component": "backend-docs",
+        "status": "deferred",
+        "summary": "术语资产 SQL 版本化历史主题占位。当前请改看术语规则与翻译配置的现行版本化指南。",
+        "tags": [
+          "term-assets",
+          "deferred",
+          "historical"
+        ],
+        "last_reviewed": "2026-06-30"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/term-rule-set-versioning-guide.md",
+      "proposed_batch": "B3",
+      "sha256": "483a61c00fb6950b034cf1b33bcf45c7f014e77632ff3da474e8c4e9b8891ee5",
+      "body_sha256": "aef1a8d18ef36a69b20d487e119b920adb1db5565533bba528eb956fcf32f0ed",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "term-rule-set-versioning-guide",
+        "component": "term-rule-set-versioning",
+        "status": "current",
+        "summary": "面向集成方说明如何通过 Term Rule Set API 编辑草稿、发布术语规则版本、切默认版本、回滚和理解审计边界。",
+        "tags": [
+          "backend",
+          "term-rules",
+          "resource-versioning",
+          "audit"
+        ],
+        "last_reviewed": "2026-05-29"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/translation-ai-audit-debug.md",
+      "proposed_batch": "B3",
+      "sha256": "d3b7492703a7632c7b80d44d4b822ea5a367532ffad455a6645e19612aea1e83",
+      "body_sha256": "d890c6c6ec352ad7aec6266bb093d17091f1e32406dcabac321dda3e6f7387af",
+      "original_fields": {
+        "doc_type": "dev-note",
+        "slug": "translation-ai-audit-debug",
+        "component": "backend-docs",
+        "status": "deferred",
+        "summary": "翻译 AI 调用与审计调试历史主题占位。当前请改看翻译配置与 provider batch 现行文档。",
+        "tags": [
+          "translation",
+          "audit",
+          "deferred",
+          "historical"
+        ],
+        "last_reviewed": "2026-06-30"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/translation-profile-and-segment-trace-guide.md",
+      "proposed_batch": "B3",
+      "sha256": "3992281297d31d0d93e52846eed88c775fd6e5578a3e9d5d5082d08549edbc4c",
+      "body_sha256": "b92449c73d3c5c46456e5123307585dec5ea505aea0bc76ae940654dc075248d",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "translation-profile-and-segment-trace-guide",
+        "component": "translation-profile-and-segment-trace",
+        "status": "current",
+        "summary": "面向集成方说明如何通过 Translation Profile API 管理翻译配置，并在翻译 job 中读取 segment trace。",
+        "tags": [
+          "backend",
+          "translation",
+          "resource-versioning",
+          "jobs",
+          "audit"
+        ],
+        "last_reviewed": "2026-07-23"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/dev/translation-terms-v1.md",
+      "proposed_batch": "B3",
+      "sha256": "ecb40500b83419432e7815c9b8dbe3c79b7e9c5c5d4b4ef30c33ef257864e308",
+      "body_sha256": "12b32ecb9439cca4e10e497580d86728747907d7450ba08260ad35198b985194",
+      "original_fields": {
+        "doc_type": "dev-note",
+        "slug": "translation-terms-v1",
+        "component": "backend-docs",
+        "status": "deferred",
+        "summary": "翻译术语 v1 历史主题占位。当前请改看翻译术语集和相关治理页面/接口。",
+        "tags": [
+          "translation-terms",
+          "deferred",
+          "historical"
+        ],
+        "last_reviewed": "2026-06-30"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/engineering/security-observability-operations.md",
+      "proposed_batch": "B2",
+      "sha256": "b1c80ba109fb35bdf8d10c24d694065852ca6b14aeb36feff9e171df5c240649",
+      "body_sha256": "080cc93fa3a980b0db5f8478d69105d25f63a04e4c584a69524a8d69c047d633",
+      "original_fields": {
+        "doc_type": "non-functional-design",
+        "status": "target",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/engineering/testing-acceptance-strategy.md",
+      "proposed_batch": "B2",
+      "sha256": "caf99ecab2b997b11c53701f8c054fc77545c3b038afbeb3b21ee275e4154de7",
+      "body_sha256": "65850ac19e40c7b8882cc001c4bec2059e562d733a0e01d6caa2765ced7831c3",
+      "original_fields": {
+        "doc_type": "testing-strategy",
+        "status": "target",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/baseline-verification-2026-10-12.md",
+      "proposed_batch": "B2",
+      "sha256": "47af9edc0598b5535f107b7e22290efc8a2c5e3045036887f02245994a8e2d47",
+      "body_sha256": "1c7c3a3d267b8edb35312122ce400fcfa6f0a8038c3af6f2ed3a02c8c7562fc8",
+      "original_fields": {
+        "doc_type": "baseline-verification",
+        "status": "accepted",
+        "baseline_commit": "fcea60ff8c131edff7fd5ba360e1bf4e37ec4227",
+        "verified_on": "2026-10-12",
+        "timezone": "America/Los_Angeles",
+        "task_id": "BAS-001"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-execution-guide.md",
+      "proposed_batch": "B2",
+      "sha256": "19c667bb69add23f9deac54b2b009f7ba7345466a17eab9c3151adc4225bdc7a",
+      "body_sha256": "beca0c6c200710fb1a9053c07757d3aea456e0a0fbe8e62e454793178c1e7251",
+      "original_fields": {
+        "doc_type": "ai-development-guide",
+        "status": "executable",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/00-parent-task-bootstrap.md",
+      "proposed_batch": "B4",
+      "sha256": "856d89c06a2991048cd5eea4a89930e1d84181df711de5417f7e961e5eea2391",
+      "body_sha256": "856d89c06a2991048cd5eea4a89930e1d84181df711de5417f7e961e5eea2391",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/BAS-001.md",
+      "proposed_batch": "B4",
+      "sha256": "7cc81aef9271f80657a8e72808a414bed9f927479623c7899bcb2a7aac604f82",
+      "body_sha256": "7cc81aef9271f80657a8e72808a414bed9f927479623c7899bcb2a7aac604f82",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/CON-101.md",
+      "proposed_batch": "B4",
+      "sha256": "05bba009feedffad02dca556f959e1062e96ee13aa128ba1c1170107462b9e09",
+      "body_sha256": "05bba009feedffad02dca556f959e1062e96ee13aa128ba1c1170107462b9e09",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/CON-102.md",
+      "proposed_batch": "B4",
+      "sha256": "28931a8d153e363a9809a905d8ba3fd6e119d99147391ad326afaf77b099e5f0",
+      "body_sha256": "28931a8d153e363a9809a905d8ba3fd6e119d99147391ad326afaf77b099e5f0",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/CON-103.md",
+      "proposed_batch": "B4",
+      "sha256": "6c1722d3f38de2a36ada5ee846b022a33df0017ee7b3c5723635428fbf3bbf71",
+      "body_sha256": "6c1722d3f38de2a36ada5ee846b022a33df0017ee7b3c5723635428fbf3bbf71",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/CON-104.md",
+      "proposed_batch": "B4",
+      "sha256": "6a4fdb770a5954ecbd397756c0fdba877bf337bd8a837cced82427b1e7d07b5a",
+      "body_sha256": "6a4fdb770a5954ecbd397756c0fdba877bf337bd8a837cced82427b1e7d07b5a",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/DOC-001.md",
+      "proposed_batch": "B4",
+      "sha256": "a11bbfbba2df963afc27655b044920dbe65b43c01bc0c8e881f70fb1c404ff3f",
+      "body_sha256": "a11bbfbba2df963afc27655b044920dbe65b43c01bc0c8e881f70fb1c404ff3f",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-201.md",
+      "proposed_batch": "B4",
+      "sha256": "21fbc6186e8a3b38a6a28e7220034f0cc5fa386a6a55bdd19e9388a221a5453b",
+      "body_sha256": "21fbc6186e8a3b38a6a28e7220034f0cc5fa386a6a55bdd19e9388a221a5453b",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-202.md",
+      "proposed_batch": "B4",
+      "sha256": "eaa3a6bf96d5d77d361fd25aef0ccc1d072d28cc759b4b9497e39e4ec89d825a",
+      "body_sha256": "eaa3a6bf96d5d77d361fd25aef0ccc1d072d28cc759b4b9497e39e4ec89d825a",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-203.md",
+      "proposed_batch": "B4",
+      "sha256": "fe836aa7db6ff3d7513e8a4616c5646ce12212ed444bff91c790ba29cee50433",
+      "body_sha256": "fe836aa7db6ff3d7513e8a4616c5646ce12212ed444bff91c790ba29cee50433",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-204.md",
+      "proposed_batch": "B4",
+      "sha256": "774717a36ac2a08d2d43bb16ff6006d54c97b9fbd62469ce07cc129cb131bcd7",
+      "body_sha256": "774717a36ac2a08d2d43bb16ff6006d54c97b9fbd62469ce07cc129cb131bcd7",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-205.md",
+      "proposed_batch": "B4",
+      "sha256": "8a78d77052cb057dea5da00299bb3078e505ad40150b40dd0220a043e0893574",
+      "body_sha256": "8a78d77052cb057dea5da00299bb3078e505ad40150b40dd0220a043e0893574",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-206.md",
+      "proposed_batch": "B4",
+      "sha256": "c47b479ee9fe6b6cf46289fdeec7d874051135a0f38295b7db7f06fea8596eb5",
+      "body_sha256": "c47b479ee9fe6b6cf46289fdeec7d874051135a0f38295b7db7f06fea8596eb5",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-207.md",
+      "proposed_batch": "B4",
+      "sha256": "d31876a96570c75c562bd72d0c1d06acd330bf390450074c112aa429deda38fb",
+      "body_sha256": "d31876a96570c75c562bd72d0c1d06acd330bf390450074c112aa429deda38fb",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-601.md",
+      "proposed_batch": "B4",
+      "sha256": "7c1d3e1499a864f863d8b363a1c27f36672c09a56029925407f5e9e6707e84f3",
+      "body_sha256": "7c1d3e1499a864f863d8b363a1c27f36672c09a56029925407f5e9e6707e84f3",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-602.md",
+      "proposed_batch": "B4",
+      "sha256": "09014555c3e3f8954380620896db43b7492a2f265e4552a058a13da9e02223a6",
+      "body_sha256": "09014555c3e3f8954380620896db43b7492a2f265e4552a058a13da9e02223a6",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-603.md",
+      "proposed_batch": "B4",
+      "sha256": "bba3a9773b1d8c6a8bfb06cd6cbd5aeb674f46662c9dccec08d060c998c4d43c",
+      "body_sha256": "bba3a9773b1d8c6a8bfb06cd6cbd5aeb674f46662c9dccec08d060c998c4d43c",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-604.md",
+      "proposed_batch": "B4",
+      "sha256": "053d4ee0a7051c5d4d21e2c8ce99d3d76ac5732f9bc29452ca9a9fcf2dfa565a",
+      "body_sha256": "053d4ee0a7051c5d4d21e2c8ce99d3d76ac5732f9bc29452ca9a9fcf2dfa565a",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-605.md",
+      "proposed_batch": "B4",
+      "sha256": "a781459c26d872732bd0d79a3a59397af2f00e0fe839b35c73daef6273e2d54c",
+      "body_sha256": "a781459c26d872732bd0d79a3a59397af2f00e0fe839b35c73daef6273e2d54c",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-606.md",
+      "proposed_batch": "B4",
+      "sha256": "840f335a3e2de0823570f384b10b5e28750bbfb0bc3b45acdcf2eff8f918baf8",
+      "body_sha256": "840f335a3e2de0823570f384b10b5e28750bbfb0bc3b45acdcf2eff8f918baf8",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-607.md",
+      "proposed_batch": "B4",
+      "sha256": "3e5c2978cae85f9e34591ea28ef23c306e230691089a0025a7bf68f7be6dc80e",
+      "body_sha256": "3e5c2978cae85f9e34591ea28ef23c306e230691089a0025a7bf68f7be6dc80e",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/README.md",
+      "proposed_batch": "B4",
+      "sha256": "03f8c5bc8c08f234e8c1b033215f8cc8698734ef7b108aa2cd406a88d29caa6b",
+      "body_sha256": "03f8c5bc8c08f234e8c1b033215f8cc8698734ef7b108aa2cd406a88d29caa6b",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/REL-701.md",
+      "proposed_batch": "B4",
+      "sha256": "1f817c257f0b74ceb60e2d0068d2020b71407979ceb225f75fc4c8c5115770ae",
+      "body_sha256": "1f817c257f0b74ceb60e2d0068d2020b71407979ceb225f75fc4c8c5115770ae",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/REL-702.md",
+      "proposed_batch": "B4",
+      "sha256": "df6d270b56ee5078dca45d929983494d8cdefcdea8d923cb725d6f43b299320d",
+      "body_sha256": "df6d270b56ee5078dca45d929983494d8cdefcdea8d923cb725d6f43b299320d",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/REL-703.md",
+      "proposed_batch": "B4",
+      "sha256": "c3c864263c25958e8743835be2adba274d0b861bdde1df5d2a559284694edda2",
+      "body_sha256": "c3c864263c25958e8743835be2adba274d0b861bdde1df5d2a559284694edda2",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/REL-704.md",
+      "proposed_batch": "B4",
+      "sha256": "89a9134d8950771cbf7775b2745fc49d7f4a89d945fda04c37d179a064136c3d",
+      "body_sha256": "89a9134d8950771cbf7775b2745fc49d7f4a89d945fda04c37d179a064136c3d",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/RND-501.md",
+      "proposed_batch": "B4",
+      "sha256": "c1b935af172bdefa8e867fc2500718e9b5caaf20234812adff57fa29fdf560e1",
+      "body_sha256": "c1b935af172bdefa8e867fc2500718e9b5caaf20234812adff57fa29fdf560e1",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/RND-502.md",
+      "proposed_batch": "B4",
+      "sha256": "d095a062814ce571077405ed8ba7e02d5d2c1f7b5506a387d4bd8f3822c4cb2c",
+      "body_sha256": "d095a062814ce571077405ed8ba7e02d5d2c1f7b5506a387d4bd8f3822c4cb2c",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/RND-503.md",
+      "proposed_batch": "B4",
+      "sha256": "c8fc5c65797ed442c20a7cadf4e6ab7db34c87f76add804f29f231cf2cb75711",
+      "body_sha256": "c8fc5c65797ed442c20a7cadf4e6ab7db34c87f76add804f29f231cf2cb75711",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/RND-504.md",
+      "proposed_batch": "B4",
+      "sha256": "da907d3a25cf96e514bc4019451da107a12ed21dc9db0fb4889faa0bddf05f3f",
+      "body_sha256": "da907d3a25cf96e514bc4019451da107a12ed21dc9db0fb4889faa0bddf05f3f",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/RND-505.md",
+      "proposed_batch": "B4",
+      "sha256": "62cea8a19703985797cc2cce5c0929e3afc969f85fbaf8d7361675bb9984bb77",
+      "body_sha256": "62cea8a19703985797cc2cce5c0929e3afc969f85fbaf8d7361675bb9984bb77",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/RND-506.md",
+      "proposed_batch": "B4",
+      "sha256": "197c0afda95b1841c015a7fd3acd43868a3635bb6f46b4e3a01e4d126e88e11f",
+      "body_sha256": "197c0afda95b1841c015a7fd3acd43868a3635bb6f46b4e3a01e4d126e88e11f",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-301.md",
+      "proposed_batch": "B4",
+      "sha256": "b5d140b2dfc1997f80ad69e301ab01bf190c5b4bb8a99f6db2bf50abd0ce12e8",
+      "body_sha256": "b5d140b2dfc1997f80ad69e301ab01bf190c5b4bb8a99f6db2bf50abd0ce12e8",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-302.md",
+      "proposed_batch": "B4",
+      "sha256": "a9f6d97b117cc81d5bd673b020de0bf4233d419a6118d687d56727d8968bafb9",
+      "body_sha256": "a9f6d97b117cc81d5bd673b020de0bf4233d419a6118d687d56727d8968bafb9",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-303.md",
+      "proposed_batch": "B4",
+      "sha256": "47f6b0f3c7fc394d21f70903aeeb64f94ed9c4fca7776423ece836d1e7384f69",
+      "body_sha256": "47f6b0f3c7fc394d21f70903aeeb64f94ed9c4fca7776423ece836d1e7384f69",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-304.md",
+      "proposed_batch": "B4",
+      "sha256": "92f92d5cf966587e5c04ec48ddb99868fa810a5384e4acaa7b4ef1427b28a33f",
+      "body_sha256": "92f92d5cf966587e5c04ec48ddb99868fa810a5384e4acaa7b4ef1427b28a33f",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-305.md",
+      "proposed_batch": "B4",
+      "sha256": "aec91e1d99bffc8ece5331d0193a471ebe8ca5b391841b4e2fbdb0a73f3a5da5",
+      "body_sha256": "aec91e1d99bffc8ece5331d0193a471ebe8ca5b391841b4e2fbdb0a73f3a5da5",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-306.md",
+      "proposed_batch": "B4",
+      "sha256": "108aac866190da33979db9a0165c07b90251875c5049b91447e48017d0fece05",
+      "body_sha256": "108aac866190da33979db9a0165c07b90251875c5049b91447e48017d0fece05",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-307.md",
+      "proposed_batch": "B4",
+      "sha256": "3cb2edbd45c2f0bff9e51ca09ddc928b09206e01e2090eb7fdb762125ed06121",
+      "body_sha256": "3cb2edbd45c2f0bff9e51ca09ddc928b09206e01e2090eb7fdb762125ed06121",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-308.md",
+      "proposed_batch": "B4",
+      "sha256": "bfcdfda6d297bef15121a9f72b6e515bfe546bd8caf7f2f8560caaa839191cf4",
+      "body_sha256": "bfcdfda6d297bef15121a9f72b6e515bfe546bd8caf7f2f8560caaa839191cf4",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-401.md",
+      "proposed_batch": "B4",
+      "sha256": "488c5ffcbe45570dcd029f9f81bbfbbfd8b141894ac68ceeac99b00722039c85",
+      "body_sha256": "488c5ffcbe45570dcd029f9f81bbfbbfd8b141894ac68ceeac99b00722039c85",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-402.md",
+      "proposed_batch": "B4",
+      "sha256": "3cd141a8bf2c98e2821e31f180e7cddf874fd81c3d230c002d00b0abbe480797",
+      "body_sha256": "3cd141a8bf2c98e2821e31f180e7cddf874fd81c3d230c002d00b0abbe480797",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-403.md",
+      "proposed_batch": "B4",
+      "sha256": "acc556e7949bc466464cc453f5abe9f98f596ff85d17857eca8789a93ec0ab0a",
+      "body_sha256": "acc556e7949bc466464cc453f5abe9f98f596ff85d17857eca8789a93ec0ab0a",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-404.md",
+      "proposed_batch": "B4",
+      "sha256": "78833f87dae8ae64ad459c914a68e34e1aaaaeebdab313a17e42166f354aa8d8",
+      "body_sha256": "78833f87dae8ae64ad459c914a68e34e1aaaaeebdab313a17e42166f354aa8d8",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-405.md",
+      "proposed_batch": "B4",
+      "sha256": "c6678a5019562230754705560e891f7cd587a7e40a99ce5db67296b14f3c08e3",
+      "body_sha256": "c6678a5019562230754705560e891f7cd587a7e40a99ce5db67296b14f3c08e3",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-406.md",
+      "proposed_batch": "B4",
+      "sha256": "db0d826eb48c0e95496032f60971dddb920433c0f9dbeac637976229f149ae2e",
+      "body_sha256": "db0d826eb48c0e95496032f60971dddb920433c0f9dbeac637976229f149ae2e",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-407.md",
+      "proposed_batch": "B4",
+      "sha256": "6b0173a4fda463f0a9b08ed30dc90d9030189dd9ffae55152d03eadd6c75d4cd",
+      "body_sha256": "6b0173a4fda463f0a9b08ed30dc90d9030189dd9ffae55152d03eadd6c75d4cd",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-task-backlog.md",
+      "proposed_batch": "B2",
+      "sha256": "da1cc364e4fe566cb86689d661ea3061905a563abbcc5c271600c120a24278bf",
+      "body_sha256": "b4ce7232d708c131afc107bd7e9925c47c34d0ff7a6d9815056eda591b022079",
+      "original_fields": {
+        "doc_type": "executable-backlog",
+        "status": "ready-for-task-creation",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/codex-task-manifest.yaml",
+      "proposed_batch": "B1",
+      "sha256": "4330b8ad42b2f8911c67a787aac667614d11f8a17b8709639960987b73d5e300",
+      "body_sha256": "4330b8ad42b2f8911c67a787aac667614d11f8a17b8709639960987b73d5e300",
+      "original_fields": {
+        "schema_version": 1,
+        "project": "md2word",
+        "repository_root": "${PROJECT_ROOT}",
+        "baseline_branch": "main",
+        "parent_task_slug": "datasheet-docx-delivery-quality",
+        "status_values": [
+          "todo",
+          "planning",
+          "in_progress",
+          "review",
+          "done",
+          "blocked",
+          "skipped_existing"
+        ],
+        "rules": [
+          "dependencies must be done or manually accepted skipped_existing before implementation",
+          "implementation sessions end at review",
+          "only human acceptance changes review to done or skipped_existing"
+        ]
+      },
+      "business_sha256": "1a306ba8724836f64caf3bda6680e89ca4157c6c60283009b5784e48b306db8d"
+    },
+    {
+      "path": "docs/implementation/codex-task-prompts-all-in-one.md",
+      "proposed_batch": "B4",
+      "sha256": "1e5099fb7c3a3f471ec04f796930b7a13fa52de0edcd96f487aba810b5b126cc",
+      "body_sha256": "1e5099fb7c3a3f471ec04f796930b7a13fa52de0edcd96f487aba810b5b126cc",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/current-gap-analysis.md",
+      "proposed_batch": "B1",
+      "sha256": "923c0ff2d18d08ad4fd4c344492c7615fa1aac575d337311e54a47da48a0a78d",
+      "body_sha256": "2806d29efa751c3876f92c99a0379539f262dcc47328ac73f5352438ec5f7069",
+      "original_fields": {
+        "doc_type": "gap-analysis",
+        "status": "current-vs-target",
+        "baseline_commit": "e51e6ccd129f59d1b372dfc6907def1fd6bb5cd8",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/implementation-plan.md",
+      "proposed_batch": "B2",
+      "sha256": "71b80babbb8a2fb7c9505ae1d946fca8d52c507f4aa72354be6cdfcc07e4e4a0",
+      "body_sha256": "0b46a46242ea851163c727156e60d6da5473256cc4167103b6fe0850cc881948",
+      "original_fields": {
+        "doc_type": "implementation-plan",
+        "status": "executable",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/implementation/rollout-and-migration.md",
+      "proposed_batch": "B2",
+      "sha256": "8409d5af09eab1b76a6b0fcd64c2ed5e369937a6a436433c1f13abc67d29be91",
+      "body_sha256": "d40b62176e8fd4a375528168531e5bf5f81ff6b841b4831a413cbe7b97a2d5f7",
+      "original_fields": {
+        "doc_type": "rollout-plan",
+        "status": "target",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/product/prd.md",
+      "proposed_batch": "B2",
+      "sha256": "76448a78bf4df68583ea00b900cf62f0b8e1e4a6e433d9439767313322fb8e39",
+      "body_sha256": "77d4f7861c5dbbb2b86416f72d6a4a55f5e2407985163f394405fe1c2ca55e01",
+      "original_fields": {
+        "doc_type": "product-requirements",
+        "status": "scope-frozen",
+        "product": "md2word",
+        "version": 1.0,
+        "baseline_commit": "e51e6ccd129f59d1b372dfc6907def1fd6bb5cd8",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/product/scope-and-decisions.md",
+      "proposed_batch": "B2",
+      "sha256": "818c564ee37712acfa92694e35aaa97dfe3b5c56ce233441671439d4ca6aae92",
+      "body_sha256": "bf9c933b7bc65f19cba6afaec418d18541f38a345d1e94a4fce5bb5513aa37d1",
+      "original_fields": {
+        "doc_type": "product-decision-record",
+        "status": "scope-frozen",
+        "last_reviewed": "2026-10-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/runbooks/backend.md",
+      "proposed_batch": "B3",
+      "sha256": "bc65f45eb2df3bb0f78ce587f72eb01b1f998922283ba488aaeb7f2e4196bd7a",
+      "body_sha256": "8f6d0d4a38ce7d862702adcc84149c283968c8f2ac3f88c9b11397258612d2de",
+      "original_fields": {
+        "doc_type": "dev-guide",
+        "slug": "runbook",
+        "component": "backend-runbook",
+        "status": "current",
+        "summary": "当前后端本地开发、线上优先验证、运维动作和真实样例验证的运行说明。",
+        "tags": [
+          "backend",
+          "runbook",
+          "jobs",
+          "deploy",
+          "hostdzire"
+        ],
+        "last_reviewed": "2026-06-17"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/runbooks/internal-portal.md",
+      "proposed_batch": "B3",
+      "sha256": "ab76f68f96c51d4a41fc88a670567f7bb0033b45db2716f76c2fa01ad61ed788",
+      "body_sha256": "a52c2f1ea4464447340c35d9bcb5a1d4754a909615148e23d52d6ff66faffb39",
+      "original_fields": {
+        "doc_type": "runbook",
+        "slug": "internal-portal",
+        "component": "md2word-internal-portal",
+        "status": "current",
+        "summary": "md2word 正式公司内部门户的产品边界、角色、页面/API 地图、部署配置和账号运营说明。",
+        "tags": [
+          "internal-portal",
+          "frontend",
+          "backend",
+          "auth",
+          "deploy",
+          "operations"
+        ],
+        "last_reviewed": "2026-06-21"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/testing/md2word-fe-be-integration-acceptance.md",
+      "proposed_batch": "B3",
+      "sha256": "05d4fb41be89757e26e9f8a510ca3ab3a97683e4405d5d73d8577d0b40ec1f81",
+      "body_sha256": "860ea03c951f00e81cf186fc145109ba62df670e7f9052dd52e9a8b16cf61afc",
+      "original_fields": {
+        "doc_type": "integration-acceptance",
+        "slug": "md2word-fe-be-integration-acceptance",
+        "component": "md2word-internal-portal",
+        "status": "current",
+        "summary": "md2word 前后端联调计划和验收口径，覆盖 mock/contract-first、接口完成标准、前端接入顺序和线上端到端验收。",
+        "tags": [
+          "testing",
+          "integration",
+          "frontend",
+          "backend",
+          "acceptance",
+          "document-jobs"
+        ],
+        "last_reviewed": "2026-06-17"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/testing/pdf-to-word-golden-sample-acceptance-report.md",
+      "proposed_batch": "B1",
+      "sha256": "40899129a42a094543f506189a6c0f466d41215c2b6602c212c95e17fe26baeb",
+      "body_sha256": "06227fa40524b5a9eb776dfea243ef54621171bbddf1c434d299c27bdbfaa054",
+      "original_fields": {
+        "doc_type": "test-report",
+        "slug": "pdf-to-word-golden-sample-acceptance-report",
+        "component": "pdf-to-word-backend",
+        "status": "current",
+        "summary": "P0 Golden Sample 验收状态；2026-06-29 hostdzire release 20d496e 的 4 个 canonical samples 自动回归和 admin 签字通过。",
+        "tags": [
+          "testing",
+          "golden-sample",
+          "pdf",
+          "word",
+          "p0"
+        ],
+        "last_reviewed": "2026-06-29"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/testing/pdf-to-word-golden-sample-manual-quality-records-20260603.md",
+      "proposed_batch": "B3",
+      "sha256": "cd4c1966f68c83860673649164856552fd3a82b879c5d843beb5fee208e22be2",
+      "body_sha256": "02be4ec2308be9ab0cbced2d61491c668809d752e2ea61c090f805e789a0556d",
+      "original_fields": {
+        "doc_type": "test-report",
+        "slug": "pdf-to-word-golden-sample-manual-quality-records-20260603",
+        "component": "pdf-to-word-backend",
+        "status": "current",
+        "summary": "2026-06-03 hostdzire 真实回归 4 个 Golden Sample DOCX 的人工质量记录。",
+        "tags": [
+          "testing",
+          "golden-sample",
+          "pdf",
+          "word",
+          "quality-triage"
+        ],
+        "last_reviewed": "2026-06-03"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/testing/pdf-to-word-gs-003-quality-triage.md",
+      "proposed_batch": "B3",
+      "sha256": "7a2159fbe11f452ca7f078bd7f16e2ef6b78daabd4a48c19b50675feb3349e48",
+      "body_sha256": "f40060a37b60cc9824ab21ce22ea80d3243d0ef02d45da83d1fc688c7b4ed188",
+      "original_fields": {
+        "doc_type": "test-report",
+        "slug": "pdf-to-word-gs-003-quality-triage",
+        "component": "pdf-to-word-backend",
+        "status": "current",
+        "summary": "gs-003 / OPA228_P1.pdf 真实链路生成 DOCX 的人工结构质量 triage。",
+        "tags": [
+          "testing",
+          "golden-sample",
+          "pdf",
+          "word",
+          "quality-triage"
+        ],
+        "last_reviewed": "2026-06-02"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "docs/testing/pdf-to-word-p0-integration-guide.md",
+      "proposed_batch": "B3",
+      "sha256": "00ab95424f81e8a90e2326adb220bd33f6569addb2ea9889520d252f09307e35",
+      "body_sha256": "f666577ad5ac08d7a013e9a1de73684b6b332a82081a16e3ef06313d9333238c",
+      "original_fields": {
+        "doc_type": "integration-guide",
+        "slug": "pdf-to-word-p0-integration-guide",
+        "component": "pdf-to-word-backend",
+        "status": "current",
+        "summary": "内部人员按步骤完成 PDF 上传、建任务、查状态、下载和排错。",
+        "tags": [
+          "integration",
+          "pdf",
+          "word",
+          "api",
+          "worker"
+        ],
+        "last_reviewed": "2026-06-17"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "tests/fixtures/component_pdf_samples/README.md",
+      "proposed_batch": "B3",
+      "sha256": "7b124b858f5647181ec772a07599d44a1178055439e6df1db05a3c710b53e5a8",
+      "body_sha256": "7b124b858f5647181ec772a07599d44a1178055439e6df1db05a3c710b53e5a8",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "tests/fixtures/component_pdf_samples/acceptance-record-template.md",
+      "proposed_batch": "B3",
+      "sha256": "146ad00d17205cb016cedc44f59ac0509ef193a4011f92b5c1b345ac2724dc40",
+      "body_sha256": "146ad00d17205cb016cedc44f59ac0509ef193a4011f92b5c1b345ac2724dc40",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "tests/fixtures/golden_samples/README.md",
+      "proposed_batch": "B3",
+      "sha256": "b9cf20ff8e98b9ef454433b93d819f94faf886925cda9d0634f1f7866f6ff243",
+      "body_sha256": "b9cf20ff8e98b9ef454433b93d819f94faf886925cda9d0634f1f7866f6ff243",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "tests/fixtures/golden_samples/acceptance-record-template.md",
+      "proposed_batch": "B3",
+      "sha256": "56475224829c7149f412f696235492c8a977257257c0d7b32e1a8b3642ba57dc",
+      "body_sha256": "2037a125bbc7544a6339be4fd496d175ebe97d9ffbf40ea8ba6e5af1966d5307",
+      "original_fields": {
+        "doc_type": "test-template",
+        "slug": "golden-sample-acceptance-record-template",
+        "component": "pdf-to-word-backend",
+        "status": "current",
+        "summary": "P0 Golden Sample 人工验收记录模板。",
+        "tags": [
+          "testing",
+          "golden-sample",
+          "pdf",
+          "word"
+        ],
+        "last_reviewed": "2026-05-29"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "tests/fixtures/p1_translation_samples/README.md",
+      "proposed_batch": "B3",
+      "sha256": "a5c2efe15fb45d900456cffe6ad7c5f19350ef55b7ee1efe42f0c012683a93d4",
+      "body_sha256": "a5c2efe15fb45d900456cffe6ad7c5f19350ef55b7ee1efe42f0c012683a93d4",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "tests/fixtures/p1_translation_samples/acceptance-record-template.md",
+      "proposed_batch": "B3",
+      "sha256": "a5377ab92c1cdff195fd67c4813c9f39f778eefba3a5e0398f982a26072c1626",
+      "body_sha256": "00ea60a2e18f59c02fb89c3f654d68060db6cb919725fe6abf5947ffdaee1499",
+      "original_fields": {
+        "doc_type": "test-template",
+        "slug": "p1-translation-acceptance-record-template",
+        "component": "pdf-to-word-translation",
+        "status": "current",
+        "summary": "P1 英文 PDF 英译中实验链路人工验收记录模板。",
+        "tags": [
+          "testing",
+          "translation",
+          "p1",
+          "document-ir"
+        ],
+        "last_reviewed": "2026-05-30"
+      },
+      "business_sha256": null
+    },
+    {
+      "path": "trellis-bootstrap/design.md",
+      "proposed_batch": "B4",
+      "sha256": "cac182894d181ff32e5f517e40100a10b952adb9b3763230a76292ae84948b24",
+      "body_sha256": "cac182894d181ff32e5f517e40100a10b952adb9b3763230a76292ae84948b24",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "trellis-bootstrap/implement.md",
+      "proposed_batch": "B4",
+      "sha256": "ad4973cacf6557715fec81f6624185b93da1e8a3c4ece89da1abd260fea7fc19",
+      "body_sha256": "ad4973cacf6557715fec81f6624185b93da1e8a3c4ece89da1abd260fea7fc19",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "trellis-bootstrap/prd.md",
+      "proposed_batch": "B4",
+      "sha256": "aad525d5e9c5e60fe52475976630f35b642a100c1fdb5f092d077551ee619644",
+      "body_sha256": "aad525d5e9c5e60fe52475976630f35b642a100c1fdb5f092d077551ee619644",
+      "original_fields": {},
+      "business_sha256": null
+    },
+    {
+      "path": "trellis-bootstrap/task-map.md",
+      "proposed_batch": "B4",
+      "sha256": "42a66012030497ae469f34d933e32eaa9b64e0bb9da42adfea321fdb0c18879f",
+      "body_sha256": "42a66012030497ae469f34d933e32eaa9b64e0bb9da42adfea321fdb0c18879f",
+      "original_fields": {},
+      "business_sha256": null
+    }
+  ]
+}

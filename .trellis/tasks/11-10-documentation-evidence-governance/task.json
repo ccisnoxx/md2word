@@ -1,0 +1,31 @@
+{
+  "id": "documentation-evidence-governance",
+  "name": "documentation-evidence-governance",
+  "title": "文档状态与实现证据治理",
+  "description": "统一文档生命周期与核验元数据，按B1–B4迁移134份维护资料并对45项产品任务做只读对账；用户已批准实施，不提交或推送。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-11-10",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "authorization": "implementation_approved_2026-11-10",
+    "current_batch": "B4_complete",
+    "delivery_status": "ready_for_acceptance",
+    "quality_gate": "documentation_pass"
+  }
+}
