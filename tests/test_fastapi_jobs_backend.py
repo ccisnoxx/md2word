@@ -1408,7 +1408,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
             )
-            old_document_client = runtime.document_job_execution_service._build_mineru_client()
+            old_document_client = runtime.document_job_execution_service.mineru._build_mineru_client()
             app = create_app(runtime)
 
             with TestClient(app) as client:
@@ -1461,7 +1461,7 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=admin_headers,
                 )
 
-            new_document_client = runtime.document_job_execution_service._build_mineru_client()
+            new_document_client = runtime.document_job_execution_service.mineru._build_mineru_client()
             callback_seed = "runtime-config-uid-seed"
             callback_content = "{}"
             callback_job = JobRecord(
@@ -1570,7 +1570,7 @@ class FastAPIJobsBackendTests(TestCase):
                 get_response = client.get("/api/v1/mineru-config", headers=admin_headers)
                 health_before = client.get("/api/v1/health/ready")
                 with self.assertRaisesRegex(MinerUConfigError, "配置文件"):
-                    runtime.document_job_execution_service._build_mineru_client()
+                    runtime.document_job_execution_service.mineru._build_mineru_client()
                 invalid_callback_job = JobRecord(
                     id="job_invalid_runtime_config_uid",
                     source_filename="source.pdf",
