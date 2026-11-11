@@ -80,7 +80,7 @@ Current dominant convention for new application code is `ApiError`, but `HTTPExc
 ### 2. 签名与 owner
 
 - 唯一策略：`app/clients/mineru_result_url.py::validate_mineru_result_url(full_zip_url: str, allowed_hosts: Sequence[str]) -> None`，非法时抛安全 `ValueError`。
-- `MinerUClient(*, api_token, result_host_allowlist, model_version="vlm", user_token="")`：结果名单为必传参数，由正式 `DocumentJobExecutionService` 客户端工厂从 `Settings.allowed_mineru_result_hosts` 注入。
+- `MinerUClient(*, api_token, result_host_allowlist, model_version="vlm", user_token="")`：结果名单为必传参数，由正式 `DocumentJobExecutionService` 持有的 `MinerUExecution` 默认客户端工厂（`_build_mineru_client`）从 `Settings.allowed_mineru_result_hosts` 注入。
 - `download_result_zip(result_url: str, output_path: Path) -> Path`：先检查初始 URL，再由下载专用 Session 在公开 `send` 边界检查每个实际请求。
 
 ### 3. 合同

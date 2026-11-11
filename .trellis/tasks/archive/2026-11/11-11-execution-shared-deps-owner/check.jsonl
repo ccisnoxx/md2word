@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "document_jobs 目录约定：宿主与三个执行协作者的归属"}
+{"file": ".trellis/spec/backend/translation-batch-lifecycle.md", "reason": "翻译批次 owner 表述：协作者经宿主引用调用收口方法，依赖归属变化需核对"}
+{"file": ".trellis/spec/backend/word-generation-rules.md", "reason": "渲染链路 owner 表述：WordRenderExecution 由宿主持有"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "失败收口与错误码合同：改写接收者后行为不得变化"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "代码质量与注释约定"}
+{"file": ".trellis/tasks/11-11-execution-shared-deps-owner/research/current-state.md", "reason": "共用依赖访问点、测试耦合与 logger 排除理由的度量"}
