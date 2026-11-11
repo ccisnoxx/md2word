@@ -2,7 +2,7 @@
 
 ## 进入实施
 
-本任务经用户审阅后进入 `in_progress`。基线见[执行记录](validation.md)，整件修复见[目录公式验证](toc-formula-verification.md)，上游标记与人工校核见[表头来源](table-header-review.md)。开发按下列顺序交付，当前分支已有行为用对应验收证明复用，证据暴露的偏差进入有界修改。
+本任务经用户审阅后进入 `in_progress`。基线见[执行记录](validation.md)，整件修复见[目录公式验证](toc-formula-verification.md)，上游标记与人工校核见[表头来源](table-header-review.md)，实时服务与人工采集见[英译中实测](en2zh-validation.md)。开发按下列顺序交付，当前分支已有行为用对应验收证明复用，证据暴露的偏差进入有界修改。
 
 ## 1. 建立样本与基线（AC1～AC3）
 

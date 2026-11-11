@@ -1,0 +1,73 @@
+{
+  "schema_version": "datasheet-quality-observations/v1",
+  "metadata": {
+    "git_commit": "26dbfb20b275c3efe43133dc8d084230d3286e58",
+    "manifest_sha256": "15b58c3f01ff6cff4e95532c40b80918af87f844ad42b71635d689bdd0bee74a",
+    "environment": {
+      "platform": "macOS-27.2.1-arm64-arm-64bit",
+      "python": "3.11.15",
+      "api": "loopback",
+      "worker": "celery_threads",
+      "broker": "isolated_redis",
+      "metadata_store": "sqlite",
+      "artifact_store": "local_object",
+      "mineru_callback": false,
+      "translation_full_text_debug": false
+    },
+    "provider": {
+      "mineru_model": "vlm",
+      "mineru_poll_seconds": 10,
+      "translation": "DeepSeek",
+      "requested_model": "deepseek-v4-flash"
+    },
+    "mineru_read_only_diagnostic_http_status": 401
+  },
+  "plan": [
+    {
+      "sample_id": "gsx-sn74ac244-specs",
+      "cohort": "extended",
+      "mode": "en2zh",
+      "evidence_level": "isolated_live_api_celery_sqlite",
+      "expected_outcome": "normal",
+      "expected_tables": 1,
+      "expected_tokens": {
+        "model": 2,
+        "unit": 1
+      },
+      "expected_visual_pages": 1,
+      "expected_visual_regions": 1
+    }
+  ],
+  "observations": [
+    {
+      "sample_id": "gsx-sn74ac244-specs",
+      "mode": "en2zh",
+      "conversion": {
+        "status": "failed",
+        "reason": "mineru_failed",
+        "docx_available": false,
+        "docx_openable": false
+      },
+      "missing": {
+        "cost": "mineru_charge_unverified_no_translation_call",
+        "edits": "no_docx_for_human_review",
+        "review_time": "no_docx_for_human_review",
+        "visual": "no_docx_or_approved_en2zh_visual_reference"
+      },
+      "latency": {
+        "kind": "end_to_end",
+        "seconds": 2.06,
+        "poll_interval_seconds": 2
+      },
+      "execution": {
+        "source_pdf_sha256": "04c5b23af2877ebd686b032caa25c9f0d2ace7b123fb0d013c83cc562285fc74",
+        "job_id": "docjob_fbf7ce75c2e8",
+        "submitted_at_utc": "2026-11-11T12:26:01.498341+00:00",
+        "failure_stage": "parsing",
+        "retry_count": 0,
+        "source_upload_seconds_excluded": 0.023,
+        "translation_invoked": false
+      }
+    }
+  ]
+}
