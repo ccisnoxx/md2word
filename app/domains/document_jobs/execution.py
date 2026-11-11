@@ -110,37 +110,24 @@ class DocumentJobExecutionService:
         self.file_repository = file_repository
         self.file_service = file_service
         self.document_ir_service = document_ir_service
+        self.job_resource_snapshot_service = job_resource_snapshot_service
         self.logger = logging.getLogger("business")
-        # MinerU 专属依赖只交给协作者持有，未传入客户端工厂时由协作者取默认构造。
+        # 共用依赖只由宿主持有，协作者经 _host 读取；以下只传各协作者的专属依赖。
+        # 未传入 MinerU 客户端工厂时由协作者取默认构造。
         self.mineru = MinerUExecution(
             self,
-            settings=settings,
-            job_repository=job_repository,
-            file_service=file_service,
             callback_message_store=callback_message_store,
             mineru_config_resolver=mineru_config_resolver,
             mineru_client_factory=mineru_client_factory,
         )
-        # 渲染专属依赖只交给协作者持有；settings 等共用依赖两边引用同一对象。
         self.rendering = WordRenderExecution(
             self,
-            settings=settings,
-            job_repository=job_repository,
-            file_repository=file_repository,
-            file_service=file_service,
-            document_ir_service=document_ir_service,
-            job_resource_snapshot_service=job_resource_snapshot_service,
             template_read_service=template_read_service,
             word_renderer=word_renderer,
             word_preview_service=word_preview_service,
         )
-        # 翻译专属依赖只交给协作者持有；settings 等共用依赖两边引用同一对象。
         self.translation_batches = TranslationBatchExecution(
             self,
-            settings=settings,
-            job_repository=job_repository,
-            file_service=file_service,
-            job_resource_snapshot_service=job_resource_snapshot_service,
             translation_batch_repository=translation_batch_repository,
             document_ir_translation_service=document_ir_translation_service,
             translation_audit_service=translation_audit_service,

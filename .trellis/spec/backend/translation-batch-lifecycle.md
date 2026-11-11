@@ -6,7 +6,7 @@
 
 - `document_jobs/workflow.py` 唯一拥有树校验与纯 generation reducer。
 - `repository.py` 与三个 metadata adapter 拥有同 job 原子操作和一致快照。
-- `translation_execution.py` 的 `TranslationBatchExecution` 负责锁外 I/O、权威计划构造、调用原子端口和幂等 finalizer；它由 `execution.py` 的 `DocumentJobExecutionService` 构造并持有（`translation_batches`），任务级事件、失败与超时收口及校验通过后的续跑仍经宿主的 `_record_event`、`_mark_failed`、`_fail_stage_attempt`、`_mark_timed_out_if_needed`、`execute_job` 完成，且在调用时经宿主引用查找。
+- `translation_execution.py` 的 `TranslationBatchExecution` 负责锁外 I/O、权威计划构造、调用原子端口和幂等 finalizer；它由 `execution.py` 的 `DocumentJobExecutionService` 构造并持有（`translation_batches`），任务级事件、失败与超时收口及校验通过后的续跑仍经宿主的 `_record_event`、`_mark_failed`、`_fail_stage_attempt`、`_mark_timed_out_if_needed`、`execute_job` 完成，且在调用时经宿主引用查找；`settings`、`job_repository`、`file_service`、`job_resource_snapshot_service` 等共用依赖只由宿主持有，协作者同样在使用时经宿主引用读取，只保存翻译专属依赖。
 - `service.py` 负责用户 retry、授权及 API 投影；前端只消费结论和 available actions。
 
 ## 2. 签名
