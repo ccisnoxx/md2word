@@ -1,0 +1,32 @@
+{
+  "id": "structure-refactor",
+  "name": "structure-refactor",
+  "title": "结构重构：组合根、用例编排、协作者解耦、Renderer/Evidence 与大型页面拆分",
+  "description": "五项结构重构的父任务：任务映射、跨子任务验收与最终集成",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-11-11",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-11-sr-1-host-decoupling",
+    "11-11-sr-2-job-use-cases",
+    "11-11-sr-3-composition-root",
+    "11-11-sr-4-renderer-evidence",
+    "11-11-sr-5-vue-pages"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
