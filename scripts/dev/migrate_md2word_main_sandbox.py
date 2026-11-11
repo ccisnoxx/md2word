@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert the legacy md2word_main project into a thin local debug sandbox."""
+"""将旧 md2word_main 项目迁移为本地调试薄壳沙盒。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Sequence
 
 
-DEFAULT_SANDBOX_ROOT = Path("/Users/sc/PycharmProjects/PythonProject/md2word_main")
 SANDBOX_ENV = "MD2WORD_SANDBOX_ROOT"
 ROOT = Path(__file__).resolve().parents[2]
 ARCHIVE_DIR_NAME = "_legacy_duplicate_core"
@@ -33,16 +32,19 @@ class MigrationResult:
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Migrate md2word_main into a thin local debug shell.")
+    parser = argparse.ArgumentParser(description="将 md2word_main 迁移为本地调试薄壳。")
     parser.add_argument(
         "--sandbox-root",
-        default=os.environ.get(SANDBOX_ENV, str(DEFAULT_SANDBOX_ROOT)),
-        help=f"md2word_main root. Defaults to {SANDBOX_ENV} or {DEFAULT_SANDBOX_ROOT}.",
+        default=os.environ.get(SANDBOX_ENV),
+        help=f"md2word_main 根目录；未传参数时读取 {SANDBOX_ENV}。",
     )
-    parser.add_argument("--official-root", default=str(ROOT), help="Official md2word repository root.")
-    parser.add_argument("--apply", action="store_true", help="Write changes. Without this, only report planned changes.")
-    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
-    return parser.parse_args(argv)
+    parser.add_argument("--official-root", default=str(ROOT), help="正式 md2word 仓库根目录。")
+    parser.add_argument("--apply", action="store_true", help="写入改动；未指定时仅报告计划改动。")
+    parser.add_argument("--json", action="store_true", help="输出机器可读的 JSON。")
+    args = parser.parse_args(argv)
+    if not args.sandbox_root:
+        parser.error(f"必须通过 --sandbox-root 或环境变量 {SANDBOX_ENV} 指定沙盒目录。")
+    return args
 
 
 def migrate_sandbox(*, sandbox_root: Path, official_root: Path, apply: bool) -> MigrationResult:
@@ -76,7 +78,7 @@ def migrate_sandbox(*, sandbox_root: Path, official_root: Path, apply: bool) -> 
         "mineru_to_docx.py": build_thin_entrypoint(official_root),
         "config.py": build_compat_config(official_root),
         "sandbox_config.json": build_sandbox_config(sandbox_root, official_root),
-        "README.md": build_readme(official_root),
+        "README.md": build_readme(official_root, sandbox_root),
         "tests/test_thin_shell.py": build_thin_shell_test(),
     }
     for relative_path, content in files.items():
@@ -188,7 +190,17 @@ def build_sandbox_config(sandbox_root: Path, official_root: Path) -> str:
     return json.dumps(config, ensure_ascii=False, indent=2) + "\n"
 
 
-def build_readme(official_root: Path) -> str:
+def build_readme(official_root: Path, sandbox_root: Path) -> str:
+    config_example = json.dumps(
+        {
+            "input_path": str(sandbox_root / "mineru_result" / "OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4"),
+            "output_path": "tests/tmp/local_mineru_debug/OPA228_P1.docx",
+            "document_language": "en",
+            "translation_mode": "direct",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
     return f'''# md2word_main
 
 `md2word_main` 已不再作为转换代码运行入口。这个目录只保留历史样例资产和输出资产，例如 `test_pdf/`、`mineru_result/`、`out/`。
@@ -202,15 +214,10 @@ def build_readme(official_root: Path) -> str:
 - 默认配置文件：`{official_root}/scripts/dev/local_mineru_debug_config.json`
 - Python 解释器：在 PyCharm 中选择正式项目的 Python 3.11 解释器。
 
-配置文件里的 `input_path` 可以使用绝对路径指向本目录下的 `mineru_result/`，例如：
+配置文件里的 `input_path` 可以使用绝对路径指向本目录下的 `mineru_result/`。以下示例按本次指定的沙盒目录生成：
 
 ```json
-{{
-  "input_path": "/Users/sc/PycharmProjects/PythonProject/md2word_main/mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4",
-  "output_path": "tests/tmp/local_mineru_debug/OPA228_P1.docx",
-  "document_language": "en",
-  "translation_mode": "direct"
-}}
+{config_example}
 ```
 
 ## 废弃入口
