@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "document_jobs 目录约定：新增 mineru_execution.py 的归属与文件列表"}
+{"file": ".trellis/spec/backend/document-job-mode-contract.md", "reason": "阶段推进与事件 owner 仍为 execution.py；parsing/parsed 阶段语义与回调重放不变"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "失败收口与错误码合同：宿主 5 个回调方法与 MinerU 失败分类不得变化"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "回调消息存储与 MinerU 原始结果文件登记的持久化合同：搬移后保持"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "business logger 与回调日志约定：协作者沿用同一 logger"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "代码质量与注释约定"}
+{"file": ".trellis/tasks/11-11-mineru-execution-extraction/research/current-state.md", "reason": "迁出集合、双向耦合、依赖归属与测试耦合的度量"}
