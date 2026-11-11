@@ -13,9 +13,16 @@ source_files:
 summary: Document Jobs API 提供 P0 PDF -> Word 任务创建、查询、事件、重试、clone、取消、归档、删除和下载入口。
 tags: [document-jobs, api, pdf, word]
 last_reviewed: 2026-10-22
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 ## 概述
+
+本页维护正式文档任务的 API 参考。本批仅静态核对路由挂载与声明入口，未逐字段复核响应、权限、副作用或真实请求；示例和原验收声明仍按各自记录范围解释。 文末 Golden blocked 是保留的旧验收口径，不是本次环境结论；新运行见 [P0 联调说明](../testing/pdf-to-word-p0-integration-guide.md)，原发布批次见 [历史 Golden 报告](../testing/pdf-to-word-golden-sample-acceptance-report.md)。
 
 Document Jobs API 挂在 `/api/v1/document-jobs` 下，是当前 P0 PDF -> Word 工作台和 Golden Sample 回归使用的主链路。
 

@@ -1,8 +1,8 @@
-/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+${PROJECT_ROOT}/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
   from starlette.testclient import TestClient as TestClient  # noqa
-/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
   from app.api.errors import register_api_error_handlers
-/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
   from app.api.errors import register_api_error_handlers
 test_export_openapi_writes_snapshot_and_check_passes (tests.test_openapi_export.OpenAPIExportTests.test_export_openapi_writes_snapshot_and_check_passes) ... ok
 test_legacy_jobs_api_paths_are_removed (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_legacy_jobs_api_paths_are_removed) ... 2026-11-06 16:01:44,751 | business | WARNING | [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
@@ -329,7 +329,7 @@ ok
 ERROR: test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 9207, in test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 9207, in test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed
     job_id = create_response.json()["job_id"]
              ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
 KeyError: 'job_id'
@@ -338,7 +338,7 @@ KeyError: 'job_id'
 FAIL: test_health_ready_blocks_p0_document_jobs_in_production_when_required_config_missing (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_blocks_p0_document_jobs_in_production_when_required_config_missing)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 1668, in test_health_ready_blocks_p0_document_jobs_in_production_when_required_config_missing
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 1668, in test_health_ready_blocks_p0_document_jobs_in_production_when_required_config_missing
     self.assertIn("mineru_callback_url_missing", checks["p0_document_jobs_blockers"])
 AssertionError: 'mineru_callback_url_missing' not found in ['document_jobs_worker_backend_disabled', 'document_jobs_metadata_store_not_mysql', 'auth_jwt_secret_key_missing', 'auth_internal_users_source_missing', 'mineru_api_token_missing']
 

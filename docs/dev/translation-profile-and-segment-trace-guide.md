@@ -6,9 +6,16 @@ status: current
 summary: 面向集成方说明如何通过 Translation Profile API 管理翻译配置，并在翻译 job 中读取 segment trace。
 tags: [backend, translation, resource-versioning, jobs, audit]
 last_reviewed: 2026-07-23
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # Translation Profile 与 Segment Trace 指南
+
+本页维护翻译配置版本和片段证据的集成程序，应与 [Translation Profiles API](../api/translation-profiles.md) 及 [Document Jobs API](../api/document-jobs.md) 配合阅读。本批仅核对入口，未逐项验证 trace 内容、各翻译方向或真实模型执行。
 
 ## 概述
 
@@ -122,7 +129,7 @@ Translation Profile payload 保存模型、目标语言、领域、分批阈值�
 
 ## 接口参考
 
-完整端点参考见 [translation-profiles.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-profiles.md)。
+完整端点参考见 [translation-profiles.md](../api/translation-profiles.md)。
 
 常用端点：
 
@@ -228,7 +235,7 @@ curl -sS -X POST \
 
 ## 相关文档
 
-- [translation-profiles.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-profiles.md)
-- [jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/jobs.md)
-- [term-rule-set-versioning-guide.md](/Users/sc/PycharmProjects/md2word/docs/dev/term-rule-set-versioning-guide.md)
-- [backend-local-setup-and-architecture.md](/Users/sc/PycharmProjects/md2word/docs/dev/backend-local-setup-and-architecture.md)
+- [translation-profiles.md](../api/translation-profiles.md)
+- [jobs.md](../api/jobs.md)
+- [term-rule-set-versioning-guide.md](term-rule-set-versioning-guide.md)
+- [backend-local-setup-and-architecture.md](backend-local-setup-and-architecture.md)

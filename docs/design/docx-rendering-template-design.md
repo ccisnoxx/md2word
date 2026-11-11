@@ -3,9 +3,16 @@ doc_type: technical-design
 status: target
 component: docx-renderer-template
 last_reviewed: 2026-10-03
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  本批仅阅读全文、核对用途和原字段：目标渲染设计及已写入的 RND-502/503 合同；保留细节，Word/部署预览未验边界不能丢。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
 ---
 
 # DOCX 原生渲染与模板设计
+
+目标渲染设计及已写入的 RND-502/503 合同；保留细节，Word/部署预览未验边界不能丢。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](../engineering/documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
 
 ## 1. 目标
 

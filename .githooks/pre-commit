@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""原生 Git 提交入口；失败即阻止提交，只输出安全定位。"""
+
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+def main():
+    root_result = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True)
+    if root_result.returncode:
+        print("pre-commit:1: git-read-failed：无法确定 Git 仓库根目录。", file=sys.stderr)
+        return 2
+    root = Path(os.fsdecode(root_result.stdout).removesuffix("\n"))
+    check = subprocess.run([sys.executable, str(root / "scripts/ops/check_repository_hygiene.py"), "--staged"], cwd=root)
+    if check.returncode:
+        return check.returncode
+    scanner = shutil.which("gitleaks")
+    if scanner is None:
+        print("pre-commit:1: scanner-missing：请按开发文档安装 Gitleaks 8.30.1。", file=sys.stderr)
+        return 2
+    version = subprocess.run([scanner, "version"], capture_output=True)
+    if version.returncode or version.stdout.strip() != b"8.30.1":
+        print("pre-commit:1: scanner-version：必须使用 Gitleaks 8.30.1。", file=sys.stderr)
+        return 2
+    with tempfile.TemporaryDirectory(prefix="md2word-gitleaks-") as directory:
+        report = Path(directory) / "report.json"
+        result = subprocess.run([
+            scanner, "git", "--pre-commit", "--staged", "--config", str(root / ".gitleaks.toml"),
+            "--redact=100", "--ignore-gitleaks-allow", "--gitleaks-ignore-path", os.devnull,
+            "--no-banner", "--no-color", "--log-level", "error", "--report-format", "json",
+            "--report-path", str(report),
+        ], cwd=root, capture_output=True)
+        if result.returncode not in (0, 1):
+            print(f"pre-commit:1: scanner-failed：Gitleaks 扫描失败，退出码 {result.returncode}。", file=sys.stderr)
+            return 2
+        try:
+            hits = json.loads(report.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            print("pre-commit:1: scanner-report：Gitleaks 未提供有效报告，提交已阻止。", file=sys.stderr)
+            return 2
+        for hit in hits:
+            # 报告虽已全量脱敏，仍仅展示位置和规则，不转发扫描器的原始输出。
+            path = json.dumps(hit["File"], ensure_ascii=False)
+            print(f"{path}:{hit['StartLine']}: {hit['RuleID']}：疑似凭证，请移除并核查。")
+        if result.returncode or hits:
+            if not hits:
+                print("pre-commit:1: scanner-failed：Gitleaks 非零退出且无定位，提交已阻止。", file=sys.stderr)
+            return 1
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except OSError:
+        print("pre-commit:1: tool-execution-failed：无法启动或读取检查工具，提交已阻止。", file=sys.stderr)
+        raise SystemExit(2)

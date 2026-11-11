@@ -31,7 +31,7 @@
 以下为实施轮主会话执行的新增模块，准确argv/cwd/env见外置真实记录；当前提交轮不重跑：
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_template_seed_history -v
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_template_seed_history -v
 ```
 
 仅运行这个模块。成功输入不变时复用；不因Spec、任务记录或收尾再跑。测试结果不扩展为真实MySQL、线上或Word外观验收。

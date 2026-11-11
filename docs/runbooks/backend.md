@@ -6,9 +6,16 @@ status: current
 summary: 当前后端本地开发、线上优先验证、运维动作和真实样例验证的运行说明。
 tags: [backend, runbook, jobs, deploy, hostdzire]
 last_reviewed: 2026-06-17
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # 后端运行与线上验证说明
+
+本页维护后端专项开发、运行与迁移程序；本批仅静态核对入口/参数声明，没有执行文中 API、服务启动、数据库迁移、发布检查或真实样例。原先分版本、环境与维护窗口的限制继续适用，具体核验边界见本文元数据所引本批证据。
 
 ## 0. 线上优先验证边界
 

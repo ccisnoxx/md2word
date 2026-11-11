@@ -9,9 +9,16 @@ source_files:
 summary: Legacy `/api/v1/jobs` endpoint family has been removed from the public v1 API. Use Files + Document Jobs instead.
 tags: [jobs, api, legacy, removed]
 last_reviewed: 2026-06-11
+doc_status: superseded
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文占位/移除用途及明确替代入口的静态核对；原 status 和说明保留，不认证旧功能或命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # Legacy Jobs API Removed
+
+本页保留已移除的 legacy Jobs API 引用入口，已由 [Files API](files.md) 与 [Document Jobs API](document-jobs.md) 的正式流程替代。原 `status: removed` 和历史说明保留；不要从旧目录仍有共享文件推断旧 HTTP 入口仍然可用。
 
 `/api/v1/jobs` is no longer exposed by the v1 API router and must not be used by the frontend workbench or new integrations.
 

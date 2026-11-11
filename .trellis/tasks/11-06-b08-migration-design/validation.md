@@ -12,8 +12,8 @@
 
 | 检查/实际命令 | 结果 | 证据边界 |
 |---|---|---|
-| `PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python .trellis/scripts/task.py validate .trellis/tasks/11-06-b08-migration-design` | 通过 | implement.jsonl、check.jsonl 各 5 个有效条目；这是上下文格式/路径检查，不是设计语义或迁移执行验收。 |
-| `PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -`（内联只读检查） | 通过 | 扫描三件套中反引号包裹的代码文件:行号，共 29 处唯一引用；路径存在且行号有效，已输出并人工核对目标行含义。另检查行尾空白、task.json 可解析、Git 未跟踪范围及暂存/已跟踪差异为空。 |
+| `PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python .trellis/scripts/task.py validate .trellis/tasks/11-06-b08-migration-design` | 通过 | implement.jsonl、check.jsonl 各 5 个有效条目；这是上下文格式/路径检查，不是设计语义或迁移执行验收。 |
+| `PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -`（内联只读检查） | 通过 | 扫描三件套中反引号包裹的代码文件:行号，共 29 处唯一引用；路径存在且行号有效，已输出并人工核对目标行含义。另检查行尾空白、task.json 可解析、Git 未跟踪范围及暂存/已跟踪差异为空。 |
 | `git diff --check` | 通过 | 无已跟踪差异或空白错误；新增文件的空白检查由上条补足。 |
 | `git status --short --untracked-files=all`、`git diff --stat`、`git diff --cached --stat` | 通过 | 只有本任务目录内新增文件，已跟踪及暂存差异为空。 |
 

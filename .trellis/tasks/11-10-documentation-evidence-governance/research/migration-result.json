@@ -1,0 +1,1346 @@
+{
+  "date": "2026-11-10",
+  "status": "local_checks_and_independent_review_passed",
+  "source_head": "d45e46e1233c3f173fa1d738cf75b3ef7a393eb9",
+  "existing_documents": 134,
+  "added_documents": 1,
+  "current_total": 135,
+  "by_batch": {
+    "B1": 11,
+    "B2": 21,
+    "B3": 51,
+    "B4": 52
+  },
+  "lifecycle_counts": {
+    "active": 120,
+    "draft": 2,
+    "historical": 6,
+    "superseded": 7
+  },
+  "non_null_verified_commit": 2,
+  "confirmed_owners": 0,
+  "preservation": {
+    "preexisting_dirty_unchanged": 178,
+    "preexisting_dirty_changed_within_authorized_documents": 67,
+    "owned_preexisting_dirty_paths": [
+      "docs/api/term-rule-categories.md",
+      "docs/api/term-rule-sets.md",
+      "docs/api/term-rules.md",
+      "docs/api/translation-profiles.md",
+      "docs/api/translation-term-proposals.md",
+      "docs/api/translation-term-sets.md",
+      "docs/deploy/hostdzire-dmit-md2word.md",
+      "docs/deploy/online-first-validation-workflow.md",
+      "docs/dev/local-component-pdf-debugging-implementation-plan.md",
+      "docs/dev/local-conversion-sandbox.md",
+      "docs/dev/term-rule-set-versioning-guide.md",
+      "docs/dev/translation-profile-and-segment-trace-guide.md",
+      "docs/implementation/baseline-verification-2026-10-12.md",
+      "docs/implementation/codex-prompts/00-parent-task-bootstrap.md",
+      "docs/implementation/codex-prompts/BAS-001.md",
+      "docs/implementation/codex-prompts/CON-101.md",
+      "docs/implementation/codex-prompts/CON-102.md",
+      "docs/implementation/codex-prompts/CON-103.md",
+      "docs/implementation/codex-prompts/CON-104.md",
+      "docs/implementation/codex-prompts/DOC-001.md",
+      "docs/implementation/codex-prompts/IR-201.md",
+      "docs/implementation/codex-prompts/IR-202.md",
+      "docs/implementation/codex-prompts/IR-203.md",
+      "docs/implementation/codex-prompts/IR-204.md",
+      "docs/implementation/codex-prompts/IR-205.md",
+      "docs/implementation/codex-prompts/IR-206.md",
+      "docs/implementation/codex-prompts/IR-207.md",
+      "docs/implementation/codex-prompts/QA-601.md",
+      "docs/implementation/codex-prompts/QA-602.md",
+      "docs/implementation/codex-prompts/QA-603.md",
+      "docs/implementation/codex-prompts/QA-604.md",
+      "docs/implementation/codex-prompts/QA-605.md",
+      "docs/implementation/codex-prompts/QA-606.md",
+      "docs/implementation/codex-prompts/QA-607.md",
+      "docs/implementation/codex-prompts/REL-701.md",
+      "docs/implementation/codex-prompts/REL-702.md",
+      "docs/implementation/codex-prompts/REL-703.md",
+      "docs/implementation/codex-prompts/REL-704.md",
+      "docs/implementation/codex-prompts/RND-501.md",
+      "docs/implementation/codex-prompts/RND-502.md",
+      "docs/implementation/codex-prompts/RND-503.md",
+      "docs/implementation/codex-prompts/RND-504.md",
+      "docs/implementation/codex-prompts/RND-505.md",
+      "docs/implementation/codex-prompts/RND-506.md",
+      "docs/implementation/codex-prompts/TAB-301.md",
+      "docs/implementation/codex-prompts/TAB-302.md",
+      "docs/implementation/codex-prompts/TAB-303.md",
+      "docs/implementation/codex-prompts/TAB-304.md",
+      "docs/implementation/codex-prompts/TAB-305.md",
+      "docs/implementation/codex-prompts/TAB-306.md",
+      "docs/implementation/codex-prompts/TAB-307.md",
+      "docs/implementation/codex-prompts/TAB-308.md",
+      "docs/implementation/codex-prompts/TR-401.md",
+      "docs/implementation/codex-prompts/TR-402.md",
+      "docs/implementation/codex-prompts/TR-403.md",
+      "docs/implementation/codex-prompts/TR-404.md",
+      "docs/implementation/codex-prompts/TR-405.md",
+      "docs/implementation/codex-prompts/TR-406.md",
+      "docs/implementation/codex-prompts/TR-407.md",
+      "docs/implementation/codex-task-manifest.yaml",
+      "docs/implementation/codex-task-prompts-all-in-one.md",
+      "docs/runbooks/internal-portal.md",
+      "docs/testing/md2word-fe-be-integration-acceptance.md",
+      "docs/testing/pdf-to-word-golden-sample-acceptance-report.md",
+      "docs/testing/pdf-to-word-gs-003-quality-triage.md",
+      "docs/testing/pdf-to-word-p0-integration-guide.md",
+      "docs/dev/repository-hygiene.md"
+    ],
+    "index_entries_unchanged": true,
+    "head_unchanged": true,
+    "unexpected_changes": []
+  },
+  "manifest_reconciliation": {
+    "tasks": 45,
+    "unique_ids": 45,
+    "status_counts": {
+      "done": 8,
+      "todo": 37
+    },
+    "execution_data_unchanged": true,
+    "report": "research/manifest-reconciliation.md"
+  },
+  "reference_search_scope": "app/scripts/tests/frontend/.trellis/scripts 的py/ts/js完整精确引用枚举未找到两份docs Manifest的业务读取；不推断仓库外消费者",
+  "known_existing_issues": [
+    "docs/api/document-jobs.md 中两条CON-102 receipt归档断链，原文保留",
+    "TR-406提示词与Manifest依赖口径差异，导语明确依赖门以Manifest为准"
+  ],
+  "patch": null,
+  "errors": [],
+  "documents": [
+    {
+      "path": "DOCUMENTATION-MANIFEST.md",
+      "batch": "B1",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "核对文档职责、权威关系和治理说明入口；不核验各目标能力或推进任务状态。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。",
+      "sha256": "440414f945dab789db7f17f038afc1c7fb42b5a5f7ee26a57e4900bea2b9a5a0"
+    },
+    {
+      "path": "README.md",
+      "batch": "B1",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "仅核对产品/运行文档导航、目标与现状边界及历史验收入口；不认证 API、P1/P2 或运行结果。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。",
+      "sha256": "bc375525922ff6dcb41d7fa5dba060b35aa5a62d20dbab423c0a30d0bf06044b"
+    },
+    {
+      "path": "docker/README.md",
+      "batch": "B1",
+      "doc_status": "active",
+      "last_verified_commit": "d45e46e1233c3f173fa1d738cf75b3ef7a393eb9",
+      "owner": null,
+      "verification_scope": "静态对照该提交的 dev/prod Dockerfile、Compose 与 requirements.txt，核对运行锁、wheelhouse、pip 参数和共用镜像声明；未构建、拉取、启动或访问生产。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。",
+      "sha256": "c757cd91954d1a9bfa7a7c7745cac99427f7a806a731ce6445df8ca4d8c42026"
+    },
+    {
+      "path": "docs/README.md",
+      "batch": "B1",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "核对文档分层导航、生命周期说明及历史验收入口；链接可达不等于正文能力已验收。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。",
+      "sha256": "8d1c3247587b275529a9d5304bcc8cfe03f17b429c0a4f4616df9977c41e177c"
+    },
+    {
+      "path": "docs/api/acceptance.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "d138aab6f1c1d05b76d194b82a6884ffba46d8bdad5eb1bb4001c05c53dcc7f3"
+    },
+    {
+      "path": "docs/api/auth.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "6893743be148ae15c8d985346f43fc00d34f95484eb3f14b4483ca50ceaa2d1e"
+    },
+    {
+      "path": "docs/api/config-workbench.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "1fd9647b2c647be9f6350d37f32ea7c4c48ebe4b2e66ce8e77bff1c24e6062d3"
+    },
+    {
+      "path": "docs/api/document-jobs.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "10d8f1820efa6a15d7ac1394433a66e9a85053d7bbe9e6336387e44bbbae6cd2"
+    },
+    {
+      "path": "docs/api/files.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "f9a4a5e6045957b9df70f046ce38b6fe6c4bfb769d8ccd9752086a91b75a4bf4"
+    },
+    {
+      "path": "docs/api/health.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "fd13085223f2259d7756a3dfe724406b0c307b78a4496ef5d8314f71fcbd1124"
+    },
+    {
+      "path": "docs/api/jobs.md",
+      "batch": "B3",
+      "doc_status": "superseded",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文占位/移除用途及明确替代入口的静态核对；原 status 和说明保留，不认证旧功能或命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "ae73a1e6e9d49ad0dd139b4c7d6eb0949ea255c82606677fd458bce53d624517"
+    },
+    {
+      "path": "docs/api/manifest.yaml",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "顶层索引用途、当前 v1 挂载和原字段的静态核对；entries/guides/OpenAPI 及原 status 保留，不认证索引完整性或仓库外消费者。原索引差异与工作区内容身份见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md；未导出 OpenAPI、执行接口或发布检查。",
+      "sha256": "30962d6a06818ce84f7c23a292de2cf36c3b754e30aa980f93c8a907c55e805c"
+    },
+    {
+      "path": "docs/api/mineru-callbacks.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "edddbf6ce6cbfb767e8992badb1fbbb0e5146e252ad69421398a16b24088ba8a"
+    },
+    {
+      "path": "docs/api/mineru-config.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "8648e5a5248772ed1670d4fbeab06108ad807b02e1394cc6ab7f02a2e0f07acf"
+    },
+    {
+      "path": "docs/api/ops.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "7d3527b7164d87dbeb6e782ebdfe0dee8432fd140de9856598717570dac924d0"
+    },
+    {
+      "path": "docs/api/templates.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "80acb118311488e2872404f8d86a42194f41a3a7823db3f9e4237d7ed2814197"
+    },
+    {
+      "path": "docs/api/term-rule-categories.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "39795a21310ac705eb6da7e8a1d1feb5a4762d45ee0325de660b23ba512c5714"
+    },
+    {
+      "path": "docs/api/term-rule-sets.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "ad7843bcc71f5e86258b40b345e0ba798f823e11d245438108995a2dafac98c4"
+    },
+    {
+      "path": "docs/api/term-rules.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "202725c58e73c488b13fdf0cd96decf53b4df8996940696f672c6026468b74fd"
+    },
+    {
+      "path": "docs/api/translation-profiles.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "6694a86bad97af1aae60899e51850bd10a3fe6051558a12d5619a74e006044a4"
+    },
+    {
+      "path": "docs/api/translation-term-proposals.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "834d674db9a7a860b8428da4b28c7925020b5e644fa961b8077c05cc69eca80a"
+    },
+    {
+      "path": "docs/api/translation-term-sets.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "e8e5d553cb298e9422ae664f247a28a301af00d3d63d0f5193cdc82dbb3e7eb9"
+    },
+    {
+      "path": "docs/api/users.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "1dff89d04bd7fbd14be5b0b90cdc94de69049b1b08ca128639f9d41c25dde1e3"
+    },
+    {
+      "path": "docs/architecture/business-architecture.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：业务能力、角色和价值流是目标边界；不能把能力地图当作现有全链实现。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "573fcf6a7d55d5e1bf263fc8e608776981040ef40fa4f150a18a88a71ec97ce7"
+    },
+    {
+      "path": "docs/architecture/domain-model.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：聚合、不变量和模型为目标合同；示例字段与实际模型不逐项等同。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "0d461d23ec18584e10edd51fe3d16f04e67b5e084edab7aa821aaadc6c444678"
+    },
+    {
+      "path": "docs/architecture/system-architecture.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：目标模块边界与历史当前拓扑混排；保留 e51e6ccd 与 2026-11-06 局部复核，不给全篇换新基线。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "4dc7ad4e8542403f354660f68b6de99648713e083d846168e6c5f9bf22c9e436"
+    },
+    {
+      "path": "docs/architecture/technology-stack.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：技术约束仍维护；表内旧版本说明不证明当前安装版本，实际依赖入口是 requirements/锁与 frontend package 文件。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "6f0cf77dd98ccdb57515f4b753ac243fb35c7ccd0d96a5f56e56d5c4b10c8fbd"
+    },
+    {
+      "path": "docs/architecture/workflows-and-state-machines.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：执行/质量/复核/交付目标状态机与已有 TR-406 合同；不据文本宣布环境门已过。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "42d1b45f30155a8a981f911e7f460f62166a5790e6555370f02e82c97e063e28"
+    },
+    {
+      "path": "docs/contracts/document-ir-contract.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：v2 兼容扩展合同；保留当前结构示例与 IR-204 回执专项语义，具体当前实现另见对账。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "40185dfb8395417fd496661acb293f7d224210d413fe771ea1449eaf2aa9244b"
+    },
+    {
+      "path": "docs/contracts/mineru-artifact-contract.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：输入、资源、路径与规范化的目标边界，不是所有生产输入已验证的报告。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "e177e4859daea689dca64ffd9d3b8e57a85746c98368067c0372014ae8061a6b"
+    },
+    {
+      "path": "docs/decisions/architecture-decisions.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：ADR-001 至 ADR-016 为已接受决策；accepted 不表示其所有目标能力已交付。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "0bb18bb445a37fad2a46ddd73b7df59b7f8ae2357b4fabb56414ff95cb988abd"
+    },
+    {
+      "path": "docs/deploy/hostdzire-dmit-md2word.md",
+      "batch": "B1",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "仅核对仓库 Compose 与分层 override 记录的适用边界及维护入口；2026-11-06/09 线上观察保留为原记录，本次未读取线上配置或复核部署结果。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。",
+      "sha256": "e378247f6699b22510698bb166b432bd576d2348a92e938380cd733aa9167a0b"
+    },
+    {
+      "path": "docs/deploy/online-first-validation-workflow.md",
+      "batch": "B1",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "仅对照仓库配置、既有部署记录和脚本参数标明当前入口及 B02 前构建/回滚示例范围；未执行部署或运行门禁，历史环境不是当前观察。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。",
+      "sha256": "04c8d01d49221e3db8e30c714cdbe7c91563f6966c2d20110928a071b6adda92"
+    },
+    {
+      "path": "docs/deploy/p0-docker-deployment.md",
+      "batch": "B1",
+      "doc_status": "active",
+      "last_verified_commit": "d45e46e1233c3f173fa1d738cf75b3ef7a393eb9",
+      "owner": null,
+      "verification_scope": "仅静态核对该提交的 dev/prod Dockerfile 和 Compose 中依赖安装链、服务、镜像引用与平台声明；制品来源/工具版本、运行配置和线上验收未重新验证。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。",
+      "sha256": "e29a2e56974f67a3fd78bbc23404399f21e96c3a77a15ae6259d8049376ced9b"
+    },
+    {
+      "path": "docs/design/docx-rendering-template-design.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：目标渲染设计及已写入的 RND-502/503 合同；保留细节，Word/部署预览未验边界不能丢。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "ed1c49062b8d3551cea402436488a93730147865e40f0a65a43067f02f02a014"
+    },
+    {
+      "path": "docs/design/quality-review-release-design.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：质量、统一复核、三栏和发布的目标设计；后端局部存在不等于全部前端/端到端完成。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "3b70f2e327f77dea6221a12f03827102c4612b01b91fd6554f653610386709ae"
+    },
+    {
+      "path": "docs/design/table-processing-design.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：目标表格设计；第2节当前基线/主要差距是历史调查，不凭旧行号重复实现当前已有 grid。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "2092322fba8c178967d439ef635bbd1521d92cbaffc3c65bef1a9c680a8a5b1c"
+    },
+    {
+      "path": "docs/design/translation-design.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：翻译目标与 TR-402/403/406 局部合同；其他任务需区分历史接受与当前集成，不能用历史功能提交代替当前调用核对。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "0137b5c1f10724922b8f48f5d523d9659837df8acf8ce74fa30b6ca2334486ed"
+    },
+    {
+      "path": "docs/dev/backend-architecture-baseline-and-issues.md",
+      "batch": "B3",
+      "doc_status": "draft",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文草稿定位、原日期/checklist 和现行入口的静态核对；未重新冻结方案或把原勾选认作当前验收。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "912bb9e6b4c933a8b7e7855e3921a300e678322544012341fee6ebc5d3ce0f47"
+    },
+    {
+      "path": "docs/dev/backend-design-implementation-plan.md",
+      "batch": "B3",
+      "doc_status": "draft",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文草稿定位、原日期/checklist 和现行入口的静态核对；未重新冻结方案或把原勾选认作当前验收。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "d92fd492d8a92a543877867a893e1137e8fbe301cd5d20caba629a0cdc5ea106"
+    },
+    {
+      "path": "docs/dev/backend-dev-docs-index.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "6318a7ef0e341d9c7f31d082ce8bce21cf6babbbb79e6c325226c103ff1dcbda"
+    },
+    {
+      "path": "docs/dev/backend-local-minimal-env-and-commands.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "3df864cc9be1f5716a2e938ee1474b94a0e68fbb24d51e03b9b7c3cde926d358"
+    },
+    {
+      "path": "docs/dev/backend-local-setup-and-architecture.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "cb8dd30934d72303fcfa1c115b44e7caa228406ee2dbe201044d7e87986c10ec"
+    },
+    {
+      "path": "docs/dev/backend-pdf-online-completion-change-summary.md",
+      "batch": "B3",
+      "doc_status": "superseded",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文占位/移除用途及明确替代入口的静态核对；原 status 和说明保留，不认证旧功能或命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "8e9c63903250e2867d8157534273adab0623d57361fad2aa8e1e791a525b7413"
+    },
+    {
+      "path": "docs/dev/component-pdf-regression-governance.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "ab33eeae1027aea9f558407b2b10032f811ab067af518976542bd876b905053d"
+    },
+    {
+      "path": "docs/dev/document-ir-v1.md",
+      "batch": "B3",
+      "doc_status": "superseded",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文占位/移除用途及明确替代入口的静态核对；原 status 和说明保留，不认证旧功能或命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "38c9765fa5f5c8f5aa85a10b0015bdd297975dae069fff43b29dfda8e82ff6c5"
+    },
+    {
+      "path": "docs/dev/document-ir-v2.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "b65b4e604aaf6680c46d9a4aaf155809117b221e86473cc4b95f21828e8296d4"
+    },
+    {
+      "path": "docs/dev/local-component-pdf-debugging-implementation-plan.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "4ba180d624e17244c3ea334361e43d42379bf4a92218010be7bb2128354df4da"
+    },
+    {
+      "path": "docs/dev/local-conversion-sandbox.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "ed2b81b52b195172d8c02108024cc5c0a667789f6b3eea599fc3c58e9c590cef"
+    },
+    {
+      "path": "docs/dev/repository-hygiene.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "既有正文与工具入口/参数声明的局部静态对照；仅追加元数据，原扫描和制品结论未重新执行验证。原文及输入身份见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "e2c9b9018fc33b9d7aa456b7d00ea5d692a7e8f368f8fa746cf492fcdf076f75"
+    },
+    {
+      "path": "docs/dev/runtime-observability-and-health.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "0b1eb634ab929a8cd1ae83e09905e2480136137be541a837147454ceffaa384d"
+    },
+    {
+      "path": "docs/dev/template-config-package-v1.md",
+      "batch": "B3",
+      "doc_status": "superseded",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文占位/移除用途及明确替代入口的静态核对；原 status 和说明保留，不认证旧功能或命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "a1201d69993d75a18d3903f35433ff4666f7c1f0247bbbcd3fc159a7e0e8d055"
+    },
+    {
+      "path": "docs/dev/term-assets-sql-versioning-tasks.md",
+      "batch": "B3",
+      "doc_status": "historical",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文原时间、报告/占位用途、历史结论与当前阅读入口的静态核对；未重开原二进制或执行历史命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "57bf1b20dce5d489973fa1409686e111f3cc86e98d4ca579137a16226c2c128d"
+    },
+    {
+      "path": "docs/dev/term-assets-sql-versioning.md",
+      "batch": "B3",
+      "doc_status": "superseded",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文占位/移除用途及明确替代入口的静态核对；原 status 和说明保留，不认证旧功能或命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "2ad665c6d09c1d73089fc00f7340899b84956f283e4cec729092a5131ad2d7ec"
+    },
+    {
+      "path": "docs/dev/term-rule-set-versioning-guide.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "8d0c28e91d8173c8e4357dfe804a85cc401a2acb8e9b10abd61550dfc3cf738b"
+    },
+    {
+      "path": "docs/dev/translation-ai-audit-debug.md",
+      "batch": "B3",
+      "doc_status": "superseded",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文占位/移除用途及明确替代入口的静态核对；原 status 和说明保留，不认证旧功能或命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "f6e329fd44adf6f1fea8808ac3ec3f51f8d7c16e68db333971e50c16f7d667ec"
+    },
+    {
+      "path": "docs/dev/translation-profile-and-segment-trace-guide.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "80a664e7eec351324d5a0cb2cff658caab65a139ba7f5a7f6300f54fb44cb0c9"
+    },
+    {
+      "path": "docs/dev/translation-terms-v1.md",
+      "batch": "B3",
+      "doc_status": "superseded",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文占位/移除用途及明确替代入口的静态核对；原 status 和说明保留，不认证旧功能或命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "65a86df4f25806312f6bcf635bd40e42e74c6d611c6fca5a57126ff1aa18f74b"
+    },
+    {
+      "path": "docs/engineering/documentation-governance.md",
+      "batch": "B1",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本文按文档治理任务 design revision 1 定义字段、生命周期、证据分类与维护边界；只核对规则一致性和导航，不声明代码或运行验收。实施记录：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。",
+      "sha256": "17f91184382cb4a00f82db1b58e7c4c04ddac1123547f0f54a84d97bcc5faed9"
+    },
+    {
+      "path": "docs/engineering/security-observability-operations.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：安全、运维、指标和部署目标要求；不声明本批完成权限或线上安全验收。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "97e30aea31a35a44640713c6c91cba1c192d513ec1f5d67175230b7b1ce8f41d"
+    },
+    {
+      "path": "docs/engineering/testing-acceptance-strategy.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：分层验收策略和目标样本方案；不是本次检查清单，translation-core 等建议命令须先核实实际支持。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "aac2e8207fea5c35206190d96f00c64aeda6c7297dc58077e4f9c68609e2d8ca"
+    },
+    {
+      "path": "docs/implementation/baseline-verification-2026-10-12.md",
+      "batch": "B2",
+      "doc_status": "historical",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：2026-10-12 BAS-001 已接受历史报告，绑定 fcea60ff 基线；运行命令/结果/哈希保持。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "27234f771c08b8f7b1a0d015fd35df23ad003f1498a122c7bd2fd7e2cbc89171"
+    },
+    {
+      "path": "docs/implementation/codex-execution-guide.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：复杂任务执行指引与模板；按当前 AGENTS/实际任务选择必要检查，不自动扩成全仓测试或提交授权。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "add9992ff46e325132940be5cc9d0dd9f484acde18277ec06efbe7646eb5abba"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/00-parent-task-bootstrap.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "c377f5c95ee2e8e6dacaa6acd335bd0ad5ed27225d2358e1dc12e24c3a86552e"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/BAS-001.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "a87cfb1f111ccea636fa296377f7e901e5e70d85c17613170734b388d3a8dabb"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/CON-101.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "5fa11a03e492b0d76ecc1fa20c148e55e198f1a5af6a515e37a9099929f5ebe1"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/CON-102.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "6a8231760747535612536b2d51afa7e64b966c87d412b0db2496ff6fedf4a94c"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/CON-103.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "3e0d04352f9ade232bdac9c4d65714afb07c75084f5facd3958f9d3377466578"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/CON-104.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "05bc7db28df60dae7c93fa7a8dd5adae3f73446b7432b432ed884d69b1494ed4"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/DOC-001.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "5d133020928ca82d86115e7049914c460edc39c5344b7732870655733a9498e6"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-201.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "844e00730e15a03d4735345bbd9af09d32ebfba16a442c5829537c47c08aca54"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-202.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "562249f303eb22dc1ab340ed508d545331efd54bedafdeb900e1c7f065d8a7ef"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-203.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "563b4bff9badcb3df399542923232e5b377837a925482e27d5642f9087d1ec76"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-204.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "c9147a7ee5ecc93e62376f28268cd7eeee93646227f0d615c1c7466bdc8a2275"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-205.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "d2ad8682cfda7e1639722b45aefb8d92276ca093be871290a617b23af129c6bc"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-206.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "f5b18b5cac22d884014e0ed4090c5954e0f38ce3605763282bd433846bdd97e3"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/IR-207.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "a6c5c4dac99aa7a4a6b87a7492bb0b3d0ee9793fd5495312ec2001074567013d"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-601.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "946bf567af23a0124ff3874549f74ccfd96e4b319b5bcac47e216227e192d82c"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-602.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "7231cb251e007906b935ca0ce6c406cffff94a038ae9aebdbd1dfe3dc0d0f329"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-603.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "5b31a7f37fa7d3a0ec75395acae3df0b7205da15d2634fb43c4e6a8b5c0fe26a"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-604.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "334b5949e494d367efbb2740ddaee81cf5526bc4f2c700b42ed7e1a5c83b839c"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-605.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "1ffcd115ee741adfd79fd498b4dfa779b7d3207e69c14a3e874bc3ea0f6123a9"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-606.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "3764adb9ae64b6938e468b31437fb10b91cae54a0708cc2c6ea04ed91699cf06"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/QA-607.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "c33a48439647bbdabfb484378ef6503059f1ad6a49d7dd1053642c1cecfacc18"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/README.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "dafe328762d405d8341844a41bbbd0ece4737de5843237a5af3f047c9b8eae02"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/REL-701.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "32917a95af1d67d7196a7cc6367e66889aceaffec77dd67d5d28818fc206507d"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/REL-702.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "5db4a86a2021c09b6d64e90f16c748523d1e76247315680554703b8bb6cd11d4"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/REL-703.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "e0db631506e3557de2c405bd3d538c63820caea0f1187a568b507db51d880cc4"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/REL-704.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "91d69c1595d32f7e09885c7e73ac7d67a3641d759d6ffe413e097669abb93b96"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/RND-501.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "1b3f6f6e4f363bdf93f8a51c3c155bf399bc92f01a280686c0999016fd432bdf"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/RND-502.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "a6b9311c2b83537e33a823738b07169ee7bdd3cf7ce5eb4e160a15c81394655c"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/RND-503.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "4bef973d63e5a1071b1dc828a3a87bedcaef13d4aefbe9ccdeaf5f6a54fed34e"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/RND-504.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "113522484578e16faf5675665d7c3a2eee2891df53f2e8c49e0d09f309d0332e"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/RND-505.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "ad1fcf894607d0d20dcc5f724f63df03c81d51c8e5cc5a4b005deea746ab1fd4"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/RND-506.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "4ec027a65f2f05d2b793e4e7660e612b8ffbdafa80eba9b814e3991ecd6145d9"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-301.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "ab3a971e3bfda6213384d4f555ab2a10b5237eed372266627b94ced472ab31d9"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-302.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "6b3abad0af82efc7ec2e9d069dedc7a2fd0722af0cf7e12c78efa589d91e2328"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-303.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "add85125be96b50d029e9b1ad2682d94b1e92a796b8a4595c3301a66b17dcbed"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-304.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "76afb79588b847cb4435b4862c84a9bf49e365fd3d1c71d105ee7b0d5c15434e"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-305.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "2c73d7d6d1d67aad0418cc4bed99e9ecec548df21782642bf6a164f46fbc552c"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-306.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "8d98ef4ea50a54f5299c80814d237afe1bc7da5d129432246bbc21b336f3eacb"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-307.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "10c4a650ba037e0a8d4f79111abf2f47ff384545e09143bf8efd77d581f176e3"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TAB-308.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "d3066a809bce6f66a8d75060b11faa84ea41823e00cf8f843f8ad713fb9bfb68"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-401.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "c04507e0dc59a4aa2d090fb3e8d69c148e209795e60f912174687d981079206a"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-402.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "9f25464ae3987832d905f5a047c2c4f3891d8ad76bdfce8de3c42ec9d000f2ea"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-403.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "9e516ee28b795924fd8e04b30405b47242a15be7a9d3c168fc0d633d955a07c0"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-404.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "9f0eb250707850e8a7a8598e34fdb0fc6f5aac028a6fd5bf0e32029869c7c097"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-405.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "6c1c2b6e1bfba8bcadb71dd48a4f27d9841674c3db2eb4bde527ad0498a0b915"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-406.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "f9f4356729437be04dd00accf430b62802dccd7bedb045a975c86ffe761bd933"
+    },
+    {
+      "path": "docs/implementation/codex-prompts/TR-407.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "950b3825b9fb00b520d2547e2b8334b22436ff6701f3ec0aaad54902ae8eb36a"
+    },
+    {
+      "path": "docs/implementation/codex-task-backlog.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：45项原始目标/AC与依赖定义；执行状态仍只由 Manifest记录，文档迁移不改 AC。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "c5e25ae26021a78b580f4b836370a4b69839306627a59780970b0c3acfdc1361"
+    },
+    {
+      "path": "docs/implementation/codex-task-manifest.yaml",
+      "batch": "B1",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批只核对顶层文档边界并验证原任务对象、rules 和 status_values 保持；45 项 AC/实现/历史验收对账留待 B2，不据静态符号改变状态。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。",
+      "sha256": "62bbde5feb197ed99e5ccfa14d4d7e56cc5088399a4fa9347c88ae3874a64b7f"
+    },
+    {
+      "path": "docs/implementation/codex-task-prompts-all-in-one.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "236673f581b1c384b0e90f72b7a93ee70a0cb95bdd750a2e4082c7821f4e70a5"
+    },
+    {
+      "path": "docs/implementation/current-gap-analysis.md",
+      "batch": "B1",
+      "doc_status": "historical",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "保留 e51e6ccd 基线与 2026-11-06 局部判断；2026-11-10 只静态复核扩展阶段、table context 及含未提交 translation_execution.py 的调用位置，其他旧判断未全面复核，未做运行或整项 AC 验收。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。",
+      "sha256": "734bb2e8457b624ffdf0d0620f8d0c1d9f7ee763cefc4f00d26dc95dc79e433b"
+    },
+    {
+      "path": "docs/implementation/implementation-plan.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：七阶段目标、出口和回滚建议；不把建议flag当作已安装配置，不自动触发阶段门禁。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "0ae3a4489f5a2d78daf7ddbe7a138a1531cc58759e51746cbc8ed7b32c5ac0af"
+    },
+    {
+      "path": "docs/implementation/rollout-and-migration.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：迁移与启用目标及 CON-103 专项文字；建议flag不证明存在或启用，实际迁移需对应任务/部署证据。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "f3f2ffdc2364c424da507d7ae6ea5e287e5ec0ddc948ebc07c41bda41e78a790"
+    },
+    {
+      "path": "docs/product/prd.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：冻结产品需求与验收边界；FR列表描述目标，不声明所有功能已上线。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "40b1419909a4cd040280ccd8520baea507cbba4af214ef59f08944bab9dd6e50"
+    },
+    {
+      "path": "docs/product/scope-and-decisions.md",
+      "batch": "B2",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "本批仅阅读全文、核对用途和原字段：冻结范围与 PD-001 至 PD-020 决策；维护其约束，不扩展产品范围。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。",
+      "sha256": "6c98fc361a47ceb60854b90c7cdb99c49e2195e4275197bb42f851740cca5d82"
+    },
+    {
+      "path": "docs/runbooks/backend.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "58c3ef713f3dcc89e5838caf8fe3a7501c6f882a3cd4236e714ca20125b8ed2d"
+    },
+    {
+      "path": "docs/runbooks/internal-portal.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "1dc98b9c30e41d210c113a65330d46876a1b74d1432e7949a1a67b16b83bf549"
+    },
+    {
+      "path": "docs/testing/md2word-fe-be-integration-acceptance.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "e17ffd6f9eb8876ceb2dc5edbe10327962def9d571869b6d05b65efbe832c600"
+    },
+    {
+      "path": "docs/testing/pdf-to-word-golden-sample-acceptance-report.md",
+      "batch": "B1",
+      "doc_status": "historical",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "仅核对历史报告中的 release 20d496e、run 20260629T070506Z、hostdzire、四样本和签字声明，并区分 2026-06-02/03/24 历史结论；未核看原始运行/签字制品、重跑或认证当前版本。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。",
+      "sha256": "93ec454873a56a46c4870676e01efda02dcaaf04866a11e533a5986395f20389"
+    },
+    {
+      "path": "docs/testing/pdf-to-word-golden-sample-manual-quality-records-20260603.md",
+      "batch": "B3",
+      "doc_status": "historical",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文原时间、报告/占位用途、历史结论与当前阅读入口的静态核对；未重开原二进制或执行历史命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "83880db13c9f30cf6736c856c1e557b924d4bbd878513a0824c8403e26f764e8"
+    },
+    {
+      "path": "docs/testing/pdf-to-word-gs-003-quality-triage.md",
+      "batch": "B3",
+      "doc_status": "historical",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文原时间、报告/占位用途、历史结论与当前阅读入口的静态核对；未重开原二进制或执行历史命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "ac45b0a48d15ea2ed13d9ef2adf85c36779dbd4873c99a8fe75bbb870bf6f313"
+    },
+    {
+      "path": "docs/testing/pdf-to-word-p0-integration-guide.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "42ed6fc7021fe22ad59f65153c7f71db55ca1820d7ea1d57da496a4ebce8aa91"
+    },
+    {
+      "path": "tests/fixtures/component_pdf_samples/README.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "504ea39112d9ffd9db83caa13f17af306a53c650937615d4e0eb0fbce0667d51"
+    },
+    {
+      "path": "tests/fixtures/component_pdf_samples/acceptance-record-template.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "479eefcb629bfcd25f90dd37a85d35fe8d61d811a4d5e4fb643e4c24b457702c"
+    },
+    {
+      "path": "tests/fixtures/golden_samples/README.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "28af08f22754dd4e6faa944d540cd8317cf831cd37fa6645e92a44d2f08e1e3f"
+    },
+    {
+      "path": "tests/fixtures/golden_samples/acceptance-record-template.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "4e8a34c0a02ca36d76d298631de5abd62c99f90242d14ee689b578e620b46c7f"
+    },
+    {
+      "path": "tests/fixtures/p1_translation_samples/README.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "2c506860093da32807b22e74a6f22d7e580c2a7e7cd92f4edd9e8d8e261bc69e"
+    },
+    {
+      "path": "tests/fixtures/p1_translation_samples/acceptance-record-template.md",
+      "batch": "B3",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。",
+      "sha256": "0e17f7156da81d75922075ef6aeda9cc94fa9a7b2bffc79fe87983a7e04eb52d"
+    },
+    {
+      "path": "trellis-bootstrap/design.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "bd7a04c7297933233007a749d491f34c0b8ffdeb2a3139d47805414c1b794c45"
+    },
+    {
+      "path": "trellis-bootstrap/implement.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "633387708c2471fd25868787d3e3651abc29771015a045d7738dda42bc9a4f5e"
+    },
+    {
+      "path": "trellis-bootstrap/prd.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "d8eef595cd6156d815edd8f3a1b1b465d999abeb236b7aadf4bd47a877f57409"
+    },
+    {
+      "path": "trellis-bootstrap/task-map.md",
+      "batch": "B4",
+      "doc_status": "active",
+      "last_verified_commit": null,
+      "owner": null,
+      "verification_scope": "全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。",
+      "sha256": "54cd4a981123424b4238da2a24295c95a89f586f0148af4a8f4bf213fb2c08f3"
+    }
+  ],
+  "task_delta": {
+    "added_lines": 1252,
+    "removed_lines": 19,
+    "files_with_original_line_removals": {
+      "DOCUMENTATION-MANIFEST.md": 1,
+      "README.md": 1,
+      "docker/README.md": 3,
+      "docs/deploy/online-first-validation-workflow.md": 2,
+      "docs/implementation/current-gap-analysis.md": 4,
+      "docs/testing/pdf-to-word-golden-sample-acceptance-report.md": 8
+    },
+    "all_original_line_removals_within_B1": true
+  },
+  "independent_review": "research/final-review.md"
+}

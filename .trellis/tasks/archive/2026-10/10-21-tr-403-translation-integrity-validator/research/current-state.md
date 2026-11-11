@@ -2,9 +2,9 @@
 
 ## 1. 工作区、规则与依赖
 
-- 首条 shell 已执行 pwd 和 git status --short，目录为 /Users/sc/PycharmProjects/md2word；实际分支 md2word/TR-402，HEAD=c8fd2afc7dfea349b7fbc3e1f516d85adcb57536。
+- 首条 shell 已执行 pwd 和 git status --short，目录为 ${PROJECT_ROOT}；实际分支 md2word/TR-402，HEAD=c8fd2afc7dfea349b7fbc3e1f516d85adcb57536。
 - 已有 tracked dirty：父任务 task.json、workspace/777 的 index/journal、CON-104 prompt、backlog、manifest；untracked 为 SC1259、RND-504、TAB-307/308 和多个归档任务。创建前读取并保护 386 个既存 dirty/untracked 文件哈希；不清理、不 stash、不覆盖。
-- 已读根 AGENTS.md、用户补充规则、/Users/sc/.codex/RTK.md、完整 workflow、guides/backend/frontend index，backend directory/error/quality/logging/database/mode/Codec 规范；没有作用域内额外 AGENTS.md。
+- 已读根 AGENTS.md、用户补充规则、${DEVELOPER_HOME}/.codex/RTK.md、完整 workflow、guides/backend/frontend index，backend directory/error/quality/logging/database/mode/Codec 规范；没有作用域内额外 AGENTS.md。
 - 已读用户指定的 11 份文档：product prd、scope-and-decisions、implementation-plan、完整 backlog、execution-guide、manifest、architecture-decisions、document-ir-contract、translation-design、testing-acceptance-strategy、rollout-and-migration；另查 current-gap-analysis、TR-403 task prompt。prompt 内的后续实现/切分支命令仅为证据，不构成本会话授权。
 - 已读父任务 task.json 与 prd/design/implement，及 TR-402 归档的 task.json、三件套、research/current-state、closeout。相关历史结论已在正式 task/Spec/提交中，无需再读取会话全文。
 - TR-403 原 todo/path=null；唯一直接依赖 TR-402=done/implemented，归档 completed，有人工接受实现、证据和残余风险记录。git merge-base --is-ancestor 24ed6a717ca86cf5ed086f2eda58030e4af66810 HEAD 返回 0。

@@ -6,9 +6,16 @@ status: current
 summary: P1 英文 PDF 英译中实验链路人工验收记录模板。
 tags: [testing, translation, p1, document-ir]
 last_reviewed: 2026-05-30
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # P1 翻译质量验收记录模板
+
+本页是 P1 翻译质量的空白验收模板；运行元数据、脱敏/过期检查和质量结论须逐批填写，不能从模板推断已经通过。执行入口见 [P1 样例说明](README.md)，本批未创建真实翻译任务。
 
 ## 回归批次
 

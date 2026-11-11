@@ -1,9 +1,19 @@
+---
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。
+---
+
 # Trellis 父任务与状态清单初始化
+
+本页是父任务首次初始化辅助；原“首次全部 todo”、创建及状态迁移步骤是使用条件，不表示现在应重建父任务或重置状态。使用前按 [Manifest](../codex-task-manifest.yaml) 和实际 Trellis 记录确认；本批不执行原命令，原模板完整保留。
 
 ## 一次性准备
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 python3 ./.trellis/scripts/init_developer.py sc
 python3 ./.trellis/scripts/task.py create \

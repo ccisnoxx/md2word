@@ -5,7 +5,7 @@
 
 ## 依赖、任务与工作区
 
-- `pwd` 返回 `/Users/sc/PycharmProjects/md2word`；`git status --short` 初始只有 ` M .gitignore`。
+- `pwd` 返回 `${PROJECT_ROOT}`；`git status --short` 初始只有 ` M .gitignore`。
 - 初始 `.gitignore` SHA-256：`b0719d64dea7293460521fa0fb9b575bb3440abcdc4d567ec465adc95a39dc89`，不属本任务。
 - DOC-001 manifest 为 done；`.trellis/tasks/archive/2026-10/10-12-doc-001-documentation-package-index/task.json` 为 completed，meta.human_acceptance 已接受实现、验证和风险。其 validation.md 提供归档复验结果。
 - BAS-001 初始 todo/path=null；遍历当前与归档 task.json 未发现同 slug 子任务；已存在父任务 `10-12-datasheet-docx-delivery-quality` 为 planning。使用 create --parent --no-start 新建一次；不激活会话。

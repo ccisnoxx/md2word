@@ -11,9 +11,16 @@ source_files:
 summary: Health API 提供 liveness、readiness、运行时依赖状态检查、JSON metrics 和 Admin-only 运维告警 readiness。
 tags: [health, api, ops]
 last_reviewed: 2026-06-06
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 ## 概述
+
+本页维护健康与只读告警的 API 参考。本批仅静态核对路由挂载与声明入口，未逐字段复核响应、权限、副作用或真实请求；示例和原验收声明仍按各自记录范围解释。 示例中的部署版本、计数和 ready 值不是本次实例观测。
 
 Health API 当前有五条入口：
 

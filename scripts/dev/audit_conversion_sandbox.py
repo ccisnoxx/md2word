@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect local conversion sandbox drift, sample assets, and thin-shell state."""
+"""检查本地转换沙盒的代码差异、样例资产和薄壳状态。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ if root_path not in sys.path:
     sys.path.insert(0, root_path)
 
 
-DEFAULT_SANDBOX_ROOT = Path("/Users/sc/PycharmProjects/PythonProject/md2word_main")
 SANDBOX_ENV = "MD2WORD_SANDBOX_ROOT"
 DEFAULT_COMPARE_PATHS = ("app/conversion", "resources")
 IGNORED_DIR_NAMES = {"__pycache__", ".git", ".idea", ".pytest_cache"}
@@ -75,36 +74,39 @@ class ThinShellReport:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Audit md2word_main as a local sandbox while md2word remains the official conversion source."
+        description="检查 md2word_main 本地沙盒；正式转换代码由 md2word 维护。"
     )
     parser.add_argument(
         "--sandbox-root",
-        default=os.environ.get(SANDBOX_ENV, str(DEFAULT_SANDBOX_ROOT)),
-        help=f"Local sandbox root. Defaults to {SANDBOX_ENV} or {DEFAULT_SANDBOX_ROOT}.",
+        default=os.environ.get(SANDBOX_ENV),
+        help=f"本地沙盒根目录；未传参数时读取 {SANDBOX_ENV}。",
     )
-    parser.add_argument("--official-root", default=str(ROOT), help="Official md2word repository root.")
+    parser.add_argument("--official-root", default=str(ROOT), help="正式 md2word 仓库根目录。")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
-    drift_parser = subparsers.add_parser("drift", help="Compare official conversion files with a sandbox copy.")
+    drift_parser = subparsers.add_parser("drift", help="比较正式转换文件与沙盒副本。")
     drift_parser.add_argument(
         "--path",
         action="append",
         dest="compare_paths",
-        help="Relative path to compare. May be repeated. Defaults to app/conversion and resources.",
+        help="待比较的相对路径，可重复传入；默认为 app/conversion 和 resources。",
     )
-    drift_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    drift_parser.add_argument("--json", action="store_true", help="输出机器可读的 JSON。")
     drift_parser.add_argument(
         "--allow-drift",
         action="store_true",
-        help="Exit 0 even when drift is found. Useful for inventory-only local runs.",
+        help="发现差异时仍以 0 退出，用于只做本地盘点的场景。",
     )
 
-    samples_parser = subparsers.add_parser("samples", help="Inventory local test PDFs and MinerU result packages.")
-    samples_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    samples_parser = subparsers.add_parser("samples", help="盘点本地测试 PDF 和 MinerU 结果包。")
+    samples_parser.add_argument("--json", action="store_true", help="输出机器可读的 JSON。")
 
-    thin_parser = subparsers.add_parser("thin", help="Validate that the sandbox is an inactive thin shell.")
-    thin_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
-    return parser.parse_args(argv)
+    thin_parser = subparsers.add_parser("thin", help="确认沙盒是未启用重复转换代码的薄壳。")
+    thin_parser.add_argument("--json", action="store_true", help="输出机器可读的 JSON。")
+    args = parser.parse_args(argv)
+    if not args.sandbox_root:
+        parser.error(f"必须通过 --sandbox-root 或环境变量 {SANDBOX_ENV} 指定沙盒目录。")
+    return args
 
 
 def _should_ignore(path: Path) -> bool:

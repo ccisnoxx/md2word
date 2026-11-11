@@ -6,17 +6,24 @@ status: current
 summary: 在正式项目中用 PyCharm 运行本地 MinerU 转 DOCX 调试。
 tags: [conversion, mineru, sandbox, regression, pycharm]
 last_reviewed: 2026-10-21
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # 本地 MinerU 转 DOCX 调试入口
 
+本页维护正式项目内的 MinerU 调试适配入口、质量矩阵和视觉证据程序。本批仅静态核对仓库脚本/参数声明；本地输入、模型密钥、外部工具与版本化插件路径的可用性未验证，文中命令和历史 sandbox 资产说明不代表新运行已完成。
+
 ## 当前决定
 
-`/Users/sc/PycharmProjects/md2word` 是唯一长期维护的转换代码源。所有本地 MinerU 结果包转 DOCX 调试，都在正式项目中通过 `scripts.dev.formal_mineru_conversion` 进入正式 DocumentIR 转换与 Word renderer 核心。
+`${PROJECT_ROOT}` 是唯一长期维护的转换代码源。所有本地 MinerU 结果包转 DOCX 调试，都在正式项目中通过 `scripts.dev.formal_mineru_conversion` 进入正式 DocumentIR 转换与 Word renderer 核心。
 
 排版行为修复必须落到正式核心：`app/services/document_ir/*`、`app/services/renderer/*` 或共享规则 `app/conversion/docx_rules/*`。本地脚本只做路径、离线翻译响应和报告适配，不写独立排版逻辑。
 
-`/Users/sc/PycharmProjects/PythonProject/md2word_main` 不再作为运行入口。它只保留历史样例资产和输出资产，例如：
+`${SANDBOX_ROOT}` 不再作为运行入口。它只保留历史样例资产和输出资产，例如：
 
 - `test_pdf/`
 - `mineru_result/`
@@ -29,7 +36,7 @@ last_reviewed: 2026-10-21
 在 PyCharm 中打开正式项目：
 
 ```text
-/Users/sc/PycharmProjects/md2word
+${PROJECT_ROOT}
 ```
 
 仓库已提供三个可共享 Run Configuration：
@@ -41,7 +48,7 @@ last_reviewed: 2026-10-21
 如果 PyCharm 没有自动识别 `.run/` 下的配置，可以手动新建 Python Run Configuration：
 
 - Script path: `scripts/dev/run_local_mineru_debug_config.py`
-- Working directory: `/Users/sc/PycharmProjects/md2word`
+- Working directory: `${PROJECT_ROOT}`
 - Python interpreter: 选择正式项目的 Python 3.11 解释器，例如 `.venv/bin/python`
 - Parameters:
   - direct：`--config scripts/dev/local_mineru_debug_direct_config.json`
@@ -82,7 +89,7 @@ scripts.dev.formal_mineru_conversion.run_conversion(...)
 
 路径规则：
 
-- 相对路径从正式项目根目录 `/Users/sc/PycharmProjects/md2word` 解析。
+- 相对路径从正式项目根目录 `${PROJECT_ROOT}` 解析。
 - 新样例优先放在正式项目根目录的 `mineru_result/`。
 - 历史样例可以先复制或同步到正式项目 `mineru_result/` 后再运行；不要从 `md2word_main` 启动转换。
 - 输出建议写入 `tests/tmp/`，不要提交生成的 DOCX、PNG、PDF 或调试 trace。
@@ -221,7 +228,7 @@ command -v pdftoppm
 
 ```bash
 env TMPDIR=/private/tmp .venv/bin/python \
-  /Users/sc/.codex/plugins/cache/openai-primary-runtime/documents/26.622.11653/skills/documents/render_docx.py \
+  ${DEVELOPER_HOME}/.codex/plugins/cache/openai-primary-runtime/documents/26.622.11653/skills/documents/render_docx.py \
   tests/tmp/local_mineru_debug/direct/OPA228_P1.docx \
   --output_dir tests/tmp/local_mineru_debug/visual_qa/standard_render/direct \
   --emit_pdf
@@ -231,7 +238,7 @@ env TMPDIR=/private/tmp .venv/bin/python \
 
 ```bash
 env TMPDIR=/private/tmp .venv/bin/python \
-  /Users/sc/.codex/plugins/cache/openai-primary-runtime/documents/26.622.11653/skills/documents/render_docx.py \
+  ${DEVELOPER_HOME}/.codex/plugins/cache/openai-primary-runtime/documents/26.622.11653/skills/documents/render_docx.py \
   tests/tmp/local_mineru_debug/en2zh/OPA228_P1.zh.docx \
   --output_dir tests/tmp/local_mineru_debug/visual_qa/standard_render/en2zh \
   --emit_pdf
@@ -305,7 +312,7 @@ ru2zh 验收样本可以单独运行：
 
 如果某个本地样例需要长期回归，应沉淀到：
 
-[component-pdf-regression-governance.md](/Users/sc/PycharmProjects/md2word/docs/dev/component-pdf-regression-governance.md)
+[component-pdf-regression-governance.md](component-pdf-regression-governance.md)
 
 ## Sandbox 审计
 
@@ -313,7 +320,7 @@ ru2zh 验收样本可以单独运行：
 
 ```bash
 .venv/bin/python scripts/dev/audit_conversion_sandbox.py \
-  --sandbox-root /Users/sc/PycharmProjects/PythonProject/md2word_main \
+  --sandbox-root ${SANDBOX_ROOT} \
   thin
 ```
 
@@ -321,7 +328,7 @@ ru2zh 验收样本可以单独运行：
 
 ```bash
 .venv/bin/python scripts/dev/audit_conversion_sandbox.py \
-  --sandbox-root /Users/sc/PycharmProjects/PythonProject/md2word_main \
+  --sandbox-root ${SANDBOX_ROOT} \
   samples --json
 ```
 
@@ -353,4 +360,4 @@ ru2zh 验收样本可以单独运行：
 
 完整第一阶段计划和后续扩展路线见：
 
-[local-component-pdf-debugging-implementation-plan.md](/Users/sc/PycharmProjects/md2word/docs/dev/local-component-pdf-debugging-implementation-plan.md)
+[local-component-pdf-debugging-implementation-plan.md](local-component-pdf-debugging-implementation-plan.md)

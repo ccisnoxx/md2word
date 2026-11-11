@@ -6,9 +6,16 @@ status: current
 summary: 内部人员按步骤完成 PDF 上传、建任务、查状态、下载和排错。
 tags: [integration, pdf, word, api, worker]
 last_reviewed: 2026-06-17
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # PDF 到 Word P0 内部联调说明
+
+本页维护 P0 人工联调和 Golden 签字程序，不是本批运行报告。本批只静态核对入口与脚本参数；上传授权应以 [Files API](../api/files.md) 当前合同为准，原外部 presigned URL 条件不证明该路径现已启用；新运行的环境、结果及签字须另行记录。
 
 ## 前置条件
 
@@ -24,7 +31,7 @@ last_reviewed: 2026-06-17
 export API_BASE_URL="http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}"
 ```
 
-从本机或其他外部网络验证公网入口时，把 `API_BASE_URL` 改为 `https://md2word.962850.xyz`。完整发布证据按 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md) 收集。
+从本机或其他外部网络验证公网入口时，把 `API_BASE_URL` 改为 `https://md2word.962850.xyz`。完整发布证据按 [线上优先验证流程](../deploy/online-first-validation-workflow.md) 收集。
 
 ## 1. 登录
 

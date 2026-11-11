@@ -1,4 +1,14 @@
+---
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
+---
+
 # 电子元器件 PDF 人工验收记录
+
+本页是本地组件 PDF 的空白人工验收模板；勾选、结论与证据引用须来自具体运行和人工检查，不能把模板视为已通过记录。使用方法见 [组件样例治理说明](../../../docs/dev/component-pdf-regression-governance.md)。
 
 ## 运行元数据
 

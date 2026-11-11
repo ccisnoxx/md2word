@@ -3,13 +3,13 @@
 ## 1. 输入与候选
 
 - 验证日期：2026-08-18 至 2026-08-19（Asia/Shanghai）。
-- 正式输入目录：`/Users/sc/Downloads/mineru_raw_result 2`。
+- 正式输入目录：`${DEVELOPER_HOME}/Downloads/mineru_raw_result 2`。
 - `content_list_v2.json` SHA-256：`c4d03c0ba23eaaf653657f8a0a1b687247d0840910d1e0a15a3c32aefd46d22f`。
 - 正式入口命令：
 
   ```bash
   .venv/bin/python scripts/dev/run_local_mineru_conversion.py \
-    '/Users/sc/Downloads/mineru_raw_result 2' \
+    '${DEVELOPER_HOME}/Downloads/mineru_raw_result 2' \
     --output /tmp/md2word-cm4112-structural-fix/cm4112-fixed.docx \
     --translation-mode direct
   ```
@@ -82,7 +82,7 @@
 ### 7.2 LibreOffice 与 WPS CLI
 
 - LibreOffice 26.2.4.2 输出 `/tmp/md2word-cm4112-caption-font-fix/libreoffice/cm4112-fixed.pdf`，SHA-256 `c5ec778d8c542afa3f307d7ffc7a77ac58ce4d0d4fb952219478e46d88781e7d`，23 页 A4，无纯文本空页；图 33 在第 14 页，“工作原理”直接从第 15 页开始。
-- WPS CLI 1.1.0 因 macOS 权限拒读 `/tmp`，因此把同一 DOCX hash 的副本放到 `/Users/sc/Downloads/md2word-cm4112-caption-font-fix/cm4112-fixed.docx`。输出 PDF SHA-256 `08e0760a539dbd62569d26ad877f8ba98461d984f746380b3c0fa1b49691b3fc`，20 页 A4，无纯文本空页；图 33 在第 12 页，“工作原理”直接从第 13 页开始。
+- WPS CLI 1.1.0 因 macOS 权限拒读 `/tmp`，因此把同一 DOCX hash 的副本放到 `${DEVELOPER_HOME}/Downloads/md2word-cm4112-caption-font-fix/cm4112-fixed.docx`。输出 PDF SHA-256 `08e0760a539dbd62569d26ad877f8ba98461d984f746380b3c0fa1b49691b3fc`，20 页 A4，无纯文本空页；图 33 在第 12 页，“工作原理”直接从第 13 页开始。
 - WPS CLI 输出仍把部分单位和公式字符显示为替换符；这与本机缺少精确 `宋体`/`Cambria Math` 的环境边界一致，不能通过改写已发布配置字体名掩盖。
 
 ### 7.3 WPS GUI 关键页复核

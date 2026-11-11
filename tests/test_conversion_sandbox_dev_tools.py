@@ -8,6 +8,7 @@ from unittest import TestCase, mock
 from xml.etree import ElementTree
 
 import json
+import io
 import os
 import zipfile
 
@@ -603,6 +604,46 @@ class LocalMinerUDebugConfigTests(TestCase):
         self.assertEqual(run_conversion.call_args.kwargs["input_path"], str(Path("/tmp/mineru-package").resolve()))
 
 
+class SandboxCliConfigurationTests(TestCase):
+    def test_explicit_sandbox_root_works_without_environment(self) -> None:
+        with TemporaryDirectory() as tmp_dir, mock.patch.dict(os.environ, clear=True):
+            sandbox = str(Path(tmp_dir) / "sandbox with spaces")
+            for module, command in ((audit_conversion_sandbox, ["samples"]), (migrate_md2word_main_sandbox, [])):
+                with self.subTest(module=module.__name__):
+                    args = module.parse_args(["--sandbox-root", sandbox, *command])
+                    self.assertEqual(args.sandbox_root, sandbox)
+
+    def test_environment_supplies_sandbox_root(self) -> None:
+        with TemporaryDirectory() as tmp_dir, mock.patch.dict(os.environ, {"MD2WORD_SANDBOX_ROOT": tmp_dir}):
+            self.assertEqual(audit_conversion_sandbox.parse_args(["samples"]).sandbox_root, tmp_dir)
+            self.assertEqual(migrate_md2word_main_sandbox.parse_args([]).sandbox_root, tmp_dir)
+
+    def test_explicit_sandbox_root_overrides_environment(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            sandbox = str(root / "explicit")
+            with mock.patch.dict(os.environ, {"MD2WORD_SANDBOX_ROOT": str(root / "environment")}):
+                self.assertEqual(
+                    audit_conversion_sandbox.parse_args(["--sandbox-root", sandbox, "samples"]).sandbox_root,
+                    sandbox,
+                )
+                self.assertEqual(
+                    migrate_md2word_main_sandbox.parse_args(["--sandbox-root", sandbox]).sandbox_root,
+                    sandbox,
+                )
+
+    def test_missing_or_empty_sandbox_configuration_has_chinese_error(self) -> None:
+        for environment in ({}, {"MD2WORD_SANDBOX_ROOT": ""}):
+            for module, command in ((audit_conversion_sandbox, ["samples"]), (migrate_md2word_main_sandbox, [])):
+                with self.subTest(module=module.__name__, environment=environment):
+                    stderr = io.StringIO()
+                    with mock.patch.dict(os.environ, environment, clear=True), mock.patch("sys.stderr", stderr):
+                        with self.assertRaises(SystemExit) as raised:
+                            module.parse_args(command)
+                    self.assertEqual(raised.exception.code, 2)
+                    self.assertIn("必须通过 --sandbox-root 或环境变量 MD2WORD_SANDBOX_ROOT 指定沙盒目录", stderr.getvalue())
+
+
 class ConversionSandboxAuditTests(TestCase):
     def test_drift_report_classifies_changed_and_one_sided_files(self) -> None:
         with TemporaryDirectory() as tmp_dir:
@@ -676,6 +717,15 @@ class ConversionSandboxAuditTests(TestCase):
 
 
 class Md2wordMainMigrationTests(TestCase):
+    def test_readme_example_uses_configured_sandbox_root(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            sandbox = root / 'sandbox " with spaces'
+            readme = migrate_md2word_main_sandbox.build_readme(root / "official", sandbox)
+            example = json.loads(readme.split("```json\n", 1)[1].split("\n```", 1)[0])
+            self.assertEqual(Path(example["input_path"]).parent, sandbox / "mineru_result")
+            self.assertNotIn("${", example["input_path"])
+
     def test_migration_archives_duplicate_sources_and_writes_thin_shell(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

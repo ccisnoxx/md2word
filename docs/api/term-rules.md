@@ -18,9 +18,16 @@ source_files:
 summary: Term-rules API 以 v2 manifest 为版本化 seed，以 live runtime store 为可变真源，并在 MySQL versioned mode 下把写入交给 Term Rule Set 发布流程。
 tags: [term-rules, api, runtime-store]
 last_reviewed: 2026-06-04
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 ## 概述
+
+本页维护术语规则与提案的 API 参考。本批仅静态核对路由挂载与声明入口，未逐字段复核响应、权限、副作用或真实请求；示例和原验收声明仍按各自记录范围解释。
 
 当前 `term-rules` 统一挂在 `/api/v1/term-rules` 下，职责分三层：
 
@@ -329,5 +336,5 @@ last_reviewed: 2026-06-04
 
 - 当前 import 面向 v2 manifest，不再把 legacy `subscript_rules` YAML 当作者真源。
 - `source_term` 在 live store 内保持全局唯一。
-- MySQL versioned mode 下，legacy 写接口只保留 file/sqlite 兼容用途；生产术语变更应走 [term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md)。
+- MySQL versioned mode 下，legacy 写接口只保留 file/sqlite 兼容用途；生产术语变更应走 [term-rule-sets.md](term-rule-sets.md)。
 - MySQL mode 会把当前 term rule seed/runtime 投影到 `term_rule_categories`、`term_rules`、`term_rule_segments` 明细表；发布版本仍以 Term Rule Set 版本流程为准。

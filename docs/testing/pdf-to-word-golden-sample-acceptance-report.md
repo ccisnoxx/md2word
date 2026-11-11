@@ -6,17 +6,26 @@ status: current
 summary: P0 Golden Sample 验收状态；2026-06-29 hostdzire release 20d496e 的 4 个 canonical samples 自动回归和 admin 签字通过。
 tags: [testing, golden-sample, pdf, word, p0]
 last_reviewed: 2026-06-29
+doc_status: historical
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  仅核对历史报告中的 release 20d496e、run 20260629T070506Z、hostdzire、四样本和签字声明，并区分 2026-06-02/03/24 历史结论；未核看原始运行/签字制品、重跑或认证当前版本。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # P0 Golden Sample 验收报告
 
-## 当前结论
+本文是历史验收记录。下述通过结论只绑定 2026-06-29 hostdzire release `20d496e`、run `20260629T070506Z` 和 4 个 canonical OPA228 样本。2026-11-10 文档治理仅核对报告中的版本、环境、范围与文字，未核看原始 run_dir/签字制品或重跑链路；不能据此认定当前 HEAD 或线上版本通过。保留的 `status: current` 是原字段，不覆盖新增的 `doc_status: historical` 语义。
+
+当前验证顺序见[线上优先验证流程](../deploy/online-first-validation-workflow.md#golden-sample-线上验收)，镜像输入见 [P0 Docker 部署说明](../deploy/p0-docker-deployment.md#依赖锁与构建输入)，hostdzire 切换见[分层 override 上线记录](../deploy/hostdzire-dmit-md2word.md#分层-override-上线当前生产方式)。后文命令和实现描述保留其当时范围，不作为本批对当前流程或代码的重新认证。
+
+## 2026-06-29 报告结论
 
 2026-06-29 正式结论：hostdzire release `20d496e` 已完成 P0 Golden Sample 正式回归和 admin manual signoff，`report.json` / `report.md` 显示 `p0_release_ready=true`。
 
 本次发布证据来自 hostdzire 真实 API、Worker、MySQL、Redis/Celery 和 MinerU 链路；4 个 canonical OPA228 样本自动链路全部成功，admin 对同一 run_dir 完成签字。2026-06-17 的 hostdzire admin signoff 仍只保留为历史基线。
 
-当前状态：`p0_release_ready=true` for release `20d496e`。
+该批次记录状态：`p0_release_ready=true` for release `20d496e`。
 
 | 项目 | 结果 |
 |---|---|
@@ -34,7 +43,9 @@ last_reviewed: 2026-06-29
 
 第三阶段 `document-ir-renderer-parity` 已完成本地实现收口和正式链路 targeted 验证，`pipeline-parity-gap` 的修复入口已从本地 sandbox 收敛到 `document_jobs -> DocumentIR -> app/services/renderer/*` 链路。
 
-## 第三阶段完成证据
+## 2026-06-24 第三阶段完成证据
+
+本节实现、命令与结果为当时记录，未在本次文档治理中重新核验；后续实现可能已改变 owner 或调用入口。
 
 | 证据项 | 当前结论 |
 |---|---|
@@ -59,6 +70,8 @@ last_reviewed: 2026-06-29
 测试输出中只出现 FastAPI/Starlette deprecation warnings，不影响本轮 P0 renderer/document_jobs 验收判断。
 
 ## 正式链路验收流程
+
+以下保留 2026-06-29 报告所用流程；新版本执行以上方维护入口为准。
 
 正式 P0 验收只统计 `tests/fixtures/golden_samples/manifest.yaml` 中 4 个 canonical samples：`gs-003`、`gs-004`、`gs-006`、`gs-008`。不扩大样本范围，不新增 PDF。
 
@@ -132,7 +145,7 @@ Backlog 条目必须包含 sample/run_id、job_id、截图路径、`docx_quality
 
 以下内容保留为历史排障和质量演进记录，不代表本轮 2026-06-24 变更后的发布状态。
 
-## 最近脚本验证
+## 2026-06-02 脚本验证（历史记录）
 
 2026-06-02 已运行一次 Golden Sample 脚本做 inventory smoke。该次运行使用当时仍包含 backlog 占位样本的旧 manifest、dummy bearer token，未启动真实后端/Worker/MinerU，因此只作为历史脚本字段验证，不计入正式 P0 回归。当前正式 manifest 已收敛为 4 个 OPA228 canonical 样本。
 
@@ -169,7 +182,7 @@ Backlog 条目必须包含 sample/run_id、job_id、截图路径、`docx_quality
 | 主链路结论 | 未卡在上传、建任务、Worker、MinerU、DocumentIR、Word 渲染或下载任一 stage |
 | P0 判定 | 历史记录：本次远端 smoke 只执行 1 个样本；后续已扩展为 4 个 OPA228 canonical 样本 |
 
-## 最新真实回归（4 个 runnable 样本）
+## 2026-06-03 真实回归（4 个 runnable 样本，历史记录）
 
 2026-06-03 在 hostdzire 真实部署环境中运行 `gs-003`、`gs-004`、`gs-006`、`gs-008`。本次使用真实 API、Worker、MySQL、Redis 和 MinerU 配置，目标是确认当前 4 个 runnable 样本是否存在上传、建任务、Worker、MinerU、DocumentIR、Word 渲染和下载 stage 卡点。
 
@@ -237,7 +250,7 @@ Backlog 条目必须包含 sample/run_id、job_id、截图路径、`docx_quality
 
 ## 正式验收命令
 
-后续重新验收按 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md) 在 hostdzire 执行，不在本地启动前后端或 MySQL/Redis/Celery。
+后续重新验收按 [线上优先验证流程](../deploy/online-first-validation-workflow.md) 在 hostdzire 执行，不在本地启动前后端或 MySQL/Redis/Celery。
 
 ```bash
 GOLDEN_SAMPLE_USERNAME=admin \
@@ -245,6 +258,6 @@ GOLDEN_SAMPLE_PASSWORD='<password>' \
 .venv/bin/python scripts/ops/run_golden_sample_regression.py
 ```
 
-正式执行后，把 `tests/tmp/golden_sample_runs/{timestamp}/report.md` 的汇总结果回填到本报告，人工打开每个成功样本 Word 后按 `tests/fixtures/golden_samples/acceptance-record-template.md` 或本报告的人工质量口径记录结论。
+历史流程要求将 `tests/tmp/golden_sample_runs/{timestamp}/report.md` 的汇总结果回填到本报告，人工打开每个成功样本 Word 后按 `tests/fixtures/golden_samples/acceptance-record-template.md` 或当次人工质量口径记录结论。新一次验收应追加独立的版本/run 记录，保留原批次结果。
 
-当前 4 个 OPA228 PDF 已进入正式 manifest 并完成真实链路执行；正式 P0 通过不再以扩充到 10-20 份样本为阻塞条件，而以 canonical suite 4/4 admin 人工质量通过为准。DocumentIR layout facts 已开始接入主链路，但不改变当前 0/4 人工 P0 质量结论。
+2026-06-03 历史口径：4 个 OPA228 PDF 已进入正式 manifest 并完成真实链路执行；正式 P0 通过不再以扩充到 10-20 份样本为阻塞条件，而以 canonical suite 4/4 admin 人工质量通过为准。DocumentIR layout facts 当时已开始接入主链路，但不改变该批次 0/4 人工 P0 质量结论。2026-06-29 release `20d496e` 的后续通过声明见页首，两个批次的结论分别保留。

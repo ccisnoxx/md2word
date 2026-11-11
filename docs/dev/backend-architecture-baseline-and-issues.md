@@ -6,9 +6,16 @@ status: draft
 summary: 正式整理当前 md2word 后端的现状架构基线、job 生命周期视图和待收口结构问题。
 tags: [backend, architecture, baseline, jobs]
 last_reviewed: 2026-05-28
+doc_status: draft
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文草稿定位、原日期/checklist 和现行入口的静态核对；未重新冻结方案或把原勾选认作当前验收。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # 后端现状架构基线与问题清单（初稿）
+
+本页保留 2026-05-28 的 legacy Jobs 架构草稿；其中“当前”与完成进展属于该草稿范围，未在本批重新冻结或逐项验收。现行主线请结合 [系统架构](../architecture/system-architecture.md)、[本地结构说明](backend-local-setup-and-architecture.md) 与 [Document Jobs API](../api/document-jobs.md) 阅读。
 
 ## 文档目的
 

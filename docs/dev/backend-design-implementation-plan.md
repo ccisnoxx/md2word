@@ -6,9 +6,16 @@ status: draft
 summary: 基于当前 FastAPI 后端现状，把后端设计草案拆成可逐步执行的阶段计划。
 tags: [backend, implementation-plan, architecture, jobs]
 last_reviewed: 2026-05-28
+doc_status: draft
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文草稿定位、原日期/checklist 和现行入口的静态核对；未重新冻结方案或把原勾选认作当前验收。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # 后端设计实现计划
+
+本页保留 2026-05-28 后端阶段计划草稿，原 checklist 和验证命令均按原记录解释，不代表本批已确认当前实现或再次执行。现行任务执行以 [产品任务 Manifest](../implementation/codex-task-manifest.yaml) 和对应 AC 为准；正式链路入口见 [后端运行说明](../runbooks/backend.md)。
 
 ## 设计前提
 

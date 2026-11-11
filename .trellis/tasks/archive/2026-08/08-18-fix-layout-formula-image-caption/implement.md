@@ -31,7 +31,7 @@
 10. [x] 在一次 `render_to_bytes()` 内预扫描唯一题注目标，向正式文本渲染入口传递局部引用映射；实现 TOC/SEQ/bookmark/REF 的最小 OOXML helper，不在 renderer 实例保存状态。
 11. [x] 追踪 `app/conversion/runtime/*` 的剩余真实调用者和兼容合同；仅当仍受支持路径必须满足同一输出语义时，同步最小改动并复用 `text_semantics.py`，否则记录未改原因。
 12. [x] 运行定向测试并修复仅由本任务引起的失败。
-13. [x] 使用用户提供的 `/Users/sc/Downloads/mineru_raw_result.zip`，经正式本地转换脚本生成新 DOCX；结果包和生成文件均不提交到仓库。
+13. [x] 使用用户提供的 `${DEVELOPER_HOME}/Downloads/mineru_raw_result.zip`，经正式本地转换脚本生成新 DOCX；结果包和生成文件均不提交到仓库。
 14. [x] 用 LibreOffice→PDF→PNG 标准链检查“典型性能参数”、示例公式、低分辨率窄图、题注、目录和正文引用，并检查 OOXML：
     - 原生双栏/列分隔符；
     - OMML 分式与上下标；
@@ -58,12 +58,12 @@
 26. [x] 在 `app/conversion/docx_rules/mineru_content.py` 复用现有递归文本/资产抽取实现单一保守纯判定；不增加依赖、配置开关、模糊评分或第二套关键词。
 27. [x] 在正式 `MinerUToDocumentIRService._convert_blocks()` 的 pages/blocks/assets 构造前删除命中页，并确保 `DocumentIR.pages`、blocks、assets/image_assets 均不保留该 page index；写入 `final_promotional_page_filtered:<page_index>` quality flag。
 28. [x] 在仍受支持的兼容 MinerU 输入适配路径复用同一纯判定，补最小 characterization test，确保两条路径不会产生不同推广页策略。
-29. [x] 使用 `/Users/sc/Downloads/mineru_raw_result.zip` 经正式本地脚本重新生成 SC2167，验证末页推广文案和二维码资产消失、无空尾页、其余页面/图片/公式/图注不回归；同时运行 TPL51200、BL0942、RS2G04 可用负样本或等价合成负样本。
+29. [x] 使用 `${DEVELOPER_HOME}/Downloads/mineru_raw_result.zip` 经正式本地脚本重新生成 SC2167，验证末页推广文案和二维码资产消失、无空尾页、其余页面/图片/公式/图注不回归；同时运行 TPL51200、BL0942、RS2G04 可用负样本或等价合成负样本。
 30. [x] 运行推广页增补定向测试、现有必需测试和 `trellis-check`；通过后更新质量规范与最终验收记录。
 
 ## 实施记录
 
-- 使用 `/Users/sc/Downloads/mineru_raw_result.zip` 经正式本地脚本和 `datasheet_template_v2.yaml` 重新生成 `/Users/sc/Downloads/SC2167_native_word_verified.docx`；SHA-256 为 `f72808f0b6299e7c00040c62756afd85ab305a2de421d905856f96f077706893`。
+- 使用 `${DEVELOPER_HOME}/Downloads/mineru_raw_result.zip` 经正式本地脚本和 `datasheet_template_v2.yaml` 重新生成 `${DEVELOPER_HOME}/Downloads/SC2167_native_word_verified.docx`；SHA-256 为 `f72808f0b6299e7c00040c62756afd85ab305a2de421d905856f96f077706893`。
 - 先前两个隔离 LibreOffice profile 均渲染为 42 页，但“无空白页”结论使用了包含页眉页码的整页文本判定，属于假阴性。增补复查确认 LibreOffice 第 17 页正文为空、第 18 页正文仅有误识别版本文字；本机 WPS 也直接复现空白/近空白页。
 - OOXML 确认 4 个原生双栏 section、4 个 column break、29 个真实数据表且无布局 1×2 表格；144 个 OMML 公式、3 个分式、14 个上标和 137 个下标，目标 `2^15`、`f_CLKIN` 结构正确且无 `\frac`、`\times` 残留。
 - 题注与引用确认 19 个 `SEQ 图`、24 个 `SEQ 表`、43 个书签及 24 个有效 `REF`；源包没有目录输入，因此真样本不生成 TOC，合成用例验证了检测到目录时的原生 TOC。
@@ -73,13 +73,13 @@
 - 可选后端套件此前观察到 8 项与当前差异无关的既有模板状态/MinerU callback 测试配置异常，未越界修复。
 - 用户复查后新增四项阻塞：图注错配、六类公式残留、多个正文空白页和可配置左右页脚；此前生成文件不再作为最终验收成品。
 - v3 是已淘汰的中间候选；逐行 continuous 分节在 WPS 中触发栏平衡并把纯图片网格拆成多页。最终改为严格守卫的单栏原生 25%/75% 中心制表位行，普通文字或多题注双栏仍使用一次 `w:cols` + column break。
-- 最终候选 `/Users/sc/Downloads/SC2167_native_word_addendum_verified_v6.docx` 的 SHA-256 为 `12fc1fb481d7ad579a40131ce675271f2c7995428c871bf6983787173552cfcf`。正式 converter 已把源页 9/10 的 `type=table + img_path=""` 空续表并入表 3，并把源页 11 的图 3–10 重配为 8 张曲线的一图一注；图 3–10 以完整 2×4 网格保持在同一页。
+- 最终候选 `${DEVELOPER_HOME}/Downloads/SC2167_native_word_addendum_verified_v6.docx` 的 SHA-256 为 `12fc1fb481d7ad579a40131ce675271f2c7995428c871bf6983787173552cfcf`。正式 converter 已把源页 9/10 的 `type=table + img_path=""` 空续表并入表 3，并把源页 11 的图 3–10 重配为 8 张曲线的一图一注；图 3–10 以完整 2×4 网格保持在同一页。
 - 最终 OOXML 含 `m:bar=126`、数学粗体 `m:sty b=3`、`m:borderBox=1`、U+2A02 `⨂=2`、`m:sSub=143`，六类增补 TeX、原 `\frac/\times` 及字面 `</td>` 残留均为 0；同方向物理页 `w:br type=page` 为 0，且 `w:doNotAutoCompressPictures=true`、`w:updateFields=true`。
 - 隔离 LibreOffice 渲染最终候选为 35 页，按正文裁剪逐页检查无空白页；图 3–10 完整集中在一页且题注与曲线对应。WPS 最终重排为 31 页，图 3–10 完整集中在第 13 页，抽查原第 17/18 页附近均有正文，未再复现空白页；示例激励频率公式保持上下分式、乘号和上下标结构。
-- 自定义页脚样本 `/Users/sc/Downloads/SC2167_native_word_footer_demo.docx` 使用 `版本号：V1.1`、原生 `PAGE` 和 `www.ic-helps.com`；WPS 实测左/中/右按页边距正确对齐且无布局表格。LibreOffice 26 不展开标准 `w:ptab` 的相对 margin 位置，因此页脚视觉以 WPS/Word 为最终互操作验收。
+- 自定义页脚样本 `${DEVELOPER_HOME}/Downloads/SC2167_native_word_footer_demo.docx` 使用 `版本号：V1.1`、原生 `PAGE` 和 `www.ic-helps.com`；WPS 实测左/中/右按页边距正确对齐且无布局表格。LibreOffice 26 不展开标准 `w:ptab` 的相对 margin 位置，因此页脚视觉以 WPS/Word 为最终互操作验收。
 - 增补必需自动化验证及页脚 API 往返共 80 项通过，相关 characterization tests 73 项通过，前端 `vue-tsc --noEmit`、`npm run build`、Python 编译与 `git diff --check` 通过。定向 Playwright smoke 已通过新增字段可见断言，但其既有“保存后重新读取 version=2”请求未被 mock 拦截，最终在既有“创建验证任务”断言处失败；未把该无关 mock 缺口纳入产品修复。
 - 推广封底过滤在共享 MinerU 内容规则中使用“明确 CTA 组合 + 可解析的 image/figure 资产 + 无表格/公式/列表/编号标题题注/长正文”的全量守卫；正式 DocumentIR 和兼容输入均调用同一判定，未增加依赖、配置或评分分类器。共享规则、正式 pages/blocks/assets 删除、物理末页优先、无 layout 回退和兼容 v2 路径共 38 项定向测试通过。
-- 正式本地脚本生成 `/Users/sc/Downloads/SC2167_native_word_promo_filtered_verified_v7.docx`，SHA-256 为 `eef39e4810371b97be144c2c76b3ab575c1d870e1de65185b22931173193d081`；对应 DocumentIR 为 33 页（索引 0–32）、383 blocks、24 assets，并含 `final_promotional_page_filtered:33`。推广文案、二维码源资产哈希均未进入 DocumentIR/DOCX；隔离 LibreOffice 渲染为 34 页且无文本空白尾页。
+- 正式本地脚本生成 `${DEVELOPER_HOME}/Downloads/SC2167_native_word_promo_filtered_verified_v7.docx`，SHA-256 为 `eef39e4810371b97be144c2c76b3ab575c1d870e1de65185b22931173193d081`；对应 DocumentIR 为 33 页（索引 0–32）、383 blocks、24 assets，并含 `final_promotional_page_filtered:33`。推广文案、二维码源资产哈希均未进入 DocumentIR/DOCX；隔离 LibreOffice 渲染为 34 页且无文本空白尾页。
 - v7 相对 v6 只少 1 个 media；`oMath=257`、`m:bar=126`、`m:borderBox=1`、`m:sSub=143`、`m:sSup=14`、`SEQ=43`、`REF=24` 全部保持一致。TPL51200、BL0942、RS2G04 三个正式负样本分别保留 18、32、13 个物理页，均未产生推广页过滤质量标记。
 - 独立 `trellis-check` 补齐兼容 legacy 回归与稳定质量规范后，推广页定向测试和现有必需门共 111 项通过；SC2167 再次得到 33 个 DocumentIR 页面（0–32）、383 blocks、24 assets 与 `final_promotional_page_filtered:33`，二维码源哈希未进入 IR/DOCX。v7 SHA-256 仍为 `eef39e4810371b97be144c2c76b3ab575c1d870e1de65185b22931173193d081`，隔离 LibreOffice 复核为 34 页且末三页均有正文；未在本轮重复声明 WPS 视觉结果。
 

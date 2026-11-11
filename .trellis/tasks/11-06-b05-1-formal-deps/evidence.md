@@ -4,12 +4,12 @@
 
 ## 检查命令与实际结果
 
-工作目录始终为 `/Users/sc/PycharmProjects/md2word-wt/b05-1-formal-deps`。全部 Python 命令使用 `PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python`；涉及临时文件的测试及最终 AST 检查另设 `TMPDIR="$PWD/.trellis/tasks/11-06-b05-1-formal-deps/tmp"`。测试后该目录为空，已用 `rmdir` 清理。
+工作目录始终为 `${TASK_WORKTREE_ROOT}/b05-1-formal-deps`。全部 Python 命令使用 `PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python`；涉及临时文件的测试及最终 AST 检查另设 `TMPDIR="$PWD/.trellis/tasks/11-06-b05-1-formal-deps/tmp"`。测试后该目录为空，已用 `rmdir` 清理。
 
 基线命令：
 
 ```sh
-TMPDIR="$PWD/.trellis/tasks/11-06-b05-1-formal-deps/tmp" PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest -v \
+TMPDIR="$PWD/.trellis/tasks/11-06-b05-1-formal-deps/tmp" PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest -v \
   tests.test_translation_profile_prompts.TranslationProfilePromptTests.test_bootstrap_seeds_four_profiles_without_overwriting_defaults \
   tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_blocks_when_default_translation_mode_requires_missing_client \
   tests.test_conversion_sandbox_dev_tools.LocalMinerUConversionCliTests.test_main_calls_formal_conversion_adapter \
@@ -21,7 +21,7 @@ TMPDIR="$PWD/.trellis/tasks/11-06-b05-1-formal-deps/tmp" PYTHONDONTWRITEBYTECODE
 最终定向命令：
 
 ```sh
-TMPDIR="$PWD/.trellis/tasks/11-06-b05-1-formal-deps/tmp" PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest -v \
+TMPDIR="$PWD/.trellis/tasks/11-06-b05-1-formal-deps/tmp" PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest -v \
   tests.test_formal_conversion_configuration \
   tests.test_translation_profile_prompts.TranslationProfilePromptTests.test_bootstrap_seeds_four_profiles_without_overwriting_defaults \
   tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_blocks_when_default_translation_mode_requires_missing_client \

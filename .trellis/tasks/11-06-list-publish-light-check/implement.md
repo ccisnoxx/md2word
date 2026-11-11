@@ -3,25 +3,25 @@
 1. 读取 PRD/design、backend 目录/错误/质量/列表查询合同，核对实际读视图调用链。
 2. 子代理仅修改 service.py 与定向测试；主会话同步 Spec 和任务文档。
 3. 新增列表零读取、状态拒绝矩阵、默认深度路径与 POST 拒绝、其他动作/非管理员保持的测试。复用本地替身，禁止真实外部服务。
-4. 使用 PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest 加具体新增模块和现有类/方法；现有失败须在内存载入 git HEAD 的 service.py 后复现，不修历史测试。临时资源须清理，不能留下工作树临时目录或修改仓库外文件。
+4. 使用 PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest 加具体新增模块和现有类/方法；现有失败须在内存载入 git HEAD 的 service.py 后复现，不修历史测试。临时资源须清理，不能留下工作树临时目录或修改仓库外文件。
 5. trellis-check 子代理独立审查默认值、唯一轻量调用方、POST 合同与测试证据；复用已通过检查，不跑广泛测试。检查 git diff/status 后按 schema 报告，不归档或记录会话。
 
 ## 执行结果
 
 产品代码仅新增默认 True 的 check_publication_evidence 参数链，唯一 False 位于 list_jobs；未修改 schema/router/POST/前端/incidents。Spec 和 API 文档已按授权同步。修改的 docstring、注释和测试提示均为中文。独立 trellis-check 只读审查及夹具增量复核无未解决发现。
 
-所有测试使用 PYTHONDONTWRITEBYTECODE=1 与 /Users/sc/PycharmProjects/md2word/.venv/bin/python；外层 Python TemporaryDirectory(dir=本任务目录, prefix="validation-") 将 TMPDIR 传给测试子进程，完成即清理，没有 worktree 外测试文件写入。
+所有测试使用 PYTHONDONTWRITEBYTECODE=1 与 ${PROJECT_ROOT}/.venv/bin/python；外层 Python TemporaryDirectory(dir=本任务目录, prefix="validation-") 将 TMPDIR 传给测试子进程，完成即清理，没有 worktree 外测试文件写入。
 
 首轮实际子命令：
 
 ```sh
-/Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_document_job_list_publish_light_check tests.test_document_job_list_query_v2_service.DocumentJobListV2PublicationTests.test_legacy_real_table_report_publication_action_is_page_bounded tests.test_document_job_download_availability_api.DocumentJobDownloadAvailabilityApiTests.test_list_detail_and_incidents_use_the_same_metadata_only_owner tests.test_document_job_download_availability.DocumentJobDownloadAvailabilityTests.test_default_download_actions_share_existing_issuance_rejections
+${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_document_job_list_publish_light_check tests.test_document_job_list_query_v2_service.DocumentJobListV2PublicationTests.test_legacy_real_table_report_publication_action_is_page_bounded tests.test_document_job_download_availability_api.DocumentJobDownloadAvailabilityApiTests.test_list_detail_and_incidents_use_the_same_metadata_only_owner tests.test_document_job_download_availability.DocumentJobDownloadAvailabilityTests.test_default_download_actions_share_existing_issuance_rejections
 ```
 
 6 方法 / 3.524 秒：新增两 API 方法及既有页内解码方法通过；新增状态夹具有 2 错误；两个旧方法有 1 失败和 11 错误。单跑新增状态类定位后修正：用真实发布替代禁止的普通 published 更新，running 使用 unreviewed。随后仅运行受影响目标：
 
 ```sh
-/Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest -v tests.test_document_job_list_publish_light_check.DocumentJobListPublishLightCheckTests.test_admin_list_skips_evidence_but_default_read_views_verify tests.test_document_job_list_publish_light_check.DocumentJobListPublishStateTests
+${PROJECT_ROOT}/.venv/bin/python -m unittest -v tests.test_document_job_list_publish_light_check.DocumentJobListPublishLightCheckTests.test_admin_list_skips_evidence_but_default_read_views_verify tests.test_document_job_list_publish_light_check.DocumentJobListPublishStateTests
 ```
 
 2 方法 / 1.847 秒，OK。最终新增 3 方法和直接修改的既有 1 方法全部通过；其他成功结果按未变输入复用，未为汇总重跑。
@@ -57,7 +57,7 @@ git diff --check 通过。测试临时目录已清理。未执行全仓/完整�
 新增分类前到期回归先在旧候选验证 RED（1 方法 / 0.013 秒，旧候选保留 blocked，旧全量流程 total=0），随后移除 helper 的 as_of 参数。最终实际子命令如下；外层始终 PYTHONDONTWRITEBYTECODE=1，TemporaryDirectory(dir=本任务目录, prefix="validation-") 设置子进程 TMPDIR，退出即清理：
 
 ```sh
-/Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest -v tests.test_document_job_incident_publish_light_check tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_incident_queue_filters_priority_and_diagnostics tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_incident_bulk_retry_skips_non_retryable_and_refreshes_status tests.test_degraded_page_display.DegradedPageDisplayApiTests.test_detail_and_incident_queue_list_degraded_pages
+${PROJECT_ROOT}/.venv/bin/python -m unittest -v tests.test_document_job_incident_publish_light_check tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_incident_queue_filters_priority_and_diagnostics tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_incident_bulk_retry_skips_non_retryable_and_refreshes_status tests.test_degraded_page_display.DegradedPageDisplayApiTests.test_detail_and_incident_queue_list_degraded_pages
 ```
 
 7 方法 / 3.103 秒全部通过（新增异常 4 方法、既有异常 3 方法）。新增模块首次两个夹具错误为非法 queued stage、普通更新不能改质量贡献，已按合法 uploaded 及既有发布夹具锁内历史槽方式修正，不涉及产品兜底。
@@ -65,7 +65,7 @@ git diff --check 通过。测试临时目录已清理。未执行全仓/完整�
 本轮先前实际运行的组合命令：
 
 ```sh
-/Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest -v tests.test_document_job_incident_publish_light_check.DocumentJobIncidentMetadataTests.test_page_reuses_classification_observation_and_preserves_result_gates tests.test_document_job_list_publish_light_check tests.test_document_job_list_query_v2_service.DocumentJobListV2PublicationTests.test_legacy_real_table_report_publication_action_is_page_bounded tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_incident_queue_filters_priority_and_diagnostics tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_incident_bulk_retry_skips_non_retryable_and_refreshes_status tests.test_degraded_page_display.DegradedPageDisplayApiTests.test_detail_and_incident_queue_list_degraded_pages tests.test_document_job_download_availability_api.DocumentJobDownloadAvailabilityApiTests.test_list_detail_and_incidents_use_the_same_metadata_only_owner
+${PROJECT_ROOT}/.venv/bin/python -m unittest -v tests.test_document_job_incident_publish_light_check.DocumentJobIncidentMetadataTests.test_page_reuses_classification_observation_and_preserves_result_gates tests.test_document_job_list_publish_light_check tests.test_document_job_list_query_v2_service.DocumentJobListV2PublicationTests.test_legacy_real_table_report_publication_action_is_page_bounded tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_incident_queue_filters_priority_and_diagnostics tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_incident_bulk_retry_skips_non_retryable_and_refreshes_status tests.test_degraded_page_display.DegradedPageDisplayApiTests.test_detail_and_incident_queue_list_degraded_pages tests.test_document_job_download_availability_api.DocumentJobDownloadAvailabilityApiTests.test_list_detail_and_incidents_use_the_same_metadata_only_owner
 ```
 
 9 方法 / 4.450 秒，8 通过、1 历史失败。其中 AC-11 的第一轮新增 3 方法和既有页内方法均通过；最终时钟修正只影响异常 classification helper，普通列表不调用该 helper，故复用 AC-11 成功结果。

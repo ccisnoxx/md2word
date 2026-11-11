@@ -14,8 +14,8 @@
 
 ## 并行候选（只读获取，非本轮运行结果）
 
-1. `/Users/sc/PycharmProjects/md2word-wt/list-ready-once/.trellis/tasks/11-06-list-ready-once/`：PRD/design/implement/validation 记录 13→11 条 SELECT、61 项定向通过，真实 MySQL 未跑。记录引用历史生产两条校验合计 5.19 秒，但本轮没有取得该线上原始 trace，因此只作历史线索；净收益不能直接等同 5.19 秒。实现为请求内合并校验，不是按名字理解的启动时只检查一次。
-2. `/Users/sc/PycharmProjects/md2word-wt/list-key-columns/.trellis/tasks/11-06-list-key-columns/`：已有五个全文列、投影版本 job v3/file v2、迁移和验证记录。合成 JSON 体积下降 99%以上不等于真实接口收益。Docker daemon 不可用导致真实 MySQL not_run；禁止据此声称完成引擎或线上验收。
+1. `${TASK_WORKTREE_ROOT}/list-ready-once/.trellis/tasks/11-06-list-ready-once/`：PRD/design/implement/validation 记录 13→11 条 SELECT、61 项定向通过，真实 MySQL 未跑。记录引用历史生产两条校验合计 5.19 秒，但本轮没有取得该线上原始 trace，因此只作历史线索；净收益不能直接等同 5.19 秒。实现为请求内合并校验，不是按名字理解的启动时只检查一次。
+2. `${TASK_WORKTREE_ROOT}/list-key-columns/.trellis/tasks/11-06-list-key-columns/`：已有五个全文列、投影版本 job v3/file v2、迁移和验证记录。合成 JSON 体积下降 99%以上不等于真实接口收益。Docker daemon 不可用导致真实 MySQL not_run；禁止据此声称完成引擎或线上验收。
 3. 两 worktree 均有未提交修改，共享 SQL/spec 文件有重叠；未修改、提交、合并、复制其产品代码，未改变其任务状态。
 
 ## 尚未取得

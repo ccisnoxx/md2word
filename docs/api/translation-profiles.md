@@ -15,9 +15,16 @@ source_files:
 summary: Translation Profiles API 在 MySQL resource service 下提供翻译配置与命名 Prompt 的草稿编辑、发布、默认切换、回滚和成功动作审计。
 tags: [translation, resource-versioning, api, audit]
 last_reviewed: 2026-07-23
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 ## 概述
+
+本页维护翻译配置与命名 Prompt的 API 参考。本批仅静态核对路由挂载与声明入口，未逐字段复核响应、权限、副作用或真实请求；示例和原验收声明仍按各自记录范围解释。
 
 `translation-profiles` 统一挂在 `/api/v1/translation-profiles` 下，用于管理翻译配置、内嵌命名 Prompt、发布版本、默认指针和回滚。
 
@@ -129,6 +136,6 @@ MySQL resource mode 下，不传时按语言方向绑定当前默认 published p
 
 ## 相关条目
 
-- [translation-profile-and-segment-trace-guide.md](/Users/sc/PycharmProjects/md2word/docs/dev/translation-profile-and-segment-trace-guide.md)
-- [jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/jobs.md)
-- [term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md)
+- [translation-profile-and-segment-trace-guide.md](../dev/translation-profile-and-segment-trace-guide.md)
+- [jobs.md](jobs.md)
+- [term-rule-sets.md](term-rule-sets.md)

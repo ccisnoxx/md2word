@@ -1,4 +1,14 @@
+---
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。
+---
+
 # md2word Codex 逐任务提示词
+
+本页维护提示词导航与复制使用约定，不维护第二套任务状态。各提示词目标、命令与接受语句须在实际任务满足当前授权和依赖条件后使用；实现/历史证据见 [只读对账](../../../.trellis/tasks/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)，执行状态以 [Manifest](../codex-task-manifest.yaml) 为准。
 
 本目录为 `docs/implementation/codex-task-backlog.md` 中全部 45 个任务提供可直接复制给 Codex 的独立提示词。
 

@@ -1,0 +1,105 @@
+{
+  "tracked": {
+    "exit_code": 0,
+    "summary": "仓库卫生检查完成：文件 1664，内容跳过 8，未发现规则命中。",
+    "stderr_present": false
+  },
+  "new_candidates": {
+    "exit_code": 0,
+    "summary": "仓库卫生检查完成：文件 18，内容跳过 0，未发现规则命中。",
+    "stderr_present": false
+  },
+  "full_candidate_secrets": {
+    "exit_code": 0,
+    "tracked_files": 1664,
+    "explicit_new_files": 18,
+    "snapshot_files": 1682,
+    "rule_hits": 0,
+    "config": "repository exact-path allowlists",
+    "command": "cwd=完整候选快照根；gitleaks dir . --config=${PROJECT_ROOT}/.gitleaks.toml --redact=100 --ignore-gitleaks-allow",
+    "ignored_private_files_included": false,
+    "history_rescanned": false
+  },
+  "snapshot_sources_unchanged_during_scan": true,
+  "date": "2026-11-10",
+  "baseline_commit": "d45e46e1",
+  "hook_activation": {
+    "configured_hooks_path": ".githooks",
+    "hook_executable": true,
+    "actual_git_hook_exit": 0,
+    "index_entries_unchanged": true,
+    "hook_stderr_present": true,
+    "root_repository_test_commit_created": false,
+    "hook_output": "仓库卫生检查完成：文件 0，内容跳过 0，未发现规则命中。",
+    "git_hook_output_stream": "stderr；Git 正常将钩子输出转发到此流",
+    "execution_confirmed": true
+  },
+  "targeted_tests": [
+    {
+      "command": "python3 -m unittest tests.test_repository_hygiene",
+      "tests": 15,
+      "result": "OK",
+      "seconds": 5.443,
+      "phase": "初次完成真实 index/Gitleaks 回归"
+    },
+    {
+      "command": "python3 -m unittest tests.test_repository_hygiene.HygieneRuleTests",
+      "tests": 5,
+      "result": "OK",
+      "seconds": 0.001,
+      "phase": "去除部署 root 路径误报后的受影响规则回归"
+    },
+    {
+      "command": "python3 -m unittest tests.test_repository_hygiene.GitleaksHookTests",
+      "tests": 5,
+      "result": "OK",
+      "seconds": 4.56,
+      "phase": "精确路径修复，含2项新增回归；无跳过"
+    },
+    {
+      "command": ".venv/bin/python -m unittest tests.test_conversion_sandbox_dev_tools.SandboxCliConfigurationTests tests.test_conversion_sandbox_dev_tools.ConversionSandboxAuditTests tests.test_conversion_sandbox_dev_tools.Md2wordMainMigrationTests",
+      "tests": 9,
+      "result": "OK",
+      "seconds": 0.024,
+      "phase": "沙盒配置与生成样例"
+    }
+  ],
+  "independent_security_review": {
+    "remaining_confirmed_findings": 0,
+    "pure_memory_failure_cases": 7,
+    "gitleaks_exact_path_issue": "fixed and verified",
+    "real_gitleaks_result": "reused final 5 tests with original terminal output"
+  },
+  "quality_review": {
+    "remaining_confirmed_findings": 0,
+    "markdown_links_corrected": 39,
+    "markdown_files_corrected": 16,
+    "all_corrected_targets_exist": true,
+    "python_AST_files": 6,
+    "type_check": "未配置工具，未运行，AST不等同类型检查"
+  },
+  "history": {
+    "baseline_scan_reused": true,
+    "bearer_status": "有效性、权限和吊销状态未确认",
+    "history_rewrite_executed": false
+  },
+  "documentation": {
+    "new_or_updated_python_comments_docstrings_help_errors": "中文；未翻译无关遗留输出",
+    "historical_evidence_normalized_files": 23,
+    "historical_hashes_recomputed": false
+  },
+  "closeout": {
+    "task_scoped_tracked_paths": 158,
+    "task_artifact_files": 15,
+    "task_json_jsonl_parsed": 8,
+    "explicit_new_artifact_hygiene_exit": 0,
+    "explicit_new_artifact_secrets_hits": 0,
+    "affected_document_json_parse": "passed",
+    "task_context_validation": "passed",
+    "concurrent_business_changes_preserved": true,
+    "concurrent_business_changes_validated": false,
+    "tracked_diff_foreign_paths_count": 11,
+    "only_four_approved_cleanup_deletes_staged": true,
+    "HEAD_unchanged": "d45e46e1"
+  }
+}

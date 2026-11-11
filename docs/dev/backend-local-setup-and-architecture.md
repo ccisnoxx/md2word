@@ -6,9 +6,16 @@ status: current
 summary: 说明如何启动当前 FastAPI 后端，以及如何理解项目结构和主链路。
 tags: [backend, setup, architecture, onboarding]
 last_reviewed: 2026-05-31
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 ## 概述
+
+本页维护正式后端的结构与接手路径，主体为 Files + Document Jobs；目录、入口与配置示例不代表相关服务已在当前环境启用。本批只做用途与局部静态入口对照，实际运行条件见 [后端运行说明](../runbooks/backend.md)。
 
 当前公开链路统一为 Files + Document Jobs：
 

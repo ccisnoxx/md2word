@@ -5,15 +5,22 @@ baseline_commit: fcea60ff8c131edff7fd5ba360e1bf4e37ec4227
 verified_on: 2026-10-12
 timezone: America/Los_Angeles
 task_id: BAS-001
+doc_status: historical
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  本批仅阅读全文、核对用途和原字段：2026-10-12 BAS-001 已接受历史报告，绑定 fcea60ff 基线；运行命令/结果/哈希保持。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
 ---
 
 # BAS-001 当前能力与测试基线
+
+2026-10-12 BAS-001 已接受历史报告，绑定 fcea60ff 基线；运行命令/结果/哈希保持。本次未核看全部原制品或重跑历史命令；旧缺口与通过结论不能直接外推到当前源码或部署。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](../engineering/documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
 
 ## 1. 结论、身份与证据等级
 
 六项不确定能力已形成事实结论；本地 release、IR、fake MySQL、API、component、前端单测和构建通过。P1 在线预检因缺认证信息阻断；当前线上转换/翻译、真实 MySQL DDL 和 Microsoft Word 人工质量没有验证。本报告完成 BAS-001 的证据交付，不代表目标产品能力已齐备或当前版本可发布。
 
-- 仓库/cwd：`/Users/sc/PycharmProjects/md2word`；分支：`md2word/BAS-001`；HEAD 见 front matter。
+- 仓库/cwd：`${PROJECT_ROOT}`；分支：`md2word/BAS-001`；HEAD 见 front matter。
 - 本地基线执行时间：2026-10-12 21:14 PDT，等于 2026-10-13 04:14 UTC；不存在日期/版本混用。
 - Trellis：`.trellis/tasks/archive/2026-10/10-12-bas-001-current-capability-baseline`；父任务 `10-12-datasheet-docx-delivery-quality`。
 - 开始时 manifest BAS-001=`planning`、DOC-001=`done`；DOC-001 归档 `archive/2026-10/10-12-doc-001-documentation-package-index/task.json` 的 `meta.human_acceptance` 已接受。用户本轮明确批准三份规划。扫描任务记录未见冲突的 `in_progress` 实现任务。

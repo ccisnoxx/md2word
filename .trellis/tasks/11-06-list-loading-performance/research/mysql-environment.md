@@ -17,10 +17,10 @@ colima start md2word-list-perf --activate=false --ssh-config=false --template=fa
 
 ## 镜像与 daemon 证据
 
-- Docker endpoint：`unix:///Users/sc/.colima/md2word-list-perf/docker.sock`
+- Docker endpoint：`unix://${DEVELOPER_HOME}/.colima/md2word-list-perf/docker.sock`
 - 实际 daemon：Docker 29.5.2，ID `cb77bc2b-b4d6-49db-81ab-e018d349ef45`，aarch64，2 CPU，`MemTotal=3040718848`。
 - 拉取前读取实际 `docker info` JSON：`RegistryConfig.Mirrors=[]`；`HttpProxy`、`HttpsProxy`、`NoProxy` 均为空。
-- 按原始固定标签执行一次正常 `docker --host unix:///Users/sc/.colima/md2word-list-perf/docker.sock pull mysql:8.4`，全部镜像层成功下载，退出码 0；未换源、未替换版本、未重试拉取。
+- 按原始固定标签执行一次正常 `docker --host unix://${DEVELOPER_HOME}/.colima/md2word-list-perf/docker.sock pull mysql:8.4`，全部镜像层成功下载，退出码 0；未换源、未替换版本、未重试拉取。
 - 镜像：`docker.io/library/mysql:8.4`，arm64。
 - RepoDigest：`mysql@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902`。本 daemon 的 image inspect 同时返回该 SHA 为 image ID。
 - 拉取后从实际创建的容器提取并检查官方入口脚本，确认显式密码和 `MYSQL_ROOT_HOST` 的初始化方式；使用随机生成的本任务密码，未使用默认密码或随机密码日志输出模式。
@@ -48,7 +48,7 @@ colima start md2word-list-perf --activate=false --ssh-config=false --template=fa
 
 `.trellis/tasks/11-06-list-loading-performance/research/data/mysql-environment/credentials.json`
 
-路径相对于 `/Users/sc/PycharmProjects/md2word-wt/list-loading-performance`。文件权限为 0600，父目录为 0700；`data/` 命中现有 Git ignore 规则。JSON 是完整的 `MD2WORD_TEST_MYSQL`、`MD2WORD_TEST_MYSQL_HOST`、`MD2WORD_TEST_MYSQL_PORT`、`MD2WORD_TEST_MYSQL_USER`、`MD2WORD_TEST_MYSQL_PASSWORD` 字符串映射，不含数据库名。仅供主会话程序读取并注入测试子进程，不能打印、提交或写入测试报告。
+路径相对于 `${TASK_WORKTREE_ROOT}/list-loading-performance`。文件权限为 0600，父目录为 0700；`data/` 命中现有 Git ignore 规则。JSON 是完整的 `MD2WORD_TEST_MYSQL`、`MD2WORD_TEST_MYSQL_HOST`、`MD2WORD_TEST_MYSQL_PORT`、`MD2WORD_TEST_MYSQL_USER`、`MD2WORD_TEST_MYSQL_PASSWORD` 字符串映射，不含数据库名。仅供主会话程序读取并注入测试子进程，不能打印、提交或写入测试报告。
 
 同目录中的 `mysql.env` 为创建容器使用的 0600 专属环境文件；密码也存在本任务 Docker 容器的配置中，故不要输出完整 `docker inspect`。`readiness.json` 仅存版本、UUID、字符集、隔离和系统库名；没有密码。未复用任何现有凭据或业务数据。
 
@@ -91,7 +91,7 @@ colima start md2word-list-perf --activate=false --ssh-config=false --template=fa
 
 | 项目 | run2 实际值 |
 | --- | --- |
-| Docker endpoint | `unix:///Users/sc/.colima/md2word-list-perf/docker.sock` |
+| Docker endpoint | `unix://${DEVELOPER_HOME}/.colima/md2word-list-perf/docker.sock` |
 | 容器名 | `md2word-codex-list-perf` |
 | 容器 ID | `4aeafee23ecc315392e13977673103accb567b9161995c2fd896a71abb77b2bb` |
 | 标签 | `md2word.task=list-loading-performance`、`md2word.run=2` |

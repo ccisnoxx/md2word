@@ -3,13 +3,13 @@
 ## 实际命令与结果
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ai_provider_config_api_updates_runtime_config_and_masks_secret tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_reports_invalid_ai_provider_config_file
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ai_provider_config_api_updates_runtime_config_and_masks_secret tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_reports_invalid_ai_provider_config_file
 ```
 
 原始修改前基线 2 项通过，无基线失败。本次 AC-3 返工后重新运行，2 项通过（0.158s）。覆盖成功写入、响应脱敏、审计和损坏配置健康报告。
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_provider_config -v
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_provider_config -v
 ```
 
 实施代理在本次 AC-3 返工后重新运行 8 个方法，全部通过（0.021s）；主会话已阅读完整测试及最终服务差异。AC-1 保留 umask 0 下实际创建瞬间、替换前、最终 mode 和 inode/JSON 格式断言；AC-2 保留 fchmod/fstat/创建/实际 mode 不符，以及 fdopen/replace 失败与旧记录保全断言，检查整个配置目录确认无随机临时文件泄漏；AC-3 覆盖历史固定名和随机名普通残留/符号链接同时存在时保存成功，残留内容、inode、权限及独立链接目标均保持不变；API 失败测试确认 HTTP 500、无密钥和无成功审计。AC-4 由上述两个现有方法证明。

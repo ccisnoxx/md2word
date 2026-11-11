@@ -6,9 +6,16 @@ status: current
 summary: 当前后端最小 .env 模板和启动命令速查版。
 tags: [backend, setup, quickstart, env]
 last_reviewed: 2026-05-29
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 ## 最小 `.env`
+
+本页继续作为本地配置速查，原示例包含遗留口径：根 `run_api.py` / `run_worker.py`、旧 StageWorker 和额外 callback token 段落不适用于当前正式链路。启动与 Worker 入口请按 [后端运行说明](../runbooks/backend.md)，回调请按 [MinerU callbacks](../api/mineru-callbacks.md) 的 checksum 合同；本批仅核对入口声明，未执行原命令。
 
 当前仓库根目录 `.env` 最小只需要保证下面这些值：
 

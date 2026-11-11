@@ -6,9 +6,16 @@ status: current
 summary: gs-003 / OPA228_P1.pdf 真实链路生成 DOCX 的人工结构质量 triage。
 tags: [testing, golden-sample, pdf, word, quality-triage]
 last_reviewed: 2026-06-02
+doc_status: historical
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文原时间、报告/占位用途、历史结论与当前阅读入口的静态核对；未重开原二进制或执行历史命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # gs-003 DOCX 质量 triage
+
+本页保存 2026-06-02、run `20260602T071017Z` 的 gs-003 triage 与旧 sandbox 基线；原缺陷、命令和结论按当时范围保留，不推断当前仍存在或已修复。本批未复现旧运行；当前调试入口见 [本地转换说明](../dev/local-conversion-sandbox.md)，新验收见 [P0 联调说明](pdf-to-word-p0-integration-guide.md)。
 
 ## 1. 样本与产物
 
@@ -80,19 +87,19 @@ rendered_pages=2
 ## 6. md2word_main 本地基线
 
 > 2026-06-23 更新：本节保留 2026-06-02 的历史基线证据。当前长期维护策略已调整为
-> `/Users/sc/PycharmProjects/md2word/app/conversion` 是唯一转换代码源，
+> `${PROJECT_ROOT}/app/conversion` 是唯一转换代码源，
 > `md2word_main` 只保留历史样例输入输出资产，不再作为运行入口。新的本地调试流程见
-> [local-conversion-sandbox.md](/Users/sc/PycharmProjects/md2word/docs/dev/local-conversion-sandbox.md)。
+> [local-conversion-sandbox.md](../dev/local-conversion-sandbox.md)。
 
 2026-06-02 使用 `md2word_main/mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4` 跑本地转换基线。
 
 历史运行方式如下，仅作为 2026-06-02 证据记录保留；当前不要再从 `md2word_main/mineru_to_docx.py` 运行：
 
 ```bash
-PYTHONPATH=/Users/sc/PycharmProjects/md2word:/Users/sc/PycharmProjects/md2word/tests/tmp/md2word_main_baseline/shim \
+PYTHONPATH=${PROJECT_ROOT}:${PROJECT_ROOT}/tests/tmp/md2word_main_baseline/shim \
 .venv/bin/python mineru_to_docx.py \
-  /Users/sc/PycharmProjects/PythonProject/md2word_main/mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4 \
-  --output /Users/sc/PycharmProjects/md2word/tests/tmp/md2word_main_baseline/OPA228_P1/md2word_main_direct.docx \
+  ${SANDBOX_ROOT}/mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4 \
+  --output ${PROJECT_ROOT}/tests/tmp/md2word_main_baseline/OPA228_P1/md2word_main_direct.docx \
   --document-language en \
   --translation-mode direct
 ```
@@ -101,7 +108,7 @@ PYTHONPATH=/Users/sc/PycharmProjects/md2word:/Users/sc/PycharmProjects/md2word/t
 
 - `md2word_main/mineru_to_docx.py` 直接运行会失败：`ModuleNotFoundError: No module named 'app'`。
 - `md2word_main/.idea` 未配置额外 source root；`md2word_main` 目录内也没有 `app/conversion/`。
-- 本地基线实际通过 `PYTHONPATH=/Users/sc/PycharmProjects/md2word` 加载当前仓库的 `app.conversion.runtime_runner` 和 `app/conversion/runtime/*`。
+- 本地基线实际通过 `PYTHONPATH=${PROJECT_ROOT}` 加载当前仓库的 `app.conversion.runtime_runner` 和 `app/conversion/runtime/*`。
 - 临时 `config.py` shim 只用于导入 `app.conversion.runtime_config.APP_CONFIG`，不属于业务代码。
 - 之后曾将可运行的 `app/conversion/`、`resources/`、根级 `config.py`、`README.md` 和 `requirements.txt` 复制到 `md2word_main`；该做法已废弃，当前不再恢复 `md2word_main` 作为独立转换项目。
 
@@ -134,10 +141,10 @@ PYTHONPATH=/Users/sc/PycharmProjects/md2word:/Users/sc/PycharmProjects/md2word/t
 
 验证结果：
 
-- 输出：`/Users/sc/PycharmProjects/PythonProject/md2word_main/out/OPA228_P1_standalone.docx`
-- 渲染：`/Users/sc/PycharmProjects/PythonProject/md2word_main/out/OPA228_P1_standalone_rendered/page-1.png`
+- 输出：`${SANDBOX_ROOT}/out/OPA228_P1_standalone.docx`
+- 渲染：`${SANDBOX_ROOT}/out/OPA228_P1_standalone_rendered/page-1.png`
 - 渲染页数：1
-- 模板来源：`/Users/sc/PycharmProjects/PythonProject/md2word_main/resources/templates/default/datasheet_template.docx`（历史路径；当前模板由官方 `md2word/resources/` 提供）
+- 模板来源：`${SANDBOX_ROOT}/resources/templates/default/datasheet_template.docx`（历史路径；当前模板由官方 `md2word/resources/` 提供）
 
 当前结论：`md2word_main` 不再作为独立转换代码源或运行入口。后续质量修复必须先落在正式项目
 `md2word/app/conversion/runtime/*`，再用正式项目的 PyCharm 配置入口读取 `md2word_main` 样例资产做本地 render 验证。

@@ -7,7 +7,7 @@
 ## 环境与固定输入
 
 - 基线 `828e1d9d656bf266cba7bba0ed23a62c550db15c`，分支 `codex/b10-measurement`；测量日期 2026-11-06。
-- Apple M5，10 个逻辑 CPU，32 GiB 内存；macOS 27.2 arm64，Python 3.11.15，SQLite 3.53.1。解释器 `/Users/sc/PycharmProjects/md2word/.venv/bin/python`，根目录运行且 `PYTHONDONTWRITEBYTECODE=1`。
+- Apple M5，10 个逻辑 CPU，32 GiB 内存；macOS 27.2 arm64，Python 3.11.15，SQLite 3.53.1。解释器 `${PROJECT_ROOT}/.venv/bin/python`，根目录运行且 `PYTHONDONTWRITEBYTECODE=1`。
 - 每 10 任务：4 成功（2 已发布、1 有效 approved、1 有效 needs_fix）、2 失败、2 运行、2 排队；均属于同一租户/公司，管理员可见全部，固定时刻为 `2026-11-06T00:00:00+00:00`。运行与排队记录已停滞，异常总数为 0.6N。
 - 每任务 1 源文件，成功任务另有 IR 和 DOCX；文件 F=1.8N、publication P=0.2N，每条 publication 保护 3 个文件，受保护文件总数 0.6N。失败任务源文件已到期，清理候选为 0.2N；所有文件 status=uploaded。
 - 这些是按真实模型关系构造的合成比例，未从生产抽样。21 事件/任务实际写入本地库，近似用户给出的 2511/119；本次所有路径均零事件 SQL、零事件模型解码。

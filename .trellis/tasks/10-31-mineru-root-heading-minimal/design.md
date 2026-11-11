@@ -39,4 +39,4 @@
 
 ## 隔离与回退
 
-基线固定为 main `a942bbda`；工作分支 `codex/mineru-root-heading-minimal-20261031`，worktree 位于 `/Users/sc/.codex/worktrees/mineru-root-heading-20261031-xtefthlw/md2word`。两批源码及直接回归内容保持已验证版本，按用户授权分别保存为两个本地提交；共用 Spec 按 INPUT-001/TEXT-001 分批纳入，任务记录随相应快照更新。不执行回退、推送、合并或分支删除。
+基线固定为 main `a942bbda`；工作分支 `codex/mineru-root-heading-minimal-20261031`，worktree 位于 `${TASK_WORKTREE_ROOT}/mineru-root-heading-20261031-xtefthlw/md2word`。两批源码及直接回归内容保持已验证版本，按用户授权分别保存为两个本地提交；共用 Spec 按 INPUT-001/TEXT-001 分批纳入，任务记录随相应快照更新。不执行回退、推送、合并或分支删除。

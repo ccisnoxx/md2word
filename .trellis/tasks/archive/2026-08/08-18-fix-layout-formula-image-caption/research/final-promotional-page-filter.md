@@ -16,8 +16,8 @@
 - `app/conversion/runtime/input_adapter_runtime.py`：仍存在的兼容转换路径；保留独立的 `PageData` 页面结构。
 - `app/conversion/runtime/page_repair_runtime.py`：兼容路径当前唯一明显的页面级修复，处理空续表页，不处理推广封底。
 - `tests/test_document_ir_mineru_converter_layout.py`：正式转换器现有的合成 MinerU zip 测试入口，已覆盖嵌套 v2 页、资产、页尺寸、题注重配和续表。
-- `/Users/sc/Downloads/TPL51200_mineru_result/*_content_list_v2.json`：现有负样本；最后一页是商标/免责声明文字，无图片 block。
-- `/Users/sc/Downloads/BL0942_mineru_result/*_content_list_v2.json`：现有负样本；最后一页是“Version update”真实表格，不能按“短末页”删除。
+- `${DEVELOPER_HOME}/Downloads/TPL51200_mineru_result/*_content_list_v2.json`：现有负样本；最后一页是商标/免责声明文字，无图片 block。
+- `${DEVELOPER_HOME}/Downloads/BL0942_mineru_result/*_content_list_v2.json`：现有负样本；最后一页是“Version update”真实表格，不能按“短末页”删除。
 - `mineru_result/RS2G04_(RevA.4).pdf-*/**_content_list_v2.json`：现有负样本；最后一页是重要声明，不能按“末页声明/联系信息”删除。
 
 ### MinerU 页面与块信号

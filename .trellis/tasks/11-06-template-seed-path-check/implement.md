@@ -8,7 +8,7 @@
 4. 运行完整 tests.test_template_seed_history（含新增及 build_runtime 用例），以及 FastAPIJobsBackendTests.test_bundled_v2_bootstrap_preserves_existing_v1_default、test_bundled_v2_bootstrap_sets_v2_default_in_empty_mysql_repository 两个定向方法。历史失败单独记录，不修。
 5. Trellis check 静态复核最终 diff、范围、中文注释和原断言保留；成功输入不变不重复测试。
 
-统一使用 /Users/sc/PycharmProjects/md2word/.venv/bin/python，设置 PYTHONDONTWRITEBYTECODE=1 和 TMPDIR 指向本任务临时目录。禁止 unittest discover、全仓/前端/发布门禁；不访问生产或真实服务。测试完成清理本任务临时目录，不运行 archive/add_session，不提交。
+统一使用 ${PROJECT_ROOT}/.venv/bin/python，设置 PYTHONDONTWRITEBYTECODE=1 和 TMPDIR 指向本任务临时目录。禁止 unittest discover、全仓/前端/发布门禁；不访问生产或真实服务。测试完成清理本任务临时目录，不运行 archive/add_session，不提交。
 
 ## 实施结果
 

@@ -12,7 +12,7 @@
 - 基线 `app/conversion/docx_rules/formula.py:493` 在反斜杠后先扫描字母；`\,`、`\_` 会降级为 invalid_syntax，六个函数名缺少分支而降级为 unsupported_command。
 - 基线 `formula.py:691` 已为基础 run 写 p；text/roman wrappers、显式 b/i、内部空格及受控降级已经存在。
 - 基线 `app/services/renderer/docx_quality.py:125` 拼接 w:t/m:t 并扫描残留；报告验证后只精确排除 text_fallback。原生 `Noise_RMS` 会触发 `_RMS` 模式，必须同批适配。
-- 固定审查报告位于 `/Users/sc/.codex/worktrees/mineru-root-heading-20261031-xtefthlw/evidence/formula-minimal-review-20261031/review-and-minimal-plan.md`。
+- 固定审查报告位于 `${TASK_WORKTREE_ROOT}/mineru-root-heading-20261031-xtefthlw/evidence/formula-minimal-review-20261031/review-and-minimal-plan.md`。
 
 ## 需求与验收
 

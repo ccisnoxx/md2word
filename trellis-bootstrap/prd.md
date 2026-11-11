@@ -1,4 +1,14 @@
+---
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。
+---
+
 # Parent PRD：Datasheet DOCX 交付质量完善
+
+本页是父任务PRD起草模板；原目标、复选框、建议映射与验收条件供实际任务引用和确认，不证明当前已实施或验收，也不授权创建、启动、提交或归档任务。定义及 AC 见 [原任务清单](../docs/implementation/codex-task-backlog.md)，执行状态与依赖门以 [Manifest](../docs/implementation/codex-task-manifest.yaml) 为准；原模板字节保留。
 
 ## 1. 背景
 

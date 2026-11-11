@@ -18,7 +18,7 @@
 实施轮已执行的唯一应用检查（本提交轮禁止重跑；当时 cwd 为本任务 worktree）：
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_formula_literal_support -v
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_formula_literal_support -v
 ```
 
 ## 复核与收尾（AC6）
@@ -35,7 +35,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. /Users/sc/PycharmProjects/md2word/.venv/b
 
 ## 证据位置
 
-`/Users/sc/.codex/worktrees/formula-literal-minimal-20261031-g0l1d94p/evidence/`。before.json 为实施前保留基线；本任务最后一次新增直接回归19/19通过；完整保留两次执行记录与初审实际问题。
+`${TASK_WORKTREE_ROOT}/formula-literal-minimal-20261031-g0l1d94p/evidence/`。before.json 为实施前保留基线；本任务最后一次新增直接回归19/19通过；完整保留两次执行记录与初审实际问题。
 
 ## 实际执行与修复
 

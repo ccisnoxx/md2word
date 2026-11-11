@@ -11,9 +11,16 @@ source_files:
 summary: 管理员读取 MinerU 账号与密钥安全状态并原子轮换运行时绑定。
 tags: [config, mineru, secret, admin]
 last_reviewed: 2026-07-10
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # MinerU Config API
+
+本页维护MinerU 账号与密钥配置的 API 参考。本批仅静态核对路由挂载与声明入口，未逐字段复核响应、权限、副作用或真实请求；示例和原验收声明仍按各自记录范围解释。
 
 ## 概述
 

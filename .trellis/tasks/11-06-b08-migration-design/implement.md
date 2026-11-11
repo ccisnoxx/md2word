@@ -54,9 +54,9 @@
 建议新增 `tests/test_mysql_schema_migrations.py` 与 `tests/test_mysql_schema_migrations_integration.py`（拟新增路径，当前不存在），按上表分别承载离线合同与真实引擎合同。后续最小命令形状如下，测试模块实现后才能执行；不把这些预定命令列作本轮通过：
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_mysql_schema_migrations
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_mysql_schema_migrations
 # 下条仅在取得隔离 MySQL 授权且显式配置专用连接后运行
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_mysql_schema_migrations_integration
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_mysql_schema_migrations_integration
 ```
 
 真实引擎至少执行六组：
@@ -75,7 +75,7 @@ PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m 
 在 worktree 根目录使用指定 Python，`PYTHONDONTWRITEBYTECODE=1`，不生成临时目录：
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python .trellis/scripts/task.py validate .trellis/tasks/11-06-b08-migration-design
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python .trellis/scripts/task.py validate .trellis/tasks/11-06-b08-migration-design
 
 git diff --check
 git status --short --untracked-files=all

@@ -1,4 +1,14 @@
+---
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
+---
+
 # Golden Sample 回归样本
+
+本页维护 P0 canonical suite 与执行程序；manifest 的样本声明及 `available` 不代表本批运行通过。本批仅对照清单 ID 和脚本参数，实际运行与 admin 签字请结合 [P0 联调说明](../../../docs/testing/pdf-to-word-p0-integration-guide.md) 和 [验收模板](acceptance-record-template.md)。
 
 本目录用于 P0 PDF 到 Word 主链路验收。`manifest.yaml` 是版本化样本清单，`pdfs/` 放真实 PDF，`runs/` 放回归脚本输出。
 

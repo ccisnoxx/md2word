@@ -6,9 +6,16 @@ status: current
 summary: md2word 在 dmit + WireGuard + hostdzire 结构下的实际部署和线上验证记录。
 tags: [deploy, nginx, docker, wireguard, hostdzire, dmit]
 last_reviewed: 2026-11-09
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  仅核对仓库 Compose 与分层 override 记录的适用边界及维护入口；2026-11-06/09 线上观察保留为原记录，本次未读取线上配置或复核部署结果。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # md2word 线上部署记录
+
+本文继续维护部署入口，并保留带日期的线上观察。2026-11-06 分层 override、2026-11-09 上线及验证结果均为原记录，本次仅核对仓库配置与文字边界，未登录主机或复核当前生效设置。部署时先读取实际 Compose 文件清单、镜像和配置来源；镜像输入按 [P0 部署说明](./p0-docker-deployment.md#依赖锁与构建输入)，既有生产切换按下文[分层 override 上线](#分层-override-上线当前生产方式)。
 
 ## 拓扑
 
@@ -37,11 +44,11 @@ last_reviewed: 2026-11-09
 
 ## 标准迭代流程
 
-后续代码和文档迭代遵循 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md)：
+后续代码和文档迭代遵循 [线上优先验证流程](online-first-validation-workflow.md)：
 
 1. 在本地完成代码或文档改写，跑不依赖真实服务的检查并提交。
 2. 推送 `main` 到 GitHub，确认 `git ls-remote origin refs/heads/main` 返回目标 commit。
-3. 用私密 VPS 登录信息 SSH 到 `hostdzire`；不要把 `/Users/sc/work_file/bak_file/VPS.txt` 的内容写入仓库、任务记录或对话。
+3. 用私密 VPS 登录信息 SSH 到 `hostdzire`；不要把 `${DEVELOPER_HOME}/work_file/bak_file/VPS.txt` 的内容写入仓库、任务记录或对话。
 4. 在 `hostdzire` 新建 `${RELEASE_DIR}`，从 GitHub bare 源缓存 fetch 目标 commit，再用 `git archive` 导出运行包；按 [依赖锁与构建输入](./p0-docker-deployment.md#依赖锁与构建输入) 的来源记录核对 57 个运行 wheel 的文件名、平台与 SHA-256，补齐 `${RELEASE_DIR}/requirements/wheels/`，不含 pip 工具。
 5. 从当前运行 release 复制 `.env` 和 `deploy/auth_internal_users.json`，更新非敏感的 `APP_VERSION` / `DEPLOYMENT_ID`，并为本次产物设置独立的版本化 `MD2WORD_IMAGE`。
 6. 在新 release 内执行 Docker Compose `build api`，再 `up -d --no-build`；API/Worker 共用该产物并核对实际 image ID，随后检查 API、Worker、MySQL、Redis/Celery。
@@ -109,7 +116,7 @@ docker compose -p md2word-p0 ${FILES} up -d --no-deps --no-build api worker
 
 ### Codex SSH profile 约定
 
-本机私密文件 `/Users/sc/work_file/bak_file/VPS.txt` 使用 `CODEX_SSH_PROFILE` 块保存 SSH 信息，避免 Codex 依赖“hostdzire 标签附近 N 行”这种不稳定截断解析。仓库文档只记录格式，不记录真实值。
+本机私密文件 `${DEVELOPER_HOME}/work_file/bak_file/VPS.txt` 使用 `CODEX_SSH_PROFILE` 块保存 SSH 信息，避免 Codex 依赖“hostdzire 标签附近 N 行”这种不稳定截断解析。仓库文档只记录格式，不记录真实值。
 
 ```text
 --- CODEX_SSH_PROFILE_BEGIN ---
@@ -220,7 +227,7 @@ docker compose --env-file .env -f docker/prod/docker-compose.yml up -d --no-buil
 - HSTS 由 `/etc/nginx/snippets/962850-hsts-host.conf` 提供，并配合 `add_header_inherit merge;` 让 location 内的 `add_header` 不丢失 server 级响应头。
 - `index.html` 使用 `expires -1`（`Cache-Control: no-cache`），发布切换后浏览器能立即取得引用新 hash chunk 的入口页；`/assets/` 仍缓存 7 天。
 
-仓库中的 [deploy/nginx/md2word-api.962850.xyz.conf](/Users/sc/PycharmProjects/md2word/deploy/nginx/md2word-api.962850.xyz.conf) 已于 2026-11-09 与线上 `/etc/nginx/sites-enabled/md2word-api.962850.xyz.conf` 逐字节对齐。修改线上站点前仍须先 diff 线上文件与仓库版本：存在未入库差异时只在线上文件上追加本次改动并回写仓库，不直接覆盖；备份放在 `/root/nginx-backups/`，`nginx -t` 通过后再 reload。
+仓库中的 [deploy/nginx/md2word-api.962850.xyz.conf](../../deploy/nginx/md2word-api.962850.xyz.conf) 已于 2026-11-09 与线上 `/etc/nginx/sites-enabled/md2word-api.962850.xyz.conf` 逐字节对齐。修改线上站点前仍须先 diff 线上文件与仓库版本：存在未入库差异时只在线上文件上追加本次改动并回写仓库，不直接覆盖；备份放在 `/root/nginx-backups/`，`nginx -t` 通过后再 reload。
 
 本机如果启用 `mosdns` + `sing-box` fakeip 分流，`md2word.962850.xyz` 可能解析成 `28.0.*`。这是本机代理接管国外域名的预期行为，不代表公网 DNS 或线上入口异常；排查公网入口时可用公共 DNS 查询或 `curl --resolve md2word.962850.xyz:443:<dmit-public-ip> ...` 强制验证 dmit 入口。真实公网 IP 只从私密 VPS 文件读取，不写入仓库文档。
 
@@ -240,8 +247,8 @@ MinerU 公开回调当前按下面约定配置：
 
 需要恢复时：
 
-- 看本机忽略文件 [.env](/Users/sc/PycharmProjects/md2word/.env)
-- 如需重置内部账号密码，用 [app/services/auth/service.py](/Users/sc/PycharmProjects/md2word/app/services/auth/service.py) 里的 `hash_password()`
+- 看本机忽略文件 [.env](../../.env)
+- 如需重置内部账号密码，用 [app/services/auth/service.py](../../app/services/auth/service.py) 里的 `hash_password()`
 
 ## 翻译能力边界
 

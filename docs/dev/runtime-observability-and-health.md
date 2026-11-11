@@ -6,9 +6,16 @@ status: current
 summary: 说明当前后端的 access/business/system 日志分层和 health readiness 字段。
 tags: [backend, logging, health, observability]
 last_reviewed: 2026-05-28
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 ## 日志分层
+
+本页维护正式任务的日志与健康观察方法，示例字段不代表当前实例观测值。末尾额外 callback token 排障提示属旧口径；现行回调按 [MinerU callbacks](../api/mineru-callbacks.md) 的 checksum 合同解释，本批未执行健康查询或恢复动作。
 
 当前后端约定三类日志：
 

@@ -13,9 +13,16 @@ source_files:
 summary: Acceptance API 提供 Admin-only P0/P1/P2 验收证据摘要、最新状态派生和复核记录。
 tags: [acceptance, ops, api, admin]
 last_reviewed: 2026-06-21
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 ## 概述
+
+本页维护验收摘要索引的 API 参考。本批仅静态核对路由挂载与声明入口，未逐字段复核响应、权限、副作用或真实请求；示例和原验收声明仍按各自记录范围解释。
 
 Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验收证据索引。
 它只保存摘要、报告路径、阻断项、告警和复核结论；不保存 PDF、Word、二进制 artifact、JWT、secret、客户全文、完整 prompt 或 provider 响应。
