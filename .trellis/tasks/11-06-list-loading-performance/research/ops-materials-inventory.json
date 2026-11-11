@@ -300,7 +300,7 @@
       }
     ],
     "screenshot": {
-      "source_path": "/Users/sc/.codex/visualizations/2026/11/06/01a1b183-fc66-7bc1-b30a-9663a4e4cc1d/md2word-list-acceptance.png",
+      "source_path": "${DEVELOPER_HOME}/.codex/visualizations/2026/11/06/01a1b183-fc66-7bc1-b30a-9663a4e4cc1d/md2word-list-acceptance.png",
       "committable_copy": ".trellis/tasks/11-06-list-loading-performance/research/production-acceptance.jpg",
       "format": "JPEG",
       "sha256": "19fbc282a12488c928895420948794d758a699a2c1d04079e166692e2f67ee3b",

@@ -1,8 +1,8 @@
-/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+${PROJECT_ROOT}/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
   from starlette.testclient import TestClient as TestClient  # noqa
-/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
   from app.api.errors import register_api_error_handlers
-/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
   from app.api.errors import register_api_error_handlers
 test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default)
 验证 real-send preview 默认 blocked，且不解析 secret、不调用 provider、不写 audit。 ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]

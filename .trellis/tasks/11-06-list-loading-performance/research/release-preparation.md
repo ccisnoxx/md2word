@@ -3,7 +3,7 @@
 - Query: 核对维护中的发布、构建、迁移、原数据保真与回退入口，为后续审批提供可审核事实。
 - Scope: internal；只读本地源码、部署记录与任务文档，仅写本文件。
 - Date: 2026-11-07
-- Checkout: `/Users/sc/PycharmProjects/md2word-wt/list-loading-performance`。
+- Checkout: `${TASK_WORKTREE_ROOT}/list-loading-performance`。
 
 ## Findings
 

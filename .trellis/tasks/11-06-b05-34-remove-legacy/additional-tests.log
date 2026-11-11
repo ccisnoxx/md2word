@@ -1,8 +1,8 @@
-/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+${PROJECT_ROOT}/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
   from starlette.testclient import TestClient as TestClient  # noqa
-/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
   from app.api.errors import register_api_error_handlers
-/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
   from app.api.errors import register_api_error_handlers
 test_cli_default_model_and_limits_share_configuration (tests.test_formal_conversion_configuration.FormalConversionConfigurationTests.test_cli_default_model_and_limits_share_configuration) ... ok
 test_configuration_defaults_remain_literal_values (tests.test_formal_conversion_configuration.FormalConversionConfigurationTests.test_configuration_defaults_remain_literal_values) ... ok
@@ -28,7 +28,7 @@ test_initial_url_rejected_before_transport_and_output (tests.test_mineru_downloa
 test_production_factories_use_custom_allowlist_and_existing_resolver (tests.test_mineru_download_boundary.MinerUDownloadBoundaryTests.test_production_factories_use_custom_allowlist_and_existing_resolver) ... ok
 test_document_file_retention_plan_marks_expired_without_deleting_objects (tests.test_artifact_retention.DocumentFileRetentionTests.test_document_file_retention_plan_marks_expired_without_deleting_objects) ... ERROR
 test_mineru_config_api_updates_runtime_token_without_exposing_secret (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_mineru_config_api_updates_runtime_token_without_exposing_secret) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
-/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:59: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+${PROJECT_ROOT}/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:59: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
   response = await handler(conn, exc)  # type: ignore[arg-type]
 ok
 test_mineru_config_invalid_file_blocks_without_settings_fallback (tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_mineru_config_invalid_file_blocks_without_settings_fallback) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
@@ -74,11 +74,11 @@ FAIL
 ERROR: test_document_file_retention_plan_marks_expired_without_deleting_objects (tests.test_artifact_retention.DocumentFileRetentionTests.test_document_file_retention_plan_marks_expired_without_deleting_objects)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_artifact_retention.py", line 43, in test_document_file_retention_plan_marks_expired_without_deleting_objects
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/tests/test_artifact_retention.py", line 43, in test_document_file_retention_plan_marks_expired_without_deleting_objects
     adapters.document_file_repository.create_document_file(old_file)
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/infrastructure/persistence/file/files.py", line 45, in create_document_file
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/app/infrastructure/persistence/file/files.py", line 45, in create_document_file
     ensure_new_file_identity(record)
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/domains/files/result_registration.py", line 149, in ensure_new_file_identity
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/app/domains/files/result_registration.py", line 149, in ensure_new_file_identity
     raise ValueError("新文件对象路径缺少固定位置的独立 file_id。")
 ValueError: 新文件对象路径缺少固定位置的独立 file_id。
 
@@ -87,7 +87,7 @@ FAIL: test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default 
 验证 real-send preview 默认 blocked，且不解析 secret、不调用 provider、不写 audit。
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 2967, in test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 2967, in test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default
     self.assertEqual(admin_response.status_code, 200)
 AssertionError: 400 != 200
 
@@ -96,7 +96,7 @@ FAIL: test_ops_real_alert_delivery_kill_switch_blocks_before_secret_and_provider
 验证 kill switch 在解析 secret 和调用 provider 前阻断，并写入脱敏 audit。
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 3114, in test_ops_real_alert_delivery_kill_switch_blocks_before_secret_and_provider
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 3114, in test_ops_real_alert_delivery_kill_switch_blocks_before_secret_and_provider
     self.assertEqual(response.status_code, 200)
 AssertionError: 400 != 200
 
@@ -105,7 +105,7 @@ FAIL: test_ops_real_alert_delivery_success_uses_injected_provider_and_dedupes (t
 验证 real-send 成功路径使用注入 provider，重复请求 dedupe 且不泄露 secret。
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 3192, in test_ops_real_alert_delivery_success_uses_injected_provider_and_dedupes
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 3192, in test_ops_real_alert_delivery_success_uses_injected_provider_and_dedupes
     self.assertEqual(first_response.status_code, 200)
 AssertionError: 400 != 200
 
@@ -114,7 +114,7 @@ FAIL: test_ops_real_alert_delivery_rate_limits_failed_provider_attempts (tests.t
 验证 provider 失败尝试达到 Phase 7 rate limit 后不再调用 provider。
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 3267, in test_ops_real_alert_delivery_rate_limits_failed_provider_attempts
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 3267, in test_ops_real_alert_delivery_rate_limits_failed_provider_attempts
     self.assertEqual([response.status_code for response in responses], [200, 200, 200, 200])
 AssertionError: Lists differ: [400, 400, 400, 400] != [200, 200, 200, 200]
 
@@ -134,7 +134,7 @@ FAIL: test_ops_integration_capabilities_report_phase7_slack_pilot_ready_without_
 验证 control plane 可报告 Phase 7 Slack pilot ready，但不解析 secret 或调用 provider。
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 3956, in test_ops_integration_capabilities_report_phase7_slack_pilot_ready_without_side_effects
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/tests/test_fastapi_jobs_backend.py", line 3956, in test_ops_integration_capabilities_report_phase7_slack_pilot_ready_without_side_effects
     self.assertEqual(alert_delivery["status"], "ready")
 AssertionError: 'blocked' != 'ready'
 - blocked

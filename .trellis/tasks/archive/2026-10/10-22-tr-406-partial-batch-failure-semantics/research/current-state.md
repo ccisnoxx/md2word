@@ -2,7 +2,7 @@
 
 ## 1. 工作区、真源与依赖
 
-- 首条执行 pwd 和 git status --short，工作区 `/Users/sc/PycharmProjects/md2word`，分支 `md2word/TR-403`，HEAD `596a2de7ed29edb7fdb378d91c17bda09b7f1066`。
+- 首条执行 pwd 和 git status --short，工作区 `${PROJECT_ROOT}`，分支 `md2word/TR-403`，HEAD `596a2de7ed29edb7fdb378d91c17bda09b7f1066`。
 - 既存 dirty 为父任务 task.json、workspace/777 的 index/journal、CON-104 prompt、backlog、manifest；另有其他 active/archive task 未跟踪目录。创建前保存所有既存 dirty/untracked 文件哈希及 manifest/父 task 原字节到系统临时目录，只允许 TR-406 区块与父 children 的必要追加。
 - 已读根 AGENTS.md、用户补充规则、RTK.md、workflow、guides/backend/frontend index、translation-integrity、database、error、quality、logging、mode Spec 与跨层指南；相关 Skill 为 trellis-start、trellis-brainstorm、clean-code-design。历史事实已在正式任务/Spec/提交中，依 session-insight 规则无需读会话全文。
 - 已读用户指定 11 份文档：产品 PRD、scope-and-decisions、implementation-plan、backlog（完整 TR-406 定义含四项要求）、execution-guide、manifest、architecture-decisions、document-ir-contract、translation-design、testing-acceptance-strategy、rollout-and-migration；另读父任务三件套、CON-102 归档 design/task/batch-generation-fix-validation、TR-403 归档 task/research 和 TR-405 待审 design。

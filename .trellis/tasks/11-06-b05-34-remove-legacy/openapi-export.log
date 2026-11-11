@@ -1,9 +1,9 @@
-/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
   from app.api.errors import register_api_error_handlers
-/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
   from app.api.errors import register_api_error_handlers
 OpenAPI export report
-output_path: /Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/docs/api/openapi.json
+output_path: ${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/docs/api/openapi.json
 ok: True
 changed: True
 path_count: 180

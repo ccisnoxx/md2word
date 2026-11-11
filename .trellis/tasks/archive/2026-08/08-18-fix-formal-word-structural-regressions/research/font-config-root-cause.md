@@ -22,7 +22,7 @@
 
 ```bash
 .venv/bin/python scripts/dev/run_local_mineru_conversion.py \
-  '/Users/sc/Downloads/mineru_raw_result 2' \
+  '${DEVELOPER_HOME}/Downloads/mineru_raw_result 2' \
   --output /tmp/md2word-cm4112-structural-fix/cm4112-fixed.docx \
   --translation-mode direct
 ```

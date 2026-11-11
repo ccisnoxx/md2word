@@ -8,7 +8,7 @@
 
 ## 执行环境
 
-所有 Python 命令使用 `/Users/sc/PycharmProjects/md2word/.venv/bin/python`、`PYTHONDONTWRITEBYTECODE=1`。测试 `TMPDIR` 指向本任务目录，自动清理；compileall 缓存使用 `/Users/sc/.codex/tmp/b05-34-compile-cache`（用户允许的 Codex 缓存）。未访问生产、真实数据库、Provider 或 MinerU，未运行 discover、前端完整测试或发布门禁；只移除 check_release.py 中4个已删测试目标，没有调用该门禁。
+所有 Python 命令使用 `${PROJECT_ROOT}/.venv/bin/python`、`PYTHONDONTWRITEBYTECODE=1`。测试 `TMPDIR` 指向本任务目录，自动清理；compileall 缓存使用 `${DEVELOPER_HOME}/.codex/tmp/b05-34-compile-cache`（用户允许的 Codex 缓存）。未访问生产、真实数据库、Provider 或 MinerU，未运行 discover、前端完整测试或发布门禁；只移除 check_release.py 中4个已删测试目标，没有调用该门禁。
 
 ## 指定检查
 
@@ -16,7 +16,7 @@
 - 已通过全部用户指定 direct、四方向真实阶段边界、fan-in失败落库、v1 renderer回退、renderer evidence 阻断、正式最小 MinerU→DOCX。
 - 指定 OpenAPI 导出/临时快照一致性及旧HTTP入口404测试最终仍通过；最终额外 HTML 跨行跨列表格渲染测试通过，见 final-contract-tests.log。该次批量命令误写一个额外类名导致加载错误，随后纠正为真实类名单独执行并识别下述既有失败；不计为产品故障。
 - `import app.main; build_runtime(test_settings)`、`create_celery_app(memory_settings)`、`celery.loader.import_default_modules()` 通过，注册 document_jobs.run 与 document_jobs.translate_batch；没有启动真实broker连接，见 runtime-smoke.log。
-- `PYTHONPYCACHEPREFIX=/Users/sc/.codex/tmp/b05-34-compile-cache python -m compileall -q app scripts` 退出0。
+- `PYTHONPYCACHEPREFIX=${DEVELOPER_HOME}/.codex/tmp/b05-34-compile-cache python -m compileall -q app scripts` 退出0。
 - `python .trellis/tasks/11-06-b05-34-remove-legacy/verify_removal.py`：408 Python文件 AST 通过，重点符号引用76→0，59个已删模块的AST导入及文本引用0。
 - `git diff --check` 通过。docx_rules、table_html_parser、正式 document_jobs/DocumentIR/renderer/MinerU callback 源文件与 HEAD 无差异。
 

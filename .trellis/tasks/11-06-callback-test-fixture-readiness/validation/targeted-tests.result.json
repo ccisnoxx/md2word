@@ -8,7 +8,7 @@
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_mineru_callback_dedupes_duplicate_delivery_before_worker",
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_worker_ignores_queued_callback_after_cancel"
   ],
-  "cwd": "/Users/sc/PycharmProjects/md2word",
+  "cwd": "${PROJECT_ROOT}",
   "started_at": "2026-11-06T04:16:11.665599+00:00",
   "finished_at": "2026-11-06T04:16:13.620469+00:00",
   "exit_code": 0,

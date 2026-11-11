@@ -14,7 +14,7 @@
   "completedAt": "2026-11-07",
   "branch": "codex/list-loading-performance",
   "base_branch": "main",
-  "worktree_path": "/Users/sc/PycharmProjects/md2word-wt/list-loading-performance",
+  "worktree_path": null,
   "commit": "1a8211106fab865756cf090c7211d6008738e381",
   "pr_url": "https://github.com/ccisnoxx/md2word/pull/34",
   "subtasks": [],

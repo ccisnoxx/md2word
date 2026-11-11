@@ -1,6 +1,6 @@
 # 异常读取会话实施与验证
 
-日期：2026-11-07。用户已批准 incident-read-session-plan.md 的本地实施与定向验证。工作区 `/Users/sc/PycharmProjects/md2word-wt/list-loading-performance`，未提交、推送或操作生产；上一轮 ready+key 候选保持。主会话维护 Spec 和任务三件套。
+日期：2026-11-07。用户已批准 incident-read-session-plan.md 的本地实施与定向验证。工作区 `${TASK_WORKTREE_ROOT}/list-loading-performance`，未提交、推送或操作生产；上一轮 ready+key 候选保持。主会话维护 Spec 和任务三件套。
 
 ## 冻结与变更范围
 
@@ -24,10 +24,10 @@
 
 ## 本轮直接检查
 
-实际解释器 `/Users/sc/PycharmProjects/md2word/.venv/bin/python`，设置 `PYTHONDONTWRITEBYTECODE=1`。
+实际解释器 `${PROJECT_ROOT}/.venv/bin/python`，设置 `PYTHONDONTWRITEBYTECODE=1`。
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest \
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest \
   tests.test_document_file_read_session \
   tests.test_document_job_incident_publish_light_check \
   tests.test_document_job_list_query_v2_service \
@@ -43,7 +43,7 @@ PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m 
 真实引擎入口通过受控 Python 包装读取 `data/mysql-environment/credentials.json` 的完整环境映射，仅注入测试子进程，不输出凭据。实际测试命令：
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_document_file_read_session_mysql
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_document_file_read_session_mysql
 ```
 
 **2 项全部通过，0.136 秒，无 skip**。日志 `data/incident-session-mysql-tests.log`。显式设置并读取确认 RR；第一次主件读取提交后，第二连接通过真实 current key writer 更新文件，原物理连接的下次读取能看见更新；保护关系也能看见第二连接新提交。两种读取共 4 次独立 commit、1 次 close，连接 ID 不变。额外核对 current key 三列与最终 payload 一致。真实 JSON/model/id 错误仍 commit 后抛出，保护 JSON 错误 rollback 后关闭。
@@ -53,7 +53,7 @@ PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m 
 ## 独立冻结差分与合成基准
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python \
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python \
   .trellis/tasks/11-06-list-loading-performance/research/benchmark-incident-session.py \
   --credentials .trellis/tasks/11-06-list-loading-performance/research/data/mysql-environment/credentials.json \
   --output .trellis/tasks/11-06-list-loading-performance/research/data/incident-session-benchmark.json

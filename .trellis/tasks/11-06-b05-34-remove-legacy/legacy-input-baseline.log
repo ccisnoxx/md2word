@@ -4,20 +4,20 @@ test_convert_zip_prefers_v2_content_and_keeps_legacy_only_fallback (tests.test_d
 ERROR: test_convert_zip_prefers_v2_content_and_keeps_legacy_only_fallback (tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_prefers_v2_content_and_keeps_legacy_only_fallback)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/.trellis/tasks/11-06-b05-34-remove-legacy/baseline-sda19694/app/services/document_ir/mineru_converter.py", line 131, in convert_zip
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/.trellis/tasks/11-06-b05-34-remove-legacy/baseline-sda19694/app/services/document_ir/mineru_converter.py", line 131, in convert_zip
     content_list_path = find_content_list(package_root)
                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/.trellis/tasks/11-06-b05-34-remove-legacy/baseline-sda19694/app/services/document_ir/mineru_package.py", line 198, in find_content_list
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/.trellis/tasks/11-06-b05-34-remove-legacy/baseline-sda19694/app/services/document_ir/mineru_package.py", line 198, in find_content_list
     raise MinerUPackageError("mineru_content_list_ambiguous", "multiple_result_roots")
 app.services.document_ir.mineru_package.MinerUPackageError: MinerU 输入校验失败：mineru_content_list_ambiguous（multiple_result_roots）。
 
 The above exception was the direct cause of the following exception:
 
 Traceback (most recent call last):
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/.trellis/tasks/11-06-b05-34-remove-legacy/baseline-sda19694/tests/test_document_ir_mineru_converter_layout.py", line 376, in test_convert_zip_prefers_v2_content_and_keeps_legacy_only_fallback
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/.trellis/tasks/11-06-b05-34-remove-legacy/baseline-sda19694/tests/test_document_ir_mineru_converter_layout.py", line 376, in test_convert_zip_prefers_v2_content_and_keeps_legacy_only_fallback
     both = MinerUToDocumentIRService().convert_zip(
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/sc/PycharmProjects/md2word-wt/b05-34-remove-legacy/.trellis/tasks/11-06-b05-34-remove-legacy/baseline-sda19694/app/services/document_ir/mineru_converter.py", line 153, in convert_zip
+  File "${TASK_WORKTREE_ROOT}/b05-34-remove-legacy/.trellis/tasks/11-06-b05-34-remove-legacy/baseline-sda19694/app/services/document_ir/mineru_converter.py", line 153, in convert_zip
     raise MinerUArtifactValidationError(report) from error
 app.services.document_ir.artifact_validator.MinerUArtifactValidationError: MinerU 产物验证失败：mineru_content_list_ambiguous。
 

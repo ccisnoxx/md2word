@@ -1,6 +1,6 @@
 # Research: SC2167 Word 空白页根因
 
-- Query: 调查 `/Users/sc/Downloads/SC2167_native_word_verified.docx` 在 Microsoft Word 中出现多页空白的结构原因，区分真实输入/分页缺陷与 LibreOffice、Word 的排版差异，并给出最小修复及回归测试建议。
+- Query: 调查 `${DEVELOPER_HOME}/Downloads/SC2167_native_word_verified.docx` 在 Microsoft Word 中出现多页空白的结构原因，区分真实输入/分页缺陷与 LibreOffice、Word 的排版差异，并给出最小修复及回归测试建议。
 - Scope: mixed
 - Date: 2026-08-18
 
@@ -15,8 +15,8 @@
 - `app/conversion/runtime/input_adapter_runtime.py`：旧兼容路径已有 `is_empty_table_placeholder()`，能识别 `type=table + html="" + image path="images/"`，是可复用的已验证规则。
 - `app/conversion/runtime/page_repair_runtime.py`：旧兼容路径已有续表占位页收集逻辑，但正式 DocumentIR 路径没有获得等价输入归一化。
 - `tests/test_document_ir_word_renderer_layout.py`：现有测试明确要求每个同方向源页写一个 `w:br type="page"`，并要求某些分页符与连续分节结束段落共存；该测试把当前风险固化为合同。
-- `/Users/sc/Downloads/mineru_raw_result.zip`：34 页 MinerU 输入；源页索引 8 含完整 48 行“表 3”HTML，源页索引 9、10 又各含一个空表续页占位块。
-- `/Users/sc/Downloads/SC2167_native_word_verified.docx`：生成样本，含 32 个显式 `w:br type="page"`、9 个段落级 `sectPr` 和 1 个正文末 `sectPr`。
+- `${DEVELOPER_HOME}/Downloads/mineru_raw_result.zip`：34 页 MinerU 输入；源页索引 8 含完整 48 行“表 3”HTML，源页索引 9、10 又各含一个空表续页占位块。
+- `${DEVELOPER_HOME}/Downloads/SC2167_native_word_verified.docx`：生成样本，含 32 个显式 `w:br type="page"`、9 个段落级 `sectPr` 和 1 个正文末 `sectPr`。
 
 ### Verified blank pages in the current artifact
 

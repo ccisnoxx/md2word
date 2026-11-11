@@ -2,22 +2,22 @@
 
 ## 实际执行
 
-工作目录始终为 `/Users/sc/PycharmProjects/md2word-wt/b10-measurement`，Python 统一设置 `PYTHONDONTWRITEBYTECODE=1`。无 commit、push、发布、归档、add_session、依赖安装或 Spec 修改；没有运行应用测试、前端测试、unittest discover、check_release 或在线门禁。
+工作目录始终为 `${TASK_WORKTREE_ROOT}/b10-measurement`，Python 统一设置 `PYTHONDONTWRITEBYTECODE=1`。无 commit、push、发布、归档、add_session、依赖安装或 Spec 修改；没有运行应用测试、前端测试、unittest discover、check_release 或在线门禁。
 
 1. **120 档探测：首次失败，修复夹具后通过。** 两次实际命令相同：
    ```bash
-   PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python .trellis/tasks/11-06-b10-measurement/measure.py --sizes 120 --output smoke
+   PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python .trellis/tasks/11-06-b10-measurement/measure.py --sizes 120 --output smoke
    ```
    首次尝试通过普通任务 patch 写发布指针，被真实仓储的不可变字段约束拒绝（ValueError）。修正任务内播种脚本，使用真实模型和仓储内部 `_write_job` / `_insert_publication` 构造发布元数据；未放宽应用约束。随后四路径 smoke 通过，保留 smoke.json/csv；这份数据采用初轮测量方法，不用于最终预算判断。
 2. **首轮完整测量：主动中断，非成功结果。** 命令与最终命令相同：
    ```bash
-   PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python .trellis/tasks/11-06-b10-measurement/measure.py --output results
+   PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python .trellis/tasks/11-06-b10-measurement/measure.py --output results
    ```
    发现脚本把 query_only PRAGMA 和 authorizer 加到了计时连接中，会对短连接路径增加测量开销；仅中断本任务进程（session 8737，退出码130），finally清理临时数据库。完整完成的120/1000档另存 guarded-baseline.json/csv，JSON标明 interrupted_method_correction；10,000档未完成，不充作正式结果。
 3. **正式完整测量：通过。** 将只读保护限制在独立计数阶段，正常计时和内存使用真实 backend.connect 后，重新执行上条命令，session 73205 退出0。results.json/csv包含3档×4路径、每格5次计时，共60个原始样本；前后数据库SHA一致，脚本SHA与当前measure.py一致。正文读取全零、临时SQLite及sidecar已清理。
 4. **最终证据核对：通过。**
    ```bash
-   PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python .trellis/tasks/11-06-b10-measurement/verify_results.py
+   PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python .trellis/tasks/11-06-b10-measurement/verify_results.py
    ```
    核对12格覆盖、5次样本与P95、中位数、CSV中位数/返回行字段、任务/文件/事件比例、只读SHA、保护与清理公式、任务解码、零正文/事件SQL和临时库清理，输出verification.json。它不宣称核对了所有CSV字段，也不替代应用回归测试。
 5. **语法、空白与最终范围：通过。** 对两个新增脚本做AST解析；`git diff --check`通过，另检查新增任务文件的行尾空白和结尾换行（Git默认diff不覆盖未跟踪文件）。`git status --short --untracked-files=all`确认仅本任务目录新增，无跟踪文件改动、无临时数据库或pycache。

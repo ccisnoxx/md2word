@@ -8,12 +8,12 @@
 
 ### 真实包与现有产物
 
-- 输入包为 `/Users/sc/Downloads/mineru_raw_result.zip`。当前 `find_content_list()` 对同层候选按路径字符串排序（`app/services/document_ir/mineru_package.py:22-34`），本包实际选中无 `_v2` 后缀的 `37548120-74b7-4402-be65-6761475b5494_content_list.json`；以下计数以正式转换实际消费的该文件为准。
+- 输入包为 `${DEVELOPER_HOME}/Downloads/mineru_raw_result.zip`。当前 `find_content_list()` 对同层候选按路径字符串排序（`app/services/document_ir/mineru_package.py:22-34`），本包实际选中无 `_v2` 后缀的 `37548120-74b7-4402-be65-6761475b5494_content_list.json`；以下计数以正式转换实际消费的该文件为准。
 - 真实输入共有：`\overline` 126 次、`\mathbf` 3 次、`\bigotimes` 2 次、`\boxed` 1 次、`_{DD}` 13 次、`_{TRACK}` 2 次。
 - 典型来源：
   - 表格：block 51 的 `EXC` 互补信号、block 68 的时序引脚、block 90 的管脚定义都包含 `\overline`；block 90 还包含 `AV $_{DD}$` 及同一句中的 `AV $_{DD}$` / `DV $_{DD}$`。
   - 正文/标题：block 229、231 为 `$\overline{\mathbf{SOE}}$`、`$\overline{\mathbf{SAMPLE}}$`；block 280、288 为 `$\bigotimes$`；block 326 为 `$\boxed{\mathrm{X}}$`；block 352 包含 `$\mathbf{t}_{\text{TRACK}}$` 和多个普通 `t_{\text{TRACK}}`。
-- 现有 `/Users/sc/Downloads/SC2167_native_word_verified.docx` 的质量证据恰有 6 类唯一残留：`_{DD}`、`\overline`、`\mathbf`、`\bigotimes`、`\boxed`、`_{TRACK}`。其 `document.xml` 中 `m:bar`、`m:borderBox`、粗体 `m:sty` 和 U+2A02 均为 0；反而有 398 个组合上划线 U+0305。这说明当前简单 `\overline` 虽未都被残留检测捕获，但也没有生成可编辑的原生上划线结构。
+- 现有 `${DEVELOPER_HOME}/Downloads/SC2167_native_word_verified.docx` 的质量证据恰有 6 类唯一残留：`_{DD}`、`\overline`、`\mathbf`、`\bigotimes`、`\boxed`、`_{TRACK}`。其 `document.xml` 中 `m:bar`、`m:borderBox`、粗体 `m:sty` 和 U+2A02 均为 0；反而有 398 个组合上划线 U+0305。这说明当前简单 `\overline` 虽未都被残留检测捕获，但也没有生成可编辑的原生上划线结构。
 
 ### 当前代码路径与根因
 
@@ -69,8 +69,8 @@
 - `app/services/document_ir/mineru_package.py` — 决定真实包实际消费哪个 content-list。
 - `tests/test_document_ir_word_renderer_layout.py` — 现有 OMML 和 DOCX 质量回归测试。
 - `tests/test_text_render_characterization.py` — 共享/兼容文本语义 characterization tests。
-- `/Users/sc/Downloads/mineru_raw_result.zip` — 真实公式输入样本。
-- `/Users/sc/Downloads/SC2167_native_word_verified.docx` — 当前六类残留和非原生上划线的复现产物。
+- `${DEVELOPER_HOME}/Downloads/mineru_raw_result.zip` — 真实公式输入样本。
+- `${DEVELOPER_HOME}/Downloads/SC2167_native_word_verified.docx` — 当前六类残留和非原生上划线的复现产物。
 
 ## External References
 

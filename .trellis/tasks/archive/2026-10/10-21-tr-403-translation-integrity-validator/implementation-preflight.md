@@ -4,7 +4,7 @@
 
 ## 准入
 
-- 工作目录 /Users/sc/PycharmProjects/md2word；从 HEAD c8fd2afc7dfea349b7fbc3e1f516d85adcb57536 新建并切换 md2word/TR-403，未 stash、提交或丢弃任何原有改动。
+- 工作目录 ${PROJECT_ROOT}；从 HEAD c8fd2afc7dfea349b7fbc3e1f516d85adcb57536 新建并切换 md2word/TR-403，未 stash、提交或丢弃任何原有改动。
 - TR-403 准入时 manifest/Trellis=planning；TR-402=done/implemented，归档 completed 且人工验收，实现提交 24ed6a717ca86cf5ed086f2eda58030e4af66810 是 HEAD 祖先。
 - manifest 无冲突 in_progress；TAB-307 的 Trellis in_progress 是已实现待人工验收的隔离任务（manifest=review），SC1259 为另一隔离任务；不合入它们的业务改动。启动时 app/tests/scripts/实际 Spec 相对 HEAD 无 diff。
 - 成功执行 task.py start .trellis/tasks/10-21-tr-403-translation-integrity-validator；session 指针准确，Trellis=in_progress。manifest 只把 TR-403 改 in_progress；本任务 task.json 记录 planning_revision_accepted=3、implementation_authorized=true、planning_review=accepted。

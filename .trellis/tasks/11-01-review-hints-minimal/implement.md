@@ -17,7 +17,7 @@
 以下命令仅记录实施轮已完成的检查，本提交轮不重跑。后端使用已安装项目 venv，不建立新环境：
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_document_job_review_hints -v
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_document_job_review_hints -v
 ```
 
 前端使用既有 node_modules 中 Vitest，若新 worktree 没有依赖目录，仅在新 worktree 建 ignored node_modules 目录，按包链接已安装依赖；不链接共享 .vite/.cache，缓存保留新 worktree，不安装或改动共享依赖：

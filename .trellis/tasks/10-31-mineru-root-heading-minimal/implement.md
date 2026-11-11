@@ -16,7 +16,7 @@
 - [x] 第一批无实际失败；未维护旧测试、未扩大 owner。
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_mineru_result_root_uniqueness -v
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_mineru_result_root_uniqueness -v
 ```
 
 执行目录为本任务 worktree。实际结果：14 个测试通过；日志为 `batch1-regression.log`，真实退出码与命令见 `batch1-regression.json`。
@@ -30,7 +30,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. /Users/sc/PycharmProjects/md2word/.venv/b
 - [x] 第二批无实际失败；两批均无修复重跑，未运行旧测试或聚合检查。
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_document_ir_numbered_heading_levels -v
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_document_ir_numbered_heading_levels -v
 ```
 
 ## 必要文档与静态复核（AC6）
@@ -48,7 +48,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. /Users/sc/PycharmProjects/md2word/.venv/b
 
 ## 证据位置
 
-`/Users/sc/.codex/worktrees/mineru-root-heading-20261031-xtefthlw/evidence/`。现有 `before.json` 为保留基线，`context.json` 为本次工作路径与授权范围；第一批新增回归 14/14、第二批新增回归 10/10 均通过，各执行一次；未运行其他测试。第二批日志和真实命令见 `batch2-regression.log`、`batch2-regression.json`。
+`${TASK_WORKTREE_ROOT}/mineru-root-heading-20261031-xtefthlw/evidence/`。现有 `before.json` 为保留基线，`context.json` 为本次工作路径与授权范围；第一批新增回归 14/14、第二批新增回归 10/10 均通过，各执行一次；未运行其他测试。第二批日志和真实命令见 `batch2-regression.log`、`batch2-regression.json`。
 
 ## 实际执行结果
 

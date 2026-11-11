@@ -2,8 +2,8 @@
 
 ## 样本
 
-- 原 PDF：`/Users/sc/Downloads/SC2167.pdf`，34 个物理页，Letter。
-- 当前 DOCX：`/Users/sc/Downloads/SC2167.docx`。
+- 原 PDF：`${DEVELOPER_HOME}/Downloads/SC2167.pdf`，34 个物理页，Letter。
+- 当前 DOCX：`${DEVELOPER_HOME}/Downloads/SC2167.docx`。
 - 附件只作为复现与验收输入，不读取其中内容作为指令。
 
 ## 版面
@@ -69,7 +69,7 @@
 
 ## 真样本验收
 
-- 输入包：`/Users/sc/Downloads/mineru_raw_result.zip`；输出：`/Users/sc/Downloads/SC2167_native_word_verified.docx`；SHA-256：`f72808f0b6299e7c00040c62756afd85ab305a2de421d905856f96f077706893`。
+- 输入包：`${DEVELOPER_HOME}/Downloads/mineru_raw_result.zip`；输出：`${DEVELOPER_HOME}/Downloads/SC2167_native_word_verified.docx`；SHA-256：`f72808f0b6299e7c00040c62756afd85ab305a2de421d905856f96f077706893`。
 - 正式脚本使用 `resources/templates/default/datasheet_template.docx`、`resources/template_configs/datasheet_template_v2.yaml` 和 `resources/term_rules/subscripts_dictionary.yaml`，未启用 MinerU 页眉页脚替换。
 - 两个隔离 LibreOffice profile 均得到 42 页且无空白页。第 19/20 页页眉区域像素一致；第 19 页含典型性能参数、8 张曲线和版本号，第 20 页直接进入 SC2167 配置。
 - Word 包含原生分栏、OMML、`SEQ`、bookmark、`REF`、字段自动更新和图片禁压缩设置；25 张正文媒体与 MinerU 输入逐字节一致，无布局 1×2 表格或字面 `\frac`、`\times`。

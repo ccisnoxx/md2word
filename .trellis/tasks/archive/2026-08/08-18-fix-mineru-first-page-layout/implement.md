@@ -57,7 +57,7 @@
 
 ```bash
 .venv/bin/python scripts/dev/run_local_mineru_conversion.py \
-  --input '/Users/sc/Downloads/mineru_raw_result 2' \
+  --input '${DEVELOPER_HOME}/Downloads/mineru_raw_result 2' \
   --output <temp-dir>/cm4112-fixed.docx
 
 soffice --headless --convert-to pdf --outdir <temp-dir> <temp-dir>/cm4112-fixed.docx

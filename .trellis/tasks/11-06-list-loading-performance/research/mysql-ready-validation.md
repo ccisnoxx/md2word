@@ -4,7 +4,7 @@
 
 ## 本轮实际引擎验证
 
-通过受控 Python 包装从 credentials JSON 设置既有 `MD2WORD_TEST_MYSQL*` 环境变量，执行 `PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_document_job_list_query_v2_mysql`。
+通过受控 Python 包装从 credentials JSON 设置既有 `MD2WORD_TEST_MYSQL*` 环境变量，执行 `PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_document_job_list_query_v2_mysql`。
 
 结果为 **10 项通过，1.431 秒**，无失败或 skip；原始安全日志为 `data/mysql-v2-ready-tests.log`。该模块覆盖有效复核/权限/汇总/排序/分页、全文搜索及字面通配符、collation 别名 ID 错误、双连接快照、回填与 receipt/guard 等既有合同。模块用自身 UUID 库并在 context manager 退出时删除；本轮没有扩改测试或产品。
 
@@ -15,7 +15,7 @@
 脚本：`research/benchmark-ready-mysql.py`；完整结果：`research/data/mysql-ready-benchmark.json`；逐次进度：`research/data/mysql-ready-benchmark.log`。
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python .trellis/tasks/11-06-list-loading-performance/research/benchmark-ready-mysql.py --credentials .trellis/tasks/11-06-list-loading-performance/research/data/mysql-environment/credentials.json --output .trellis/tasks/11-06-list-loading-performance/research/data/mysql-ready-benchmark.json
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python .trellis/tasks/11-06-list-loading-performance/research/benchmark-ready-mysql.py --credentials .trellis/tasks/11-06-list-loading-performance/research/data/mysql-environment/credentials.json --output .trellis/tasks/11-06-list-loading-performance/research/data/mysql-ready-benchmark.json
 ```
 
 冻结旧 SQL 来自 `25860865812ef5bb9159a449aaa7df0a6dfcb815` 的 `git show`；当前候选为本任务已经逐字节接入的 ready 文件。两者复用相同库、连接、固定 aware `as_of=2026-10-30T00:00:00+00:00` 和同一 RR 只读快照。计时包含查询层 Python 和页模型解码，逐 SELECT 计时包含 execute/fetch；不包括建库、seed、连接建立、service 动作、HTTP、网络浏览器或渲染。

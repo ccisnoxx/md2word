@@ -2,7 +2,7 @@
 
 ## 调查边界
 
-仓库 `/Users/sc/PycharmProjects/md2word`，分支 `md2word/RND-502`，HEAD=`1835263621a2a18627a5730e7fd62b6bc7cae8c2`。只读调查业务源码、现有测试和 Git 对象；本轮允许写当前任务规划、父任务子链接及 manifest 的 RND-503 条目。建议分支 `md2word/RND-503` 只记录，不切换。未使用子代理、未 start、未提交或 push。
+仓库 `${PROJECT_ROOT}`，分支 `md2word/RND-502`，HEAD=`1835263621a2a18627a5730e7fd62b6bc7cae8c2`。只读调查业务源码、现有测试和 Git 对象；本轮允许写当前任务规划、父任务子链接及 manifest 的 RND-503 条目。建议分支 `md2word/RND-503` 只记录，不切换。未使用子代理、未 start、未提交或 push。
 
 初始 `git status --short` 为 310 条：302 项已暂存删除、5 项已有修改，以及 `.serena/`、父任务目录、RND-501 目录三项未跟踪目录。父任务目录在工作树存在而索引仍暂存删除；这不是本轮产生的状态。保存了初始 status、暂存补丁、tracked 文件哈希及 manifest/父 task.json 前像于系统临时目录，最终与其比较，不恢复或重新暂存这些既有改动。
 

@@ -2,7 +2,7 @@
 
 ## 1. 调查身份和范围
 
-日期：2026-10-21，Asia/Shanghai。仓库 /Users/sc/PycharmProjects/md2word，分支 main，HEAD 4c40e6c52bde072a7ad3afab67eb425f757bd33c。
+日期：2026-10-21，Asia/Shanghai。仓库 ${PROJECT_ROOT}，分支 main，HEAD 4c40e6c52bde072a7ad3afab67eb425f757bd33c。
 
 首条命令已执行 pwd 和 git status --short。原有 tracked dirty 为父任务 task.json、workspace/777 的 index/journal、CON-104 prompt、backlog 和 manifest；另有 SC1259、RND-504、TAB-307/308 及多份归档任务的 untracked 文件。创建前以 SHA-256 记录 386 个现存 dirty/untracked 文件用于收尾核对，不修改其业务内容。
 

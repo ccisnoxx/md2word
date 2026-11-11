@@ -2,8 +2,8 @@
 
 ## 样本证据
 
-- 原 PDF：`/Users/sc/Downloads/CM4112,CM4114数据手册_V1.1(1).pdf`，21 页 A4 portrait。
-- MinerU v2：`/Users/sc/Downloads/mineru_raw_result 2/*_content_list_v2.json`，21 页、196 block：`page_header=41`、`chart=38`、`paragraph=35`、`page_footer=20`、`page_number=19`、`title=18`、`image=15`、`table=8`、`equation_interline=2`。
+- 原 PDF：`${DEVELOPER_HOME}/Downloads/CM4112,CM4114数据手册_V1.1(1).pdf`，21 页 A4 portrait。
+- MinerU v2：`${DEVELOPER_HOME}/Downloads/mineru_raw_result 2/*_content_list_v2.json`，21 页、196 block：`page_header=41`、`chart=38`、`paragraph=35`、`page_footer=20`、`page_number=19`、`title=18`、`image=15`、`table=8`、`equation_interline=2`。
 - 回退输出：`/tmp/md2word-cm4112-final.XhHq0T/cm4112-fixed.docx`；LibreOffice 26.2.4.2 渲染为 23 页，DOCX 只有 15 个 media/inline drawing，且没有 header/footer part。
 - 回退 IR：149 paragraph、18 heading、15 image、8 table、4 list、2 formula、15 asset，并留下 `unsupported_block_type:chart`。
 - 本机客户端：`/Applications/wpsoffice.app`、LibreOffice 26.2.4.2。

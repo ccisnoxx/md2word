@@ -15,7 +15,7 @@ Python新增/修改的必要注释、docstring、CLI帮助和开发者文案使�
 
 最终 `task.py validate` 的 implement/check 两清单各5条全部通过；`git diff --check` 通过，最终路径仅为明确候选/直接测试/Spec/任务。未 stage、commit、push、archive 或 add_session。
 
-原始忽略证据保存在本任务独立工作树 `/Users/sc/PycharmProjects/md2word-wt/list-loading-performance` 的 research/data，root仅同步脱敏文档和轻量测量记录，不复制凭据或大体积冻结副本。
+原始忽略证据保存在本任务独立工作树 `${TASK_WORKTREE_ROOT}/list-loading-performance` 的 research/data，root仅同步脱敏文档和轻量测量记录，不复制凭据或大体积冻结副本。
 
 ## 异常补充方案最终结果
 

@@ -1,10 +1,10 @@
 # list-ready-once 候选接入记录
 
-日期：2026-11-06。执行位置仅为 `/Users/sc/PycharmProjects/md2word-wt/list-loading-performance`，基线 `25860865812ef5bb9159a449aaa7df0a6dfcb815`。来源工作区只读，未提交、推送、归档、记账或访问生产。
+日期：2026-11-06。执行位置仅为 `${TASK_WORKTREE_ROOT}/list-loading-performance`，基线 `25860865812ef5bb9159a449aaa7df0a6dfcb815`。来源工作区只读，未提交、推送、归档、记账或访问生产。
 
 ## 来源与冻结身份
 
-来源：`/Users/sc/PycharmProjects/md2word-wt/list-ready-once`，分支 `codex/list-ready-once`，HEAD `1f4a90adcf824608e9e603190434a0c8f78b118f`。来源为未提交候选，不能仅以 HEAD 标识补丁。
+来源：`${TASK_WORKTREE_ROOT}/list-ready-once`，分支 `codex/list-ready-once`，HEAD `1f4a90adcf824608e9e603190434a0c8f78b118f`。来源为未提交候选，不能仅以 HEAD 标识补丁。
 
 读取来源后，接入前再次读取并核对下列五个 SHA-256、来源 HEAD 与 tracked patch SHA；两次完全一致。三个产品/测试文件接入后再次与冻结字节比较，完全一致。目标原有两个 tracked 文件同时与目标 HEAD 和来源 HEAD 比较一致，新增测试在目标原先不存在，因此未覆盖并行修改。
 

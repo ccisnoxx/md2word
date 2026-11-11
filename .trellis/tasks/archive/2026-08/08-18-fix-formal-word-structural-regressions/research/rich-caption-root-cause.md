@@ -8,7 +8,7 @@
 
 ### 1. 文件与证据
 
-- `/Users/sc/Downloads/mineru_raw_result 2/ddd54804-71d7-4ca5-91a1-b99ab35cab75_content_list_v2.json`：CM4112/CM4114 的权威 v2 输入；JSON Pointer `$[11][2].content.chart_caption` 是图 33 的单条富文本题注。
+- `${DEVELOPER_HOME}/Downloads/mineru_raw_result 2/ddd54804-71d7-4ca5-91a1-b99ab35cab75_content_list_v2.json`：CM4112/CM4114 的权威 v2 输入；JSON Pointer `$[11][2].content.chart_caption` 是图 33 的单条富文本题注。
 - `/tmp/md2word-cm4112-structural-fix/cm4112-fixed.document-ir.json`：当前正式候选的 IR；`block_0097` 把图 33 保存为三个 `captions` 元素。
 - `/tmp/md2word-cm4112-structural-fix/document-formatted.xml`：当前 DOCX 的格式化 `word/document.xml`；第 10322～10354 行可见图 33 主题注、`±`、`18V)` 分属三个 `w:p`。
 - `app/conversion/docx_rules/mineru_content.py`：通用 MinerU 文本拍平、富文本节点拼接和脚注片段合并 helper。

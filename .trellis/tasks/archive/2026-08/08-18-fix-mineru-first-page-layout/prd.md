@@ -8,7 +8,7 @@
 
 ## 背景与已确认事实
 
-- 样本目录 `/Users/sc/Downloads/mineru_raw_result 2` 同时包含 `*_content_list.json` 与 `*_content_list_v2.json`。
+- 样本目录 `${DEVELOPER_HOME}/Downloads/mineru_raw_result 2` 同时包含 `*_content_list.json` 与 `*_content_list_v2.json`。
 - `app/services/document_ir/mineru_package.py::find_content_list()` 当前只按路径深度和字典序选候选，实际选中旧版 content list；生成 DOCX 中的 `\-`、`\~` 残留与该文件一致。
 - 样本源 PDF 为纵向 A4、21 页；当前 DOCX 第一节为横向 A4，LibreOffice 渲染共 18 页。
 - `layout.json` 第一页物理尺寸为 `595×841`，content bbox 范围约为 `942×879`。`layout_signals.build_pages()` 对不同坐标空间逐轴取最大值得到 `942×879`，错误标记为横向。

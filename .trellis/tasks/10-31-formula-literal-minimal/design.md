@@ -32,4 +32,4 @@
 
 实现代理仅写三份产品/回归文件；主代理维护本任务与必要 Spec。独立只读复核复用已有新增回归结果，不再运行其他检查。
 
-基线 worktree：`/Users/sc/.codex/worktrees/formula-literal-minimal-20261031-g0l1d94p/md2word`；分支 `codex/formula-literal-minimal-20261031`。本轮按用户新增授权将本批保存为一个本地提交；源码和独立回归内容保持已验证版本，不再运行应用检查，不推送、合并或删除分支。
+基线 worktree：`${TASK_WORKTREE_ROOT}/formula-literal-minimal-20261031-g0l1d94p/md2word`；分支 `codex/formula-literal-minimal-20261031`。本轮按用户新增授权将本批保存为一个本地提交；源码和独立回归内容保持已验证版本，不再运行应用检查，不推送、合并或删除分支。

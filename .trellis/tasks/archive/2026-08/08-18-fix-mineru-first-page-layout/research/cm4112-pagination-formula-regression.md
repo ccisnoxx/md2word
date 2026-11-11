@@ -2,9 +2,9 @@
 
 ## 样本与方法
 
-- 原 PDF：`/Users/sc/Downloads/CM4112,CM4114数据手册_V1.1(1).pdf`
-- 当前 DOCX：`/Users/sc/Downloads/CM4112,CM4114数据手册_V1.1(1).docx`
-- MinerU 包：`/Users/sc/Downloads/mineru_raw_result 2`
+- 原 PDF：`${DEVELOPER_HOME}/Downloads/CM4112,CM4114数据手册_V1.1(1).pdf`
+- 当前 DOCX：`${DEVELOPER_HOME}/Downloads/CM4112,CM4114数据手册_V1.1(1).docx`
+- MinerU 包：`${DEVELOPER_HOME}/Downloads/mineru_raw_result 2`
 - 当前 DOCX 经 LibreOffice 转 PDF后，与原 PDF 第 3–6、13 页逐页截图对照。
 - 使用 `trellis mem` 检索 2026-06-23 的分页讨论，并检查旧兼容 runtime 与当前正式 renderer。
 
@@ -66,7 +66,7 @@ v2 paragraph 中的 `equation_inline` 又由 `mineru_content.join_text_fragments
 
 它尚不能消费样本中的 `\left`、`\right`、`\leq`，也不会先把 `I N`、`5 0 0`、`C M 7 5 0 1` 收敛为正常 token。
 
-对 `/Users/sc/Downloads` 下 4 份 v2 与对应 legacy content-list 做 JSON 字符串统计，共 203 个含 TeX 文本。除换行转义外，实际命令为：
+对 `${DEVELOPER_HOME}/Downloads` 下 4 份 v2 与对应 legacy content-list 做 JSON 字符串统计，共 203 个含 TeX 文本。除换行转义外，实际命令为：
 
 ```text
 pm 82, mu 66, mathrm 62, circ 54, times 22,

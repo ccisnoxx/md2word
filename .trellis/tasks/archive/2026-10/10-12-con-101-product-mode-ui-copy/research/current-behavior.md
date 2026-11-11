@@ -4,7 +4,7 @@
 
 ## 工作区与依赖
 
-`pwd` 为 `/Users/sc/PycharmProjects/md2word`；初始 `git status --short` 仅 ` M .gitignore`。其 SHA-256 为 `b0719d64dea7293460521fa0fb9b575bb3440abcdc4d567ec465adc95a39dc89`，不属于本任务，不修改、不暂存。
+`pwd` 为 `${PROJECT_ROOT}`；初始 `git status --short` 仅 ` M .gitignore`。其 SHA-256 为 `b0719d64dea7293460521fa0fb9b575bb3440abcdc4d567ec465adc95a39dc89`，不属于本任务，不修改、不暂存。
 
 Manifest CON-101 起始为 `todo`；唯一直接依赖 BAS-001 为 `done`。`archive/2026-10/10-12-bas-001-current-capability-baseline/task.json` 为 `completed`，`meta.human_acceptance` 记载已接受 implementation/validation/residual_risks。DOC-001 也为 done，但没有为本任务增加依赖边。父任务已存在且 planning；未发现重复 CON-101。
 

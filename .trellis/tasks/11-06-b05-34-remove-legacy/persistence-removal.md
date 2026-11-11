@@ -27,7 +27,7 @@ HealthService 及 health_schemas 仅移除旧 jobs 统计、旧 stage spool 依�
 
 ## 验证
 
-指定解释器 `/Users/sc/PycharmProjects/md2word/.venv/bin/python` 与 `PYTHONDONTWRITEBYTECODE=1` 执行以下 6 个方法，最终全部通过：
+指定解释器 `${PROJECT_ROOT}/.venv/bin/python` 与 `PYTHONDONTWRITEBYTECODE=1` 执行以下 6 个方法，最终全部通过：
 
 - `test_metadata_repository_contract_matches_file_backend`（file/SQLite/fake MySQL 正式元数据及保留事件合同）
 - `test_mysql_schema_bootstrap_includes_resource_versions`

@@ -1,10 +1,10 @@
 # 拆列与请求内校验整合证据
 
-日期：2026-11-07。执行工作区 `/Users/sc/PycharmProjects/md2word-wt/list-loading-performance`，HEAD `25860865812ef5bb9159a449aaa7df0a6dfcb815`。只修改本地候选和定向验证；未提交、推送或操作生产。Spec 与任务三件套由主会话维护。
+日期：2026-11-07。执行工作区 `${TASK_WORKTREE_ROOT}/list-loading-performance`，HEAD `25860865812ef5bb9159a449aaa7df0a6dfcb815`。只修改本地候选和定向验证；未提交、推送或操作生产。Spec 与任务三件套由主会话维护。
 
 ## 来源与接入
 
-只读来源 `/Users/sc/PycharmProjects/md2word-wt/list-key-columns`，HEAD `1f4a90adcf824608e9e603190434a0c8f78b118f`。对 tracked diff 与全部相关文件进行两次读取，字节完全一致；未在来源写入文件。冻结证据在忽略目录 `data/key-source-freeze/`，包括 source.patch、逐文件副本和 SHA-256 manifest。tracked patch SHA-256：`efeffe4bdc3b5568637cc596044183d5323964aa2f1f7e956e0fb245384afff5`。
+只读来源 `${TASK_WORKTREE_ROOT}/list-key-columns`，HEAD `1f4a90adcf824608e9e603190434a0c8f78b118f`。对 tracked diff 与全部相关文件进行两次读取，字节完全一致；未在来源写入文件。冻结证据在忽略目录 `data/key-source-freeze/`，包括 source.patch、逐文件副本和 SHA-256 manifest。tracked patch SHA-256：`efeffe4bdc3b5568637cc596044183d5323964aa2f1f7e956e0fb245384afff5`。
 
 另行冻结未跟踪文件：`scripts/ops/migrate_document_job_list_keys.py`（`917b29d0b251583d5542af7952b42e7a8e18dc80698367636e878ca639ee9412`）、`tests/test_document_job_list_key_columns.py`（`e42f3d3882ce15d75a1f5ce1069257a2028b4c2f8637acb3d46aa5dbee9c85a3`）。源 base 与本 HEAD 的 app/scripts/tests 差异只有表格占位故障诊断相关文件，本次接入目标均无 base 差异。
 
@@ -18,12 +18,12 @@
 
 ## 本轮定向检查
 
-解释器固定 `/Users/sc/PycharmProjects/md2word/.venv/bin/python`，设置 `PYTHONDONTWRITEBYTECODE=1`。没有全仓 discover、构建、前端、发布聚合或真实 Provider/MinerU 请求。
+解释器固定 `${PROJECT_ROOT}/.venv/bin/python`，设置 `PYTHONDONTWRITEBYTECODE=1`。没有全仓 discover、构建、前端、发布聚合或真实 Provider/MinerU 请求。
 
 首轮实际执行：
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest \
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest \
   tests.test_document_job_list_query_readiness \
   tests.test_document_job_list_query \
   tests.test_document_job_list_query_v2 \
@@ -42,7 +42,7 @@ PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m 
 首轮 98 项，97 通过、1 失败，6.569 秒；原始日志 `data/key-local-tests.log`。失败为 `test_writer_and_state_backfill_keep_projection_current` 仍将新小 JSON 与旧完整语义 JSON 比较，是本次改变布局直接影响的测试断言；产品行为无失败。修正该断言，并添加五列 NULL 在成功请求后、空页/无匹配/状态筛选空集仍拒绝的交叉用例，实际仅执行：
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest \
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest \
   tests.test_document_job_list_query.DocumentJobListQueryTests.test_writer_and_state_backfill_keep_projection_current \
   tests.test_document_job_list_query_readiness.DocumentJobListReadinessTests.test_missing_keys_after_success_still_fail_outside_filtered_page
 ```
@@ -52,7 +52,7 @@ PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m 
 通过受控 Python 包装读取本任务 `data/mysql-environment/credentials.json`，只在子进程环境映射既有 `MD2WORD_TEST_MYSQL*`，没有打印凭据。实际命令：
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m unittest tests.test_document_job_list_query_v2_mysql
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python -m unittest tests.test_document_job_list_query_v2_mysql
 ```
 
 **12 项全部通过、无 skip，3.586 秒**，包括 4 个入口/离线 guard、7 个真实引擎 v2 用例和 1 个真实引擎大 key 用例；日志 `data/key-mysql-tests.log`。新增真实引擎用例覆盖五列 NULL 的 V 域拒绝、可靠隐藏任务缺 key 与坏关联文件 JSON 不阻断。既有实际引擎用例覆盖权限/统计域/分页、字面搜索、寻址 collation 别名、RR 两连接快照、缺列 DDL/回填/全量 verify、receipt 前缀与即时 guard。大 key 覆盖完整前缀后单字符/大小写/尾空格、29 种查询与 Python owner 对照、dry-run/apply/verify/重跑。
@@ -64,7 +64,7 @@ PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python -m 
 新独立脚本 `benchmark-key-mysql.py` 复用原 `benchmark-ready-mysql.py` 的测量及合成夹具 helper，没有改写原脚本和原结果。旧查询从固定 HEAD 读取；ready 从只读来源再次核验已记录 SHA 后冻结为 `data/key-source-freeze/ready-sql.py`。组合候选身份见上文，脚本输出中也记录三者 SHA。
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 /Users/sc/PycharmProjects/md2word/.venv/bin/python \
+PYTHONDONTWRITEBYTECODE=1 ${PROJECT_ROOT}/.venv/bin/python \
   .trellis/tasks/11-06-list-loading-performance/research/benchmark-key-mysql.py \
   --credentials .trellis/tasks/11-06-list-loading-performance/research/data/mysql-environment/credentials.json \
   --output .trellis/tasks/11-06-list-loading-performance/research/data/mysql-key-benchmark.json
