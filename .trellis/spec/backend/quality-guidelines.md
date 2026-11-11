@@ -54,6 +54,50 @@ Questions to answer:
 
 ## Testing Requirements
 
+### 仓库卫生与原生 Git 提交检查
+
+#### 1. 范围与触发
+
+修改仓库卫生规则、Git 钩子、个人环境路径或扫描例外时应用本合同。使用方法和精确例外理由见 [仓库卫生说明](../../../docs/dev/repository-hygiene.md)，规则实现由 `scripts/ops/check_repository_hygiene.py` 与 `.gitleaks.toml` 各自维护。
+
+#### 2. 命令入口
+
+- `python3 scripts/ops/check_repository_hygiene.py --staged` 检查准备提交的路径和完整 index 内容。
+- `python3 scripts/ops/check_repository_hygiene.py --tracked` 检查当前跟踪工作树；新增候选文件通过同一检查器的显式文件入口检查。
+- `.githooks/pre-commit` 串行运行卫生检查与固定版本 Gitleaks 的暂存扫描；当前仓库使用 `git config --local core.hooksPath .githooks` 激活。
+
+#### 3. 数据与隐私合同
+
+Git 路径用 NUL 分隔，暂存内容按 index 对象读取；不得用工作树替代暂存区，也不得 stash、自动暂存或改变用户文件。检查器不得依赖业务 runtime。拒绝 `.tmp`、真实用户目录绝对路径、未声明 RFC1918 地址和新 secrets；输出只保留相对定位、规则和中文修复提示，不回显敏感原值。
+
+合法部署地址的卫生例外必须限定精确文件、规则、内容指纹和用途；secrets 误报仅允许已核实文件中的特定校验和条目形状，不得豁免整个任务/工具目录或所有十六进制值。脱敏历史日志时保留运行结论，明确标注路径已改写，不将其作为未修改的原始字节证据。
+
+#### 4. 验证与错误矩阵
+
+| 输入或状态 | 结果 |
+|---|---|
+| 暂存违规、工作树已修复 | 必须拒绝提交。 |
+| 暂存干净、工作树有额外违规 | 只按暂存内容判断，不改工作树。 |
+| 初始提交、删除或路径含空格 | 按 Git index 真实语义处理。 |
+| Git 读取失败、Gitleaks 缺失或版本不符 | 明确非零退出，不能作为空命中通过。 |
+| 已确认校验和例外文件新增 credential 字段 | 必须继续拒绝。 |
+
+#### 5. 正常、基线与拒绝案例
+
+- 正常：使用 `${PROJECT_ROOT}` 等明确变量，暂存文件不携带本机路径；必要部署配置按精确例外保留。
+- 基线：历史扫描是独立证据，不能在每次提交时重跑，也不能将未确认历史凭证标记为安全。
+- 拒绝：仅修改工作树来隐藏仍在 index 中的凭证，或因为缺扫描器而跳过检测。
+
+#### 6. 必要测试
+
+`tests.test_repository_hygiene` 用独立临时 Git 仓库验证规则、部分暂存、初始提交、删除、重命名、空格路径、index 不变、错误脱敏及精确例外边界。沙盒默认路径变更只运行直接配置测试与受影响的既有审计/迁移测试；不因此扩展为全仓回归或发布门禁。
+
+#### 7. 错误与正确做法
+
+错误：对 `git diff --cached --name-only` 的路径直接读取工作树文件；部分暂存时会检查错误版本。
+
+正确：用 NUL 接口枚举 index 路径并按对象读取完整暂存 blob，检查结束后保持 index 与工作树不变。安全扫描完整跟踪树时不得依赖 `git archive`，因为 `export-ignore` 会排除任务与工具目录；使用完整 Git 对象或显式跟踪文件快照。
+
 ### API 快照与前端动作契约
 
 - 后端接口或响应模型变化时，使用 `scripts/ops/export_openapi.py` 同步 `docs/api/openapi.json`；快照检查必须比较当前生成结果，不能以历史部署快照替代或豁免差异。

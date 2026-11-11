@@ -1,0 +1,21 @@
+title = "仓库凭证检测：继承默认规则，仅排除已确认文件校验和"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "三个已核对证据 JSON 中的相对源码文件 SHA-256 条目"
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^\.trellis/tasks/archive/2026-10/10-22-tr-406-partial-batch-failure-semantics/dependency-intermediate-validation\.json$''',
+  '''^\.trellis/tasks/archive/2026-10/10-23-rnd-503-image-group-caption-rendering/b1-build-manifest\.json$''',
+  '''^\.trellis/tasks/11-06-dependency-image-baseline/research/source-inputs\.json$''',
+]
+regexes = [
+  # 8.30.1 的 line 定位可能携带前一行换行；只允许换行本身，不接受额外字段。
+  '''^(?:\r?\n)?[ \t]*"(?:app|docs|scripts|tests)/[^"\\\r\n]+\.(?:py|json)"[ \t]*:[ \t]*"[0-9a-f]{64}",?[ \t]*(?:\r?\n)?$''',
+]

@@ -22,3 +22,9 @@ frontend/playwright-report/
 # 测试生成的根目录图片
 /--*.png
 /--*.jpg
+
+# 个人临时文件与 IDE 的本机 SDK/module 绑定
+*.tmp
+.idea/misc.xml
+.idea/md2word.iml
+.idea/modules.xml
