@@ -441,15 +441,16 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### FIELD-001 目录只写一个原生 TOC 字段
 
-- 状态：`implemented-gap`
-- 输入信号：TOC 标题和足够可靠的目录点线 entry；renderer 当前文档尚未写 TOC 字段。
-- 正式 owner：`app/services/renderer/text_renderer.py::_fill_toc_entry_if_needed`、`::_configure_toc_styles`；`app/services/renderer/word_renderer.py::_RenderContext.toc_written`。
-- 预期输出：写入一个原生 `TOC` complex field 并应用配置的 TOC styles；后续目录 entry 不重复写静态点线目录；`toc_written` 只属于单次 render context。
-- 冲突/例外：字段结果依赖 Word/WPS 更新；`updateFields` 只请求更新，不保证所有客户端打开即刷新。现有测试只覆盖单次 render 的一个 TOC 字段，未直接覆盖复用同一 renderer 的跨调用状态隔离。
-- 禁止：整页目录逐行静态点线输出并同时插入 TOC；一个 entry 一个 TOC field。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_uses_one_native_toc_field_for_toc_like_entries`、`.test_render_to_bytes_uses_configured_toc_styles`。
-- 样本证据：OPA228 P2 manifest 有 TOC 焦点，但当前 Golden 未实际转换。
-- 来源/取代：commit `5d4a02d7`；取代静态目录为正式目标。
+- 状态：`enforced-tested`
+- 输入信号：目录标题和可识别的目录项。含公式策略要求来源条目通过既有 TOC 识别且含 `content_math_spans`。
+- 正式 owner：`app/services/renderer/render_plan.py::build_render_plan` 冻结代表和文本策略，`app/services/renderer/text_renderer.py::_fill_toc_entry_paragraph` 及 `word_renderer.py::_render_block` 按计划输出。
+- 预期输出：写入一个原生 `TOC` complex field 并应用配置的 TOC styles。普通目录项共享实际字段。含公式的目录标题另写独立可编辑段，移除点引导符与旧页码，保留原始数学字符串和源公式书签。首条含公式时字段和公式分别占段，普通项仍绑定字段段。
+- 版本与对账：新策略使用 `render-plan/v2` 和 `word-renderer-policy/v3`，普通目录沿用原计划身份。持久化证据核对字段指令、begin/separate/end、源公式字段和书签、目录别名目标。表格上下文保持正文。需要估算目录字段页面位置时使用已认证的物理字段路径。
+- 更新边界：`updateFields` 请求客户端刷新。LibreOffice 完整刷新会重建目录缓存，并可能重写数学排版属性。带公式的源标题位于独立段落，刷新后可继续从原书签定位。Word/WPS 客户端的刷新验收单独记录。
+- 禁止：整页逐行静态点线目录与原生 TOC 重复输出。一个 entry 一个 TOC 字段。用字段缓存或同一字段段落保留必须跨刷新追溯的来源公式。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests` 的普通目录、配置样式、含公式目录、表格上下文及归并预览映射用例。
+- 样本证据：[SN74AC244 原生目录公式验证](../../tasks/11-11-datasheet-quality-baseline-contracts/toc-formula-verification.md)。
+- 来源/取代：commit `5d4a02d7` 建立原生字段行为。本轮把含公式条目保留在字段更新范围之外。
 
 ### FIELD-002 题注、书签与交叉引用唯一性
 

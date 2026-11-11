@@ -8,6 +8,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from app.conversion.docx_rules.formula import content_math_spans
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
 from app.services.renderer.layout_plan import (
     LayoutPage, LayoutPlan, LayoutRegion, build_image_plan, complete_two_column_tails, image_annotations, is_exclusive_degraded_block, is_exclusive_page, split_two_col_blocks,
@@ -20,6 +21,8 @@ from app.services.renderer.template_config import TemplateConfigPackage
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
 POLICY_VERSION = "word-renderer-policy/v1"
+TOC_FORMULA_POLICY_VERSION = "word-renderer-policy/v3"
+TEXT_MODE = Literal["paragraph", "heading", "bullet", "toc_title", "toc", "coalesced", "table_context", "formula"]
 
 
 def canonical_bytes(value: Any) -> bytes:
@@ -89,7 +92,7 @@ class ResourceIdentity(RenderContract):
 
 
 class TextPolicy(RenderContract):
-    mode: Literal["paragraph", "heading", "bullet", "toc_title", "toc", "coalesced", "table_context", "formula"]
+    mode: TEXT_MODE
     style_group: str
     heading_level: int | None = None
     representative_block_id: str | None = None
@@ -221,11 +224,30 @@ class RenderOperationV2(RenderOperation):
     unit_id: str | None = None
 
 
+class TextPolicyV2(TextPolicy):
+    mode: TEXT_MODE | Literal["toc_formula", "toc_formula_first"]
+
+
+class RenderDecisionV2(RenderDecision):
+    text_policies: list[TextPolicyV2] = Field(default_factory=list)
+
+
 class RenderPlanV2(RenderPlan):
     schema_version: Literal["render-plan/v2"] = "render-plan/v2"
-    renderer_policy_version: Literal["word-renderer-policy/v2"] = "word-renderer-policy/v2"
+    renderer_policy_version: Literal["word-renderer-policy/v2", "word-renderer-policy/v3"] = "word-renderer-policy/v2"
+    decisions: list[RenderDecisionV2]
     operations: list[RenderOperationV2]
     table_units: list[TableUnitPlan]
+
+    @model_validator(mode="after")
+    def _toc_formula_version(self):
+        modes = [policy.mode for decision in self.decisions for policy in decision.text_policies]
+        has_formula_toc = any(mode in {"toc_formula", "toc_formula_first"} for mode in modes)
+        if has_formula_toc != (self.renderer_policy_version == TOC_FORMULA_POLICY_VERSION):
+            raise ValueError("目录公式策略与渲染计划版本不一致。")
+        if has_formula_toc and sum(mode in {"toc", "toc_formula_first"} for mode in modes) != 1:
+            raise ValueError("保留源公式的目录必须包含一个原生字段。")
+        return self
 
 
 def read_render_plan(value: Any) -> RenderPlan | RenderPlanV2:
@@ -548,9 +570,52 @@ def build_render_plan(document_ir: DocumentIR, *, layout_plan: LayoutPlan, effec
                 key=lambda page: (source_rank.get(page, len(source_rank)), page))
         operations.append(RenderOperationV2.model_validate(value))
     value = original.model_dump(mode="json", exclude={"plan_sha256"})
-    value.update(schema_version="render-plan/v2", renderer_policy_version="word-renderer-policy/v2",
+    serialized_decisions = {key: decision.model_dump(mode="json") for key, decision in decisions.items()}
+    preserve_toc_formulas = _plan_toc_formula_paragraphs(document_ir, original.operations, serialized_decisions, effective_config)
+    version = TOC_FORMULA_POLICY_VERSION if preserve_toc_formulas else "word-renderer-policy/v2"
+    value.update(schema_version="render-plan/v2", renderer_policy_version=version,
         sections=[section.model_dump(mode="json") for section in sections.values()],
-        decisions=[decision.model_dump(mode="json") for decision in decisions.values()],
+        decisions=list(serialized_decisions.values()),
         operations=[operation.model_dump(mode="json") for operation in operations],
         table_units=[unit.model_dump(mode="json") for unit in units])
     return RenderPlanV2.model_validate({**value, "plan_sha256": content_hash(value)})
+
+
+def _plan_toc_formula_paragraphs(document_ir, operations, decisions, config) -> bool:
+    """只为实际含公式的目录按 writer 顺序重建字段代表，表格上下文仍是正文。"""
+    blocks = {block.id: block for block in document_ir.blocks}
+    items = []
+    for operation in operations:
+        if operation.kind != "block":
+            continue
+        block_id = operation.block_ids[0]
+        policies = decisions[block_id]["text_policies"]
+        block = blocks[block_id]
+        if block.type not in {"paragraph", "list"} or not policies:
+            continue
+        texts = (block.list_items or []) if block.type == "list" else [block.text or ""]
+        table_context = block.type == "paragraph" and block.metadata.get("annotation_role") == "table_context"
+        for index, (text, policy) in enumerate(zip(texts, policies, strict=True)):
+            if policy["mode"] in {"toc", "coalesced"}:
+                items.append((block_id, index, policy, table_context, not table_context and bool(content_math_spans(text))))
+    if not any(formula for _, _, _, _, formula in items):
+        return False
+
+    representative = None
+    for block_id, index, policy, table_context, formula in items:
+        style = policy["style_group"]
+        owner_block, owner_index = None, None
+        if table_context:
+            mode, style = "table_context", "normal"
+        elif representative is None:
+            representative = (block_id, index)
+            mode = "toc_formula_first" if formula else "toc"
+        elif formula:
+            mode, style = "toc_formula", "normal"
+        else:
+            mode = "coalesced"
+            owner_block, owner_index = representative
+        policy.update(mode=mode, style_group=style, representative_block_id=owner_block, representative_item_index=owner_index)
+        if index == 0:
+            decisions[block_id].update(style_group=style, named_style=getattr(config, style).word_style_name)
+    return True

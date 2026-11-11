@@ -387,14 +387,18 @@ def _validate_render_evidence(document_ir: DocumentIR, word_content: bytes,
     """共用最终包认证；持久化证明不重建同次运行期归属。"""
     from docx.oxml.ns import qn
     from app.services.renderer.block_evidence import (
-        BlockRenderEvidence, PackageIndex, _RenderOwnership, provenance_for,
+        BlockRenderEvidence, PackageIndex, _RenderOwnership, provenance_for, toc_representative_target,
     )
-    from app.services.renderer.render_plan import RenderPlan, content_hash, document_ir_hash, read_render_plan
+    from app.services.renderer.render_plan import (
+        RenderPlan, TOC_FORMULA_POLICY_VERSION, content_hash, document_ir_hash, read_render_plan,
+    )
     from app.services.renderer.block_evidence import read_block_render_evidence, resolve_table_scope
+    from app.services.renderer.text_renderer import TOC_FIELD_INSTRUCTION
     try:
         plan = read_render_plan(plan_value)
         trace = read_block_render_evidence(trace_value)
         v2 = plan.schema_version == "render-plan/v2"
+        toc_formula_policy = plan.renderer_policy_version == TOC_FORMULA_POLICY_VERSION
         if (trace.schema_version == "block-render-evidence/v2") != v2:
             raise ValueError("ir_render_evidence:invalid_contract")
         if (trace.docx_sha256 != hashlib.sha256(word_content).hexdigest()
@@ -439,9 +443,17 @@ def _validate_render_evidence(document_ir: DocumentIR, word_content: bytes,
                 raise ValueError("ir_render_evidence:target_mismatch")
             own_targets = [target for target in record.targets if target.role != "toc_representative"]
             if decision.mode == "native_text":
-                expected = [(i, "list_item" if block.type == "list" else "formula" if block.type == "formula" else "body")
-                    for i, policy in enumerate(decision.text_policies) if policy.mode != "coalesced"]
+                role = "list_item" if block.type == "list" else "formula" if block.type == "formula" else "body"
+                expected = []
+                for i, policy in enumerate(decision.text_policies):
+                    if policy.mode == "toc_formula_first":
+                        expected.append((i, "toc_field"))
+                    if policy.mode != "coalesced":
+                        expected.append((i, role))
                 if [(target.item_index, target.role) for target in own_targets] != expected or any(target.element_kind != "paragraph" for target in own_targets):
+                    raise ValueError("ir_render_evidence:target_mismatch")
+                if any(own_targets[i].child_path >= own_targets[i + 1].child_path
+                       for i, (_, role) in enumerate(expected) if role == "toc_field"):
                     raise ValueError("ir_render_evidence:target_mismatch")
                 coalesced = [i for i, policy in enumerate(decision.text_policies) if policy.mode == "coalesced"]
                 if [target.item_index for target in record.targets if target.role == "toc_representative"] != coalesced:
@@ -533,11 +545,23 @@ def _validate_render_evidence(document_ir: DocumentIR, word_content: bytes,
                         raise ValueError("ir_render_evidence:target_mismatch")
                     policy = decision.text_policies[item]
                     representative = records.get(policy.representative_block_id)
-                    if policy.mode != "coalesced" or representative is None or not any(
-                        (t.part, t.child_path, t.item_index) == (target.part, target.child_path, policy.representative_item_index)
-                        and t.role != "toc_representative" for t in representative.targets):
+                    if policy.mode != "coalesced" or representative is None:
+                        raise ValueError("ir_render_evidence:target_mismatch")
+                    if toc_formula_policy and (policy.representative_item_index is None or
+                            decisions[representative.block_id].text_policies[policy.representative_item_index].mode
+                            not in {"toc", "toc_formula_first"}):
+                        raise ValueError("ir_render_evidence:target_mismatch")
+                    shared = toc_representative_target(representative.targets, policy.representative_item_index)
+                    if (shared.part, shared.child_path) != (target.part, target.child_path):
                         raise ValueError("ir_render_evidence:target_mismatch")
                     continue
+                if (toc_formula_policy and decision.mode == "native_text" and
+                        (target.role == "toc_field" or decision.text_policies[target.item_index].mode == "toc")):
+                    node = index.nodes[target.part, tuple(target.child_path)]
+                    if ([leaf.text for leaf in node.iter(qn("w:instrText"))] != [TOC_FIELD_INSTRUCTION]
+                            or [leaf.get(qn("w:fldCharType")) for leaf in node.iter(qn("w:fldChar"))]
+                            != ["begin", "separate", "end"]):
+                        raise ValueError("ir_render_evidence:target_mismatch")
                 section = int(decision.section_id.split("_")[1]) if decision.section_id is not None else None
                 if section not in actual["referenced_section_indices"]:
                     raise ValueError("ir_render_evidence:target_mismatch")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from bisect import bisect_left
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -242,9 +243,9 @@ def build_page_mapping(*, binding: MappingBinding, plan: RenderPlan | RenderPlan
 
 
 def _body_positions(records, trace):
-    """v2 的共享表仅贡献各自已认证行范围，不能让所有来源借用表首。"""
+    """共享表使用各自的认证行范围，独立目录字段另存实际位置。"""
     scopes = {scope.scope_id: scope for scope in trace.content_scopes} if trace.schema_version == "block-render-evidence/v2" else {}
-    positions = {}
+    positions, toc_fields = {}, set()
     for record in records.values():
         if record.disposition != "rendered":
             continue
@@ -252,18 +253,21 @@ def _body_positions(records, trace):
         for target in record.targets:
             if target.part != "word/document.xml" or target.role in {"header", "footer", "toc_representative"}:
                 continue
+            if target.role == "toc_field":
+                toc_fields.add(tuple(target.child_path))
+                continue
             path = scopes[target.content_scope_id].first_paragraph_child_path if target.element_kind == "table_rows" else target.child_path
             paths.append(tuple(path))
         if paths:
             positions[record.block_id] = min(paths)
-    return positions
+    return positions, toc_fields
 
 
 def _build(binding, plan, trace, proof, algorithm):
     records = {record.block_id: record for record in trace.block_render_map}
     operation_order = {block_id: order for order, operation in reversed(list(enumerate(plan.operations)))
                        for block_id in operation.block_ids}
-    positions = _body_positions(records, trace)
+    positions, toc_fields = _body_positions(records, trace)
     owners = sorted(positions, key=lambda key: (positions[key], operation_order.get(key, len(operation_order))))
     order = {block_id: index for index, block_id in enumerate(owners)}
     representatives = {}
@@ -294,6 +298,11 @@ def _build(binding, plan, trace, proof, algorithm):
             locations[key] = _location(_ratio(order[key], len(owners), pages), "output_order_ratio")
     proof_version = "block-anchor-evidence/v2" if algorithm == ALGORITHM_V2_VERSION else "block-anchor-evidence/v1"
     anchors = {entry.block_id: entry.bookmark_name for entry in proof.entries} if proof is not None and proof.schema_version == proof_version else {}
+    toc_field_locations = {}
+    if toc_fields:
+        physical_order = sorted([*positions.values(), *toc_fields])
+        toc_field_locations = {path: _location(_ratio(bisect_left(physical_order, path), len(physical_order), pages),
+            "output_order_ratio") for path in toc_fields}
     # 非正文保留在实际 operation 顺序，正文及归并块使用最终 document.xml owner 顺序。
     sorted_records = sorted(records.values(), key=lambda record: (
         (0, order[representatives[record.block_id]]) if representatives[record.block_id] in order
@@ -304,6 +313,13 @@ def _build(binding, plan, trace, proof, algorithm):
         actual = record.block_id in positions or record.disposition == "coalesced" and representative in positions
         location = locations[representative] if actual else _location()
         bookmark = anchors.get(representative) if actual else anchors.get(record.block_id)
+        if actual and record.disposition == "coalesced" and toc_field_locations:
+            # 字段与源公式分别占段。只从该归并项已认证的字段位置估算，避免借到公式段书签。
+            for target in record.targets:
+                path = tuple(target.child_path)
+                if target.part == "word/document.xml" and target.role == "toc_representative" and path in toc_field_locations:
+                    location, bookmark = toc_field_locations[path], None
+                    break
         fallback = None
         if not actual and owners:
             nearest, method = None, "source_page_nearest"

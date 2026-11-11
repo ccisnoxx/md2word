@@ -29,6 +29,7 @@ from app.conversion.docx_rules.formula import (
     scan_math_spans,
     sha256_text,
 )
+from app.conversion.docx_rules.text_semantics import toc_entry_source_title
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.renderer.semantic_text import (
     infer_list_item_level,
@@ -41,6 +42,7 @@ from app.services.renderer.template_config import TemplateConfigPackage, Templat
 
 
 MD2WORD_RENDERER_BULLET_NUM_ID_ATTR = "_md2word_renderer_bullet_num_id"
+TOC_FIELD_INSTRUCTION = r' TOC \o "1-3" \h \z \u '
 CAPTION_NUMBER_PATTERN = r"(?P<number>\d+)(?![A-Za-z0-9]|[.．]\d|[-–—][A-Za-z0-9])"
 CAPTION_RE = re.compile(
     r"^(?P<prefix>\s*)(?P<label>图|表|Figure|Table)(?P<spacing>\s*)"
@@ -68,6 +70,7 @@ class WordTextRendererMixin:
         word_style_name: str | None = None,
         terminology: TerminologyReplacer | None = None,
         reference_bookmarks: CaptionBookmarks | None = None,
+        math_spans: tuple[MathSpan, ...] | None = None,
     ) -> None:
         """写入段落文本；支持 MinerU 常见的内联 HTML 标记。"""
 
@@ -75,7 +78,7 @@ class WordTextRendererMixin:
         self._apply_paragraph_style(paragraph, style)
         if prefix:
             self._add_text_run(paragraph, prefix, style)
-        self._render_mixed_math(paragraph, text, style, terminology, reference_bookmarks)
+        self._render_mixed_math(paragraph, text, style, terminology, reference_bookmarks, _spans=math_spans)
 
     def _fill_heading_paragraph(
         self,
@@ -123,6 +126,13 @@ class WordTextRendererMixin:
         """只执行已选策略，自动推断的优先级由 select_text_policy 唯一管理。"""
         if policy.mode == "toc":
             self._fill_toc_entry_paragraph(paragraph, policy, template_config)
+        elif policy.mode in {"toc_formula", "toc_formula_first"}:
+            title = toc_entry_source_title(text)
+            spans = scan_math_spans(text)
+            if not spans or spans[-1].end > len(title):
+                raise ValueError("目录页码尾缀与源公式范围重叠。")
+            self._fill_paragraph(paragraph, title, template_config.normal, terminology=template_config.terminology,
+                reference_bookmarks=reference_bookmarks, math_spans=spans)
         elif policy.mode == "bullet":
             self._fill_list_paragraph(paragraph, text, template_config, reference_bookmarks=reference_bookmarks)
         elif policy.mode == "heading":
@@ -142,7 +152,7 @@ class WordTextRendererMixin:
         self._apply_paragraph_style(paragraph, toc_style)
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         paragraph.paragraph_format.first_line_indent = Pt(0)
-        self._add_complex_field(paragraph, r' TOC \o "1-3" \h \z \u ', "更新目录", toc_style)
+        self._add_complex_field(paragraph, TOC_FIELD_INSTRUCTION, "更新目录", toc_style)
 
     def _fill_formula_paragraph(
         self,

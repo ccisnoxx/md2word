@@ -45,8 +45,8 @@ TOC_ENTRY_RE = re.compile(
     r"(?:table|figure)\s*[A-Z\d.\-]+|(?:chapter|section|part)\s+(?:[ivxlcdm]+|\d+))",
     re.IGNORECASE,
 )
-TOC_EXPLICIT_LEADER_ENTRY_RE = re.compile(r"^(?P<title>.+?)(?:\s*[.·。…]{2,}\s*)(?P<page>\d+)\s*$")
-TOC_ENTRY_WITH_PAGE_RE = re.compile(r"^(?P<title>.+?)\s+(?P<page>\d+)\s*$")
+TOC_EXPLICIT_LEADER_ENTRY_RE = re.compile(r"^(?P<title>.+?)(?:\s*[.·。…]{2,}\s*)(?P<page>\d+)\s*$", re.DOTALL)
+TOC_ENTRY_WITH_PAGE_RE = re.compile(r"^(?P<title>.+?)\s+(?P<page>\d+)\s*$", re.DOTALL)
 TRAILING_PAGE_NOISE_RE = re.compile(r"(?:[.\s·。…]{2,}|\s+)\d+\s*$")
 ENGLISH_HEADING_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9/&()\-]*")
 ENGLISH_HEADING_STOPWORDS = {
@@ -398,14 +398,23 @@ def is_toc_title_text(text: str) -> bool:
 
 
 def _split_toc_entry_text(text: str) -> tuple[str, str, bool] | None:
-    explicit_match = TOC_EXPLICIT_LEADER_ENTRY_RE.match(text)
-    if explicit_match is not None:
-        return explicit_match.group("title").strip(" .·。…"), explicit_match.group("page").strip(), True
-
-    match = TOC_ENTRY_WITH_PAGE_RE.match(text)
+    match, explicit = _match_toc_entry(text)
     if match is None:
         return None
-    return match.group("title").strip(" .·。…"), match.group("page").strip(), False
+    return match.group("title").strip(" .·。…"), match.group("page").strip(), explicit
+
+
+def _match_toc_entry(text: str) -> tuple[re.Match[str] | None, bool]:
+    explicit = TOC_EXPLICIT_LEADER_ENTRY_RE.match(text)
+    return (explicit, True) if explicit is not None else (TOC_ENTRY_WITH_PAGE_RE.match(text), False)
+
+
+def toc_entry_source_title(text: str) -> str:
+    """对已识别的目录项只移除尾缀，保留原始标题字符及数学边界位置。"""
+    match, _ = _match_toc_entry(text)
+    if match is None:
+        raise ValueError("目录项缺少可分离的页码尾缀。")
+    return match.group("title").rstrip(" .·。…\t\r\n")
 
 
 def looks_like_heading_text(text: str) -> bool:

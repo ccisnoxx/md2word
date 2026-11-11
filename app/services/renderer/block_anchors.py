@@ -141,7 +141,7 @@ def materialize_block_anchors(document: Any, records: dict[str, BlockRenderRecor
             continue
         # TAB 占位段落的固定 marker 必须保持独占，不能为导航破坏原内容证明。
         own_targets = [target for target in targets[block_id]
-            if not (target.element.tag == qn("w:p") and any(
+            if target.role != "toc_field" and not (target.element.tag == qn("w:p") and any(
                 node.get(qn("w:name"), "").startswith("_md2tp_")
                 for node in target.element.iter(qn("w:bookmarkStart"))))]
         if not own_targets:
@@ -319,7 +319,7 @@ def validate_block_anchor_evidence(value: Any, *, plan: RenderPlan | RenderPlanV
             if not any((target.part, target.child_path, target.role, target.item_index)
                        == (entry.target.part, entry.target.child_path, entry.target.role, entry.target.item_index)
                        and (not v2 or target.content_scope_id == entry.target.content_scope_id)
-                       for target in record.targets if target.role != "toc_representative"):
+                       for target in record.targets if target.role not in {"toc_representative", "toc_field"}):
                 return None
             locators = (entry.start, entry.end, entry.target)
             if (len({locator.part for locator in locators}) != 1
