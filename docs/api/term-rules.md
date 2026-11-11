@@ -329,5 +329,5 @@ last_reviewed: 2026-06-04
 
 - 当前 import 面向 v2 manifest，不再把 legacy `subscript_rules` YAML 当作者真源。
 - `source_term` 在 live store 内保持全局唯一。
-- MySQL versioned mode 下，legacy 写接口只保留 file/sqlite 兼容用途；生产术语变更应走 [term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md)。
+- MySQL versioned mode 下，legacy 写接口只保留 file/sqlite 兼容用途；生产术语变更应走 [term-rule-sets.md](term-rule-sets.md)。
 - MySQL mode 会把当前 term rule seed/runtime 投影到 `term_rule_categories`、`term_rules`、`term_rule_segments` 明细表；发布版本仍以 Term Rule Set 版本流程为准。

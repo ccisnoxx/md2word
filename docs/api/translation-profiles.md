@@ -129,6 +129,6 @@ MySQL resource mode 下，不传时按语言方向绑定当前默认 published p
 
 ## 相关条目
 
-- [translation-profile-and-segment-trace-guide.md](/Users/sc/PycharmProjects/md2word/docs/dev/translation-profile-and-segment-trace-guide.md)
-- [jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/jobs.md)
-- [term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md)
+- [translation-profile-and-segment-trace-guide.md](../dev/translation-profile-and-segment-trace-guide.md)
+- [jobs.md](jobs.md)
+- [term-rule-sets.md](term-rule-sets.md)

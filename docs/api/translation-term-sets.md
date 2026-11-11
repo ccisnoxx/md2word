@@ -317,6 +317,6 @@ rollback 是运维语义更强的 set-default：它只把默认指针切回指�
 
 ## 相关条目
 
-- [translation-term-proposals.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-term-proposals.md)
-- [translation-profiles.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-profiles.md)
-- [jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/jobs.md)
+- [translation-term-proposals.md](translation-term-proposals.md)
+- [translation-profiles.md](translation-profiles.md)
+- [jobs.md](jobs.md)

@@ -196,6 +196,6 @@ last_reviewed: 2026-06-02
 
 ## 相关条目
 
-- [translation-term-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-term-sets.md)
-- [jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/jobs.md)
-- [term-rules.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rules.md)
+- [translation-term-sets.md](translation-term-sets.md)
+- [jobs.md](jobs.md)
+- [term-rules.md](term-rules.md)

@@ -1,6 +1,6 @@
 schema_version: 1
 project: md2word
-repository_root: /Users/sc/PycharmProjects/md2word
+repository_root: ${PROJECT_ROOT}
 baseline_branch: main
 parent_task_slug: datasheet-docx-delivery-quality
 status_values: [todo, planning, in_progress, review, done, blocked, skipped_existing]

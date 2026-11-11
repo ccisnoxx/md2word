@@ -73,5 +73,5 @@ last_reviewed: 2026-05-31
 
 ## 相关条目
 
-- [term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md)
-- [term-rules.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rules.md)
+- [term-rule-sets.md](term-rule-sets.md)
+- [term-rules.md](term-rules.md)

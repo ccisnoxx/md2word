@@ -21,7 +21,7 @@ last_reviewed: 2026-07-22
 - 公开入口使用 `https://md2word.962850.xyz`。在 `hostdzire` 本机验证 API 时优先使用 `http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}`。
 - 准生产/生产基线是 MySQL metadata + Redis/Celery + 单 worker。
 - P0 Golden Sample 只使用 `tests/fixtures/golden_samples/pdfs/` 下 4 个 OPA228 technical datasheet PDF，不扩展为 10-20 份样本作为 P0 阻塞条件。
-- 远程登录信息存放在私密文件 `/Users/sc/work_file/bak_file/VPS.txt`。不要把其中的账号、密码、密钥、IP 细节复制到仓库文档、任务记录或对话输出中。
+- 远程登录信息存放在私密文件 `${DEVELOPER_HOME}/work_file/bak_file/VPS.txt`。不要把其中的账号、密码、密钥、IP 细节复制到仓库文档、任务记录或对话输出中。
 
 ### Codex SSH profile 解析规则
 

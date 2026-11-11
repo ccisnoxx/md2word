@@ -3,7 +3,7 @@
 ## 一次性准备
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 python3 ./.trellis/scripts/init_developer.py sc
 python3 ./.trellis/scripts/task.py create \

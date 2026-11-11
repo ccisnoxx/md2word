@@ -122,7 +122,7 @@ Translation Profile payload 保存模型、目标语言、领域、分批阈值�
 
 ## 接口参考
 
-完整端点参考见 [translation-profiles.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-profiles.md)。
+完整端点参考见 [translation-profiles.md](../api/translation-profiles.md)。
 
 常用端点：
 
@@ -228,7 +228,7 @@ curl -sS -X POST \
 
 ## 相关文档
 
-- [translation-profiles.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-profiles.md)
-- [jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/jobs.md)
-- [term-rule-set-versioning-guide.md](/Users/sc/PycharmProjects/md2word/docs/dev/term-rule-set-versioning-guide.md)
-- [backend-local-setup-and-architecture.md](/Users/sc/PycharmProjects/md2word/docs/dev/backend-local-setup-and-architecture.md)
+- [translation-profiles.md](../api/translation-profiles.md)
+- [jobs.md](../api/jobs.md)
+- [term-rule-set-versioning-guide.md](term-rule-set-versioning-guide.md)
+- [backend-local-setup-and-architecture.md](backend-local-setup-and-architecture.md)

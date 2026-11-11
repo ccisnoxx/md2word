@@ -14,7 +14,7 @@ last_reviewed: 2026-06-17
 
 本联调计划服务内部工作台成熟化，不把真实 PDF/MinerU/翻译/Word 主流程作为每次页面迭代的前置条件。
 
-当前 P0 发布验收遵循 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md)。本地可以做 mock/contract-first 或纯静态检查，但不要为了当前验收启动本地前后端、MySQL、Redis/Celery、Playwright smoke 或真实 PDF 转 Word 链路；服务级证据在 hostdzire 收集。
+当前 P0 发布验收遵循 [线上优先验证流程](../deploy/online-first-validation-workflow.md)。本地可以做 mock/contract-first 或纯静态检查，但不要为了当前验收启动本地前后端、MySQL、Redis/Celery、Playwright smoke 或真实 PDF 转 Word 链路；服务级证据在 hostdzire 收集。
 
 分层验收：
 

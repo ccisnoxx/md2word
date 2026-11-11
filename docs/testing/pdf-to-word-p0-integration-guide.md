@@ -24,7 +24,7 @@ last_reviewed: 2026-06-17
 export API_BASE_URL="http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}"
 ```
 
-从本机或其他外部网络验证公网入口时，把 `API_BASE_URL` 改为 `https://md2word.962850.xyz`。完整发布证据按 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md) 收集。
+从本机或其他外部网络验证公网入口时，把 `API_BASE_URL` 改为 `https://md2word.962850.xyz`。完整发布证据按 [线上优先验证流程](../deploy/online-first-validation-workflow.md) 收集。
 
 ## 1. 登录
 

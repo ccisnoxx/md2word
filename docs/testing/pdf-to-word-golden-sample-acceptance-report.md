@@ -237,7 +237,7 @@ Backlog 条目必须包含 sample/run_id、job_id、截图路径、`docx_quality
 
 ## 正式验收命令
 
-后续重新验收按 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md) 在 hostdzire 执行，不在本地启动前后端或 MySQL/Redis/Celery。
+后续重新验收按 [线上优先验证流程](../deploy/online-first-validation-workflow.md) 在 hostdzire 执行，不在本地启动前后端或 MySQL/Redis/Celery。
 
 ```bash
 GOLDEN_SAMPLE_USERNAME=admin \

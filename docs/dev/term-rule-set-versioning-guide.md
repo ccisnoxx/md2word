@@ -84,7 +84,7 @@ curl -sS -X POST \
 
 ## 接口参考
 
-完整端点参考见 [term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md)。
+完整端点参考见 [term-rule-sets.md](../api/term-rule-sets.md)。
 
 常用端点：
 
@@ -158,6 +158,6 @@ curl -sS -X POST \
 
 ## 相关文档
 
-- [term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md)
-- [term-rules.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rules.md)
-- [backend-local-setup-and-architecture.md](/Users/sc/PycharmProjects/md2word/docs/dev/backend-local-setup-and-architecture.md)
+- [term-rule-sets.md](../api/term-rule-sets.md)
+- [term-rules.md](../api/term-rules.md)
+- [backend-local-setup-and-architecture.md](backend-local-setup-and-architecture.md)

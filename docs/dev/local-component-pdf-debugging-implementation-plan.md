@@ -14,7 +14,7 @@ last_reviewed: 2026-06-26
 
 当前本地调试入口已经收敛到正式 DocumentIR 转换与 Word renderer 核心。该文档描述本地样例、PyCharm 配置、质量矩阵和人工验收闭环；脚本层只做路径、离线翻译响应和报告适配，不写独立排版逻辑。
 
-正式项目 `/Users/sc/PycharmProjects/md2word` 是唯一运行入口。新的本地 MinerU 结果包先放在仓库根目录的 `mineru_result/`，再通过 PyCharm Run Configuration 或 JSON 配置运行 `scripts/dev/run_local_mineru_debug_config.py`。
+正式项目 `${PROJECT_ROOT}` 是唯一运行入口。新的本地 MinerU 结果包先放在仓库根目录的 `mineru_result/`，再通过 PyCharm Run Configuration 或 JSON 配置运行 `scripts/dev/run_local_mineru_debug_config.py`。
 
 `mineru_result/`、`tests/tmp/`、`.env` 和真实翻译 trace/response 都是本地证据或密钥相关数据，不提交。
 
@@ -64,7 +64,7 @@ last_reviewed: 2026-06-26
 两者都使用：
 
 - Script path: `scripts/dev/run_local_mineru_debug_config.py`
-- Working directory: `/Users/sc/PycharmProjects/md2word`
+- Working directory: `${PROJECT_ROOT}`
 - Interpreter: `.venv/bin/python`
 
 日常只改 JSON 配置里的 `input_path` 和 `output_path`，不需要在 PyCharm 中手写长命令。
@@ -104,7 +104,7 @@ last_reviewed: 2026-06-26
 .venv/bin/python scripts/dev/run_local_mineru_debug_config.py --config scripts/dev/local_mineru_debug_direct_config.json
 ```
 
-DOCX 标准视觉验收命令和依赖清单见 [local-conversion-sandbox.md](/Users/sc/PycharmProjects/md2word/docs/dev/local-conversion-sandbox.md)。在 Codex 受限沙箱内运行 LibreOffice 可能出现 `Abort trap: 6`；通过 Codex 执行渲染时使用非沙箱权限，本机终端和 PyCharm 正常运行不需要特殊处理。
+DOCX 标准视觉验收命令和依赖清单见 [local-conversion-sandbox.md](local-conversion-sandbox.md)。在 Codex 受限沙箱内运行 LibreOffice 可能出现 `Abort trap: 6`；通过 Codex 执行渲染时使用非沙箱权限，本机终端和 PyCharm 正常运行不需要特殊处理。
 
 en2zh 缺 key 的预期验证：
 

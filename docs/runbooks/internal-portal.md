@@ -81,7 +81,7 @@ files 上传授权 -> document_jobs 创建任务 -> Worker 调用 MinerU/Documen
 | `/api/v1/ops` | 真实集成控制面和运维动作预览。 |
 | `/api/v1/health` | live/ready/metrics 观测。 |
 
-OpenAPI 快照在 [docs/api/openapi.json](/Users/sc/PycharmProjects/md2word/docs/api/openapi.json)，API 文档入口在 [docs/api/manifest.yaml](/Users/sc/PycharmProjects/md2word/docs/api/manifest.yaml)。
+OpenAPI 快照在 [docs/api/openapi.json](../api/openapi.json)，API 文档入口在 [docs/api/manifest.yaml](../api/manifest.yaml)。
 
 ## 4.1 翻译 QA 操作口径
 
@@ -93,7 +93,7 @@ OpenAPI 快照在 [docs/api/openapi.json](/Users/sc/PycharmProjects/md2word/docs
 
 ## 5. 正式部署配置
 
-正式内部门户推荐使用 Docker P0 编排，详见 [P0 Docker 部署说明](/Users/sc/PycharmProjects/md2word/docs/deploy/p0-docker-deployment.md)。发布和验收执行 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md)：本地只改写和做不依赖服务的检查，完整运行时证据在 hostdzire 收集。
+正式内部门户推荐使用 Docker P0 编排，详见 [P0 Docker 部署说明](../deploy/p0-docker-deployment.md)。发布和验收执行 [线上优先验证流程](../deploy/online-first-validation-workflow.md)：本地只改写和做不依赖服务的检查，完整运行时证据在 hostdzire 收集。
 
 关键环境变量建议：
 

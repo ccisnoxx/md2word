@@ -94,7 +94,7 @@ review → skipped_existing（仅现有能力已完整满足且人工接受时�
 ## 一次性准备
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 python3 ./.trellis/scripts/init_developer.py sc
 python3 ./.trellis/scripts/task.py create \
@@ -156,7 +156,7 @@ docs/implementation/codex-task-manifest.yaml
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -173,7 +173,7 @@ codex
 ```text
 请为 md2word 任务 **DOC-001：合入文档包和索引** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/DOC-001`
 发布阶段：`R0（文档与基线）`
 依赖任务：无
@@ -287,7 +287,7 @@ codex
 ```text
 请实现 md2word 任务 **DOC-001：合入文档包和索引**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/DOC-001`
 发布阶段：`R0（文档与基线）`
 依赖任务：无
@@ -441,7 +441,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **DOC-001：合入文档包和索引** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/DOC-001`
 依赖任务：无
 
@@ -478,7 +478,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -495,7 +495,7 @@ codex
 ```text
 请为 md2word 任务 **BAS-001：当前能力与测试基线核验** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/BAS-001`
 发布阶段：`R0（文档与基线）`
 依赖任务：DOC-001
@@ -612,7 +612,7 @@ codex
 ```text
 请实现 md2word 任务 **BAS-001：当前能力与测试基线核验**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/BAS-001`
 发布阶段：`R0（文档与基线）`
 依赖任务：DOC-001
@@ -772,7 +772,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **BAS-001：当前能力与测试基线核验** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/BAS-001`
 依赖任务：DOC-001
 
@@ -809,7 +809,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -826,7 +826,7 @@ codex
 ```text
 请为 md2word 任务 **CON-101：产品模式和 UI 文案收口** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/CON-101`
 发布阶段：`R1（合同和状态）`
 依赖任务：BAS-001
@@ -946,7 +946,7 @@ codex
 ```text
 请实现 md2word 任务 **CON-101：产品模式和 UI 文案收口**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/CON-101`
 发布阶段：`R1（合同和状态）`
 依赖任务：BAS-001
@@ -1109,7 +1109,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **CON-101：产品模式和 UI 文案收口** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/CON-101`
 依赖任务：BAS-001
 
@@ -1146,7 +1146,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -1163,7 +1163,7 @@ codex
 ```text
 请为 md2word 任务 **CON-102：执行阶段扩展** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/CON-102`
 发布阶段：`R1（合同和状态）`
 依赖任务：BAS-001
@@ -1283,7 +1283,7 @@ codex
 ```text
 请实现 md2word 任务 **CON-102：执行阶段扩展**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/CON-102`
 发布阶段：`R1（合同和状态）`
 依赖任务：BAS-001
@@ -1445,7 +1445,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **CON-102：执行阶段扩展** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/CON-102`
 依赖任务：BAS-001
 
@@ -1482,7 +1482,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -1499,7 +1499,7 @@ codex
 ```text
 请为 md2word 任务 **CON-103：质量/复核/交付状态模型** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/CON-103`
 发布阶段：`R1（合同和状态）`
 依赖任务：CON-102
@@ -1620,7 +1620,7 @@ codex
 ```text
 请实现 md2word 任务 **CON-103：质量/复核/交付状态模型**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/CON-103`
 发布阶段：`R1（合同和状态）`
 依赖任务：CON-102
@@ -1782,7 +1782,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **CON-103：质量/复核/交付状态模型** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/CON-103`
 依赖任务：CON-102
 
@@ -1819,7 +1819,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -1836,7 +1836,7 @@ codex
 ```text
 请为 md2word 任务 **CON-104：下载和发布可用性合同** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/CON-104`
 发布阶段：`R1（合同和状态）`
 依赖任务：CON-103
@@ -1955,7 +1955,7 @@ codex
 ```text
 请实现 md2word 任务 **CON-104：下载和发布可用性合同**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/CON-104`
 发布阶段：`R1（合同和状态）`
 依赖任务：CON-103
@@ -2116,7 +2116,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **CON-104：下载和发布可用性合同** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/CON-104`
 依赖任务：CON-103
 
@@ -2153,7 +2153,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -2170,7 +2170,7 @@ codex
 ```text
 请为 md2word 任务 **IR-201：MinerUArtifactValidator** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-201`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：BAS-001
@@ -2287,7 +2287,7 @@ codex
 ```text
 请实现 md2word 任务 **IR-201：MinerUArtifactValidator**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-201`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：BAS-001
@@ -2445,7 +2445,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **IR-201：MinerUArtifactValidator** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-201`
 依赖任务：BAS-001
 
@@ -2482,7 +2482,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -2499,7 +2499,7 @@ codex
 ```text
 请为 md2word 任务 **IR-202：MarginArtifactNormalizer** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-202`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：IR-201
@@ -2615,7 +2615,7 @@ codex
 ```text
 请实现 md2word 任务 **IR-202：MarginArtifactNormalizer**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-202`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：IR-201
@@ -2772,7 +2772,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **IR-202：MarginArtifactNormalizer** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-202`
 依赖任务：IR-201
 
@@ -2809,7 +2809,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -2826,7 +2826,7 @@ codex
 ```text
 请为 md2word 任务 **IR-203：CrossPageParagraphMerger** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-203`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：IR-201
@@ -2942,7 +2942,7 @@ codex
 ```text
 请实现 md2word 任务 **IR-203：CrossPageParagraphMerger**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-203`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：IR-201
@@ -3098,7 +3098,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **IR-203：CrossPageParagraphMerger** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-203`
 依赖任务：IR-201
 
@@ -3135,7 +3135,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -3152,7 +3152,7 @@ codex
 ```text
 请为 md2word 任务 **IR-204：CaptionReconciler 增强** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-204`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：IR-201
@@ -3268,7 +3268,7 @@ codex
 ```text
 请实现 md2word 任务 **IR-204：CaptionReconciler 增强**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-204`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：IR-201
@@ -3425,7 +3425,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **IR-204：CaptionReconciler 增强** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-204`
 依赖任务：IR-201
 
@@ -3462,7 +3462,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -3479,7 +3479,7 @@ codex
 ```text
 请为 md2word 任务 **IR-205：LogicalTableGroup 与 source spans** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-205`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：IR-201
@@ -3595,7 +3595,7 @@ codex
 ```text
 请实现 md2word 任务 **IR-205：LogicalTableGroup 与 source spans**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-205`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：IR-201
@@ -3752,7 +3752,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **IR-205：LogicalTableGroup 与 source spans** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-205`
 依赖任务：IR-201
 
@@ -3789,7 +3789,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -3806,7 +3806,7 @@ codex
 ```text
 请为 md2word 任务 **IR-206：Table Reference Asset** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-206`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：IR-205
@@ -3924,7 +3924,7 @@ codex
 ```text
 请实现 md2word 任务 **IR-206：Table Reference Asset**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-206`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：IR-205
@@ -4082,7 +4082,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **IR-206：Table Reference Asset** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-206`
 依赖任务：IR-205
 
@@ -4119,7 +4119,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -4136,7 +4136,7 @@ codex
 ```text
 请为 md2word 任务 **IR-207：ZK7044 最小回归样本** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-207`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：IR-201
@@ -4253,7 +4253,7 @@ codex
 ```text
 请实现 md2word 任务 **IR-207：ZK7044 最小回归样本**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-207`
 发布阶段：`R2（MinerU 与 DocumentIR）`
 依赖任务：IR-201
@@ -4411,7 +4411,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **IR-207：ZK7044 最小回归样本** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/IR-207`
 依赖任务：IR-201
 
@@ -4448,7 +4448,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -4465,7 +4465,7 @@ codex
 ```text
 请为 md2word 任务 **TAB-301：CanonicalTableGrid 模型** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-301`
 发布阶段：`R3（表格核心）`
 依赖任务：IR-205
@@ -4581,7 +4581,7 @@ codex
 ```text
 请实现 md2word 任务 **TAB-301：CanonicalTableGrid 模型**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-301`
 发布阶段：`R3（表格核心）`
 依赖任务：IR-205
@@ -4739,7 +4739,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TAB-301：CanonicalTableGrid 模型** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-301`
 依赖任务：IR-205
 
@@ -4776,7 +4776,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -4793,7 +4793,7 @@ codex
 ```text
 请为 md2word 任务 **TAB-302：HTML Normalizer/Grid Builder** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-302`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-301
@@ -4909,7 +4909,7 @@ codex
 ```text
 请实现 md2word 任务 **TAB-302：HTML Normalizer/Grid Builder**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-302`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-301
@@ -5067,7 +5067,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TAB-302：HTML Normalizer/Grid Builder** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-302`
 依赖任务：TAB-301
 
@@ -5104,7 +5104,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -5121,7 +5121,7 @@ codex
 ```text
 请为 md2word 任务 **TAB-303：Table Validator/Quality Flags** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-303`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-302
@@ -5237,7 +5237,7 @@ codex
 ```text
 请实现 md2word 任务 **TAB-303：Table Validator/Quality Flags**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-303`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-302
@@ -5395,7 +5395,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TAB-303：Table Validator/Quality Flags** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-303`
 依赖任务：TAB-302
 
@@ -5432,7 +5432,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -5449,7 +5449,7 @@ codex
 ```text
 请为 md2word 任务 **TAB-304：大表保留合并关系** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-304`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-302
@@ -5565,7 +5565,7 @@ codex
 ```text
 请实现 md2word 任务 **TAB-304：大表保留合并关系**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-304`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-302
@@ -5723,7 +5723,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TAB-304：大表保留合并关系** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-304`
 依赖任务：TAB-302
 
@@ -5760,7 +5760,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -5777,7 +5777,7 @@ codex
 ```text
 请为 md2word 任务 **TAB-305：跨页逻辑表 Word 渲染** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-305`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-304、IR-205
@@ -5894,7 +5894,7 @@ codex
 ```text
 请实现 md2word 任务 **TAB-305：跨页逻辑表 Word 渲染**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-305`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-304、IR-205
@@ -6053,7 +6053,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TAB-305：跨页逻辑表 Word 渲染** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-305`
 依赖任务：TAB-304、IR-205
 
@@ -6090,7 +6090,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -6107,7 +6107,7 @@ codex
 ```text
 请为 md2word 任务 **TAB-306：空 HTML 内部占位和 blocked** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-306`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-303、CON-103
@@ -6224,7 +6224,7 @@ codex
 ```text
 请实现 md2word 任务 **TAB-306：空 HTML 内部占位和 blocked**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-306`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-303、CON-103
@@ -6383,7 +6383,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TAB-306：空 HTML 内部占位和 blocked** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-306`
 依赖任务：TAB-303、CON-103
 
@@ -6420,7 +6420,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -6437,7 +6437,7 @@ codex
 ```text
 请为 md2word 任务 **TAB-307：表格 evidence 聚合** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-307`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-303、TAB-304
@@ -6554,7 +6554,7 @@ codex
 ```text
 请实现 md2word 任务 **TAB-307：表格 evidence 聚合**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-307`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-303、TAB-304
@@ -6712,7 +6712,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TAB-307：表格 evidence 聚合** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-307`
 依赖任务：TAB-303、TAB-304
 
@@ -6749,7 +6749,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -6766,7 +6766,7 @@ codex
 ```text
 请为 md2word 任务 **TAB-308：表格专项回归门禁** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-308`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-304、TAB-305、TAB-306、TAB-307、IR-207
@@ -6883,7 +6883,7 @@ codex
 ```text
 请实现 md2word 任务 **TAB-308：表格专项回归门禁**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-308`
 发布阶段：`R3（表格核心）`
 依赖任务：TAB-304、TAB-305、TAB-306、TAB-307、IR-207
@@ -7042,7 +7042,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TAB-308：表格专项回归门禁** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TAB-308`
 依赖任务：TAB-304、TAB-305、TAB-306、TAB-307、IR-207
 
@@ -7079,7 +7079,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -7096,7 +7096,7 @@ codex
 ```text
 请为 md2word 任务 **TR-401：Caption/Footnote 翻译覆盖** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-401`
 发布阶段：`R4（翻译完整性）`
 依赖任务：IR-204
@@ -7212,7 +7212,7 @@ codex
 ```text
 请实现 md2word 任务 **TR-401：Caption/Footnote 翻译覆盖**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-401`
 发布阶段：`R4（翻译完整性）`
 依赖任务：IR-204
@@ -7370,7 +7370,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TR-401：Caption/Footnote 翻译覆盖** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-401`
 依赖任务：IR-204
 
@@ -7407,7 +7407,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -7424,7 +7424,7 @@ codex
 ```text
 请为 md2word 任务 **TR-402：ProtectedTokenCodec** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-402`
 发布阶段：`R4（翻译完整性）`
 依赖任务：BAS-001
@@ -7539,7 +7539,7 @@ codex
 ```text
 请实现 md2word 任务 **TR-402：ProtectedTokenCodec**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-402`
 发布阶段：`R4（翻译完整性）`
 依赖任务：BAS-001
@@ -7696,7 +7696,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TR-402：ProtectedTokenCodec** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-402`
 依赖任务：BAS-001
 
@@ -7733,7 +7733,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -7750,7 +7750,7 @@ codex
 ```text
 请为 md2word 任务 **TR-403：TranslationIntegrityValidator** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-403`
 发布阶段：`R4（翻译完整性）`
 依赖任务：TR-402
@@ -7866,7 +7866,7 @@ codex
 ```text
 请实现 md2word 任务 **TR-403：TranslationIntegrityValidator**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-403`
 发布阶段：`R4（翻译完整性）`
 依赖任务：TR-402
@@ -8024,7 +8024,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TR-403：TranslationIntegrityValidator** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-403`
 依赖任务：TR-402
 
@@ -8061,7 +8061,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -8078,7 +8078,7 @@ codex
 ```text
 请为 md2word 任务 **TR-404：TableContextBuilder** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-404`
 发布阶段：`R4（翻译完整性）`
 依赖任务：TAB-301
@@ -8194,7 +8194,7 @@ codex
 ```text
 请实现 md2word 任务 **TR-404：TableContextBuilder**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-404`
 发布阶段：`R4（翻译完整性）`
 依赖任务：TAB-301
@@ -8351,7 +8351,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TR-404：TableContextBuilder** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-404`
 依赖任务：TAB-301
 
@@ -8388,7 +8388,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -8405,7 +8405,7 @@ codex
 ```text
 请为 md2word 任务 **TR-405：术语和目标语言后验检查** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-405`
 发布阶段：`R4（翻译完整性）`
 依赖任务：TR-403
@@ -8521,7 +8521,7 @@ codex
 ```text
 请实现 md2word 任务 **TR-405：术语和目标语言后验检查**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-405`
 发布阶段：`R4（翻译完整性）`
 依赖任务：TR-403
@@ -8679,7 +8679,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TR-405：术语和目标语言后验检查** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-405`
 依赖任务：TR-403
 
@@ -8716,7 +8716,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -8733,7 +8733,7 @@ codex
 ```text
 请为 md2word 任务 **TR-406：部分批次失败语义收口** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-406`
 发布阶段：`R4（翻译完整性）`
 依赖任务：TR-403、CON-102
@@ -8851,7 +8851,7 @@ codex
 ```text
 请实现 md2word 任务 **TR-406：部分批次失败语义收口**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-406`
 发布阶段：`R4（翻译完整性）`
 依赖任务：TR-403、CON-102
@@ -9010,7 +9010,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TR-406：部分批次失败语义收口** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-406`
 依赖任务：TR-403、CON-102
 
@@ -9047,7 +9047,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -9064,7 +9064,7 @@ codex
 ```text
 请为 md2word 任务 **TR-407：四语言方向样本和门禁** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-407`
 发布阶段：`R4（翻译完整性）`
 依赖任务：TR-401、TR-402、TR-403、TR-404、TR-405、TR-406
@@ -9180,7 +9180,7 @@ codex
 ```text
 请实现 md2word 任务 **TR-407：四语言方向样本和门禁**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-407`
 发布阶段：`R4（翻译完整性）`
 依赖任务：TR-401、TR-402、TR-403、TR-404、TR-405、TR-406
@@ -9338,7 +9338,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **TR-407：四语言方向样本和门禁** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/TR-407`
 依赖任务：TR-401、TR-402、TR-403、TR-404、TR-405、TR-406
 
@@ -9375,7 +9375,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -9392,7 +9392,7 @@ codex
 ```text
 请为 md2word 任务 **RND-501：RenderPlan 与 block evidence** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-501`
 发布阶段：`R5（DOCX、模板和预览）`
 依赖任务：IR-205、TAB-301
@@ -9509,7 +9509,7 @@ codex
 ```text
 请实现 md2word 任务 **RND-501：RenderPlan 与 block evidence**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-501`
 发布阶段：`R5（DOCX、模板和预览）`
 依赖任务：IR-205、TAB-301
@@ -9668,7 +9668,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **RND-501：RenderPlan 与 block evidence** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-501`
 依赖任务：IR-205、TAB-301
 
@@ -9705,7 +9705,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -9722,7 +9722,7 @@ codex
 ```text
 请为 md2word 任务 **RND-502：公式 OMML 和降级规则** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-502`
 发布阶段：`R5（DOCX、模板和预览）`
 依赖任务：BAS-001
@@ -9839,7 +9839,7 @@ codex
 ```text
 请实现 md2word 任务 **RND-502：公式 OMML 和降级规则**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-502`
 发布阶段：`R5（DOCX、模板和预览）`
 依赖任务：BAS-001
@@ -9998,7 +9998,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **RND-502：公式 OMML 和降级规则** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-502`
 依赖任务：BAS-001
 
@@ -10035,7 +10035,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -10052,7 +10052,7 @@ codex
 ```text
 请为 md2word 任务 **RND-503：图片并排和 Caption** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-503`
 发布阶段：`R5（DOCX、模板和预览）`
 依赖任务：IR-204
@@ -10168,7 +10168,7 @@ codex
 ```text
 请实现 md2word 任务 **RND-503：图片并排和 Caption**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-503`
 发布阶段：`R5（DOCX、模板和预览）`
 依赖任务：IR-204
@@ -10325,7 +10325,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **RND-503：图片并排和 Caption** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-503`
 依赖任务：IR-204
 
@@ -10362,7 +10362,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -10379,7 +10379,7 @@ codex
 ```text
 请为 md2word 任务 **RND-504：WordPreviewProvider** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-504`
 发布阶段：`R5（DOCX、模板和预览）`
 依赖任务：CON-103
@@ -10497,7 +10497,7 @@ codex
 ```text
 请实现 md2word 任务 **RND-504：WordPreviewProvider**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-504`
 发布阶段：`R5（DOCX、模板和预览）`
 依赖任务：CON-103
@@ -10657,7 +10657,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **RND-504：WordPreviewProvider** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-504`
 依赖任务：CON-103
 
@@ -10694,7 +10694,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -10711,7 +10711,7 @@ codex
 ```text
 请为 md2word 任务 **RND-505：PDF/IR/Word 页映射** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-505`
 发布阶段：`R5（DOCX、模板和预览）`
 依赖任务：RND-501、RND-504
@@ -10827,7 +10827,7 @@ codex
 ```text
 请实现 md2word 任务 **RND-505：PDF/IR/Word 页映射**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-505`
 发布阶段：`R5（DOCX、模板和预览）`
 依赖任务：RND-501、RND-504
@@ -10984,7 +10984,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **RND-505：PDF/IR/Word 页映射** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-505`
 依赖任务：RND-501、RND-504
 
@@ -11021,7 +11021,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -11038,7 +11038,7 @@ codex
 ```text
 请为 md2word 任务 **RND-506：页级 DOCX 质量检查** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-506`
 发布阶段：`R5（DOCX、模板和预览）`
 依赖任务：RND-504、RND-505
@@ -11154,7 +11154,7 @@ codex
 ```text
 请实现 md2word 任务 **RND-506：页级 DOCX 质量检查**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-506`
 发布阶段：`R5（DOCX、模板和预览）`
 依赖任务：RND-504、RND-505
@@ -11312,7 +11312,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **RND-506：页级 DOCX 质量检查** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/RND-506`
 依赖任务：RND-504、RND-505
 
@@ -11349,7 +11349,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -11366,7 +11366,7 @@ codex
 ```text
 请为 md2word 任务 **QA-601：统一 Review 模型** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-601`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：CON-103
@@ -11486,7 +11486,7 @@ codex
 ```text
 请实现 md2word 任务 **QA-601：统一 Review 模型**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-601`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：CON-103
@@ -11649,7 +11649,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **QA-601：统一 Review 模型** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-601`
 依赖任务：CON-103
 
@@ -11686,7 +11686,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -11703,7 +11703,7 @@ codex
 ```text
 请为 md2word 任务 **QA-602：Quality/Review API** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-602`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：QA-601、TAB-307、RND-506
@@ -11822,7 +11822,7 @@ codex
 ```text
 请实现 md2word 任务 **QA-602：Quality/Review API**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-602`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：QA-601、TAB-307、RND-506
@@ -11984,7 +11984,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **QA-602：Quality/Review API** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-602`
 依赖任务：QA-601、TAB-307、RND-506
 
@@ -12021,7 +12021,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -12038,7 +12038,7 @@ codex
 ```text
 请为 md2word 任务 **QA-603：三栏审核页面** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-603`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：QA-602、RND-505
@@ -12157,7 +12157,7 @@ codex
 ```text
 请实现 md2word 任务 **QA-603：三栏审核页面**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-603`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：QA-602、RND-505
@@ -12319,7 +12319,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **QA-603：三栏审核页面** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-603`
 依赖任务：QA-602、RND-505
 
@@ -12356,7 +12356,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -12373,7 +12373,7 @@ codex
 ```text
 请为 md2word 任务 **QA-604：下载状态提示** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-604`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：CON-104、QA-602
@@ -12490,7 +12490,7 @@ codex
 ```text
 请实现 md2word 任务 **QA-604：下载状态提示**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-604`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：CON-104、QA-602
@@ -12650,7 +12650,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **QA-604：下载状态提示** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-604`
 依赖任务：CON-104、QA-602
 
@@ -12687,7 +12687,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -12704,7 +12704,7 @@ codex
 ```text
 请为 md2word 任务 **QA-605：PublicationRecord 和发布门禁** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-605`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：QA-601、RND-504
@@ -12826,7 +12826,7 @@ codex
 ```text
 请实现 md2word 任务 **QA-605：PublicationRecord 和发布门禁**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-605`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：QA-601、RND-504
@@ -12991,7 +12991,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **QA-605：PublicationRecord 和发布门禁** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-605`
 依赖任务：QA-601、RND-504
 
@@ -13028,7 +13028,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -13045,7 +13045,7 @@ codex
 ```text
 请为 md2word 任务 **QA-606：发布 UI 与审计** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-606`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：QA-605
@@ -13163,7 +13163,7 @@ codex
 ```text
 请实现 md2word 任务 **QA-606：发布 UI 与审计**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-606`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：QA-605
@@ -13323,7 +13323,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **QA-606：发布 UI 与审计** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-606`
 依赖任务：QA-605
 
@@ -13360,7 +13360,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -13377,7 +13377,7 @@ codex
 ```text
 请为 md2word 任务 **QA-607：审核发布 E2E** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-607`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：QA-603、QA-604、QA-605、QA-606
@@ -13495,7 +13495,7 @@ codex
 ```text
 请实现 md2word 任务 **QA-607：审核发布 E2E**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-607`
 发布阶段：`R6（审核、批准和发布）`
 依赖任务：QA-603、QA-604、QA-605、QA-606
@@ -13656,7 +13656,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **QA-607：审核发布 E2E** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/QA-607`
 依赖任务：QA-603、QA-604、QA-605、QA-606
 
@@ -13693,7 +13693,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -13710,7 +13710,7 @@ codex
 ```text
 请为 md2word 任务 **REL-701：Release check 和 Acceptance gate** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/REL-701`
 发布阶段：`R7（发布收口）`
 依赖任务：TAB-308、TR-407、QA-607
@@ -13829,7 +13829,7 @@ codex
 ```text
 请实现 md2word 任务 **REL-701：Release check 和 Acceptance gate**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/REL-701`
 发布阶段：`R7（发布收口）`
 依赖任务：TAB-308、TR-407、QA-607
@@ -13993,7 +13993,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **REL-701：Release check 和 Acceptance gate** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/REL-701`
 依赖任务：TAB-308、TR-407、QA-607
 
@@ -14030,7 +14030,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -14047,7 +14047,7 @@ codex
 ```text
 请为 md2word 任务 **REL-702：指标、告警和容量** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/REL-702`
 发布阶段：`R7（发布收口）`
 依赖任务：REL-701
@@ -14165,7 +14165,7 @@ codex
 ```text
 请实现 md2word 任务 **REL-702：指标、告警和容量**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/REL-702`
 发布阶段：`R7（发布收口）`
 依赖任务：REL-701
@@ -14328,7 +14328,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **REL-702：指标、告警和容量** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/REL-702`
 依赖任务：REL-701
 
@@ -14365,7 +14365,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -14382,7 +14382,7 @@ codex
 ```text
 请为 md2word 任务 **REL-703：迁移和灰度启用** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/REL-703`
 发布阶段：`R7（发布收口）`
 依赖任务：REL-701
@@ -14504,7 +14504,7 @@ codex
 ```text
 请实现 md2word 任务 **REL-703：迁移和灰度启用**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/REL-703`
 发布阶段：`R7（发布收口）`
 依赖任务：REL-701
@@ -14671,7 +14671,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **REL-703：迁移和灰度启用** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/REL-703`
 依赖任务：REL-701
 
@@ -14708,7 +14708,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ## 使用前
 
 ```bash
-cd /Users/sc/PycharmProjects/md2word
+cd ${PROJECT_ROOT}
 git status --short
 git switch main
 git pull --ff-only
@@ -14725,7 +14725,7 @@ codex
 ```text
 请为 md2word 任务 **REL-704：Runbook、OpenAPI、最终签字** 完成 Trellis 规划。本会话只做调查和规划，不修改业务代码，不执行 `task.py start`，不提交，不 push。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/REL-704`
 发布阶段：`R7（发布收口）`
 依赖任务：REL-703
@@ -14846,7 +14846,7 @@ codex
 ```text
 请实现 md2word 任务 **REL-704：Runbook、OpenAPI、最终签字**。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/REL-704`
 发布阶段：`R7（发布收口）`
 依赖任务：REL-703
@@ -15011,7 +15011,7 @@ Trellis 状态：保持 `in_progress`，人工验收前不要 archive
 ```text
 我已经人工审查并接受 **REL-704：Runbook、OpenAPI、最终签字** 的实现、测试证据和残余风险。
 
-仓库根目录：`/Users/sc/PycharmProjects/md2word`
+仓库根目录：`${PROJECT_ROOT}`
 建议分支：`md2word/REL-704`
 依赖任务：REL-703
 

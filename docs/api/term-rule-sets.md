@@ -433,6 +433,6 @@ Preflight blocking 返回 `400`，`detail` 结构：
 
 ## 相关条目
 
-- [term-rules.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rules.md)
-- [term-rule-categories.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-categories.md)
-- [templates.md](/Users/sc/PycharmProjects/md2word/docs/api/templates.md)
+- [term-rules.md](term-rules.md)
+- [term-rule-categories.md](term-rule-categories.md)
+- [templates.md](templates.md)
