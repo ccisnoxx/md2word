@@ -53,7 +53,7 @@ Business domains live under `app/domains/<domain>/`. The exact file set varies b
 
 Examples:
 
-- `app/domains/document_jobs/` has `models.py`, `schemas.py`, `router.py`, `service.py`, `repository.py`, `workflow.py`, `execution.py`, `translation_execution.py`（翻译批次执行协作者，由 `execution.py` 持有）, `render_execution.py`（Word 渲染执行协作者，由 `execution.py` 持有）, `recovery.py`, and incident routers.
+- `app/domains/document_jobs/` has `models.py`, `schemas.py`, `router.py`, `service.py`, `repository.py`, `workflow.py`, `execution.py`, `translation_execution.py`（翻译批次执行协作者，由 `execution.py` 持有）, `render_execution.py`（Word 渲染执行协作者，由 `execution.py` 持有）, `mineru_execution.py`（MinerU 解析与回调执行协作者，由 `execution.py` 持有）, `recovery.py`, and incident routers.
 - `app/domains/jobs/` 保留正式 DocumentJob 共用的模型、资源快照、路径、事件端口及 MinerU callback router；旧服务、调度、状态机和未挂载路由已删除。
 - `app/domains/files/` splits upload service, retention, quota policy, cleanup, validation, repository, schemas, and router.
 

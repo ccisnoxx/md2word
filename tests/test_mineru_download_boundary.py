@@ -274,7 +274,7 @@ class MinerUDownloadBoundaryTests(unittest.TestCase):
         runtime.mineru_config_service.update_credentials(
             api_token="synthetic-rotated-api", uid="synthetic-rotated-uid", updated_by="boundary-test",
         )
-        for factory in (runtime.document_job_execution_service._build_mineru_client,):
+        for factory in (runtime.document_job_execution_service.mineru._build_mineru_client,):
             with self.subTest(factory=factory.__qualname__):
                 client = factory()
                 self.addCleanup(client.session.close)
@@ -319,9 +319,9 @@ class MinerUDownloadBoundaryTests(unittest.TestCase):
             with self.subTest(redirect=redirect):
                 runtime = self.make_runtime(self.root / str(redirect))
                 execution = runtime.document_job_execution_service
-                client = execution._build_mineru_client()
+                client = execution.mineru._build_mineru_client()
                 self.addCleanup(client.session.close)
-                execution.mineru_client_factory = lambda: client
+                execution.mineru.mineru_client_factory = lambda: client
                 url = START_URL if redirect else f"https://evil.test/result.zip?signature={SECRET}"
                 transport = DownloadTransport([(302, f"https://evil.test/result.zip?signature={SECRET}", b"redirect", False)])
                 with patch.object(client, "upload_files_batch", return_value=("batch-boundary", [])), patch.object(
@@ -338,9 +338,9 @@ class MinerUDownloadBoundaryTests(unittest.TestCase):
             with self.subTest(redirect=redirect):
                 runtime = self.make_runtime(self.root / str(redirect), callback=True)
                 execution = runtime.document_job_execution_service
-                client = execution._build_mineru_client()
+                client = execution.mineru._build_mineru_client()
                 self.addCleanup(client.session.close)
-                execution.mineru_client_factory = lambda: client
+                execution.mineru.mineru_client_factory = lambda: client
                 transport = DownloadTransport([(302, f"https://evil.test/result.zip?signature={SECRET}", b"redirect", False)])
                 with patch.object(client, "upload_files_batch", return_value=("batch-boundary", [])), patch.object(
                     client, "query_batch_extract_results", return_value={

@@ -36,12 +36,12 @@ async def receive_mineru_callback(
         verify_mineru_callback_identity(request, runtime)
         normalized_payload = verify_mineru_callback_request(payload)
         verify_mineru_callback_result_url(normalized_payload, runtime)
-        document_job = runtime.document_job_execution_service.find_job_for_mineru_callback(normalized_payload)
+        document_job = runtime.document_job_execution_service.mineru.find_job_for_mineru_callback(normalized_payload)
         if document_job is None:
             raise FileNotFoundError("document_job not found for MinerU callback")
         verify_mineru_callback_checksum_for_job(normalized_payload, document_job, runtime)
         document_job, _callback_message, _created, should_enqueue = (
-            runtime.document_job_execution_service.enqueue_mineru_callback_for_job(
+            runtime.document_job_execution_service.mineru.enqueue_mineru_callback_for_job(
                 document_job,
                 normalized_payload,
                 trace_id=trace_id,
