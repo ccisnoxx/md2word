@@ -3,9 +3,16 @@ doc_type: system-architecture
 status: target-with-current-baseline
 baseline_commit: e51e6ccd129f59d1b372dfc6907def1fd6bb5cd8
 last_reviewed: 2026-10-03
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  本批仅阅读全文、核对用途和原字段：目标模块边界与历史当前拓扑混排；保留 e51e6ccd 与 2026-11-06 局部复核，不给全篇换新基线。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
 ---
 
 # 系统架构
+
+目标模块边界与历史当前拓扑混排；保留 e51e6ccd 与 2026-11-06 局部复核，不给全篇换新基线。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](../engineering/documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
 
 > **局部复核（2026-11-06，源码基线 `79f20cef`）**：第 2 节按 B05 第 3、4 步更新旧 Jobs 运行时移除边界，并更新第 7.2、8 节的 Codec/Validator 接入事实。其余章节、拓扑与目标描述仍沿用 `e51e6ccd129f59d1b372dfc6907def1fd6bb5cd8` / 2026-10-03 的历史基线，未作全面复核；页首 `baseline_commit` 和 `last_reviewed` 保持历史值。
 

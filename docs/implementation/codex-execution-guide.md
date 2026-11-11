@@ -2,9 +2,16 @@
 doc_type: ai-development-guide
 status: executable
 last_reviewed: 2026-10-03
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  本批仅阅读全文、核对用途和原字段：复杂任务执行指引与模板；按当前 AGENTS/实际任务选择必要检查，不自动扩成全仓测试或提交授权。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
 ---
 
 # Codex + Trellis 执行指南
+
+复杂任务执行指引与模板；按当前 AGENTS/实际任务选择必要检查，不自动扩成全仓测试或提交授权。具体授权、任务范围和验证选择以当前 AGENTS.md 与批准任务为准；文档治理、分支整理或收尾不自动触发应用测试、构建或发布检查，模板也不构成提交、推送或部署授权。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](../engineering/documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
 
 ## 1. 目的
 

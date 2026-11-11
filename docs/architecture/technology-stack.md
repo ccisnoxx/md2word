@@ -2,9 +2,16 @@
 doc_type: technology-stack
 status: current-and-target
 last_reviewed: 2026-10-03
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  本批仅阅读全文、核对用途和原字段：技术约束仍维护；表内旧版本说明不证明当前安装版本，实际依赖入口是 requirements/锁与 frontend package 文件。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
 ---
 
 # 技术栈与技术约束
+
+技术约束仍维护；表内旧版本说明不证明当前安装版本，实际依赖入口是 requirements/锁与 frontend package 文件。实际依赖输入以 requirements.txt、运行锁与前端 package/lock 文件为准；镜像安装链见 [P0 部署说明](../deploy/p0-docker-deployment.md#依赖锁与构建输入)。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](../engineering/documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
 
 ## 1. 后端
 

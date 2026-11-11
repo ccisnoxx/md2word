@@ -4,9 +4,16 @@ status: target-compatible-extension
 contract: document-ir
 current_schema: document-ir/v2
 last_reviewed: 2026-10-03
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  本批仅阅读全文、核对用途和原字段：v2 兼容扩展合同；保留当前结构示例与 IR-204 回执专项语义，具体当前实现另见对账。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
 ---
 
 # DocumentIR 合同
+
+v2 兼容扩展合同；保留当前结构示例与 IR-204 回执专项语义，具体当前实现另见对账。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](../engineering/documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
 
 ## 1. 设计目的
 
