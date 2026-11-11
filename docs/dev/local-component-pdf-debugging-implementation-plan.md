@@ -6,9 +6,16 @@ status: current
 summary: md2word 本地电子元器件 PDF direct/en2zh 调试第一阶段实施计划和运行闭环。
 tags: [conversion, mineru, regression, pycharm, translation]
 last_reviewed: 2026-06-26
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # 本地电子元器件 PDF 调试实施计划
+
+本页维护本地 PDF 调试的阶段目标与操作闭环；“准入条件”、质量矩阵和后续扩展是待按批次证明的要求，不能当作已经满足的验收结果。本批只对照脚本入口/参数声明，执行与证据记录按 [本地调试说明](local-conversion-sandbox.md)。
 
 ## 当前阶段目标
 

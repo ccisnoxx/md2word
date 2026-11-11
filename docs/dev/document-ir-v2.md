@@ -6,9 +6,16 @@ status: current
 summary: DocumentIR v2 layout-aware schema contract for MinerU to Word rendering.
 tags: [document-ir, mineru, parser, renderer, layout]
 last_reviewed: 2026-06-03
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # DocumentIR v2
+
+本页维护 v2 布局字段与兼容性开发参考，应结合 [DocumentIR 合同](../contracts/document-ir-contract.md) 及实际模型/转换入口阅读。本批核对文档用途与导航，未逐字段重验模型兼容、翻译或 Word 输出。
 
 DocumentIR v2 extends the P0 v1 contract with layout facts from MinerU. It keeps
 parser facts separate from Word output decisions: the renderer owns Word-specific

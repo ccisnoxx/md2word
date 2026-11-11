@@ -1,3 +1,9 @@
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  顶层索引用途、当前 v1 挂载和原字段的静态核对；entries/guides/OpenAPI 及原 status 保留，不认证索引完整性或仓库外消费者。原索引差异与工作区内容身份见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md；未导出 OpenAPI、执行接口或发布检查。
+
 doc_type: api-manifest
 status: current
 project: md2word_file

@@ -6,9 +6,16 @@ status: current
 summary: 面向集成方说明如何通过 Term Rule Set API 编辑草稿、发布术语规则版本、切默认版本、回滚和理解审计边界。
 tags: [backend, term-rules, resource-versioning, audit]
 last_reviewed: 2026-05-29
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # Term Rule Set 版本管理指南
+
+本页维护术语规则集版本管理的集成程序；示例版本、鉴权头和发布动作需结合 [Term Rule Sets API](../api/term-rule-sets.md) 的当前合同使用。本批只核对维护入口，未执行读写请求、发布或回滚。
 
 ## 概述
 

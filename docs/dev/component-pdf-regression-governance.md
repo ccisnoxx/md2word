@@ -6,9 +6,16 @@ status: current
 summary: 电子元器件 PDF 的品牌/分类样例治理与本地回归流程。
 tags: [conversion, mineru, regression, samples, datasheet]
 last_reviewed: 2026-06-26
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # 电子元器件 PDF 样例回归治理
+
+本页维护电子元器件 PDF 的本地样例治理与回归程序；样例加入条件、质量分级和命令是操作要求，不是本次已运行或验收通过的记录。本批仅静态对照脚本入口/参数，实际批次请另填 [人工验收模板](../../tests/fixtures/component_pdf_samples/acceptance-record-template.md)。
 
 ## 目的
 

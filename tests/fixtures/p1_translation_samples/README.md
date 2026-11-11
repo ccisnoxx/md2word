@@ -1,4 +1,14 @@
+---
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
+---
+
 # P1 Translation Acceptance Samples
+
+本页维护 P1 英译中样例与 formal beta 执行程序；样本清单、目标数量和预期检查不是本批验收结果。本批只对照 manifest 与脚本参数，实际证据请按 [P1 验收模板](acceptance-record-template.md) 记录，未执行翻译或签字。
 
 本目录用于 P1 英文 PDF 英译中实验链路和人工质量验收。`manifest.yaml` 维护样本清单，`acceptance-record-template.md` 记录术语命中、结构不变性和人工质量反馈。
 

@@ -6,9 +6,16 @@ status: current
 summary: P0 Golden Sample 人工验收记录模板。
 tags: [testing, golden-sample, pdf, word]
 last_reviewed: 2026-05-29
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # Golden Sample 人工验收记录模板
+
+本页是 Golden Sample 人工验收与机器可读签字模板；空白结果、示例时间、job/hash 和 reviewer 不能当作真实签字。新批次必须绑定实际制品与人工结论，程序见 [P0 联调说明](../../../docs/testing/pdf-to-word-p0-integration-guide.md)；本批未执行脚本或填写验收结果。
 
 ## 回归批次
 

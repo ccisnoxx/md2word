@@ -6,9 +6,16 @@ status: current
 summary: 当前 md2word 后端开发文档索引，区分可直接依赖的现行文档与仅保留占位的 deferred 主题。
 tags: [backend, docs, onboarding, index]
 last_reviewed: 2026-06-30
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # 后端开发文档索引
+
+本页是后端开发资料导航；阅读具体页面时，以其 `doc_status`、用途和适用范围为准，原推荐次序不赋予草稿或占位页现行合同效力。文档维护规则见 [文档治理说明](../engineering/documentation-governance.md)。
 
 ## 推荐阅读顺序
 

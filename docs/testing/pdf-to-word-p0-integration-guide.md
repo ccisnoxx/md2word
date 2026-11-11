@@ -6,9 +6,16 @@ status: current
 summary: 内部人员按步骤完成 PDF 上传、建任务、查状态、下载和排错。
 tags: [integration, pdf, word, api, worker]
 last_reviewed: 2026-06-17
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # PDF 到 Word P0 内部联调说明
+
+本页维护 P0 人工联调和 Golden 签字程序，不是本批运行报告。本批只静态核对入口与脚本参数；上传授权应以 [Files API](../api/files.md) 当前合同为准，原外部 presigned URL 条件不证明该路径现已启用；新运行的环境、结果及签字须另行记录。
 
 ## 前置条件
 

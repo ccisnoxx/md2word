@@ -6,9 +6,16 @@ status: current
 summary: md2word 前后端联调计划和验收口径，覆盖 mock/contract-first、接口完成标准、前端接入顺序和线上端到端验收。
 tags: [testing, integration, frontend, backend, acceptance, document-jobs]
 last_reviewed: 2026-06-17
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # md2word 前后端联调计划与验收口径
+
+本页维护联调计划、验收口径与空白记录模板；第 9 节是 2026-06-10 的原执行声明，只覆盖其中写明的 mock/定向检查范围。本批未重跑这些检查或真实主链路；当前执行程序见 [P0 联调说明](pdf-to-word-p0-integration-guide.md)。
 
 ## 1. 联调原则
 

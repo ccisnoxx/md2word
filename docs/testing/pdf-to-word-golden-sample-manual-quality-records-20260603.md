@@ -6,9 +6,16 @@ status: current
 summary: 2026-06-03 hostdzire 真实回归 4 个 Golden Sample DOCX 的人工质量记录。
 tags: [testing, golden-sample, pdf, word, quality-triage]
 last_reviewed: 2026-06-03
+doc_status: historical
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文原时间、报告/占位用途、历史结论与当前阅读入口的静态核对；未重开原二进制或执行历史命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # Golden Sample 人工质量记录（2026-06-03）
+
+本页保存 2026-06-03、run `20260603T070724Z` 的四样本人工质量 triage；原环境、job、结构数据及“未通过 P0 质量”的结论仅适用于该批次。本批只复核文档范围，未重开原制品或重做验收；新批次程序见 [P0 联调说明](pdf-to-word-p0-integration-guide.md)，其他历史发布记录见 [Golden 验收报告](pdf-to-word-golden-sample-acceptance-report.md)。
 
 ## 1. 批次与检查方式
 

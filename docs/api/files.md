@@ -20,9 +20,16 @@ source_files:
 summary: Files API 提供 PDF 上传授权、后端代理上传、文件 metadata 查询、Admin-only 文件库搜索、metadata 保留期管理、quota policy dry-run、受保护的过期文件物理删除、signed cleanup run 执行合同、手动 scheduler dry-run 和 durable run history。
 tags: [files, api, pdf, upload, retention, search, quota]
 last_reviewed: 2026-06-07
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 ## 概述
+
+本页维护文件上传、元数据与保留期的 API 参考。本批仅静态核对路由挂载与声明入口，未逐字段复核响应、权限、副作用或真实请求；示例和原验收声明仍按各自记录范围解释。
 
 Files API 挂在 `/api/v1/files` 下，当前只面向登录用户。P0 PDF -> Word 流程先通过它登记并上传 PDF，再把返回的 `file_id` 传给 `/api/v1/document-jobs`。
 

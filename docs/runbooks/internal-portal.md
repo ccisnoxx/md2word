@@ -6,9 +6,16 @@ status: current
 summary: md2word 正式公司内部门户的产品边界、角色、页面/API 地图、部署配置和账号运营说明。
 tags: [internal-portal, frontend, backend, auth, deploy, operations]
 last_reviewed: 2026-06-21
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # md2word 正式内部门户运行说明
+
+本页维护内部门户角色、页面/API 地图与账号运营程序；本批只核对静态入口，没有启动门户或执行账号/部署操作。B02 后的构建输入与版本化镜像应按 [P0 Docker 部署说明](../deploy/p0-docker-deployment.md#依赖锁与构建输入) 阅读，原 `compose up --build` 示例不构成新镜像构建步骤或验收。
 
 ## 1. 产品边界
 

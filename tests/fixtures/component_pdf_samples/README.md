@@ -1,4 +1,14 @@
+---
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
+---
+
 # 电子元器件 PDF 样例
+
+本页维护本地组件 PDF 样例的组织与记录方法，不代表本批回归通过。原“只在 app/conversion 修复”的职责提示应结合 [现行组件治理说明](../../../docs/dev/component-pdf-regression-governance.md) 阅读，正式转换规则归属 DocumentIR、renderer 与共享 DOCX 规则；本批不改原步骤或执行命令。
 
 这个目录按品牌和元器件分类沉淀电子元器件 PDF 回归样例。它用于本地转换能力加固和反复排版回归，不替代 P0 Golden Sample 发布门禁。
 

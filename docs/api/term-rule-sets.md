@@ -16,9 +16,16 @@ source_files:
 summary: Term-rule-sets API 在 MySQL resource service 下提供术语规则集 draft、结构化 draft rule CRUD、diff/preflight、import/export、publish、set-default、rollback 和成功动作审计。
 tags: [term-rules, resource-versioning, api, audit]
 last_reviewed: 2026-06-21
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途与当前 v1 挂载/声明入口的局部静态核对；未逐字段认证 schema、权限、副作用或真实请求。工作区内容身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 ## 概述
+
+本页维护术语规则集版本的 API 参考。本批仅静态核对路由挂载与声明入口，未逐字段复核响应、权限、副作用或真实请求；示例和原验收声明仍按各自记录范围解释。
 
 当前 `term-rule-sets` 统一挂在 `/api/v1/term-rule-sets` 下，用于管理术语规则集的草稿、结构化 draft 规则、diff、发布前校验、导入导出、发布版本、默认指针和回滚。
 

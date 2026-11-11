@@ -6,9 +6,16 @@ status: current
 summary: 在正式项目中用 PyCharm 运行本地 MinerU 转 DOCX 调试。
 tags: [conversion, mineru, sandbox, regression, pycharm]
 last_reviewed: 2026-10-21
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # 本地 MinerU 转 DOCX 调试入口
+
+本页维护正式项目内的 MinerU 调试适配入口、质量矩阵和视觉证据程序。本批仅静态核对仓库脚本/参数声明；本地输入、模型密钥、外部工具与版本化插件路径的可用性未验证，文中命令和历史 sandbox 资产说明不代表新运行已完成。
 
 ## 当前决定
 

@@ -6,9 +6,16 @@ status: current
 summary: gs-003 / OPA228_P1.pdf 真实链路生成 DOCX 的人工结构质量 triage。
 tags: [testing, golden-sample, pdf, word, quality-triage]
 last_reviewed: 2026-06-02
+doc_status: historical
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文原时间、报告/占位用途、历史结论与当前阅读入口的静态核对；未重开原二进制或执行历史命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # gs-003 DOCX 质量 triage
+
+本页保存 2026-06-02、run `20260602T071017Z` 的 gs-003 triage 与旧 sandbox 基线；原缺陷、命令和结论按当时范围保留，不推断当前仍存在或已修复。本批未复现旧运行；当前调试入口见 [本地转换说明](../dev/local-conversion-sandbox.md)，新验收见 [P0 联调说明](pdf-to-word-p0-integration-guide.md)。
 
 ## 1. 样本与产物
 

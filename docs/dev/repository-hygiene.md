@@ -1,3 +1,11 @@
+---
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  既有正文与工具入口/参数声明的局部静态对照；仅追加元数据，原扫描和制品结论未重新执行验证。原文及输入身份见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
+---
+
 # 仓库卫生检查
 
 本仓库使用标准库检查器与原生 Git `pre-commit` 钩子，在本地提交前检查实际暂存内容。Gitleaks 是固定版本的开发工具，不加入应用运行依赖，不安装 pre-commit 框架，也不配置 GitHub Actions 或 CI。
