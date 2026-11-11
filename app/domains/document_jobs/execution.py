@@ -47,7 +47,7 @@ from app.domains.document_jobs.repository import (
 )
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRWordRenderer
-from app.services.renderer.evidence import build_renderer_event_summary
+from app.services.renderer.render_event_summary import build_renderer_event_summary
 from app.domains.translation.audit import TranslationAuditService
 from app.domains.translation.modes import is_translation_document_job_mode
 from app.domains.translation.document_ir_translator import (

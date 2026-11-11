@@ -42,7 +42,7 @@ from app.services.document_ir.layout_signals import pdf_point_bbox
 from app.services.document_ir.models import DocumentIR
 from app.services.preview.models import PreviewPolicy
 from app.services.preview.page_mapping import PageMapping
-from app.services.renderer.evidence import controlled_quality_flags
+from app.services.renderer.render_event_summary import controlled_quality_flags
 
 MAX_IR_BYTES = 64 * 1024 * 1024
 MAX_BLOCKS = 100000

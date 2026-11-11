@@ -41,7 +41,7 @@ from app.core.errors import ApiError
 from app.api.errors import api_error_response
 from app.domains.document_jobs.service import NewGenerationRequestUnavailable
 from app.domains.files.models import DocumentFileRecord
-from app.services.renderer.evidence import build_renderer_event_summary, controlled_quality_flags
+from app.services.renderer.render_event_summary import build_renderer_event_summary, controlled_quality_flags
 from app.domains.files.schemas import DocumentFileSummaryResponse
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import translation_mode_for_document_job_mode

@@ -24,7 +24,7 @@ from app.domains.files.retention import DocumentFileRetentionPlanner
 from app.domains.resources.models import utc_now
 from app.infrastructure.persistence import build_file_persistence_adapters, build_sqlite_persistence_adapters
 from app.services.document_ir.models import DocumentIR
-from app.services.renderer.evidence import build_renderer_evidence
+from app.services.renderer.render_evidence import build_renderer_evidence
 from tests import test_database_job_repository as persistence
 from tests import test_fastapi_jobs_backend as fixtures
 from tests import test_document_job_execution_stages as stages

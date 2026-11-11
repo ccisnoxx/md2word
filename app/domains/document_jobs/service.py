@@ -104,7 +104,7 @@ from app.services.document_ir.table_reference_assets import (
     CHECKSUM_RE, INLINE_MIME_TYPES, RASTER_EXTENSIONS, TABLE_REFERENCE_ROLE,
     DecodedTableReference, decode_table_references,
 )
-from app.services.renderer.evidence import is_valid_table_rendering_evidence
+from app.services.renderer.render_event_summary import is_valid_table_rendering_evidence
 from app.services.auth.models import AuthenticatedUser
 
 

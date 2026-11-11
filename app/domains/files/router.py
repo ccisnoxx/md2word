@@ -782,7 +782,7 @@ def _build_document_file_response(record: DocumentFileRecord) -> DocumentFileRes
     payload = record.model_dump(mode="python")
     if record.file_type == "generated_word" and (
             "renderer_content_contract_version" in record.metadata or "formula_source_coverage" in record.metadata):
-        from app.services.renderer.evidence import build_renderer_event_summary
+        from app.services.renderer.render_event_summary import build_renderer_event_summary
 
         # 声明损坏或未知版本也走同一白名单，不能退回原始私有 metadata。
         payload["metadata"] = build_renderer_event_summary(record.metadata)

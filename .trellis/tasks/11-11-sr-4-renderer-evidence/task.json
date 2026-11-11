@@ -3,7 +3,7 @@
   "name": "sr-4-renderer-evidence",
   "title": "拆分超大 Renderer 与 Evidence 模块",
   "description": "evidence.py 三分、render_to_result 分阶段、Mixin 按职责拆分，DOCX 字节等价",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

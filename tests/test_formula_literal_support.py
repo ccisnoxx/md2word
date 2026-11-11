@@ -26,7 +26,8 @@ from app.services.renderer.docx_quality import (
     validate_formula_report,
     verify_docx_formula_report,
 )
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.render_evidence import build_renderer_evidence
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.services.renderer.word_renderer import DocumentIRWordRenderer
 
 

@@ -12,7 +12,7 @@ from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import (
     DocumentIR, DocumentIRBlock, DocumentIRBlockLayout, DocumentIRMetadata, DocumentIRPage,
 )
-from app.services.renderer.evidence import build_renderer_event_summary
+from app.services.renderer.render_event_summary import build_renderer_event_summary
 from app.services.renderer.table_renderer import TableRenderError
 from app.services.renderer.word_renderer import FAILURE_CONTEXT_ATTRIBUTE, DocumentIRWordRenderer
 from tests import test_fastapi_jobs_backend as fixtures

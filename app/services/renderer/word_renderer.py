@@ -127,7 +127,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         config_content = config_path.read_bytes() if config_path is not None else None
         template_content = template_path.read_bytes() if template_path is not None else None
         template_config = self._load_template_config(document_ir, config_path, options, content=config_content)
-        from app.services.renderer.evidence import render_contract_failure
+        from app.services.renderer.render_evidence_validation import render_contract_failure
         logo_path = self._resolve_asset_path(template_config.header.logo_path, config_path)
         logo_content = logo_path.read_bytes() if template_config.header.enabled and logo_path is not None and logo_path.exists() else None
         from app.services.renderer.resource_identity import normalized_resource_identity

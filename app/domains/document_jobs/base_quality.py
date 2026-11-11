@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.services.document_ir.artifact_validator import MinerUValidationReport
 from app.services.document_ir.mineru_package import DEFAULT_POLICY
 from app.services.renderer.docx_quality import validate_formula_report
-from app.services.renderer.evidence import ensure_renderer_integrity
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.services.tables.evidence import ISSUE_CODES, read_table_evidence
 from app.services.tables.models import canonical_sha256
 

@@ -18,7 +18,8 @@ from app.domains.resources.models import utc_now
 from app.domains.jobs.models import JobResourceSnapshot
 from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.integrity import DocumentIntegrityError
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.render_evidence import build_renderer_evidence
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
 from tests import test_database_job_repository as persistence
 from tests import test_fastapi_jobs_backend as fixtures

@@ -442,7 +442,7 @@ def verify_native_content(document, content: bytes, table_plan, formula_report, 
 def build_v2_content_evidence(document, content, layout, *, coverage, formula_report, image_report,
                               expected_template_version_id=None, expected_generation_policy=None):
     """先认证全源覆盖，再进入原物理公式/图片门；不预先执行 legacy 表数或库存。"""
-    from app.services.renderer.evidence import build_renderer_aggregate_evidence
+    from app.services.renderer.render_evidence import build_renderer_aggregate_evidence
     from app.services.renderer.logical_table_plan import build_content_table_plan
     from app.services.renderer.layout_plan import build_layout_plan
     from app.services.renderer.table_content_evidence import _table_rendering_evidence, _build_table_evidence
