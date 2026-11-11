@@ -39,7 +39,7 @@ from app.domains.document_jobs.models import (
 )
 from app.core.errors import ApiError
 from app.api.errors import api_error_response
-from app.domains.document_jobs.service import NewGenerationRequestUnavailable
+from app.domains.document_jobs.use_cases.common import NewGenerationRequestUnavailable
 from app.domains.files.models import DocumentFileRecord
 from app.services.renderer.evidence import build_renderer_event_summary, controlled_quality_flags
 from app.domains.files.schemas import DocumentFileSummaryResponse
@@ -139,7 +139,7 @@ def create_document_job(
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobCreateResponse:
     _ensure_document_job_creation_ready(runtime)
-    job = runtime.document_job_service.create_job(
+    job = runtime.document_job_use_cases.submission.create_job(
         user=user,
         source_file_id=payload.source_file_id,
         mode=payload.mode,
@@ -216,7 +216,7 @@ def list_document_jobs(
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentJobListResponse:
-    result = runtime.document_job_service.list_jobs(
+    result = runtime.document_job_use_cases.queries.list_jobs(
         user=user,
         page=page,
         page_size=page_size,
@@ -262,7 +262,7 @@ def bulk_retry_document_jobs(
     items: list[DocumentJobBulkItemResponse] = []
     for job_id in job_ids:
         try:
-            job = runtime.document_job_service.retry_job(
+            job = runtime.document_job_use_cases.submission.retry_job(
                 job_id,
                 user=user,
                 reason=payload.reason,
@@ -301,7 +301,7 @@ def bulk_archive_document_jobs(
     items: list[DocumentJobBulkItemResponse] = []
     for job_id in job_ids:
         try:
-            job = runtime.document_job_service.archive_job(job_id, user=user, trace_id=trace_id)
+            job = runtime.document_job_use_cases.lifecycle_commands.archive_job(job_id, user=user, trace_id=trace_id)
         except ApiError as exc:
             items.append(_build_document_job_bulk_failure(job_id, exc))
             continue
@@ -329,7 +329,7 @@ def bulk_cancel_document_jobs(
     items: list[DocumentJobBulkItemResponse] = []
     for job_id in job_ids:
         try:
-            job = runtime.document_job_service.cancel_job(job_id, user=user, trace_id=trace_id)
+            job = runtime.document_job_use_cases.lifecycle_commands.cancel_job(job_id, user=user, trace_id=trace_id)
         except ApiError as exc:
             items.append(_build_document_job_bulk_failure(job_id, exc))
             continue
@@ -350,12 +350,12 @@ def get_document_job(
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentJobResponse:
-    service = runtime.document_job_service
-    job = service.get_job(job_id, user=user)
+    use_cases = runtime.document_job_use_cases
+    job = use_cases.access.get_job(job_id, user=user)
     response = _build_document_job_response(runtime, user, job)
     if job.status == "failed":
         # 仅详情读取事件；列表不做逐行事件查询。
-        response.failure_diagnostic = project_failure_diagnostic(job, service.list_events(job_id, user=user))
+        response.failure_diagnostic = project_failure_diagnostic(job, use_cases.queries.list_events(job_id, user=user))
     return response
 
 
@@ -365,7 +365,7 @@ def get_document_job_events(
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentJobEventListResponse:
-    events = runtime.document_job_service.list_events(job_id, user=user)
+    events = runtime.document_job_use_cases.queries.list_events(job_id, user=user)
     return DocumentJobEventListResponse(
         job_id=job_id,
         items=[_build_document_job_event_response(event) for event in events],
@@ -378,7 +378,7 @@ def get_document_job_files(
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentJobFileListResponse:
-    files = runtime.document_job_service.list_files(job_id, user=user)
+    files = runtime.document_job_use_cases.queries.list_files(job_id, user=user)
     return DocumentJobFileListResponse(
         job_id=job_id,
         files=[_build_document_file_summary_response(file) for file in files],
@@ -391,7 +391,7 @@ def get_document_job_translation_batches(
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentJobTranslationBatchListResponse:
-    job, batches = runtime.document_job_service.get_translation_batch_snapshot(job_id, user=user)
+    job, batches = runtime.document_job_use_cases.queries.get_translation_batch_snapshot(job_id, user=user)
     generation = job.retry_count
     execution = runtime.document_job_execution_service.translation_batches.summarize_translation_generation(job, batches)
     row_dispositions = {
@@ -433,7 +433,7 @@ def get_document_job_callback_message_summary(
 ) -> DocumentJobCallbackMessageSummaryResponse:
     """返回任务级 callback message 观测摘要，不暴露 callback payload。"""
 
-    runtime.document_job_service.get_job(job_id, user=user)
+    runtime.document_job_use_cases.access.get_job(job_id, user=user)
     observation = runtime.document_job_recovery_service.build_callback_observation(job_id)
     return DocumentJobCallbackMessageSummaryResponse(**observation.to_summary())
 
@@ -445,7 +445,7 @@ def get_document_job_translation_qa(
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentJobTranslationQaResponse:
-    return runtime.document_job_service.get_translation_qa(job_id, user=user, limit=limit)
+    return runtime.document_job_use_cases.translation_qa.get_translation_qa(job_id, user=user, limit=limit)
 
 
 @router.patch("/{job_id}/translation-qa", response_model=DocumentJobTranslationQaUpdateResponse)
@@ -456,7 +456,7 @@ def update_document_job_translation_qa(
     user: AuthenticatedUser = Depends(require_current_user),
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobTranslationQaUpdateResponse:
-    job = runtime.document_job_service.update_translation_qa(
+    job = runtime.document_job_use_cases.translation_qa.update_translation_qa(
         job_id,
         user=user,
         qa_status=payload.status,
@@ -464,7 +464,7 @@ def update_document_job_translation_qa(
         note=payload.note,
         trace_id=trace_id,
     )
-    job, actions = runtime.document_job_service.build_job_read_view(job, user=user)
+    job, actions = runtime.document_job_use_cases.read_model.build_job_read_view(job, user=user)
     return DocumentJobTranslationQaUpdateResponse(
         job_id=job.id,
         qa=_build_translation_qa_state_response(job),
@@ -481,7 +481,7 @@ def retry_document_job(
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobRetryResponse:
     reason = payload.reason if payload is not None else None
-    job = runtime.document_job_service.retry_job(
+    job = runtime.document_job_use_cases.submission.retry_job(
         job_id,
         user=user,
         reason=reason,
@@ -519,7 +519,7 @@ def clone_document_job(
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobCloneResponse:
     request_payload = payload or DocumentJobCloneRequest()
-    job = runtime.document_job_service.clone_job(
+    job = runtime.document_job_use_cases.submission.clone_job(
         job_id,
         user=user,
         reason=request_payload.reason,
@@ -565,7 +565,7 @@ def cancel_document_job(
     user: AuthenticatedUser = Depends(require_current_user),
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobCancelResponse:
-    job = runtime.document_job_service.cancel_job(job_id, user=user, trace_id=trace_id)
+    job = runtime.document_job_use_cases.lifecycle_commands.cancel_job(job_id, user=user, trace_id=trace_id)
     runtime.audit_service.record(
         actor=_actor_from_user(user),
         action="document_job.cancel",
@@ -588,7 +588,7 @@ def preview_delete_document_job(
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_admin_user),
 ) -> DocumentJobDeletePreviewResponse:
-    plan = runtime.document_job_service.preview_delete_job(job_id, user=user)
+    plan = runtime.document_job_use_cases.lifecycle_commands.preview_delete_job(job_id, user=user)
     return _build_document_job_delete_preview_response(plan)
 
 
@@ -600,7 +600,7 @@ def delete_document_job(
     user: AuthenticatedUser = Depends(require_admin_user),
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobDeleteExecuteResponse:
-    plan = runtime.document_job_service.delete_job(
+    plan = runtime.document_job_use_cases.lifecycle_commands.delete_job(
         job_id,
         user=user,
         reason=payload.reason,
@@ -631,7 +631,7 @@ def archive_document_job(
     user: AuthenticatedUser = Depends(require_current_user),
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobArchiveResponse:
-    job = runtime.document_job_service.archive_job(job_id, user=user, trace_id=trace_id)
+    job = runtime.document_job_use_cases.lifecycle_commands.archive_job(job_id, user=user, trace_id=trace_id)
     runtime.audit_service.record(
         actor=_actor_from_user(user),
         action="document_job.archive",
@@ -654,7 +654,7 @@ def unarchive_document_job(
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobUnarchiveResponse:
     restored_at = utc_now()
-    job = runtime.document_job_service.unarchive_job(job_id, user=user, trace_id=trace_id)
+    job = runtime.document_job_use_cases.lifecycle_commands.unarchive_job(job_id, user=user, trace_id=trace_id)
     runtime.audit_service.record(
         actor=_actor_from_user(user),
         action="document_job.unarchive",
@@ -682,7 +682,7 @@ def list_document_job_table_references(
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobTableReferenceListResponse:
     """列出当前权威 IR 的表格参考图，不公开内部存储定位。"""
-    result = runtime.document_job_service.list_table_references(job_id, user=user, block_id=block_id)
+    result = runtime.document_job_use_cases.table_references.list_table_references(job_id, user=user, block_id=block_id)
     response.headers["Cache-Control"] = "private, no-store"
     runtime.audit_service.record(
         actor=_actor_from_user(user), action="document_job.table_reference_list", target_type="document_job",
@@ -715,7 +715,7 @@ def read_document_job_table_reference(
     trace_id: str = Depends(get_trace_id),
 ) -> Response:
     """逐次鉴权并代理 local/S3 内容，不签发匿名 URL 或重定向。"""
-    result = runtime.document_job_service.read_table_reference_content(
+    result = runtime.document_job_use_cases.table_references.read_table_reference_content(
         job_id, asset_id, user=user, generation=generation, ir_file_id=ir_file_id, disposition=disposition)
     runtime.audit_service.record(
         actor=_actor_from_user(user), action="document_job.table_reference_read", target_type="document_job",
@@ -738,8 +738,8 @@ def create_document_job_download_url(
     user: AuthenticatedUser = Depends(require_current_user),
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobDownloadUrlResponse:
-    job, file = runtime.document_job_service.get_file_for_download(job_id, user=user, file_id=file_id)
-    policy = runtime.document_job_service.build_download_policy(job, file)
+    job, file = runtime.document_job_use_cases.downloads.get_file_for_download(job_id, user=user, file_id=file_id)
+    policy = runtime.document_job_use_cases.read_model.build_download_policy(job, file)
     expires_seconds = runtime.settings.oss_download_presign_expires_seconds
     if file.file_type.startswith("word_preview_"):
         expires_seconds = preview_download_ttl(
@@ -754,7 +754,7 @@ def create_document_job_download_url(
         token = _build_download_token(runtime, job_id=job.id, file_id=file.id, expires_at=expires_at)
         base_url = _externalize_url(str(request.url_for("download_document_job_result", job_id=job.id)), request=request)
         download_url = f"{base_url}?token={token}"
-    runtime.document_job_service.record_download_authorized(
+    runtime.document_job_use_cases.downloads.record_download_authorized(
         job,
         file,
         policy=policy,
@@ -793,7 +793,7 @@ def download_document_job_result(
     runtime: AppRuntime = Depends(get_runtime),
 ):
     file_id = _verify_download_token(runtime, job_id=job_id, token=token)
-    job, file = runtime.document_job_service.get_file_for_authorized_download(job_id, file_id=file_id)
+    job, file = runtime.document_job_use_cases.downloads.get_file_for_authorized_download(job_id, file_id=file_id)
     if file.storage_provider == "s3":
         expires_seconds = runtime.settings.oss_download_presign_expires_seconds
         if file.file_type.startswith("word_preview_"):
@@ -822,7 +822,7 @@ def _build_document_job_response(
     available_actions: dict[str, DocumentJobAvailableActionResponse] | None = None,
 ) -> DocumentJobResponse:
     if available_actions is None:
-        job, available_actions = runtime.document_job_service.build_job_read_view(job, user=user)
+        job, available_actions = runtime.document_job_use_cases.read_model.build_job_read_view(job, user=user)
     return DocumentJobResponse(
         **{**job.model_dump(mode="python"), **translation_qa_projection(job)},
         translation_mode=translation_mode_for_document_job_mode(job.mode),
@@ -1093,7 +1093,7 @@ def get_document_job_quality(
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentQualityResponse:
     """读取后端权威质量摘要、有效复核与可用动作。"""
-    return runtime.document_job_service.get_document_quality(job_id, user=user)
+    return runtime.document_job_use_cases.quality_review.get_document_quality(job_id, user=user)
 
 
 @_quality_review_router.get("/{job_id}/quality/tables", response_model=DocumentQualityTablesResponse,
@@ -1106,7 +1106,7 @@ def get_document_job_quality_tables(
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentQualityTablesResponse:
     """分页读取严格认证后、经过白名单投影的表格证据。"""
-    return runtime.document_job_service.get_document_quality_tables(job_id, user=user, limit=limit, cursor=cursor)
+    return runtime.document_job_use_cases.quality_review.get_document_quality_tables(job_id, user=user, limit=limit, cursor=cursor)
 
 
 @_quality_review_router.get("/{job_id}/quality/pages", response_model=DocumentQualityPagesResponse,
@@ -1119,7 +1119,7 @@ def get_document_job_quality_pages(
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentQualityPagesResponse:
     """读取已有页级报告，保留未检查、不完整与低置信来源。"""
-    return runtime.document_job_service.get_document_quality_pages(job_id, user=user, limit=limit, cursor=cursor)
+    return runtime.document_job_use_cases.quality_review.get_document_quality_pages(job_id, user=user, limit=limit, cursor=cursor)
 
 
 @_quality_review_router.get("/{job_id}/preview", response_model=DocumentPreviewResponse,
@@ -1132,7 +1132,7 @@ def get_document_job_preview_metadata(
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentPreviewResponse:
     """只返回当前预览的已验证元数据和文件 ID，不生产或签发下载链接。"""
-    return runtime.document_job_service.get_document_preview(job_id, user=user, limit=limit, cursor=cursor)
+    return runtime.document_job_use_cases.quality_review.get_document_preview(job_id, user=user, limit=limit, cursor=cursor)
 
 
 @_quality_review_router.get("/{job_id}/review", response_model=DocumentCurrentReviewResponse,
@@ -1143,7 +1143,7 @@ def get_document_job_review(
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentCurrentReviewResponse:
     """读取同一次主件观察对应的有效复核与后端动作。"""
-    return runtime.document_job_service.get_document_review(job_id, user=user)
+    return runtime.document_job_use_cases.quality_review.get_document_review(job_id, user=user)
 
 
 @_quality_review_router.get("/{job_id}/review/history", response_model=DocumentReviewHistoryResponse,
@@ -1156,7 +1156,7 @@ def list_document_job_review_history(
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentReviewHistoryResponse:
     """按固定序号高水位窗口读取追加历史。"""
-    return runtime.document_job_service.get_document_review_history(job_id, user=user, limit=limit, cursor=cursor)
+    return runtime.document_job_use_cases.quality_review.get_document_review_history(job_id, user=user, limit=limit, cursor=cursor)
 
 
 @_quality_review_router.patch("/{job_id}/review", response_model=DocumentReviewUpdateResponse,
@@ -1169,7 +1169,7 @@ def update_document_job_review(
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentReviewUpdateResponse:
     """按客户端观察来源提交一次复核；异常响应不代表记录必然未提交。"""
-    return runtime.document_job_service.submit_document_review_with_source(
+    return runtime.document_job_use_cases.quality_review.submit_document_review_with_source(
         job_id,
         user=user,
         review_status=payload.status,
@@ -1195,7 +1195,7 @@ def list_document_job_review_blocks(
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentReviewBlocksResponse:
     """有限读取当前 IR 的内容导航；筛选不把页级候选当块级缺陷。"""
-    result = runtime.document_job_service.list_document_review_blocks(job_id, user=user, limit=limit,
+    result = runtime.document_job_use_cases.quality_review.list_document_review_blocks(job_id, user=user, limit=limit,
         cursor=cursor, source_page_index=source_page_index, block_type=block_type, problem=problem, severity=severity)
     runtime.audit_service.record(actor=_actor_from_user(user), action="document_job.review_blocks",
         target_type="document_job", target_id=job_id, trace_id=trace_id,
@@ -1216,7 +1216,7 @@ def get_document_job_review_block(
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentReviewBlockDetailResponse:
     """读取已选来源中的内容分片、术语及批次摘要，不触发任何生产者。"""
-    result = runtime.document_job_service.get_document_review_block(job_id, block_id, user=user,
+    result = runtime.document_job_use_cases.quality_review.get_document_review_block(job_id, block_id, user=user,
         snapshot_id=snapshot_id, limit=limit, cursor=cursor)
     runtime.audit_service.record(actor=_actor_from_user(user), action="document_job.review_block",
         target_type="document_job", target_id=job_id, trace_id=trace_id,
@@ -1261,7 +1261,7 @@ def request_document_job_new_generation(job_id: str, payload: DocumentJobNewGene
 ):
     """仅内部 Admin JWT 可显式开始同任务的新代；重放只返回接受事实。"""
     try:
-        result, created = runtime.document_job_service.request_new_generation(job_id, user=user,
+        result, created = runtime.document_job_use_cases.publication.request_new_generation(job_id, user=user,
             request_id=payload.request_id, note=payload.note,
             expected_source=ReviewExpectedSource.model_validate(payload.expected_source.model_dump()), trace_id=trace_id)
     except NewGenerationRequestUnavailable as error:
@@ -1277,7 +1277,7 @@ def get_document_job_generation_request(job_id: str, request_id: UUID, request: 
 ):
     """主库同任务串行读取原 Admin 的接受事实，不补投或补写。"""
     try:
-        return runtime.document_job_service.get_generation_request(job_id, request_id=str(request_id), user=user)
+        return runtime.document_job_use_cases.publication.get_generation_request(job_id, request_id=str(request_id), user=user)
     except NewGenerationRequestUnavailable as error:
         return _new_generation_unavailable_response(request, error)
 
@@ -1298,7 +1298,7 @@ _PUBLICATION_WRITE_RESPONSES = {
 def publish_document(job_id: str, payload: DocumentPublishRequest, response: Response,
                      runtime: AppRuntime = Depends(get_runtime), user: AuthenticatedUser = Depends(require_admin_user),
                      trace_id: str = Depends(get_trace_id)):
-    result, created = runtime.document_job_service.publish_document(job_id, user=user,
+    result, created = runtime.document_job_use_cases.publication.publish_document(job_id, user=user,
         request_id=payload.request_id, note=payload.note, expected_source=payload.expected_source, trace_id=trace_id)
     response.status_code = 201 if created else 200
     return result
@@ -1308,7 +1308,7 @@ def publish_document(job_id: str, payload: DocumentPublishRequest, response: Res
     responses=QUALITY_REVIEW_RESPONSES)
 def list_document_publications(job_id: str, runtime: AppRuntime = Depends(get_runtime),
                                user: AuthenticatedUser = Depends(require_current_user)):
-    return runtime.document_job_service.list_document_publications(job_id, user=user)
+    return runtime.document_job_use_cases.publication.list_document_publications(job_id, user=user)
 
 
 _PUBLICATION_DOWNLOAD_RESPONSES = {
@@ -1365,7 +1365,7 @@ def create_document_publication_download_url(job_id: str, publication_id: str, r
     runtime: AppRuntime = Depends(get_runtime), user: AuthenticatedUser = Depends(require_current_user),
     trace_id: str = Depends(get_trace_id)):
     """签发绑定不可变记录的短期最终件入口，审计失败不交付 URL。"""
-    job, record, file = runtime.document_job_service.get_publication_file_for_download(
+    job, record, file = runtime.document_job_use_cases.publication.get_publication_file_for_download(
         job_id, publication_id, user=user, trace_id=trace_id)
     try:
         expires_seconds = runtime.settings.oss_download_presign_expires_seconds
@@ -1381,18 +1381,18 @@ def create_document_publication_download_url(job_id: str, publication_id: str, r
             base_url = _externalize_url(str(request.url_for("download_document_publication_result",
                 job_id=job.id, publication_id=record.id)), request=request)
             download_url = f"{base_url}?token={token}"
-        runtime.document_job_service.check_publication_download_current(job, record, file)
+        runtime.document_job_use_cases.publication.check_publication_download_current(job, record, file)
     except ApiError as error:
-        runtime.document_job_service.record_publication_download_audit(job, user=user, trace_id=trace_id,
+        runtime.document_job_use_cases.publication.record_publication_download_audit(job, user=user, trace_id=trace_id,
             reason_code=error.reason_code)
         raise
     except Exception as error:
         if not _is_preview_storage_error(error):
             raise
-        runtime.document_job_service.record_publication_download_audit(job, user=user, trace_id=trace_id,
+        runtime.document_job_use_cases.publication.record_publication_download_audit(job, user=user, trace_id=trace_id,
             reason_code="publication_storage_unavailable")
         raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
-    runtime.document_job_service.record_publication_download_audit(job, user=user, trace_id=trace_id, record=record)
+    runtime.document_job_use_cases.publication.record_publication_download_audit(job, user=user, trace_id=trace_id, record=record)
     if expires_at <= utc_now():
         raise ApiError(403, "forbidden", "最终件下载链接已过期，请重新申请。", reason_code="publication_download_token_expired")
     return DocumentPublicationDownloadUrlResponse(publication_id=record.id, job_id=job.id,
@@ -1406,7 +1406,7 @@ def download_document_publication_result(job_id: str, publication_id: str, token
     runtime: AppRuntime = Depends(get_runtime)):
     """能力取件重验记录、descriptor、真实字节和安全路径，不伪造 JWT 审计。"""
     claims = _verify_publication_download_token(runtime, job_id=job_id, publication_id=publication_id, token=token)
-    record, file = runtime.document_job_service.get_publication_file_for_authorized_download(job_id, publication_id,
+    record, file = runtime.document_job_use_cases.publication.get_publication_file_for_authorized_download(job_id, publication_id,
         result_file_id=claims.result_file_id, result_sha256=claims.result_sha256)
     if file.storage_provider == "s3":
         raise ApiError(409, "conflict", "发布结果存储身份已变化。", reason_code="publication_download_source_changed")

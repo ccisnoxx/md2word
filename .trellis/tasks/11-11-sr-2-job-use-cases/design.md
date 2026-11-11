@@ -47,3 +47,16 @@ app/domains/document_jobs/use_cases/
 
 - `test_fastapi_jobs_backend.py`（785KB）是主要的回归网，单次运行时间较长；每步只跑和该用例组相关的测试类，最后一步跑全量。
 - 私有方法之间的隐式调用链很深（例如 `_build_job_read_observation` → `_build_publish_action` → `_verify_publication_result`）。调用图必须在搬移之前完成，避免出现循环依赖。
+
+## 6. 实施定稿（2026-11-11，依据 `research/call-graph.tsv` 与 `tools/plan.py`）
+
+与初稿不同的地方：
+
+- **共享层**：没有采用纯函数模块 `action_rules.py`。动作禁用原因、发布/新代动作和读视图依赖 `settings`、文件仓储与快照服务，因此合并为有状态组件 `read_model.py`（`DocumentJobReadModel`），它是读视图与可用动作的唯一 owner。另外新增两个共享组件：`events.py`（`record_event` 被 7 个组件调用）和 `dispatcher.py`（投递与投递失败收口，submission 和 publication 共用）。`request_snapshot.py` 由用例模块改为共享组件。
+- **公开名**：共享组件中被跨组件调用的私有方法去掉前导下划线。原来的 `_get_job`（仅做授权读取）改名为 `access.get_authorized_job`，以免与返回有效投影的公开方法 `access.get_job` 冲突。`common.py` 中需要跨模块共享的私有名（`UNREAD_RESULT`、`SYSTEM_LOGGER`、`ReviewCommit`、`TableReferenceSnapshot`）公开化；原来的 `_DocumentJobSearchable` 与 `list_query.DocumentJobSearchable` 定义完全相同，删除重复，直接复用后者。
+- **死代码**：8 个方法在全仓库没有任何调用（`_matches_document_job_query`、`_matches_status_filter`、`_matches_translation_qa_status`、`_count_translation_qa_statuses`、`_matches_created_range`、`_document_job_sort_key`、`_snapshot_resource_id`、`_snapshot_resource_version`），不迁移。
+- **迁移方式**：没有按 §4 逐组迁移、多次提交，而是用 `tools/generate.py` 一次性生成全部组件，再一次性切换调用方。原因是方法之间的私有调用链跨越多个组，逐组迁移会产生大量临时的跨类调用；一次切换反而更容易核验。逐字一致性由独立脚本 `tools/verify_moved.py` 核对：165 个方法反向还原后都与 HEAD 中的原方法一致。
+- **构造后替换依赖**：生产代码坚持每个组件显式注入自己用到的依赖，`task_queue`、`job_resource_snapshot_service` 等由多个组件各自持有同一对象。测试在构造后替换依赖时，统一使用 `tests/document_job_use_case_support.py::replace_dependency`，同步到 bundle 中所有持有方。按模块路径 patch `utc_now`、`prepare_publication_evidence` 的写法，改为 `patch_use_case_clock` / `patch_publication_evidence`：对所有导入了该名字的用例模块使用同一个 mock，所以调用计数和 `side_effect` 序列与拆分前一致。
+- **incidents**：`DocumentJobIncidentService` 改为显式注入 `file_repository`、`access`、`read_model`、`queries`、`submission`。
+
+最终模块行数：request_snapshot 527、publication 480、submission 463、translation_qa 448、lifecycle_commands 403、read_model 370、quality_review 360，其余都在 230 行以下。全部在 600 行上限以内。

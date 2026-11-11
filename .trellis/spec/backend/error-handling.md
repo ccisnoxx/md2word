@@ -18,7 +18,7 @@ Evidence:
 - `app/api/errors.py`
 - `app/api/dependencies.py`
 - `app/main.py`
-- `app/domains/document_jobs/service.py`
+- `app/domains/document_jobs/use_cases/`
 - `app/domains/document_jobs/router.py`
 - `app/domains/files/service.py`
 - `tests/test_internal_user_management.py`
@@ -48,8 +48,8 @@ Use `ApiError` from `app/core/errors.py` for service/business failures that shou
 
 Examples:
 
-- `DocumentJobService.get_job()` raises `ApiError(404, "not_found", ...)`.
-- `DocumentJobService.list_jobs()` raises `invalid_request` for illegal filters and sort values.
+- `DocumentJobAccess.get_job()` / `get_authorized_job()` raise `ApiError(404, "not_found", ...)`.
+- `DocumentJobQueries.list_jobs()` raises `invalid_request` for illegal filters and sort values.
 - `FileUploadService.create_upload_authorization()` raises `service_unavailable` when S3 storage is selected without a bucket.
 - `app/api/dependencies.py` raises `unauthorized`, `invalid_token`, `role_forbidden`, and `auth_unconfigured` for auth failures.
 
@@ -242,7 +242,7 @@ Request schema validation is handled by FastAPI/Pydantic. `RequestValidationErro
 Business validation belongs in services and should raise `ApiError`. Examples include:
 
 - File upload metadata/content validation in `app/domains/files/service.py` and `app/domains/files/validation.py`.
-- Document job visibility, state, retry, cancel, delete, and download validation in `app/domains/document_jobs/service.py`.
+- Document job visibility, state, retry, cancel, delete, and download validation in `app/domains/document_jobs/use_cases/`（可见性在 `access.py`，动作禁用原因在 `read_model.py`，命令校验在各用例模块）。
 - Auth and role checks in `app/api/dependencies.py`.
 
 Pydantic model validators are used for record invariants. `DocumentJobRecord._validate_state()` rejects invalid status/stage combinations.

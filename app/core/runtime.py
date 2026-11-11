@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         DocumentJobTranslationBatchRepositoryProtocol,
     )
     from app.domains.document_jobs.recovery import DocumentJobRecoveryService
+    from app.domains.document_jobs.use_cases import DocumentJobUseCases
     from app.domains.files.repository import DocumentFileRepositoryProtocol
     from app.domains.jobs.repository import JobEventRepositoryProtocol
     from app.domains.saved_views.repository import SavedViewRepositoryProtocol
@@ -59,7 +60,7 @@ class AppRuntime:
     translation_audit_service: Any
     term_version_service: Any
     document_word_renderer: Any
-    document_job_service: Any
+    document_job_use_cases: DocumentJobUseCases
     document_job_incident_service: Any
     saved_view_service: Any
     document_job_execution_service: Any

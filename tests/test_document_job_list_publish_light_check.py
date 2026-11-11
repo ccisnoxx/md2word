@@ -9,6 +9,7 @@ from app.domains.document_jobs.publication_evidence import prepare_publication_e
 from tests.document_job_list_query_v2_publication_fixtures import V2PublicationFixture
 from tests import test_fastapi_jobs_backend as support
 from tests import test_document_job_list_query_v2_service as service_fixtures
+from tests.document_job_use_case_support import patch_use_case_clock, patch_publication_evidence
 
 
 class DocumentJobListPublishLightCheckTests(V2PublicationFixture, TestCase):
@@ -17,21 +18,19 @@ class DocumentJobListPublishLightCheckTests(V2PublicationFixture, TestCase):
             with self.subTest(kind=kind), self.publication_runtime(kind=kind) as (
                 runtime, job, admin, user, client, headers, provider,
             ):
-                service = runtime.document_job_service
+                service = runtime.document_job_use_cases
                 admin_headers = support.build_auth_header(client, "admin", "admin-pass")
                 observations = []
-                observe = service._build_job_read_observation
+                observe = service.read_model.build_job_read_observation
 
                 def capture_observation(*args, **kwargs):
                     observation = observe(*args, **kwargs)
                     observations.append(observation)
                     return observation
 
-                with patch("app.domains.document_jobs.service.prepare_publication_evidence",
-                    wraps=prepare_publication_evidence) as prepare, patch.object(
+                with patch_publication_evidence(wraps=prepare_publication_evidence) as prepare, patch.object(
                     runtime.file_upload_service, "read_file_content",
-                    wraps=runtime.file_upload_service.read_file_content) as read, patch.object(
-                    service, "_build_job_read_observation", side_effect=capture_observation):
+                    wraps=runtime.file_upload_service.read_file_content) as read, patch.object(service.read_model, "build_job_read_observation", side_effect=capture_observation):
                     response = client.get("/api/v1/document-jobs", headers=admin_headers)
                 self.assertEqual(response.status_code, 200, response.text)
                 item = response.json()["items"][0]
@@ -48,11 +47,10 @@ class DocumentJobListPublishLightCheckTests(V2PublicationFixture, TestCase):
 
                 # observed_result 只固定主件观察，不能隐式关闭默认深度核验。
                 file = runtime.document_file_repository.get_document_file(job.result_file_id)
-                with patch("app.domains.document_jobs.service.prepare_publication_evidence",
-                    wraps=prepare_publication_evidence) as prepare:
-                    _, actions = service.build_job_read_view(job, user=admin, observed_result=file)
+                with patch_publication_evidence(wraps=prepare_publication_evidence) as prepare:
+                    _, actions = service.read_model.build_job_read_view(job, user=admin, observed_result=file)
                     self.assertTrue(actions["publish"].enabled)
-                    self.assertTrue(service.build_available_actions(job, user=admin)["publish"].enabled)
+                    self.assertTrue(service.read_model.build_available_actions(job, user=admin)["publish"].enabled)
                     preflight = client.get(f"/api/v1/document-jobs/{job.id}/publications", headers=admin_headers)
                 self.assertEqual(prepare.call_count, 3)
                 self.assertEqual(preflight.status_code, 200, preflight.text)
@@ -80,8 +78,7 @@ class DocumentJobListPublishLightCheckTests(V2PublicationFixture, TestCase):
                 with self.subTest(reason=reason), patch.object(
                     runtime.file_upload_service, "read_file_content", side_effect=failure,
                     return_value=b"invalid-publication-content",
-                ) as read, patch("app.domains.document_jobs.service.prepare_publication_evidence",
-                    wraps=prepare_publication_evidence) as prepare:
+                ) as read, patch_publication_evidence(wraps=prepare_publication_evidence) as prepare:
                     listed = client.get("/api/v1/document-jobs", headers=admin_headers)
                     self.assertEqual(listed.status_code, 200, listed.text)
                     list_actions = listed.json()["items"][0]["available_actions"]
@@ -112,7 +109,7 @@ class DocumentJobListPublishLightCheckTests(V2PublicationFixture, TestCase):
                 self.assertEqual(runtime.document_job_repository.get_document_job(job.id), job)
                 self.assertEqual(runtime.document_job_repository.list_document_job_publications(job.id), [])
 
-            with patch("app.domains.document_jobs.service.prepare_publication_evidence") as prepare, patch.object(
+            with patch_publication_evidence() as prepare, patch.object(
                 runtime.file_upload_service, "read_file_content", side_effect=AssertionError("非管理员不得读取正文"),
             ) as read:
                 listed = client.get("/api/v1/document-jobs", headers=headers)
@@ -152,20 +149,18 @@ class DocumentJobListPublishStateTests(TestCase):
                 job, file = self.verified(jobs, files, review=review)
                 if changes:
                     job = jobs.update_document_job(job.id, **changes)
-                service.settings.document_publication_enabled = enabled
+                service.read_model.settings.document_publication_enabled = enabled
                 user = service_fixtures.ADMIN if role == "admin" else service_fixtures.USER
-                with patch("app.domains.document_jobs.service.utc_now", return_value=service_fixtures.NOW), patch(
-                    "app.domains.document_jobs.service.prepare_publication_evidence",
-                    side_effect=AssertionError("列表不得核验发布证据"),
+                with patch_use_case_clock(return_value=service_fixtures.NOW), patch_publication_evidence(side_effect=AssertionError("列表不得核验发布证据"),
                 ) as prepare:
-                    listed = service.list_jobs(user=user, page=1, page_size=20, status_filter=None,
+                    listed = service.queries.list_jobs(user=user, page=1, page_size=20, status_filter=None,
                         include_archived=True)
                     view, actions = listed.items[0]
                     action = actions["publish"]
                     self.assertEqual(action.enabled, reason is None)
                     self.assertEqual(action.disabled_reason_code, reason)
                     if reason is not None:
-                        baseline, expected = service.build_job_read_view(job, user=user)
+                        baseline, expected = service.read_model.build_job_read_view(job, user=user)
                         self.assertEqual(actions, expected)
                         self.assertEqual(view, baseline)
                         self.assertEqual(action.disabled_reason, action.disabled_reasons[0].message)

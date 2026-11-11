@@ -35,7 +35,7 @@ from app.domains.document_jobs.execution import (
 )
 from app.domains.document_jobs.recovery import DocumentJobRecoveryService
 from app.domains.document_jobs.incidents import DocumentJobIncidentService
-from app.domains.document_jobs.service import DocumentJobService
+from app.domains.document_jobs.use_cases import build_document_job_use_cases
 from app.domains.files import FileRetentionPolicyService, FileUploadService
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.page_degradation import PageDegradationPolicy
@@ -224,7 +224,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_job_callback_message_store,
         document_job_task_queue,
     )
-    document_job_service = DocumentJobService(
+    document_job_use_cases = build_document_job_use_cases(
         resolved_settings,
         document_job_repository,
         document_job_event_repository,
@@ -238,7 +238,13 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         word_preview_service=word_preview_service,
         audit_service=audit_service,
     )
-    document_job_incident_service = DocumentJobIncidentService(document_job_service)
+    document_job_incident_service = DocumentJobIncidentService(
+        file_repository=document_file_repository,
+        access=document_job_use_cases.access,
+        read_model=document_job_use_cases.read_model,
+        queries=document_job_use_cases.queries,
+        submission=document_job_use_cases.submission,
+    )
     saved_view_service = SavedViewService(saved_view_repository)
     term_rule_repository = FileTermRuleRepository(resolved_settings.term_rules_store_file)
     term_rule_service = TermRuleService(
@@ -370,7 +376,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         translation_audit_service=translation_audit_service,
         term_version_service=term_version_service,
         document_word_renderer=document_word_renderer,
-        document_job_service=document_job_service,
+        document_job_use_cases=document_job_use_cases,
         document_job_incident_service=document_job_incident_service,
         saved_view_service=saved_view_service,
         document_job_execution_service=document_job_execution_service,

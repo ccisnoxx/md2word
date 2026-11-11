@@ -3,7 +3,7 @@
   "name": "sr-2-job-use-cases",
   "title": "将 document_jobs 任务编排拆为明确的 Use Case/Workflow",
   "description": "DocumentJobService 拆为 use_cases 包，删除上帝服务",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

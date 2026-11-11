@@ -606,7 +606,7 @@ class DocumentJobResultPersistenceTests(TestCase):
             response = client.get(f"/api/v1/document-jobs/{job.id}/download-url", params={"file_id": file_id}, headers=headers)
             self.assertEqual(response.status_code, 409, response.text)
             with self.assertRaises(ApiError):
-                runtime.document_job_service.get_file_for_authorized_download(job.id, file_id=file_id)
+                runtime.document_job_use_cases.downloads.get_file_for_authorized_download(job.id, file_id=file_id)
             token = _build_download_token(runtime, job_id=job.id, file_id=file_id, expires_at=utc_now() + timedelta(minutes=5))
             self.assertEqual(client.get(f"/api/v1/document-jobs/{job.id}/download", params={"token": token}).status_code, 409)
             result = execution.execute_job(job.id)

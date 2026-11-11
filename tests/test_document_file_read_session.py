@@ -10,13 +10,13 @@ from unittest.mock import Mock, patch
 
 from app.core.config import Settings
 from app.core.errors import ApiError
-from app.domains.document_jobs.incidents import DocumentJobIncidentService
-from app.domains.document_jobs.service import DocumentJobService
+from app.domains.document_jobs.use_cases import build_document_job_use_cases
 from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend, MysqlPersistenceConfig
 from app.infrastructure.persistence.mysql.files import MysqlDocumentFileRepository
 from tests.test_document_job_list_query_v2_writers import FakeMysqlConnection
 from tests import test_document_job_list_query_v2_service as fixtures
 from tests.test_document_job_incident_publish_light_check import query_values
+from tests.document_job_use_case_support import build_incident_service, patch_use_case_clock
 
 
 class ReadConnection(FakeMysqlConnection):
@@ -145,7 +145,7 @@ class IncidentReadSessionTests(TestCase):
         fixture = fixtures.DocumentJobListV2ServiceTests()
         with fixture.environment("sqlite") as (jobs, files, service):
             jobs.create_document_job(fixtures.make_job(status="failed", stage="failed"))
-            incidents = DocumentJobIncidentService(service)
+            incidents = build_incident_service(service, files)
             with patch.object(files, "read_session") as session:
                 with self.assertRaises(ApiError):
                     incidents.list_incidents(**query_values(sort="invalid"))
@@ -158,17 +158,16 @@ class IncidentReadSessionTests(TestCase):
                 with original() as reader:
                     yield reader
                 events.append("exit")
-            build = service.build_job_read_view
+            build = service.read_model.build_job_read_view
             def page(*args, **kwargs):
                 self.assertEqual(events, ["enter", "exit"])
                 return build(*args, **kwargs)
-            with patch.object(files, "read_session", session), patch.object(service, "build_job_read_view", page):
+            with patch.object(files, "read_session", session), patch.object(service.read_model, "build_job_read_view", page):
                 self.assertEqual(incidents.list_incidents(**query_values()).total, 1)
 
     def test_first_review_downgrade_cannot_be_promoted_by_later_observation(self):
         fixture = fixtures.DocumentJobListV2ServiceTests()
-        with fixture.environment("sqlite") as (jobs, files, service), patch(
-                "app.domains.document_jobs.service.utc_now", return_value=fixtures.NOW):
+        with fixture.environment("sqlite") as (jobs, files, service), patch_use_case_clock(return_value=fixtures.NOW):
             _, file = fixture.verified(jobs, files, review="blocked")
             reader = SimpleNamespace(get_document_file=Mock(side_effect=[
                 file.model_copy(update={"review_source_revision": 1}), file]),
@@ -177,7 +176,7 @@ class IncidentReadSessionTests(TestCase):
             def session():
                 yield reader
             with patch.object(files, "read_session", session):
-                result = DocumentJobIncidentService(service).list_incidents(**query_values())
+                result = build_incident_service(service, files).list_incidents(**query_values())
             self.assertEqual(result.total, 0)
             self.assertEqual(reader.get_document_file.call_count, 2)
 
@@ -186,10 +185,10 @@ class IncidentReadSessionTests(TestCase):
         connection = ReadConnection(file.model_dump_json())
         files = MysqlDocumentFileRepository(backend(lambda: connection))
         job = fixtures.make_job(status="succeeded", stage="completed", result_file_id=file.id)
-        service = DocumentJobService(Settings.model_construct(),
+        service = build_document_job_use_cases(Settings.model_construct(),
             SimpleNamespace(list_document_jobs=lambda: [job]), SimpleNamespace(), files)
-        with patch("app.domains.document_jobs.service.utc_now", return_value=fixtures.NOW), self.assertRaises(TypeError):
-            DocumentJobIncidentService(service).list_incidents(**query_values())
+        with patch_use_case_clock(return_value=fixtures.NOW), self.assertRaises(TypeError):
+            build_incident_service(service, files).list_incidents(**query_values())
         self.assertEqual(connection.events, ["execute", "commit", "close"])
 
     def test_same_singleton_concurrent_requests_use_separate_sessions(self):
@@ -203,13 +202,13 @@ class IncidentReadSessionTests(TestCase):
             return connection
         files = MysqlDocumentFileRepository(backend(connect))
         job = fixtures.make_job(status="succeeded", stage="completed", result_file_id=file.id)
-        service = DocumentJobService(Settings.model_construct(),
+        service = build_document_job_use_cases(Settings.model_construct(),
             SimpleNamespace(list_document_jobs=lambda: [job]), SimpleNamespace(), files)
-        incidents = DocumentJobIncidentService(service)
-        with patch("app.domains.document_jobs.service.utc_now", return_value=fixtures.NOW), ThreadPoolExecutor(2) as pool:
+        incidents = build_incident_service(service, files)
+        with patch_use_case_clock(return_value=fixtures.NOW), ThreadPoolExecutor(2) as pool:
             futures = [pool.submit(incidents.list_incidents, **query_values()) for _ in range(2)]
             self.assertEqual([future.result(timeout=10).total for future in futures], [0, 0])
         self.assertEqual(len({c.owner for c in connections}), 2)
         self.assertEqual([(c.commits, c.rollbacks, c.closes) for c in connections], [(2, 0, 1), (2, 0, 1)])
-        self.assertIs(service.file_repository, files)
+        self.assertIs(service.access.file_repository, files)
         self.assertIsNone(files._read_connect)
