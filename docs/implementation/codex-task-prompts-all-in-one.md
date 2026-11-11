@@ -1,4 +1,14 @@
+---
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  全文辅助/模板用途、原指令结构与Manifest定义的静态对照；仅追加治理字段和导语，未执行提示词、创建任务、修改状态或验收产品。原文字节、TR-406旧依赖差异及合并关系见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b4-preparation.md；45项实现证据沿用同目录manifest-reconciliation.md原范围。
+---
+
 # md2word Codex 逐任务提示词（合并版）
+
+本页是独立提示词的合并阅读副本；嵌入的命令、目标、状态和“已接受”语句是待实际使用者确认的辅助内容，不代表本批授权或功能完成。原副本与链接保持，不向合并段再复制治理字段或执行状态；定义/AC 见 [原任务清单](codex-task-backlog.md)，状态及依赖门以 [Manifest](codex-task-manifest.yaml) 为准，独立入口见 [提示词索引](codex-prompts/README.md)。
 
 # md2word Codex 逐任务提示词
 
