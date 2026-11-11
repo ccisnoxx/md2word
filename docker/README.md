@@ -3,7 +3,7 @@ doc_status: active
 last_verified_commit: d45e46e1233c3f173fa1d738cf75b3ef7a393eb9
 owner: null
 verification_scope: >-
-  静态对照该提交的 dev/prod Dockerfile、Compose 与 requirements.txt，核对运行锁、wheelhouse、pip 参数和共用镜像声明；未构建、拉取、启动或访问生产。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+  静态对照该提交的 dev/prod Dockerfile、Compose 与 requirements.txt，核对运行锁、wheelhouse、pip 参数和共用镜像声明；未构建、拉取、启动或访问生产。 依据与内容身份：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # docker/README.md: 说明开发与生产 Docker 编排入口。

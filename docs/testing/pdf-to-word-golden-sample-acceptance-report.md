@@ -10,7 +10,7 @@ doc_status: historical
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  仅核对历史报告中的 release 20d496e、run 20260629T070506Z、hostdzire、四样本和签字声明，并区分 2026-06-02/03/24 历史结论；未核看原始运行/签字制品、重跑或认证当前版本。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+  仅核对历史报告中的 release 20d496e、run 20260629T070506Z、hostdzire、四样本和签字声明，并区分 2026-06-02/03/24 历史结论；未核看原始运行/签字制品、重跑或认证当前版本。 依据与内容身份：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # P0 Golden Sample 验收报告

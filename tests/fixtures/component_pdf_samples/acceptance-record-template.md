@@ -3,7 +3,7 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
+  全文说明/空白模板用途与相应 runner 参数、样本清单的局部静态核对；未运行回归、填验收或签字。输入身份见 ../../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # 电子元器件 PDF 人工验收记录

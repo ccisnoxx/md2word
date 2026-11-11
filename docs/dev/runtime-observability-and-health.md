@@ -10,7 +10,7 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
+  全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 ## 日志分层

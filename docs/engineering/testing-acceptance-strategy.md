@@ -6,12 +6,12 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  本批仅阅读全文、核对用途和原字段：分层验收策略和目标样本方案；不是本次检查清单，translation-core 等建议命令须先核实实际支持。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
+  本批仅阅读全文、核对用途和原字段：分层验收策略和目标样本方案；不是本次检查清单，translation-core 等建议命令须先核实实际支持。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
 ---
 
 # 测试与验收策略
 
-分层验收策略和目标样本方案；不是本次检查清单，translation-core 等建议命令须先核实实际支持。按当前项目规则、实际改动与批准任务选择最小有效检查；本文列出的建议命令不自动构成执行授权。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
+分层验收策略和目标样本方案；不是本次检查清单，translation-core 等建议命令须先核实实际支持。按当前项目规则、实际改动与批准任务选择最小有效检查；本文列出的建议命令不自动构成执行授权。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
 
 ## 1. 原则
 

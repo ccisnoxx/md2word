@@ -10,7 +10,7 @@ doc_status: historical
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  全文原时间、报告/占位用途、历史结论与当前阅读入口的静态核对；未重开原二进制或执行历史命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
+  全文原时间、报告/占位用途、历史结论与当前阅读入口的静态核对；未重开原二进制或执行历史命令。依据见 ../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # Deferred: 术语资产 SQL 版本化任务拆分

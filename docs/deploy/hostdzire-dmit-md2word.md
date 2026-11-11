@@ -10,7 +10,7 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  仅核对仓库 Compose 与分层 override 记录的适用边界及维护入口；2026-11-06/09 线上观察保留为原记录，本次未读取线上配置或复核部署结果。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+  仅核对仓库 Compose 与分层 override 记录的适用边界及维护入口；2026-11-06/09 线上观察保留为原记录，本次未读取线上配置或复核部署结果。 依据与内容身份：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # md2word 线上部署记录

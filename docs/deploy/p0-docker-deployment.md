@@ -10,7 +10,7 @@ doc_status: active
 last_verified_commit: d45e46e1233c3f173fa1d738cf75b3ef7a393eb9
 owner: null
 verification_scope: >-
-  仅静态核对该提交的 dev/prod Dockerfile 和 Compose 中依赖安装链、服务、镜像引用与平台声明；制品来源/工具版本、运行配置和线上验收未重新验证。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+  仅静态核对该提交的 dev/prod Dockerfile 和 Compose 中依赖安装链、服务、镜像引用与平台声明；制品来源/工具版本、运行配置和线上验收未重新验证。 依据与内容身份：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # P0 Docker 部署说明

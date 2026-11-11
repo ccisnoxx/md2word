@@ -3,7 +3,7 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  核对文档分层导航、生命周期说明及历史验收入口；链接可达不等于正文能力已验收。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+  核对文档分层导航、生命周期说明及历史验收入口；链接可达不等于正文能力已验收。 依据与内容身份：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # md2word 产品与工程文档

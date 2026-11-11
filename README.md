@@ -3,7 +3,7 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  仅核对产品/运行文档导航、目标与现状边界及历史验收入口；不认证 API、P1/P2 或运行结果。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+  仅核对产品/运行文档导航、目标与现状边界及历史验收入口；不认证 API、P1/P2 或运行结果。 依据与内容身份：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # md2word

@@ -9,12 +9,12 @@ doc_status: historical
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  本批仅阅读全文、核对用途和原字段：2026-10-12 BAS-001 已接受历史报告，绑定 fcea60ff 基线；运行命令/结果/哈希保持。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
+  本批仅阅读全文、核对用途和原字段：2026-10-12 BAS-001 已接受历史报告，绑定 fcea60ff 基线；运行命令/结果/哈希保持。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
 ---
 
 # BAS-001 当前能力与测试基线
 
-2026-10-12 BAS-001 已接受历史报告，绑定 fcea60ff 基线；运行命令/结果/哈希保持。本次未核看全部原制品或重跑历史命令；旧缺口与通过结论不能直接外推到当前源码或部署。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](../engineering/documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
+2026-10-12 BAS-001 已接受历史报告，绑定 fcea60ff 基线；运行命令/结果/哈希保持。本次未核看全部原制品或重跑历史命令；旧缺口与通过结论不能直接外推到当前源码或部署。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](../engineering/documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
 
 ## 1. 结论、身份与证据等级
 

@@ -4,7 +4,7 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  本批只核对顶层文档边界并验证原任务对象、rules 和 status_values 保持；45 项 AC/实现/历史验收对账留待 B2，不据静态符号改变状态。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+  本批只核对顶层文档边界并验证原任务对象、rules 和 status_values 保持；45 项 AC/实现/历史验收对账留待 B2，不据静态符号改变状态。 依据与内容身份：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md。
 schema_version: 1
 project: md2word
 repository_root: ${PROJECT_ROOT}
