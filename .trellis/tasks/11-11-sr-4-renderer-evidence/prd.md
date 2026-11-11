@@ -29,8 +29,8 @@
 
 ## 验收标准
 
-- [ ] `app/services/renderer/` 下没有超过约 550 行的模块；`render_to_result` 不超过约 50 行。
-- [ ] `evidence.py` 已删除，`rg "renderer\.evidence\b|renderer import evidence" app tests scripts` 结果为 0。
-- [ ] 渲染等价性：用第 0 步建立的 fixture 集合，在重构前后分别生成 DOCX，逐个 part 对比，结果完全一致。
-- [ ] 定向测试通过：`test_document_ir_word_renderer_layout`、`test_document_ir_mineru_converter_layout`、`test_formula_rendering`、`test_formula_rendering_compatibility`、`test_formula_literal_support`、`test_image_group_rendering`、`test_two_column_reading_order`、`test_parameter_paragraph_line_breaks`、`test_render_failure_context`、`test_render_page_degradation`、`test_document_ir_layout_contract`、`test_mineru_artifact_validator`、`test_document_job_result_persistence`、`test_document_job_execution_stages`、`test_document_job_delivery_state`、`test_rnd503_dependency_integration`、`test_component_pdf_sample_governance`、`test_conversion_sandbox_dev_tools`。
-- [ ] `word-generation-rules.md` 中引用的 renderer 文件路径都存在，且指向实际 owner。
+- [x] `app/services/renderer/` 下没有超过约 550 行的模块；`render_to_result` 不超过约 50 行。
+- [x] `evidence.py` 已删除，`rg "renderer\.evidence\b|renderer import evidence" app tests scripts` 结果为 0。
+- [x] 渲染等价性：用第 0 步建立的 fixture 集合，在重构前后分别生成 DOCX，逐个 part 对比，结果完全一致。
+- [x] 定向测试通过：`test_document_ir_word_renderer_layout`、`test_document_ir_mineru_converter_layout`、`test_formula_rendering`、`test_formula_rendering_compatibility`、`test_formula_literal_support`、`test_image_group_rendering`、`test_two_column_reading_order`、`test_parameter_paragraph_line_breaks`、`test_render_failure_context`、`test_render_page_degradation`、`test_document_ir_layout_contract`、`test_mineru_artifact_validator`、`test_document_job_result_persistence`、`test_document_job_execution_stages`、`test_document_job_delivery_state`、`test_rnd503_dependency_integration`、`test_component_pdf_sample_governance`、`test_conversion_sandbox_dev_tools`。
+- [x] `word-generation-rules.md` 中引用的 renderer 文件路径都存在，且指向实际 owner。
