@@ -1,3 +1,11 @@
+---
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  仅核对产品/运行文档导航、目标与现状边界及历史验收入口；不认证 API、P1/P2 或运行结果。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+---
+
 # md2word
 
 PDF 到 Word 转换与内部工作台项目。当前 P0 发布主链路是：
@@ -16,6 +24,7 @@ P2 入口是内部单租户规模化与外部化：不扩展为 SaaS 或泛 PDF�
 ## 产品、架构与实施文档
 
 - [文档总入口](docs/README.md)与[文档清单及权威关系](DOCUMENTATION-MANIFEST.md)
+- [文档状态与核验规则](docs/engineering/documentation-governance.md)：区分维护状态、实现事实、计划和历史验收。
 - 产品范围：[PRD](docs/product/prd.md)、[冻结决策与非目标](docs/product/scope-and-decisions.md)
 - 架构：[业务架构](docs/architecture/business-architecture.md)、[系统架构](docs/architecture/system-architecture.md)、[已接受 ADR](docs/decisions/architecture-decisions.md)
 - 实施：[总实施计划](docs/implementation/implementation-plan.md)、[当前差距调查入口](docs/implementation/current-gap-analysis.md)
@@ -23,13 +32,15 @@ P2 入口是内部单租户规模化与外部化：不扩展为 SaaS 或泛 PDF�
 
 PRD 与冻结决策定义产品目标，实施计划和任务清单定义交付步骤；这些文档不表示相关能力已经上线。当前 API 与运行事实仍查阅下方既有文档，代码执行约束遵循 `.trellis/spec/`。任务状态以执行状态清单为准，`review` 表示待人工验收。
 
+文档的 `doc_status` 只表示用途与维护阶段。判断当前能力时，还需核对正文的版本、核验范围和证据；历史报告中的通过结论只适用于所记录的 release/run，不随导航或元数据迁移变成当前版本验收。
+
 ## 发布与联调入口
 
 - 后端运行手册：[docs/runbooks/backend.md](docs/runbooks/backend.md)
 - 线上优先验证流程：[docs/deploy/online-first-validation-workflow.md](docs/deploy/online-first-validation-workflow.md)
 - 正式内部门户说明：[docs/runbooks/internal-portal.md](docs/runbooks/internal-portal.md)
 - P0 内部联调步骤：[docs/testing/pdf-to-word-p0-integration-guide.md](docs/testing/pdf-to-word-p0-integration-guide.md)
-- Golden Sample 状态：[docs/testing/pdf-to-word-golden-sample-acceptance-report.md](docs/testing/pdf-to-word-golden-sample-acceptance-report.md)
+- Golden Sample 历史验收（release `20d496e`）：[docs/testing/pdf-to-word-golden-sample-acceptance-report.md](docs/testing/pdf-to-word-golden-sample-acceptance-report.md)
 - 本地 MinerU PyCharm 配置调试入口：[docs/dev/local-conversion-sandbox.md](docs/dev/local-conversion-sandbox.md)
 - 本地电子元器件 direct/en2zh 调试计划：[docs/dev/local-component-pdf-debugging-implementation-plan.md](docs/dev/local-component-pdf-debugging-implementation-plan.md)
 - 电子元器件样例回归治理：[docs/dev/component-pdf-regression-governance.md](docs/dev/component-pdf-regression-governance.md)

@@ -6,13 +6,29 @@ status: current
 summary: md2word 本地改写、上传 hostdzire、线上验证和 Golden Sample 签字的标准流程。
 tags: [deploy, validation, hostdzire, golden-sample, mysql, celery]
 last_reviewed: 2026-07-22
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  仅对照仓库配置、既有部署记录和脚本参数标明当前入口及 B02 前构建/回滚示例范围；未执行部署或运行门禁，历史环境不是当前观察。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # 线上优先验证流程
 
+## 适用范围与维护入口
+
+本文维护线上验证的证据顺序；历史环境和上线记录不表示本次已观察当前主机。本次只静态核对仓库配置、脚本参数与文档入口，没有执行部署或验收。涉及镜像构建和生产切换时按以下入口处理：
+
+| 内容 | 适用入口与边界 |
+|---|---|
+| B02 后的依赖锁、57 个运行 wheel、版本化 `MD2WORD_IMAGE`、仓库 Compose | [P0 Docker 部署说明](./p0-docker-deployment.md#依赖锁与构建输入)；Git archive 本身不包含 wheelhouse。 |
+| hostdzire 既有生产编排与回滚 | [分层 override 上线记录](./hostdzire-dmit-md2word.md#分层-override-上线当前生产方式)；上线前读取实际文件清单，本批没有复核线上状态。 |
+| 本文保留的 `build/up`、`md2word-p0:latest` 和重建旧 release 回滚示例 | 仅适用于 B02 前的旧镜像配方，不作为新镜像或当前生产切换命令；运行时门禁示例中的 `latest` 也须改用获准验证的实际镜像身份。 |
+| 新一次 Golden/P1/P2 验证 | 下文对应验收步骤；成功结论必须绑定新 release/run 和人工签字，历史报告不自动继承。 |
+
 ## 目标
 
-本流程把 md2word 后续迭代固定为“本地改写、新增代码或文档，上传到 hostdzire 后在线上完整验证”。当前本地机器没有可用的 MySQL、Redis/Celery、API/Worker 完整运行环境，也不作为前端 smoke 或全链路验收目标。
+本流程说明 md2word“本地改写、按授权发布到 hostdzire、在线收集完整链路证据”的顺序。本地是否具备服务环境须按具体任务确认；本流程不把本地检查视为线上 API/Worker、MySQL、Redis/Celery、MinerU 或 Word 验收。纯文档变更只做对应的文档检查。
 
 ## 固定环境
 
@@ -430,7 +446,7 @@ P1 beta 通过证据是 `report.json` / `report.md` 中 `p1_beta_ready=true`。�
 - admin reviewer、最终签字状态和需要延期的质量问题。
 - P1 run id、`en2zh_pdf_to_word` 样本状态、QA evidence、术语命中、debug archive 状态、admin 翻译质量签字和 `p1_beta_ready` 结论。
 
-当前 P0 任务的证据回填位置是 `.trellis/tasks/06-16-p0-word-delivery-quality-beta/acceptance-audit.md`。正式质量结论同步更新 `docs/testing/pdf-to-word-golden-sample-acceptance-report.md`。
+历史 P0 任务曾使用 `.trellis/tasks/06-16-p0-word-delivery-quality-beta/acceptance-audit.md` 回填证据。新一次验证使用对应活动任务的实际证据路径，并按 release/run 追加验收记录；[Golden Sample 报告](../testing/pdf-to-word-golden-sample-acceptance-report.md)中的旧结论继续保留原版本和样本范围。
 
 ## 失败处理
 

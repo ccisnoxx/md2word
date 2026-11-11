@@ -1,6 +1,16 @@
+---
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  核对文档分层导航、生命周期说明及历史验收入口；链接可达不等于正文能力已验收。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+---
+
 # md2word 产品与工程文档
 
 本页导航产品目标与工程文档。职责和冲突处理见[文档清单与权威关系](../DOCUMENTATION-MANIFEST.md)，运行说明见[根 README](../README.md)。目标设计不等于当前已实现能力；当前 API 事实和既有运维资料保留在下方入口。
+
+阅读时先看 `doc_status`、核验版本和 `verification_scope`，再判断正文结论的适用范围。仍维护的目标设计可以是 `active`；历史问题与验收报告保留原版本，不能直接当成当前缺口或当前通过证据。
 
 ## 产品
 
@@ -29,6 +39,7 @@
 
 ## 工程治理
 
+- [文档状态与核验规则](engineering/documentation-governance.md)
 - [测试与验收](engineering/testing-acceptance-strategy.md)
 - [安全、可观测与运维](engineering/security-observability-operations.md)
 
@@ -59,6 +70,8 @@ PRD 与冻结决策定义范围，总实施计划定义阶段，任务清单定�
 - [线上优先验证流程](deploy/online-first-validation-workflow.md)
 
 上述 `api/`、`dev/`、`testing/`、`runbooks/`、`deploy/` 资料继续保留；目标与当前行为的差异由[差距调查](implementation/current-gap-analysis.md)和对应任务核实。
+
+[Golden Sample 历史验收报告](testing/pdf-to-word-golden-sample-acceptance-report.md)记录 release `20d496e` 等历史批次；当前验收按[线上优先验证流程](deploy/online-first-validation-workflow.md)收集新版本证据。差距调查中的未复核条目仍是历史判断，不能据此重复实施。
 
 ## Trellis 父任务模板
 

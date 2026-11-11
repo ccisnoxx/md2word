@@ -1,3 +1,11 @@
+---
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  核对文档职责、权威关系和治理说明入口；不核验各目标能力或推进任务状态。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+---
+
 # 文档清单与权威性
 
 | 路径 | 用途 | 权威性 |
@@ -17,7 +25,8 @@
 | [docs/design/quality-review-release-design.md](docs/design/quality-review-release-design.md) | 自动 QA、人工复核、批准和发布 | 质量交付设计真源 |
 | [docs/engineering/testing-acceptance-strategy.md](docs/engineering/testing-acceptance-strategy.md) | 测试层级、样本和门禁 | 验收策略真源 |
 | [docs/engineering/security-observability-operations.md](docs/engineering/security-observability-operations.md) | 安全、隐私、指标和运维 | 非功能要求真源 |
-| [docs/implementation/current-gap-analysis.md](docs/implementation/current-gap-analysis.md) | 现状能力与目标差距 | 规划输入 |
+| [docs/engineering/documentation-governance.md](docs/engineering/documentation-governance.md) | 文档生命周期、核验字段与证据边界 | 文档维护规则，不替代产品任务状态 |
+| [docs/implementation/current-gap-analysis.md](docs/implementation/current-gap-analysis.md) | 历史差距调查与注明范围的局部复核 | 规划输入，开始任务前重新核对 |
 | [docs/implementation/implementation-plan.md](docs/implementation/implementation-plan.md) | 阶段、依赖、出口和回滚 | 总实施计划真源 |
 | [docs/implementation/codex-task-backlog.md](docs/implementation/codex-task-backlog.md) | 可执行任务清单 | 任务拆分真源 |
 | [docs/implementation/codex-execution-guide.md](docs/implementation/codex-execution-guide.md) | Codex/Trellis 执行规则 | AI 开发入口 |
@@ -41,6 +50,8 @@
 
 文档包包含七类目标文档、执行清单与提示词、父任务模板。既有 `docs/api/`、`docs/dev/`、`docs/testing/`、`docs/runbooks/`、`docs/deploy/` 继续作为当前合同与历史事实资料保留，不因导入目标文档而覆盖或删除。
 
+目录不决定资料的新旧或有效性。目标设计、当前说明和历史报告按各文档的 `doc_status` 与 `verification_scope` 辨认；`active` 不表示能力已实现，历史验收只证明原版本和样本范围。字段含义及维护方法见[文档状态与核验规则](docs/engineering/documentation-governance.md)。
+
 ## 权威性冲突处理
 
 1. 产品范围冲突时，以 [产品 PRD](docs/product/prd.md) 和[冻结决策](docs/product/scope-and-decisions.md) 为准。
@@ -51,3 +62,4 @@
 6. [已接受 ADR](docs/decisions/architecture-decisions.md) 记录架构决策；若与 PRD 或冻结决策存在无法消解的冲突，停止对应任务并明确记录，不自行放宽边界。
 7. [总实施计划](docs/implementation/implementation-plan.md) 定义阶段与出口，[backlog](docs/implementation/codex-task-backlog.md) 定义任务与依赖，[manifest](docs/implementation/codex-task-manifest.yaml) 记录执行状态与实际任务路径。提示词、bootstrap 和历史 task-map 不覆盖这三者。
 8. DOC-001 文档合入不证明目标功能已经实现或测试通过；文档标注的基线保留其原始含义，实际能力由对应任务核验。实现后标记 `review`，只有人工验收才可标记 `done` 或 `skipped_existing`；此前 Trellis 子任务保持 `in_progress`，不 archive。
+9. 文档核验字段不推进任务状态。源码符号存在、历史归档或报告声明与 Manifest 不一致时，先按任务 AC、提交包含关系和验收记录对账，保留证据不足项；不能由文档治理自动改为 `done` 或绕过依赖门。

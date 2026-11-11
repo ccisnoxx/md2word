@@ -1,3 +1,10 @@
+# 文档治理字段只描述本文件的维护与核验范围；不替代任务 AC、执行状态或人工接受。
+# 源码/历史记录与任务状态不一致时先对账，不能由文档迁移自动推进任务或依赖门。
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  本批只核对顶层文档边界并验证原任务对象、rules 和 status_values 保持；45 项 AC/实现/历史验收对账留待 B2，不据静态符号改变状态。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
 schema_version: 1
 project: md2word
 repository_root: ${PROJECT_ROOT}

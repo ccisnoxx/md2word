@@ -6,9 +6,16 @@ status: current
 summary: P0 API 与 document_jobs Worker 共用镜像和根目录 .env 的 Docker Compose 部署说明。
 tags: [deploy, docker, api, worker, mysql, redis]
 last_reviewed: 2026-11-06
+doc_status: active
+last_verified_commit: d45e46e1233c3f173fa1d738cf75b3ef7a393eb9
+owner: null
+verification_scope: >-
+  仅静态核对该提交的 dev/prod Dockerfile 和 Compose 中依赖安装链、服务、镜像引用与平台声明；制品来源/工具版本、运行配置和线上验收未重新验证。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # P0 Docker 部署说明
+
+本文维护仓库 Dockerfile/Compose 的部署配方。本次文档核验只静态对照依赖安装链、服务、镜像引用和平台声明，没有构建或访问生产。hostdzire 的既有运行方式按[分层 override 上线记录](./hostdzire-dmit-md2word.md#分层-override-上线当前生产方式)复核实际清单后执行；本文仓库 Compose 示例不能证明线上正在使用同一编排。
 
 ## 组件
 

@@ -6,9 +6,16 @@ status: current
 summary: md2word 在 dmit + WireGuard + hostdzire 结构下的实际部署和线上验证记录。
 tags: [deploy, nginx, docker, wireguard, hostdzire, dmit]
 last_reviewed: 2026-11-09
+doc_status: active
+last_verified_commit: null
+owner: null
+verification_scope: >-
+  仅核对仓库 Compose 与分层 override 记录的适用边界及维护入口；2026-11-06/09 线上观察保留为原记录，本次未读取线上配置或复核部署结果。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # md2word 线上部署记录
+
+本文继续维护部署入口，并保留带日期的线上观察。2026-11-06 分层 override、2026-11-09 上线及验证结果均为原记录，本次仅核对仓库配置与文字边界，未登录主机或复核当前生效设置。部署时先读取实际 Compose 文件清单、镜像和配置来源；镜像输入按 [P0 部署说明](./p0-docker-deployment.md#依赖锁与构建输入)，既有生产切换按下文[分层 override 上线](#分层-override-上线当前生产方式)。
 
 ## 拓扑
 
