@@ -55,8 +55,8 @@ class RendererFailureContextTests(TestCase):
 
     def test_table_preparation_failure_is_located_by_block(self):
         stub_plan = SimpleNamespace(units=[])
-        with patch("app.services.renderer.word_renderer.build_content_table_plan", return_value=stub_plan), \
-                patch("app.services.renderer.word_renderer.prepare_table_input",
+        with patch("app.services.renderer.render_preparation.build_content_table_plan", return_value=stub_plan), \
+                patch("app.services.renderer.render_preparation.prepare_table_input",
                       side_effect=TableRenderError("table_html_unsupported_structure", block_index=2)), \
                 self.assertRaises(TableRenderError) as caught:
             _render(_document())
@@ -65,7 +65,7 @@ class RendererFailureContextTests(TestCase):
                          ("table_prepare", ["block_0003"], 1))
 
     def test_table_plan_failure_is_located_by_block_index(self):
-        with patch("app.services.renderer.word_renderer.build_content_table_plan",
+        with patch("app.services.renderer.render_preparation.build_content_table_plan",
                    side_effect=TableRenderError("table_render_geometry", block_index=2)), \
                 self.assertRaises(TableRenderError) as caught:
             _render(_document())
@@ -80,7 +80,7 @@ class RendererFailureContextTests(TestCase):
                 ("render_plan", "build_render_plan", ValueError("内部"), DocumentIntegrityError),
                 ("render_plan", "build_render_plan", KeyError("内部"), KeyError)):
             with self.subTest(kind=kind, error=type(error).__name__):
-                with patch(f"app.services.renderer.word_renderer.{target}", side_effect=error), \
+                with patch(f"app.services.renderer.render_preparation.{target}", side_effect=error), \
                         self.assertRaises(expected) as caught:
                     _render(_document())
                 context = getattr(caught.exception, FAILURE_CONTEXT_ATTRIBUTE)
