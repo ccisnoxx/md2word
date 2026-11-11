@@ -14,16 +14,16 @@ Evidence:
 
 ## Runtime Composition
 
-`app/main.py` is the composition root. It builds `Settings`, configures logging, builds persistence adapters, wires services, creates `AppRuntime`, registers error handlers, installs middleware, and includes the v1 API router.
+`app/main.py` is the composition root entry. `build_runtime()` builds `Settings`, configures logging, builds persistence adapters (kept in `app.main` so tests can patch `app.main.build_persistence_adapters`), then calls the per-area assembly functions in `app/composition/` in order — `platform.build_platform_services` → `document_pipeline.build_document_pipeline` → `terminology.build_terminology_services` → `startup.run_startup_bootstrap` → `health.build_observability_services` — and creates `AppRuntime` with explicit keyword arguments. 装配函数只构造对象并返回 frozen dataclass；种子写入与登记等幂等 bootstrap 统一在 `run_startup_bootstrap` 中、全部服务构造之后按固定顺序执行，构造函数不得读取 bootstrap 的产物（顺序依据见 `.trellis/tasks/11-11-sr-3-composition-root/research/bootstrap-order.md`）。
 
 Follow this pattern for runtime dependencies:
 
-- Construct shared services and adapters in `build_runtime()`.
+- Construct shared services in the owning `app/composition/*.py` assembly function; add new bootstrap side effects only to `run_startup_bootstrap`.
 - Store shared dependencies on `AppRuntime` in `app/core/runtime.py`.
 - Read runtime dependencies in routers through `Depends(get_runtime)` from `app/api/dependencies.py`.
 - Avoid constructing repositories, clients, or services directly inside route handlers unless the existing route already owns a narrow local helper.
 
-`create_app()` registers `register_api_error_handlers(app)`, CORS, trace/access logging middleware, 正式 DocumentJob 启动恢复任务, and `api_v1_router`. `app = LazyDefaultApp()` delays reading `.env` and connecting runtime dependencies until the ASGI app is actually called.
+`create_app()` registers `register_api_error_handlers(app)`, CORS, trace/access logging middleware (`app/api/middleware.py::install_trace_logging_middleware`), 正式 DocumentJob 启动恢复任务, and `api_v1_router`. `app = LazyDefaultApp()` delays reading `.env` and connecting runtime dependencies until the ASGI app is actually called.
 
 ## API Layout
 

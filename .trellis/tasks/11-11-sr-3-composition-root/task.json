@@ -3,7 +3,7 @@
   "name": "sr-3-composition-root",
   "title": "拆分 app/main.py 组合根",
   "description": "build_runtime 拆为 app/composition 装配函数与集中 bootstrap",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

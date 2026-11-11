@@ -1,95 +1,27 @@
 # 文件： app/main.py
-# 用途： 组装 FastAPI 应用及当前进程的运行时依赖。
+# 用途： 进程入口：按领域装配函数组装运行时（AppRuntime），并创建 FastAPI 应用。
 
 from __future__ import annotations
 
 import asyncio
-import logging
-import time
 from contextlib import asynccontextmanager
 from typing import Any
-from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_api_error_handlers
+from app.api.middleware import install_trace_logging_middleware
 from app.api.v1.router import router as api_v1_router
-from app.domains.document_jobs.preview import DocumentJobPreviewService
-from app.services.preview.sandbox_adapter import SandboxWordPreviewProvider
+from app.composition.document_pipeline import build_document_pipeline
+from app.composition.health import build_observability_services
+from app.composition.platform import build_platform_services
+from app.composition.startup import run_startup_bootstrap
+from app.composition.terminology import build_terminology_services
 from app.core.config import Settings
 from app.core.logging import configure_logging
 from app.core.runtime import AppRuntime
-from app.domains.term_rules.file_repository import FileTermRuleRepository
 from app.infrastructure.persistence import build_persistence_adapters
-from app.services.health_service import HealthService
-from app.domains.acceptance.service import AcceptanceRunService
-from app.domains.audit.service import AuditService
-from app.services.auth import AuthService
-from app.domains.document_jobs.execution import (
-    CeleryDocumentJobTaskQueue,
-    CeleryDocumentTranslationBatchTaskQueue,
-    DocumentJobExecutionService,
-    EagerDocumentJobTaskQueue,
-    EagerDocumentTranslationBatchTaskQueue,
-)
-from app.domains.document_jobs.recovery import DocumentJobRecoveryService
-from app.domains.document_jobs.incidents import DocumentJobIncidentService
-from app.domains.document_jobs.use_cases import build_document_job_use_cases
-from app.domains.files import FileRetentionPolicyService, FileUploadService
-from app.services.document_ir import MinerUToDocumentIRService
-from app.services.document_ir.page_degradation import PageDegradationPolicy
-from app.infrastructure.pdf_crop import PopplerPdfPageRasterizer, PopplerPdfTableCropProvider
-from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
-from app.domains.mineru.config import MinerUConfigService
-from app.domains.ops.real_alert_delivery import EnvironmentSecretResolver, SlackWebhookAlertDeliveryProvider
-from app.services.renderer import DocumentIRWordRenderer
-from app.domains.resources.service import ResourceVersionService
-from app.domains.saved_views.service import SavedViewService
-from app.domains.term_rules.bootstrap import TermRuleBootstrapService
-from app.domains.term_rules.import_validation import TermRuleImportValidationService
-from app.domains.term_rules.proposals_service import TermRuleProposalService
-from app.domains.term_rules.review_service import TermRuleReviewService
-from app.domains.term_rules.service import TermRuleService
-from app.domains.term_rules.sync_files import TermRuleFileSyncService
-from app.domains.term_rules.versioning_service import TermRuleSetVersionService
-from app.domains.terminology.service import TerminologyReleaseService
-from app.domains.templates.read_service import TemplateReadService
-from app.domains.translation.audit import TranslationAuditService
-from app.domains.translation.document_ir_translator import DocumentIRTranslationService
-from app.domains.translation.provider_config import AiProviderConfigService
-from app.domains.translation.profiles_service import TranslationProfileVersionService
-from app.domains.translation.proposals_service import TranslationTermProposalService
-from app.domains.translation.provider import build_translation_provider
-from app.domains.translation.term_set_version_service import TranslationTermSetVersionService
-from app.domains.translation.term_version_service import TermVersionService
-from app.domains.users.service import InternalUserManagementService
-
-
-def _build_document_job_task_queue(
-    settings: Settings,
-    execution_service: DocumentJobExecutionService,
-):
-    """按配置选择 document_jobs Worker 投递端口。"""
-
-    if settings.document_jobs_worker_backend == "celery":
-        return CeleryDocumentJobTaskQueue(settings)
-    if settings.document_jobs_worker_backend == "eager":
-        return EagerDocumentJobTaskQueue(execution_service)
-    return None
-
-
-def _build_document_translation_batch_task_queue(
-    settings: Settings,
-    execution_service: DocumentJobExecutionService,
-):
-    """按配置选择 translation provider batch task 投递端口。"""
-
-    if settings.document_jobs_worker_backend == "celery":
-        return CeleryDocumentTranslationBatchTaskQueue(settings)
-    if settings.document_jobs_worker_backend == "eager":
-        return EagerDocumentTranslationBatchTaskQueue(execution_service)
-    return None
 
 
 def _validate_runtime_guardrails(settings: Settings) -> None:
@@ -103,302 +35,72 @@ def _validate_runtime_guardrails(settings: Settings) -> None:
 
 
 def build_runtime(settings: Settings | None = None) -> AppRuntime:
-    """构建当前进程共享运行时，并注入 API、任务、文件和只读观测服务依赖。"""
+    """构建当前进程共享运行时：先构造全部服务，再统一执行启动 bootstrap，最后装配健康检查。"""
 
     resolved_settings = settings or Settings()
     _validate_runtime_guardrails(resolved_settings)
     configure_logging(resolved_settings.app_env, resolved_settings.log_format)
-    persistence_adapters = build_persistence_adapters(resolved_settings)
-    repository_backend = persistence_adapters.backend_name
-    job_event_repository = persistence_adapters.job_event_repository
-    audit_event_repository = persistence_adapters.audit_event_repository
-    acceptance_run_repository = persistence_adapters.acceptance_run_repository
-    document_file_repository = persistence_adapters.document_file_repository
-    file_retention_policy_repository = persistence_adapters.file_retention_policy_repository
-    file_retention_cleanup_lock_repository = persistence_adapters.file_retention_cleanup_lock_repository
-    file_retention_cleanup_run_history_repository = persistence_adapters.file_retention_cleanup_run_history_repository
-    document_job_repository = persistence_adapters.document_job_repository
-    document_job_event_repository = persistence_adapters.document_job_event_repository
-    document_job_callback_message_store = persistence_adapters.document_job_callback_message_store
-    document_job_translation_batch_repository = persistence_adapters.document_job_translation_batch_repository
-    internal_user_repository = persistence_adapters.internal_user_repository
-    saved_view_repository = persistence_adapters.saved_view_repository
-    terminology_release_repository = persistence_adapters.terminology_release_repository
-    audit_service = AuditService(audit_event_repository)
-    acceptance_run_service = AcceptanceRunService(acceptance_run_repository)
-    acceptance_run_service.bootstrap_default_runs_if_empty()
-    auth_service = AuthService(resolved_settings, internal_user_repository)
-    internal_user_management_service = InternalUserManagementService(internal_user_repository)
-    file_retention_policy_service = FileRetentionPolicyService(
-        resolved_settings,
-        file_retention_policy_repository,
-        document_file_repository,
-    )
-    file_upload_service = FileUploadService(
-        resolved_settings,
-        document_file_repository,
-        retention_days_resolver=file_retention_policy_service.resolve_retention_days,
-    )
-    document_ir_service = MinerUToDocumentIRService(pdf_crop_provider=PopplerPdfTableCropProvider(),
-                                                    page_rasterizer=PopplerPdfPageRasterizer(),
-                                                    degradation_policy=PageDegradationPolicy(
-                                                        max_page_ratio=resolved_settings.page_degradation_max_ratio,
-                                                        allow_single_page=resolved_settings.page_degradation_allow_single_page))
-    ai_provider_config_service = AiProviderConfigService(resolved_settings)
-    mineru_config_service = MinerUConfigService(resolved_settings)
-    translation_provider = build_translation_provider(
-        resolved_settings,
-        config_resolver=ai_provider_config_service.get_effective_config,
-    )
-    document_ir_translation_service = DocumentIRTranslationService(
-        translation_provider, table_context_enabled=resolved_settings.translation_table_context_enabled,
-    )
-    translation_audit_service = TranslationAuditService(
-        resolved_settings,
-        file_upload_service,
-        config_resolver=ai_provider_config_service.get_effective_config,
-    )
-    term_version_service = TermVersionService(
-        resolved_settings.translation_terms_file,
-        default_term_version_id=resolved_settings.default_translation_term_version_id,
-        repository=persistence_adapters.translation_term_repository,
-    )
-    term_version_service.bootstrap_repository_from_csv_if_empty()
-    resource_version_service = (
-        ResourceVersionService(persistence_adapters.resource_version_repository)
-        if persistence_adapters.resource_version_repository is not None
-        else None
-    )
-    job_resource_snapshot_service = JobResourceSnapshotService(
-        resolved_settings,
-        resource_version_service,
-        persistence_adapters.translation_term_repository,
-    )
-    template_read_service = TemplateReadService(
-        resolved_settings,
-        resource_version_service,
-        audit_service,
-        document_job_repository=document_job_repository,
-    )
-    document_word_renderer = DocumentIRWordRenderer()
-    resolved_settings.page_quality_policy()
-    preview_provider = SandboxWordPreviewProvider(
-        backend=resolved_settings.word_preview_backend, launcher=resolved_settings.word_preview_launcher,
-        profile_path=resolved_settings.word_preview_profile_path, profile_id=resolved_settings.word_preview_profile_id,
-        profile_sha256=resolved_settings.word_preview_profile_sha256,
-    )
-    word_preview_service = DocumentJobPreviewService(
-        resolved_settings, document_job_repository, document_job_event_repository,
-        document_file_repository, file_upload_service, audit_service=audit_service,
-        provider=preview_provider, observer=preview_provider,
-    )
-    document_job_execution_service = DocumentJobExecutionService(
-        resolved_settings,
-        document_job_repository,
-        document_job_event_repository,
-        document_job_callback_message_store,
-        document_job_translation_batch_repository,
-        document_file_repository,
-        file_upload_service,
-        document_ir_service,
-        template_read_service,
-        document_word_renderer,
-        mineru_config_service.get_effective_config,
-        document_ir_translation_service,
-        term_version_service,
-        translation_audit_service,
-        job_resource_snapshot_service,
-        word_preview_service=word_preview_service,
-    )
-    document_job_task_queue = _build_document_job_task_queue(resolved_settings, document_job_execution_service)
-    document_translation_batch_task_queue = _build_document_translation_batch_task_queue(
-        resolved_settings,
-        document_job_execution_service,
-    )
-    document_job_execution_service.translation_batches.set_translation_batch_task_queue(
-        document_translation_batch_task_queue)
-    document_job_recovery_service = DocumentJobRecoveryService(
-        resolved_settings,
-        document_job_repository,
-        document_job_event_repository,
-        document_job_callback_message_store,
-        document_job_task_queue,
-    )
-    document_job_use_cases = build_document_job_use_cases(
-        resolved_settings,
-        document_job_repository,
-        document_job_event_repository,
-        document_file_repository,
-        document_job_task_queue,
-        template_read_service,
-        term_version_service,
-        job_resource_snapshot_service,
-        document_job_translation_batch_repository=document_job_translation_batch_repository,
-        file_upload_service=file_upload_service,
-        word_preview_service=word_preview_service,
-        audit_service=audit_service,
-    )
-    document_job_incident_service = DocumentJobIncidentService(
-        file_repository=document_file_repository,
-        access=document_job_use_cases.access,
-        read_model=document_job_use_cases.read_model,
-        queries=document_job_use_cases.queries,
-        submission=document_job_use_cases.submission,
-    )
-    saved_view_service = SavedViewService(saved_view_repository)
-    term_rule_repository = FileTermRuleRepository(resolved_settings.term_rules_store_file)
-    term_rule_service = TermRuleService(
-        term_rule_repository,
-        resolved_settings.term_rules_runtime_yaml_file,
-        resolved_settings.term_rules_seed_file,
-    )
-    term_rule_import_validation_service = TermRuleImportValidationService()
-    term_rule_file_sync_service = TermRuleFileSyncService(
-        term_rule_repository,
-        resolved_settings.term_rules_runtime_yaml_file,
-        resolved_settings.term_rules_seed_file,
-        repository_backend="file",
-    )
-    term_rule_set_version_service = (
-        TermRuleSetVersionService(
-            repository=term_rule_repository,
-            runtime_yaml_path=resolved_settings.term_rules_runtime_yaml_file,
-            resource_version_service=resource_version_service,
-            audit_service=audit_service,
-            asset_repository=persistence_adapters.term_rule_asset_repository,
-        )
-        if resource_version_service is not None
-        else None
-    )
-    term_rule_proposal_service = (
-        TermRuleProposalService(
-            repository=persistence_adapters.term_rule_proposal_repository,
-            term_rule_service=term_rule_service,
-            term_rule_set_version_service=term_rule_set_version_service,
-            audit_service=audit_service,
-        )
-        if persistence_adapters.term_rule_proposal_repository is not None
-        and term_rule_set_version_service is not None
-        else None
-    )
-    term_rule_review_service = (
-        TermRuleReviewService(
-            repository=persistence_adapters.term_rule_review_repository,
-            term_rule_service=term_rule_service,
-            term_rule_set_version_service=term_rule_set_version_service,
-            audit_service=audit_service,
-        )
-        if persistence_adapters.term_rule_review_repository is not None
-        and term_rule_set_version_service is not None
-        else None
-    )
-    translation_profile_service = (
-        TranslationProfileVersionService(resolved_settings, resource_version_service, audit_service)
-        if resource_version_service is not None
-        else None
-    )
-    translation_term_set_version_service = (
-        TranslationTermSetVersionService(persistence_adapters.translation_term_repository, audit_service)
-        if persistence_adapters.translation_term_repository is not None
-        else None
-    )
-    translation_term_proposal_service = (
-        TranslationTermProposalService(
-            repository=persistence_adapters.translation_term_repository,
-            term_set_version_service=translation_term_set_version_service,
-            audit_service=audit_service,
-        )
-        if persistence_adapters.translation_term_repository is not None
-        and translation_term_set_version_service is not None
-        else None
-    )
-    terminology_release_service = TerminologyReleaseService(
-        terminology_release_repository,
-        translation_term_repository=persistence_adapters.translation_term_repository,
-        resource_version_service=resource_version_service,
-    )
-    if term_rule_set_version_service is not None:
-        term_rule_set_version_service.bootstrap_seed_as_default_if_empty(resolved_settings.term_rules_seed_file)
-    else:
-        TermRuleBootstrapService(
-            term_rule_repository,
-            resolved_settings.term_rules_runtime_yaml_file,
-            resolved_settings.term_rules_seed_file,
-            repository_backend="file",
-        ).bootstrap()
-    if translation_profile_service is not None:
-        translation_profile_service.bootstrap_default_profiles_if_missing()
-    template_read_service.get_default_template_id()
-    template_read_service.bootstrap_manifest_versions()
-    health_service = HealthService(
-        resolved_settings,
-        effective_repository_backend=repository_backend,
-        artifact_storage_backend=resolved_settings.jobs_artifact_storage_backend,
-        document_job_repository=document_job_repository,
-        document_job_callback_message_store=document_job_callback_message_store,
-        internal_user_repository=internal_user_repository,
-        audit_event_repository=audit_event_repository,
-        resource_version_repository=resource_version_service.repository if resource_version_service is not None else None,
-        default_template_id_getter=template_read_service.get_default_template_id,
-        ai_provider_config_service=ai_provider_config_service,
-        mineru_config_service=mineru_config_service,
-    )
-    alert_delivery_provider = SlackWebhookAlertDeliveryProvider()
-    secret_resolver = EnvironmentSecretResolver()
+    # 持久化适配器在此构造（测试按 app.main.build_persistence_adapters 替换后端）。
+    adapters = build_persistence_adapters(resolved_settings)
+    platform = build_platform_services(resolved_settings, adapters)
+    pipeline = build_document_pipeline(resolved_settings, adapters, platform)
+    terminology = build_terminology_services(resolved_settings, adapters, platform)
+    run_startup_bootstrap(resolved_settings, platform, pipeline, terminology)
+    observability = build_observability_services(resolved_settings, adapters, platform, pipeline)
     return AppRuntime(
         settings=resolved_settings,
-        persistence_adapters=persistence_adapters,
-        job_event_repository=job_event_repository,
-        audit_event_repository=audit_event_repository,
-        acceptance_run_repository=acceptance_run_repository,
-        document_file_repository=document_file_repository,
-        file_retention_policy_repository=file_retention_policy_repository,
-        file_retention_cleanup_lock_repository=file_retention_cleanup_lock_repository,
-        file_retention_cleanup_run_history_repository=file_retention_cleanup_run_history_repository,
-        document_job_repository=document_job_repository,
-        document_job_event_repository=document_job_event_repository,
-        document_job_callback_message_store=document_job_callback_message_store,
-        document_job_translation_batch_repository=document_job_translation_batch_repository,
-        internal_user_repository=internal_user_repository,
-        saved_view_repository=saved_view_repository,
-        terminology_release_repository=terminology_release_repository,
-        audit_service=audit_service,
-        acceptance_run_service=acceptance_run_service,
-        auth_service=auth_service,
-        internal_user_management_service=internal_user_management_service,
-        file_upload_service=file_upload_service,
-        file_retention_policy_service=file_retention_policy_service,
-        document_ir_service=document_ir_service,
-        ai_provider_config_service=ai_provider_config_service,
-        mineru_config_service=mineru_config_service,
-        translation_provider=translation_provider,
-        document_ir_translation_service=document_ir_translation_service,
-        translation_audit_service=translation_audit_service,
-        term_version_service=term_version_service,
-        document_word_renderer=document_word_renderer,
-        document_job_use_cases=document_job_use_cases,
-        document_job_incident_service=document_job_incident_service,
-        saved_view_service=saved_view_service,
-        document_job_execution_service=document_job_execution_service,
-        word_preview_service=word_preview_service,
-        document_job_recovery_service=document_job_recovery_service,
-        document_job_task_queue=document_job_task_queue,
-        health_service=health_service,
-        template_read_service=template_read_service,
-        term_rule_service=term_rule_service,
-        term_rule_import_validation_service=term_rule_import_validation_service,
-        term_rule_file_sync_service=term_rule_file_sync_service,
-        term_rule_set_version_service=term_rule_set_version_service,
-        term_rule_proposal_service=term_rule_proposal_service,
-        term_rule_review_service=term_rule_review_service,
-        translation_term_set_version_service=translation_term_set_version_service,
-        translation_term_proposal_service=translation_term_proposal_service,
-        terminology_release_service=terminology_release_service,
-        translation_profile_service=translation_profile_service,
-        resource_version_service=resource_version_service,
-        job_resource_snapshot_service=job_resource_snapshot_service,
-        alert_delivery_provider=alert_delivery_provider,
-        secret_resolver=secret_resolver,
+        persistence_adapters=adapters,
+        job_event_repository=adapters.job_event_repository,
+        audit_event_repository=adapters.audit_event_repository,
+        acceptance_run_repository=adapters.acceptance_run_repository,
+        document_file_repository=adapters.document_file_repository,
+        file_retention_policy_repository=adapters.file_retention_policy_repository,
+        file_retention_cleanup_lock_repository=adapters.file_retention_cleanup_lock_repository,
+        file_retention_cleanup_run_history_repository=adapters.file_retention_cleanup_run_history_repository,
+        document_job_repository=adapters.document_job_repository,
+        document_job_event_repository=adapters.document_job_event_repository,
+        document_job_callback_message_store=adapters.document_job_callback_message_store,
+        document_job_translation_batch_repository=adapters.document_job_translation_batch_repository,
+        internal_user_repository=adapters.internal_user_repository,
+        saved_view_repository=adapters.saved_view_repository,
+        terminology_release_repository=adapters.terminology_release_repository,
+        audit_service=platform.audit_service,
+        acceptance_run_service=platform.acceptance_run_service,
+        auth_service=platform.auth_service,
+        internal_user_management_service=platform.internal_user_management_service,
+        file_upload_service=platform.file_upload_service,
+        file_retention_policy_service=platform.file_retention_policy_service,
+        document_ir_service=pipeline.document_ir_service,
+        ai_provider_config_service=pipeline.ai_provider_config_service,
+        mineru_config_service=pipeline.mineru_config_service,
+        translation_provider=pipeline.translation_provider,
+        document_ir_translation_service=pipeline.document_ir_translation_service,
+        translation_audit_service=pipeline.translation_audit_service,
+        term_version_service=pipeline.term_version_service,
+        document_word_renderer=pipeline.document_word_renderer,
+        document_job_use_cases=pipeline.document_job_use_cases,
+        document_job_incident_service=pipeline.document_job_incident_service,
+        saved_view_service=platform.saved_view_service,
+        document_job_execution_service=pipeline.document_job_execution_service,
+        word_preview_service=pipeline.word_preview_service,
+        document_job_recovery_service=pipeline.document_job_recovery_service,
+        document_job_task_queue=pipeline.document_job_task_queue,
+        health_service=observability.health_service,
+        template_read_service=pipeline.template_read_service,
+        term_rule_service=terminology.term_rule_service,
+        term_rule_import_validation_service=terminology.term_rule_import_validation_service,
+        term_rule_file_sync_service=terminology.term_rule_file_sync_service,
+        term_rule_set_version_service=terminology.term_rule_set_version_service,
+        term_rule_proposal_service=terminology.term_rule_proposal_service,
+        term_rule_review_service=terminology.term_rule_review_service,
+        translation_term_set_version_service=terminology.translation_term_set_version_service,
+        translation_term_proposal_service=terminology.translation_term_proposal_service,
+        terminology_release_service=terminology.terminology_release_service,
+        translation_profile_service=terminology.translation_profile_service,
+        resource_version_service=platform.resource_version_service,
+        job_resource_snapshot_service=pipeline.job_resource_snapshot_service,
+        alert_delivery_provider=observability.alert_delivery_provider,
+        secret_resolver=observability.secret_resolver,
     )
 
 
@@ -434,37 +136,7 @@ def create_app(runtime: AppRuntime | None = None) -> FastAPI:
             allow_headers=["*"],
         )
 
-    access_logger = logging.getLogger("access")
-    system_logger = logging.getLogger("system")
-
-    @app.middleware("http")
-    async def trace_logging_middleware(request: Request, call_next):
-        trace_id = request.headers.get("X-Trace-Id") or uuid4().hex
-        request.state.trace_id = trace_id
-        start = time.perf_counter()
-        try:
-            response = await call_next(request)
-        except Exception:
-            duration_ms = (time.perf_counter() - start) * 1000.0
-            system_logger.exception(
-                "[trace_id=%s method=%s path=%s status=exception duration_ms=%.1f]",
-                trace_id,
-                request.method,
-                request.url.path,
-                duration_ms,
-            )
-            raise
-        duration_ms = (time.perf_counter() - start) * 1000.0
-        response.headers["X-Trace-Id"] = trace_id
-        access_logger.info(
-            "[trace_id=%s method=%s path=%s status_code=%s duration_ms=%.1f]",
-            trace_id,
-            request.method,
-            request.url.path,
-            response.status_code,
-            duration_ms,
-        )
-        return response
+    install_trace_logging_middleware(app)
 
     app.include_router(api_v1_router)
     return app

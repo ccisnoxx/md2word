@@ -36,7 +36,7 @@ The current error response contains:
 - `trace_id`
 - nested `error.code`, `error.message`, `error.status_code`, `error.request_id`, `error.trace_id`
 
-`trace_id` is set by the HTTP middleware in `app/main.py` from `X-Trace-Id` or a generated UUID hex value.
+`trace_id` is set by the HTTP middleware in `app/api/middleware.py` from `X-Trace-Id` or a generated UUID hex value.
 
 ## Application Errors
 
@@ -255,7 +255,7 @@ Only use this pattern when the API response schema explicitly represents per-ite
 
 ## Unexpected Exceptions
 
-The HTTP middleware in `app/main.py` logs unexpected exceptions on the `system` logger with trace, method, path, and duration, then re-raises. 正式阶段失败由 `document_jobs` execution 与 `_failure_policy.py` 更新任务、追加事件并记录脱敏业务错误。
+The HTTP middleware in `app/api/middleware.py` logs unexpected exceptions on the `system` logger with trace, method, path, and duration, then re-raises. 正式阶段失败由 `document_jobs` execution 与 `_failure_policy.py` 更新任务、追加事件并记录脱敏业务错误。
 
 Do not add broad silent `except Exception` blocks that hide errors. If an exception is caught, either convert it to a stable `ApiError`/workflow transition or preserve it in stage/job diagnostic state.
 
