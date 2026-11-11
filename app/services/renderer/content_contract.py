@@ -83,7 +83,7 @@ class FormulaSource:
 
 def cell_math_spans(cell):
     """从 writer 同一确定 native 视图枚举，逐 run 切分不能截断原有数学 base。"""
-    from app.services.renderer.table_renderer import native_cell_parts
+    from app.services.renderer.native_table_renderer import native_cell_parts
     for part in native_cell_parts(cell.runs):
         for span in part.spans:
             yield part.offset + span.start, part.offset + span.end, span

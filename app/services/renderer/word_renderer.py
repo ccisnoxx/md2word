@@ -22,6 +22,7 @@ from app.services.document_ir.models import DocumentIR, DocumentIRAsset, Documen
 from app.services.renderer.formula_renderer import WordFormulaRendererMixin
 from app.services.renderer.image_renderer import WordImageRendererMixin
 from app.services.renderer.list_numbering import WordListNumberingMixin
+from app.services.renderer.native_table_renderer import WordNativeTableRendererMixin
 from app.services.renderer.page_layout_renderer import WordPageLayoutMixin
 from app.services.renderer.image_evidence import caption_bookmark_inventory, new_image_report, finish_image_report
 from app.services.renderer.layout_plan import build_image_plan
@@ -81,7 +82,7 @@ class _RenderContext:
 
 
 class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, WordListNumberingMixin, WordTableRendererMixin,
-                             WordImageRendererMixin, WordPageLayoutMixin):
+                             WordNativeTableRendererMixin, WordImageRendererMixin, WordPageLayoutMixin):
     """P0 Word 渲染器：覆盖标题、段落、基础表格和图片。"""
 
     def render_to_bytes(
