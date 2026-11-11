@@ -24,7 +24,7 @@ from app.services.document_ir.artifact_validator import DEFERRABLE_ISSUE_CODES
 from app.services.document_ir.page_degradation import (
     DEGRADED_REASON_LABELS, NOTICE_RESERVE_EMU, PageDegradationPolicy, drop_degraded_table_groups, replace_degraded_pages,
 )
-from app.services.renderer.evidence import validate_render_result
+from app.services.renderer.render_evidence_validation import validate_render_result
 from app.services.renderer.table_renderer import TableRenderError
 from app.services.document_ir.table_placeholder import PdfCropSource, checksum
 from app.services.renderer.word_renderer import DocumentIRWordRenderer

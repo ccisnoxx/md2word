@@ -18,7 +18,8 @@ from app.conversion.docx_rules.formula import scan_math_spans
 from app.conversion.docx_rules.mineru_content import clean_markdown_document, clean_text
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRWordRenderer
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.render_evidence import build_renderer_evidence
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 
 
 NS = {

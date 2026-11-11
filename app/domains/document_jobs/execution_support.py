@@ -27,7 +27,7 @@ from app.domains.translation.document_ir_translator import DocumentIRTranslation
 from app.domains.translation.integrity import TranslationIntegrityError, TranslationIntegrityEvidence
 from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.table_reference_assets import decode_table_references
-from app.services.renderer.evidence import build_renderer_event_summary
+from app.services.renderer.render_event_summary import build_renderer_event_summary
 
 
 def document_ir_layout_metadata(document_ir: DocumentIR) -> dict[str, Any]:

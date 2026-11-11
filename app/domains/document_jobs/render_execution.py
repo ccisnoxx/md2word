@@ -55,13 +55,15 @@ from app.services.document_ir.table_placeholder import (
 from app.services.document_ir.table_reference_assets import TABLE_REFERENCE_ROLE, decode_table_references
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer, image_evidence
 from app.services.renderer.block_anchors import validate_block_anchor_evidence
-from app.services.renderer.evidence import (
+from app.services.renderer.render_evidence import (
     build_renderer_evidence,
-    build_renderer_event_summary,
-    ensure_renderer_integrity,
-    validate_persisted_render_evidence,
     validate_persisted_renderer_content,
 )
+from app.services.renderer.render_evidence_validation import (
+    ensure_renderer_integrity,
+    validate_persisted_render_evidence,
+)
+from app.services.renderer.render_event_summary import build_renderer_event_summary
 from app.services.renderer.layout_plan import build_layout_plan
 from app.services.tables.evidence import TableEvidenceError
 

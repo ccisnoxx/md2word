@@ -10,6 +10,13 @@
 
 依赖方向：`render_evidence_validation` → `render_evidence`（如果校验时需要重新构建证据）；`render_event_summary` 不依赖另外两个。实施时以函数实际的相互调用为准；如果某个私有 helper 被两个模块使用，就放到被依赖的那一方。
 
+**实施结果（以实际调用为准）**：`build_renderer_evidence` 要调用 `validate_render_result`、`validate_persisted_render_evidence`、`render_contract_failure`，而 `validate_persisted_renderer_content` 要调用 `build_renderer_evidence` 和 `build_renderer_aggregate_evidence`。如果按上表放置，两个模块会互相导入。为了不产生循环导入，做了如下调整：
+
+- `validate_persisted_renderer_content`、`_restore_legacy_docx_quality`、`LEGACY_RENDERER_EVIDENCE_KEYS` 放在 `render_evidence.py`。这三项的实际工作是"按存储字段重建证据，再与存储值比对"。
+- `RENDER_EVIDENCE_CODES` 同时被摘要白名单和 `render_contract_failure` 使用，所以放在被依赖的 `render_event_summary.py`。
+- 最终依赖方向：`render_evidence` → `render_evidence_validation` → `render_event_summary`。三个模块都只在模块顶层导入，没有函数内的反向导入。
+- 原 `evidence.py` 中有一个未使用的 `ensure_integrity` 导入，迁移时去掉了；42 个顶层定义的源码逐字未变。
+
 若 `_validate_render_evidence`（约 220 行）拆完后 `render_evidence_validation.py` 仍超过上限，再按"plan/块证据校验"和"图片/公式/锚点校验"拆成两个私有函数，但仍放在同一模块内，不再新增模块。
 
 ## 2. `render_to_result` 拆分

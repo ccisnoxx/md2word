@@ -33,7 +33,7 @@ from app.domains.files.result_registration import review_source_descriptor
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import is_translation_document_job_mode
 from app.services.auth.models import AuthenticatedUser
-from app.services.renderer.evidence import is_valid_table_rendering_evidence
+from app.services.renderer.render_event_summary import is_valid_table_rendering_evidence
 
 
 class DocumentReviewWriter:

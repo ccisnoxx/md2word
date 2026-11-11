@@ -26,7 +26,8 @@ from app.services.document_ir.models import DocumentIR, DocumentIRMetadata, Docu
 from app.services.document_ir.mineru_converter import MinerUToDocumentIRService
 from app.services.renderer import image_evidence
 from app.services.renderer.docx_quality import analyze_docx_quality_bytes, build_docx_quality_flags
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity, validate_persisted_renderer_content
+from app.services.renderer.render_evidence import build_renderer_evidence, validate_persisted_renderer_content
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.services.renderer.layout_plan import build_image_plan, image_row_metrics, _aligned, IMAGE_GROUP_THRESHOLDS
 from app.services.renderer.word_renderer import DocumentIRWordRenderer, DocumentIRRenderOptions
 

@@ -23,7 +23,8 @@ from app.conversion.docx_rules.formula import (
 )
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock, DocumentIRMetadata
 from app.services.renderer.docx_quality import analyze_docx_quality_bytes, validate_formula_report
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.render_evidence import build_renderer_evidence
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.services.renderer.word_renderer import DocumentIRWordRenderer
 
 NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main", "m": "http://schemas.openxmlformats.org/officeDocument/2006/math"}

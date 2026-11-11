@@ -25,7 +25,8 @@ from app.services.document_ir.models import (
     DocumentIRPage,
 )
 from app.services.document_ir.integrity import DocumentIntegrityError
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.render_evidence import build_renderer_evidence
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.services.renderer.docx_quality import analyze_docx_quality_bytes
 from app.services.renderer.layout_plan import build_layout_plan
 from app.services.renderer.template_config import TemplateConfigPackage
