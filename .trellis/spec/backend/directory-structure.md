@@ -14,7 +14,7 @@ Evidence:
 
 ## Runtime Composition
 
-`app/main.py` is the composition root entry. `build_runtime()` builds `Settings`, configures logging, builds persistence adapters (kept in `app.main` so tests can patch `app.main.build_persistence_adapters`), then calls the per-area assembly functions in `app/composition/` in order — `platform.build_platform_services` → `document_pipeline.build_document_pipeline` → `terminology.build_terminology_services` → `startup.run_startup_bootstrap` → `health.build_observability_services` — and creates `AppRuntime` with explicit keyword arguments. 装配函数只构造对象并返回 frozen dataclass；种子写入与登记等幂等 bootstrap 统一在 `run_startup_bootstrap` 中、全部服务构造之后按固定顺序执行，构造函数不得读取 bootstrap 的产物（顺序依据见 `.trellis/tasks/11-11-sr-3-composition-root/research/bootstrap-order.md`）。
+`app/main.py` is the composition root entry. `build_runtime()` builds `Settings`, configures logging, builds persistence adapters (kept in `app.main` so tests can patch `app.main.build_persistence_adapters`), then calls the per-area assembly functions in `app/composition/` in order — `platform.build_platform_services` → `document_pipeline.build_document_pipeline` → `terminology.build_terminology_services` → `startup.run_startup_bootstrap` → `health.build_observability_services` — and creates `AppRuntime` with explicit keyword arguments. 装配函数只构造对象并返回 frozen dataclass；种子写入与登记等幂等 bootstrap 统一在 `run_startup_bootstrap` 中、全部服务构造之后按固定顺序执行，构造函数不得读取 bootstrap 的产物（顺序依据见 `.trellis/tasks/archive/2026-11/11-11-sr-3-composition-root/research/bootstrap-order.md`）。
 
 Follow this pattern for runtime dependencies:
 

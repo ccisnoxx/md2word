@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # app/composition/startup.py: 进程启动时的幂等种子写入与登记，集中在全部服务构造完成之后执行。
 #
-# 顺序约束（见 .trellis/tasks/11-11-sr-3-composition-root/research/bootstrap-order.md）：
+# 顺序约束（见 .trellis/tasks/archive/2026-11/11-11-sr-3-composition-root/research/bootstrap-order.md）：
 # 下列步骤各自只写自己的存储且"为空才写入"，构造函数不读取它们的产物，因此可以在构造之后统一执行；
 # 步骤之间仍保持拆分前的相对顺序。
 
