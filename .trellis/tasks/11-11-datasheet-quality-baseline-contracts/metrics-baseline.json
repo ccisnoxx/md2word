@@ -1,0 +1,11 @@
+{
+  "schema_version": "datasheet-quality-baseline/v1",
+  "runs": [
+    {"id": "direct-baseline", "observations": "observations.json"},
+    {"id": "direct-header-reviewed", "observations": "table-header-reviewed-observations.json"},
+    {"id": "en2zh-initial-live", "observations": "en2zh-live-observations.json"},
+    {"id": "en2zh-translation-replay", "observations": "en2zh-replay-observations.json"},
+    {"id": "en2zh-live", "observations": "en2zh-rs2g04-live-observations.json"},
+    {"id": "en2zh-header-reviewed", "observations": "en2zh-rs2g04-live-header-reviewed-observations.json"}
+  ]
+}

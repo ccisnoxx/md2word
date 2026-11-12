@@ -61,6 +61,8 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 
 七组指标的算法和缺测规则见[指标合同](design.md#2-指标合同)。从六份已保存观测复算，口径为 `datasheet-quality-observations/v1` 和 `datasheet-quality-metrics/v1`。同一指标按转换模式、样本组和证据层级比较。
 
+[统一复算清单](metrics-baseline.json)已将这六次运行纳入 `datasheet-quality-baseline-report/v1`。每份报告与单独复算逐项一致，原观测 SHA-256 随报告记录。回填接口和缺测说明见[指标实施](metrics-implementation.md)。
+
 | 指标 | 当前有数据的范围及待采集项 |
 | --- | --- |
 | 转换成功率 | 首轮原排版回放 OPA228 对照组 4/4、扩展组 2/3，预期阻断单列。RS2G04 英译中隔离完整链路 1/1。 |

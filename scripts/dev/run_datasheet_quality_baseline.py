@@ -92,16 +92,24 @@ def table_and_token_observations(tables: list[dict], doc, result) -> tuple[dict,
     duplicates = 0
     table_reasons = []
     token_reasons = []
+    source_grid_differences = []
     physical_tables = doc.element.xpath(".//w:tbl")
+    candidates_by_table = []
     for expected in tables:
         pointers = set(expected["source_pointers"])
-        candidates = [unit for unit in native if pointers.intersection(
+        candidates_by_table.append([unit for unit in native if pointers.intersection(
             fragment["source_span"]["json_pointer"] for fragment in unit["fragments"]
-        )]
+        )])
+    claims = Counter(unit["output_table_index"] for candidates in candidates_by_table for unit in candidates)
+    for expected, candidates in zip(tables, candidates_by_table, strict=True):
+        pointers = set(expected["source_pointers"])
         actual = observed.get(candidates[0]["output_table_index"]) if len(candidates) == 1 else None
         if actual is None:
             duplicates += max(len(candidates) - 1, 0)
             table_reasons.append({"id": expected["id"], "reason": "source_table_missing_or_ambiguous"})
+            continue
+        if claims[actual["table_index"]] != 1:
+            table_reasons.append({"id": expected["id"], "reason": "native_table_claimed_by_multiple_annotations"})
             continue
         headers = [i for i, row in enumerate(actual["rows"]) if row["header"]]
         cells = [[(cell["grid_span"], cell["vertical_merge"]) for cell in row["cells"]]
@@ -123,11 +131,15 @@ def table_and_token_observations(tables: list[dict], doc, result) -> tuple[dict,
             and source_grid["header_rows"] == expected["header_rows"]
             and source_merges == set(map(tuple, expected["merges"]))
         )
-        if reasons or not source_matches:
-            table_reasons.append({"id": expected["id"], "reason": ",".join(reasons) or "source_grid",
+        if not source_matches:
+            source_grid_differences.append({"id": expected["id"], "actual_rows": source_grid["rows"],
+                                            "actual_columns": source_grid["columns"],
+                                            "actual_header_rows": source_grid["header_rows"]})
+        # Word 的结构分数以实物为准。源 Grid 差异留作单独的定位证据。
+        if reasons:
+            table_reasons.append({"id": expected["id"], "reason": ",".join(reasons),
                                   "actual_columns": actual["grid_columns"], "actual_rows": len(cells),
-                                  "actual_header_rows": headers, "source_grid_matches": source_matches,
-                                  "source_header_rows": source_grid["header_rows"]})
+                                  "actual_header_rows": headers})
         else:
             matched += 1
         # 网格错位时，实际同坐标的 Token 无法与预期单元格可靠绑定。
@@ -143,7 +155,8 @@ def table_and_token_observations(tables: list[dict], doc, result) -> tuple[dict,
             tokens[kind] += min(found, count)
             extras[kind] += max(found - count, 0)
     return (
-        {"matched": matched, "duplicate": duplicates, "reasons": table_reasons},
+        {"matched": matched, "duplicate": duplicates, "reasons": table_reasons,
+         "source_grid_differences": source_grid_differences},
         {"matched": dict(tokens), "assessed": dict(assessed_tokens),
          "extras": dict(extras), "reasons": token_reasons},
     )

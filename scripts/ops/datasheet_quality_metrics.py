@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
+import re
 from collections import Counter, defaultdict
 from decimal import Decimal
 from pathlib import Path
@@ -15,6 +17,9 @@ from typing import Any
 
 OBSERVATION_VERSION = "datasheet-quality-observations/v1"
 REPORT_VERSION = "datasheet-quality-metrics/v1"
+BASELINE_VERSION = "datasheet-quality-baseline/v1"
+BASELINE_REPORT_VERSION = "datasheet-quality-baseline-report/v1"
+MANUAL_REVIEW_VERSION = "datasheet-quality-manual-reviews/v1"
 GROUP_FIELDS = ("cohort", "evidence_level", "mode")
 BLOCKER_FIELDS = ("code", "scope", "delivery_status")
 VISUAL_LAYOUT_COUNTS = ("overflow", "clipped")
@@ -491,21 +496,126 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict:
     result = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError("原始观测 JSON 包含重复键。")
+            raise ValueError("输入 JSON 包含重复键。")
         result[key] = value
     return result
 
 
+def _read_json(path: Path) -> tuple[dict, str]:
+    content = path.read_bytes()
+    payload = json.loads(content.decode("utf-8"), object_pairs_hook=_unique_object)
+    return _object(payload, "输入 JSON"), hashlib.sha256(content).hexdigest()
+
+
+def _sha256(value: Any, field: str) -> str:
+    digest = _text(value, field)
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise ValueError(f"{field} 必须为 64 位小写十六进制 SHA-256。")
+    return digest
+
+
+def _attach_manual_reviews(observations: dict, manual: dict) -> dict:
+    """以运行、计划项及产物对账人工数据，仅为本次计算叠加。"""
+    if manual.get("schema_version") != MANUAL_REVIEW_VERSION or manual.keys() - {"schema_version", "reviews"}:
+        raise ValueError("人工审核文件版本或字段不受支持。")
+    reviews = _index(manual.get("reviews"), "reviews")
+    plans = _index(observations.get("plan"), "plan")
+    rows = _index(observations.get("observations"), "observations")
+    for key, review in reviews.items():
+        if review.keys() - {"sample_id", "mode", "initial_docx_sha256", "revisions", "edits", "rounds"}:
+            raise ValueError("人工审核记录含有未定义字段。")
+        row = rows.get(key)
+        if plans.get(key, {}).get("expected_outcome") != "normal" or row is None or not _conversion(
+            _optional_object(row, "conversion")
+        )["success"]:
+            raise ValueError("人工审核须绑定到本次计划中已成功且可打开的 DOCX。")
+        if row.get("manual") is not None:
+            raise ValueError("人工审核文件不能覆盖已有人工观测。")
+        initial = _sha256(review.get("initial_docx_sha256"), "reviews.initial_docx_sha256")
+        artifacts = _optional_object(row, "artifacts") or {}
+        recorded = [artifacts[name] for name in ("docx_sha256", "reviewed_docx_sha256")
+                    if artifacts.get(name) is not None]
+        if not recorded or any(initial != digest for digest in recorded):
+            raise ValueError("首次 DOCX 的 SHA-256 与本次运行观测不一致。")
+
+        document_hashes = {initial}
+        for revision in _items(review.get("revisions", []), "reviews.revisions"):
+            digest = _sha256(revision, "reviews.revisions")
+            if digest in document_hashes:
+                raise ValueError("人工审核的产物指纹重复。")
+            document_hashes.add(digest)
+        if "rounds" in review:
+            for item in _items(review["rounds"], "reviews.rounds"):
+                round_ = _object(item, "reviews.round")
+                if _sha256(round_.get("docx_sha256"), "reviews.round.docx_sha256") not in document_hashes:
+                    raise ValueError("审核轮次须绑定到首次 DOCX 或已登记修订产物。")
+        if "edits" in review:
+            for item in _items(review["edits"], "reviews.edits"):
+                edit = _object(item, "reviews.edit")
+                if _text(edit.get("disposition"), "reviews.edit.disposition") not in {"fixed", "reported", "accepted"}:
+                    raise ValueError("人工修改记录的处置必须为 fixed、reported 或 accepted。")
+        measurements = {name: review[name] for name in ("edits", "rounds") if name in review}
+        missing = dict(_optional_object(row, "missing") or {})
+        for field, reason_key in (("edits", "edits"), ("rounds", "review_time")):
+            if field in measurements:
+                missing.pop(reason_key, None)
+        rows[key] = {**row, "manual": measurements, "missing": missing}
+    return {**observations, "observations": list(rows.values())}
+
+
+def _manifest_input(directory: Path, value: Any, field: str) -> Path:
+    path = Path(_text(value, field))
+    if path.is_absolute():
+        raise ValueError(f"{field} 须使用相对于基线清单的路径。")
+    return directory / path
+
+
+def _build_baseline(payload: dict, directory: Path, input_paths: list[Path]) -> dict:
+    """逐次复算相互独立的运行快照，保留每份输入的字节指纹。"""
+    if payload.keys() - {"schema_version", "runs"}:
+        raise ValueError("基线清单含有未定义字段。")
+    runs = _items(payload.get("runs"), "runs")
+    if not runs:
+        raise ValueError("基线清单至少需要一次运行。")
+    reports = []
+    run_ids = set()
+    for item in runs:
+        run = _object(item, "runs")
+        if run.keys() - {"id", "observations", "manual_reviews"}:
+            raise ValueError("基线运行含有未定义字段。")
+        run_id = _text(run.get("id"), "runs.id")
+        if run_id in run_ids:
+            raise ValueError("基线运行 ID 重复。")
+        run_ids.add(run_id)
+        observation_path = _manifest_input(directory, run.get("observations"), "runs.observations")
+        input_paths.append(observation_path)
+        observations, observation_hash = _read_json(observation_path)
+        entry = {"id": run_id, "observations_sha256": observation_hash}
+        if "manual_reviews" in run:
+            manual_path = _manifest_input(directory, run["manual_reviews"], "runs.manual_reviews")
+            input_paths.append(manual_path)
+            manual, entry["manual_reviews_sha256"] = _read_json(manual_path)
+            observations = _attach_manual_reviews(observations, manual)
+        entry["report"] = build_report(observations)
+        reports.append(entry)
+    return {"schema_version": BASELINE_REPORT_VERSION, "runs": reports}
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="按版本化计划复算 Datasheet 质量指标。")
-    parser.add_argument("observations", type=Path, help="样本计划与原始观测 JSON。")
+    parser.add_argument("observations", type=Path, help="单次原始观测或多次运行基线清单 JSON。")
     parser.add_argument("--output", type=Path, help="报告 JSON 路径，默认输出到标准输出。")
     args = parser.parse_args(argv)
     try:
-        if args.output is not None and args.output.resolve() == args.observations.resolve():
-            raise ValueError("报告路径必须与原始观测路径分开。")
-        payload = json.loads(args.observations.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
-        report = build_report(payload)
+        input_paths = [args.observations]
+        payload, _ = _read_json(args.observations)
+        report = (_build_baseline(payload, args.observations.parent, input_paths)
+                  if payload.get("schema_version") == BASELINE_VERSION else build_report(payload))
+        if args.output is not None and any(
+            args.output.resolve() == path.resolve() or args.output.exists() and args.output.samefile(path)
+            for path in input_paths
+        ):
+            raise ValueError("报告路径必须与清单、原始观测和人工审核文件分开。")
         content = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False)
         if args.output is None:
             print(content)

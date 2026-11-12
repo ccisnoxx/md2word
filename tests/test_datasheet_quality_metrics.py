@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import tempfile
 import unittest
+from contextlib import redirect_stderr
+from io import StringIO
 from pathlib import Path
 
-from scripts.ops.datasheet_quality_metrics import OBSERVATION_VERSION, REPORT_VERSION, build_report, main
+from scripts.ops.datasheet_quality_metrics import (
+    BASELINE_REPORT_VERSION,
+    BASELINE_VERSION,
+    MANUAL_REVIEW_VERSION,
+    OBSERVATION_VERSION,
+    REPORT_VERSION,
+    build_report,
+    main,
+)
 
 
 OPENABLE = {"status": "succeeded", "docx_available": True, "docx_openable": True}
@@ -269,6 +281,153 @@ class DatasheetQualityMetricsTests(unittest.TestCase):
             report = json.loads(first_path.read_text(encoding="utf-8"))
             self.assertEqual(report["schema_version"], REPORT_VERSION)
             self.assertEqual(report["metadata"], payload["metadata"])
+
+
+class DatasheetQualityBaselineTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.directory = Path(temp_dir.name)
+        self.initial_docx = "a" * 64
+        self.revised_docx = "b" * 64
+        self.observations = input_payload(
+            [plan("one")],
+            [observed("one", artifacts={"docx_sha256": self.initial_docx},
+                      missing={"edits": "human_signoff_pending", "review_time": "human_signoff_pending"})],
+        )
+        self.run = {"id": "first", "observations": "observations.json", "manual_reviews": "manual.json"}
+        self.review = {"sample_id": "one", "mode": "direct", "initial_docx_sha256": self.initial_docx}
+
+    def write_json(self, name: str, payload: dict) -> Path:
+        path = self.directory / name
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def baseline(self, runs: list[dict] | None = None) -> Path:
+        return self.write_json("baseline.json", {"schema_version": BASELINE_VERSION,
+                                                 "runs": runs if runs is not None else [self.run]})
+
+    def manual(self, reviews: list[dict]) -> Path:
+        return self.write_json("manual.json", {"schema_version": MANUAL_REVIEW_VERSION, "reviews": reviews})
+
+    def report(self, baseline: Path) -> dict:
+        output = self.directory / "report.json"
+        main([str(baseline), "--output", str(output)])
+        return json.loads(output.read_text(encoding="utf-8"))
+
+    def assert_cli_rejected(self, baseline: Path, reason: str, output: Path | None = None) -> None:
+        errors = StringIO()
+        with redirect_stderr(errors), self.assertRaises(SystemExit) as caught:
+            main([str(baseline), "--output", str(output or self.directory / "report.json")])
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn(reason, errors.getvalue())
+
+    def test_baseline_keeps_repeated_sample_attempts_in_separate_reports(self) -> None:
+        raw = self.write_json("observations.json", self.observations).read_bytes()
+        other = input_payload([plan("one")], [observed("one", conversion={"status": "timeout"})])
+        nested = self.directory / "other"
+        nested.mkdir()
+        other_raw = self.write_json("other/observations.json", other).read_bytes()
+        baseline = self.baseline([
+            {"id": "first", "observations": "observations.json"},
+            {"id": "second", "observations": "other/observations.json"},
+        ])
+
+        report = self.report(baseline)
+
+        self.assertEqual(report["schema_version"], BASELINE_REPORT_VERSION)
+        self.assertEqual(report["runs"], [
+            {"id": "first", "observations_sha256": hashlib.sha256(raw).hexdigest(),
+             "report": build_report(self.observations)},
+            {"id": "second", "observations_sha256": hashlib.sha256(other_raw).hexdigest(),
+             "report": build_report(other)},
+        ])
+        self.assertEqual(self.report(baseline), report)
+
+    def test_manual_review_accepts_bound_revision_and_keeps_original_evidence(self) -> None:
+        observation = self.observations["observations"][0]
+        observation["artifacts"] = {"reviewed_docx_sha256": self.initial_docx}
+        path = self.write_json("observations.json", self.observations)
+        before = path.read_bytes()
+        rounds = [
+            {"id": "initial", "reviewer": "a", "docx_sha256": self.initial_docx,
+             "intervals": [{"start_seconds": 0, "end_seconds": 30}]},
+            {"id": "revised", "reviewer": "a", "docx_sha256": self.revised_docx,
+             "intervals": [{"start_seconds": 10, "end_seconds": 40}]},
+        ]
+        manual = self.manual([{
+            **self.review,
+            "revisions": [self.revised_docx],
+            "edits": [{"id": "one", "disposition": "fixed"}] * 2 + [{"id": "two", "disposition": "reported"}],
+            "rounds": rounds,
+        }])
+        original_manual = manual.read_bytes()
+
+        result = self.report(self.baseline())["runs"][0]
+
+        self.assertEqual(result["observations_sha256"], hashlib.sha256(before).hexdigest())
+        self.assertEqual(result["manual_reviews_sha256"], hashlib.sha256(original_manual).hexdigest())
+        sample = result["report"]["samples"][0]
+        self.assertEqual(sample["edits"]["value"], 1)
+        self.assertEqual(sample["review_time_minutes"]["value"], 1)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(manual.read_bytes(), original_manual)
+        original = build_report(self.observations)["samples"][0]
+        self.assertEqual(original["edits"]["status"], "not_measured")
+        self.assertEqual(original["review_time_minutes"]["status"], "not_measured")
+
+    def test_manual_zero_and_incomplete_rounds_remain_distinct(self) -> None:
+        self.write_json("observations.json", self.observations)
+        self.manual([{
+            **self.review,
+            "edits": [],
+            "rounds": [{"id": "one", "reviewer": "a", "docx_sha256": self.initial_docx,
+                        "intervals": [{"start_seconds": 0}]}],
+        }])
+
+        sample = self.report(self.baseline())["runs"][0]["report"]["samples"][0]
+
+        self.assertEqual(sample["edits"], {"status": "measured", "value": 0, "reason": None})
+        self.assertEqual(sample["review_time_minutes"], {
+            "status": "not_measured", "value": None, "reason": "incomplete_review_round",
+        })
+
+    def test_baseline_rejects_unbound_duplicate_and_invalid_reviews(self) -> None:
+        path = self.write_json("observations.json", self.observations)
+        baseline = self.baseline()
+        for reviews, reason in (
+            ([{**self.review, "mode": "en2zh"}], "本次计划"),
+            ([{**self.review, "initial_docx_sha256": self.revised_docx}], "不一致"),
+            ([{**self.review, "initial_docx_sha256": "invalid"}], "小写十六进制"),
+            ([{**self.review, "rounds": [{"id": "one", "reviewer": "a"}]}], "docx_sha256"),
+            ([{**self.review, "rounds": [{"docx_sha256": self.revised_docx}]}], "已登记修订产物"),
+            ([{**self.review, "revisions": [self.initial_docx]}], "产物指纹重复"),
+            ([self.review, self.review], "组合重复"),
+        ):
+            with self.subTest(reason=reason):
+                self.manual(reviews)
+                self.assert_cli_rejected(baseline, reason)
+
+        self.manual([self.review])
+        self.observations["observations"][0]["conversion"] = {"status": "failed"}
+        path.write_text(json.dumps(self.observations), encoding="utf-8")
+        self.assert_cli_rejected(baseline, "成功且可打开")
+
+        self.write_json("manual.json", {"schema_version": "manual/v0", "reviews": []})
+        self.assert_cli_rejected(baseline, "版本或字段不受支持")
+
+    def test_baseline_rejects_duplicate_runs_and_protects_every_input(self) -> None:
+        observation = self.write_json("observations.json", self.observations)
+        manual = self.manual([])
+        self.assert_cli_rejected(self.baseline([self.run, self.run]), "运行 ID 重复")
+        baseline = self.baseline()
+        hardlink = self.directory / "observations-hardlink.json"
+        os.link(observation, hardlink)
+        for path in (baseline, observation, manual, hardlink):
+            with self.subTest(name=path.name):
+                original = path.read_bytes()
+                self.assert_cli_rejected(baseline, "报告路径必须", output=path)
+                self.assertEqual(path.read_bytes(), original)
 
 
 if __name__ == "__main__":

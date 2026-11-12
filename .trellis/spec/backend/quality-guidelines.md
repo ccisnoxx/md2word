@@ -35,6 +35,12 @@ Questions to answer:
 - 正式 MinerU→DocumentIR→Word 的输入、分页、分栏、表格、图片、字段、公式、样式优先级和专项质量门禁只由 [Word 生成规则](./word-generation-rules.md) 定义；本文不复制具体输出行为。
 - 修改该链路时，先按规则 ID 核对唯一 owner、冲突矩阵、自动测试和样本证据，再应用本文件的通用测试与评审纪律。
 
+### Datasheet 指标复算
+
+- `scripts/ops/datasheet_quality_metrics.py` 以 `datasheet-quality-observations/v1` 的固定计划项计算七组指标。原生表格采集按 Word 实物一对一计分，源 Grid 差异留在原始观测中供定位。缺产物的计划项仍进入已标注的比率分母。
+- `datasheet-quality-baseline/v1` 指定独立运行及各自的原始观测，输出报告逐份保留指纹和原版计算结果。人工回填使用独立文件，按计划项、成功且可打开的首次 DOCX 与审核轮次的产物指纹校验，原观测保留。单次历史复算继续使用原格式。
+- 指标定义、版本字段和复算入口见[任务指标合同](../../tasks/11-11-datasheet-quality-baseline-contracts/metrics-implementation.md)。
+
 ### 已发布模板 seed 不可变性
 
 - manifest 已登记并进入生产的模板版本，其版本号、资源路径和文件字节不可原地修改；新增可选 schema 字段应依靠模型默认值兼容旧 YAML，需要新的非默认内容时创建新版本。
