@@ -42,12 +42,12 @@ The current error response contains:
 
 `app/core/errors.py` 定义两层错误：
 
-- `ApplicationError(code, message, *, reason_code=None)`：应用层业务错误，只携带语义错误码（`ApplicationErrorCode` 子集）、对外消息和可选原因码，**不选择 HTTP 状态**。`APPLICATION_ERROR_HTTP_STATUS` 与 `http_status_for(error)` 是“错误码 → HTTP 状态”的唯一 owner（400 invalid_request、401 unauthorized、403 forbidden/role_forbidden、404 not_found、409 conflict、422 validation_error、503 service_unavailable）；未登记的错误码在构造时直接 `ValueError`。
+- `ApplicationError(code, message, *, reason_code=None)`：应用层业务错误，只携带语义错误码（`ApplicationErrorCode` 子集）、对外消息和可选原因码，**不选择 HTTP 状态**。`APPLICATION_ERROR_HTTP_STATUS` 与 `http_status_for(error)` 是“错误码 → HTTP 状态”的唯一 owner（400 invalid_request、401 unauthorized、403 forbidden/role_forbidden、404 not_found、409 conflict、422 validation_error、503 service_unavailable）；未登记的类别（`category`，缺省为 `code`）在构造时直接 `ValueError`。
 - `ApiError(status_code, code, message, *, reason_code=None)`：继承 `ApplicationError`，显式携带 HTTP 状态，供 HTTP 层（router、`http_responses`）与尚未迁移的领域使用；构造签名不变。
 
 `register_api_error_handlers` 把处理器注册在 `ApplicationError` 上（`ApiError` 经 MRO 命中同一处理器），状态码统一经 `http_status_for` 决定。捕获业务错误一律 `except ApplicationError`；需要状态码的地方（批量条目的 `status_code` 合同字段等）调用 `http_status_for`，不读取 `.status_code`。
 
-`document_jobs` 应用层（use_cases、review_content、incidents、preview、recovery 等）只抛 `ApplicationError`；唯一例外是 `use_cases/request_snapshot.py` 透传 jobs 域 `JobResourceSnapshotError` 的状态与错误码。其他领域仍可使用 `ApiError`，迁移时按领域进行。旧约定的 `ApiError` 字段说明保留如下，适用于 `ApiError`：
+`document_jobs` 应用层（use_cases、review_content、incidents、preview、recovery 等）只抛 `ApplicationError`，不构造 `ApiError`。当对外错误码比语义类别更具体时，用 `ApplicationError(code, message, category=...)`：`code` 是对外 `error_code`，HTTP 状态按 `category` 映射。jobs 域 `JobResourceSnapshotError(message, *, category, code)` 只携带语义类别与具体错误码；`use_cases/request_snapshot.py` 把它转为 `ApplicationError(exc.code, exc.message, category=exc.category)`，未经转换直接到达 API 的快照错误仍以 `resource_snapshot_error` 输出、状态按类别映射。其他领域仍可使用 `ApiError`，迁移时按领域进行。旧约定的 `ApiError` 字段说明保留如下，适用于 `ApiError`：
 
 - HTTP status code
 - stable `ApiErrorCode`

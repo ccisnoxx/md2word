@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from app.core.config import Settings
+from app.core.errors import ApplicationErrorCode
 from app.domains.jobs.models import (
     ConversionOptions,
     JobMineruSnapshot,
@@ -38,12 +39,17 @@ SourceKind = Literal["mineru_package", "source_pdf"]
 
 
 class JobResourceSnapshotError(RuntimeError):
-    """资源快照解析或物化失败，可映射为 HTTP 或 stage failure。"""
+    """资源快照解析或物化失败，可映射为 API 错误或 stage failure。
 
-    def __init__(self, message: str, *, status_code: int = 400, code: str = "resource_snapshot_invalid") -> None:
+    code 是对外稳定的具体错误码；category 是语义类别，HTTP 状态由 app/core/errors 的中央映射决定，
+    本领域不选择 HTTP 状态。
+    """
+
+    def __init__(self, message: str, *, category: ApplicationErrorCode = "invalid_request",
+                 code: str = "resource_snapshot_invalid") -> None:
         super().__init__(message)
         self.message = message
-        self.status_code = status_code
+        self.category = category
         self.code = code
 
 
@@ -87,7 +93,7 @@ class JobResourceSnapshotService:
             resource_type="template",
             resource_id=template_id,
             version=options.template_version,
-            default_missing_status=409,
+            default_missing_category="conflict",
             allow_draft=allow_draft_template,
         )
         term_rule_set_id = self._optional_text(options.term_rule_set_id) or DEFAULT_TERM_RULE_SET_ID
@@ -95,7 +101,7 @@ class JobResourceSnapshotService:
             resource_type="term_rule_set",
             resource_id=term_rule_set_id,
             version=options.term_rule_set_version,
-            default_missing_status=409,
+            default_missing_category="conflict",
         )
         translation_term_set = self._resolve_translation_term_set(options)
         translation_profile = self._resolve_translation_profile(options)
@@ -150,7 +156,7 @@ class JobResourceSnapshotService:
                 resource_type="term_rule_set",
                 resource_id=term_rule_set_id,
                 version=self._optional_text(options.term_rule_set_version) if not use_latest_defaults else None,
-                default_missing_status=409,
+                default_missing_category="conflict",
             )
 
         next_translation_term_set = job.resource_snapshot.translation_term_set
@@ -178,19 +184,19 @@ class JobResourceSnapshotService:
         if self.resource_version_service is None:
             raise JobResourceSnapshotError(
                 "当前 runtime 缺少 resource version service，无法物化 job resource snapshot。",
-                status_code=503,
+                category="service_unavailable",
                 code="resource_snapshot_unavailable",
             )
         if snapshot.template is None:
             raise JobResourceSnapshotError(
                 "job resource snapshot 缺少 Template Version。",
-                status_code=409,
+                category="conflict",
                 code="resource_snapshot_missing_template",
             )
         if snapshot.term_rule_set is None:
             raise JobResourceSnapshotError(
                 "job resource snapshot 缺少 Term Rule Version。",
-                status_code=409,
+                category="conflict",
                 code="resource_snapshot_missing_term_rule_set",
             )
         template_path = self.materialize_template(snapshot.template)
@@ -214,19 +220,19 @@ class JobResourceSnapshotService:
         if is_translation_mode(job.translation_mode) and translation_profile is None:
             raise JobResourceSnapshotError(
                 "翻译任务缺少 Translation Profile 快照。",
-                status_code=409,
+                category="conflict",
                 code="resource_snapshot_missing_translation_profile",
             )
         if is_translation_mode(job.translation_mode) and translation_term_version is None:
             raise JobResourceSnapshotError(
                 "翻译任务缺少 Translation Term Set 快照。",
-                status_code=409,
+                category="conflict",
                 code="resource_snapshot_missing_translation_term_set",
             )
         if spec.language_pair is not None and translation_profile is not None and translation_profile.language_pair != spec.language_pair:
             raise JobResourceSnapshotError(
                 f"Translation Profile language_pair 不匹配: expected={spec.language_pair} actual={translation_profile.language_pair}",
-                status_code=400,
+                category="invalid_request",
                 code="translation_profile_language_pair_mismatch",
             )
         if translation_profile is not None and any(
@@ -243,13 +249,13 @@ class JobResourceSnapshotService:
             ):
                 raise JobResourceSnapshotError(
                     "Translation Profile Prompt 快照元数据不匹配。",
-                    status_code=409,
+                    category="conflict",
                     code="translation_profile_prompt_snapshot_mismatch",
                 )
         if spec.language_pair is not None and translation_term_version is not None and translation_term_version.language_pair != spec.language_pair:
             raise JobResourceSnapshotError(
                 f"Translation Term Set language_pair 不匹配: expected={spec.language_pair} actual={translation_term_version.language_pair}",
-                status_code=400,
+                category="invalid_request",
                 code="translation_term_set_language_pair_mismatch",
             )
         return MaterializedJobResources(
@@ -268,20 +274,20 @@ class JobResourceSnapshotService:
         spec = spec_for_translation_mode(options.translation_mode)
         if not spec.is_translation:
             if has_translation_selection:
-                raise JobResourceSnapshotError("direct 任务不能绑定 Translation Profile。", status_code=400)
+                raise JobResourceSnapshotError("direct 任务不能绑定 Translation Profile。", category="invalid_request")
             return None
         profile_id = self._optional_text(options.translation_profile_id) or spec.default_profile_id
         if profile_id is None:
             raise JobResourceSnapshotError(
                 f"{options.translation_mode} 缺少默认 Translation Profile。",
-                status_code=409,
+                category="conflict",
                 code="translation_profile_default_missing",
             )
         resolved = self._resolve_resource(
             resource_type="translation_profile",
             resource_id=profile_id,
             version=options.translation_profile_version,
-            default_missing_status=409,
+            default_missing_category="conflict",
         )
         if spec.language_pair is not None:
             record = self.load_snapshot_record(resolved)
@@ -289,7 +295,7 @@ class JobResourceSnapshotService:
             if actual_language_pair != spec.language_pair:
                 raise JobResourceSnapshotError(
                     f"Translation Profile language_pair 不匹配: expected={spec.language_pair} actual={actual_language_pair}",
-                    status_code=400,
+                    category="invalid_request",
                     code="translation_profile_language_pair_mismatch",
                 )
         return resolved
@@ -304,25 +310,25 @@ class JobResourceSnapshotService:
         spec = spec_for_translation_mode(options.translation_mode)
         if not spec.is_translation:
             if has_translation_term_selection:
-                raise JobResourceSnapshotError("direct 任务不能绑定 Translation Term Set。", status_code=400)
+                raise JobResourceSnapshotError("direct 任务不能绑定 Translation Term Set。", category="invalid_request")
             return None
         set_id = self._optional_text(options.translation_term_set_id) or spec.default_term_set_id
         if set_id is None:
             raise JobResourceSnapshotError(
                 f"{options.translation_mode} 缺少默认 Translation Term Set。",
-                status_code=409,
+                category="conflict",
                 code="translation_term_set_default_missing",
             )
         version = None if use_default_version else self._optional_text(options.translation_term_version)
         resolved = self._resolve_translation_term_version(
             set_id=set_id,
             version=version,
-            default_missing_status=409,
+            default_missing_category="conflict",
         )
         if spec.language_pair is not None and resolved.language_pair != spec.language_pair:
             raise JobResourceSnapshotError(
                 f"Translation Term Set language_pair 不匹配: expected={spec.language_pair} actual={resolved.language_pair}",
-                status_code=400,
+                category="invalid_request",
                 code="translation_term_set_language_pair_mismatch",
             )
         return resolved
@@ -332,41 +338,41 @@ class JobResourceSnapshotService:
         *,
         set_id: str,
         version: str | None,
-        default_missing_status: int,
+        default_missing_category: ApplicationErrorCode,
     ) -> ResolvedTranslationTermVersion:
         if self.translation_term_repository is None:
             raise JobResourceSnapshotError(
                 "Translation Term Set 绑定需要 JOBS_REPOSITORY_BACKEND=mysql。",
-                status_code=503,
+                category="service_unavailable",
                 code="translation_term_set_unavailable",
             )
         term_set = self.translation_term_repository.get_set(set_id)
         if term_set is None:
-            status_code = 404 if version is not None else default_missing_status
+            category = "not_found" if version is not None else default_missing_category
             raise JobResourceSnapshotError(
                 f"Translation Term Set 不存在: {set_id}",
-                status_code=status_code,
+                category=category,
                 code="translation_term_set_not_found",
             )
         resolved_version = version or term_set.default_version
         if not resolved_version:
             raise JobResourceSnapshotError(
                 f"Translation Term Set 缺少默认版本: {set_id}",
-                status_code=default_missing_status,
+                category=default_missing_category,
                 code="translation_term_set_default_missing",
             )
         version_record = self.translation_term_repository.get_version(term_set.set_id, resolved_version)
         if version_record is None:
-            status_code = 404 if version is not None else default_missing_status
+            category = "not_found" if version is not None else default_missing_category
             raise JobResourceSnapshotError(
                 f"Translation Term Set 版本不存在: {term_set.set_id}@{resolved_version}",
-                status_code=status_code,
+                category=category,
                 code="translation_term_version_not_found",
             )
         if version_record.status != "published":
             raise JobResourceSnapshotError(
                 "只能绑定 published Translation Term Set 版本。",
-                status_code=400,
+                category="invalid_request",
                 code="translation_term_version_not_published",
             )
         return ResolvedTranslationTermVersion(
@@ -383,11 +389,11 @@ class JobResourceSnapshotService:
         resource_type: ResourceType,
         resource_id: str,
         version: str | None,
-        default_missing_status: int,
+        default_missing_category: ApplicationErrorCode,
         allow_draft: bool = False,
     ) -> ResolvedResourceVersion:
         if self.resource_version_service is None:
-            raise JobResourceSnapshotError("资源版本快照需要 JOBS_REPOSITORY_BACKEND=mysql。", status_code=503)
+            raise JobResourceSnapshotError("资源版本快照需要 JOBS_REPOSITORY_BACKEND=mysql。", category="service_unavailable")
         normalized_version = self._optional_text(version)
         try:
             if normalized_version is not None:
@@ -399,10 +405,10 @@ class JobResourceSnapshotService:
                 )
             return self.resource_version_service.resolve_default(resource_type, resource_id)
         except FileNotFoundError as exc:
-            status_code = 404 if normalized_version is not None else default_missing_status
-            raise JobResourceSnapshotError(str(exc), status_code=status_code, code="resource_snapshot_not_found") from exc
+            category = "not_found" if normalized_version is not None else default_missing_category
+            raise JobResourceSnapshotError(str(exc), category=category, code="resource_snapshot_not_found") from exc
         except ValueError as exc:
-            raise JobResourceSnapshotError(str(exc), status_code=400) from exc
+            raise JobResourceSnapshotError(str(exc), category="invalid_request") from exc
 
     def _build_mineru_snapshot(
         self,
@@ -430,10 +436,10 @@ class JobResourceSnapshotService:
         payload = record.payload or {}
         docx_path = self._payload_text(payload, "docx_path")
         if docx_path is None:
-            raise JobResourceSnapshotError("Template Version payload 缺少 docx_path。", status_code=409)
+            raise JobResourceSnapshotError("Template Version payload 缺少 docx_path。", category="conflict")
         resolved = self._resolve_payload_path(docx_path)
         if not resolved.exists() or not resolved.is_file():
-            raise JobResourceSnapshotError(f"Template Version 文件不存在: {docx_path}", status_code=409)
+            raise JobResourceSnapshotError(f"Template Version 文件不存在: {docx_path}", category="conflict")
         return resolved
 
     def materialize_template_layout_config(self, snapshot: ResolvedResourceVersion | None) -> Path | None:
@@ -448,7 +454,7 @@ class JobResourceSnapshotService:
             return None
         resolved = self._resolve_payload_path(layout_config_path)
         if not resolved.exists() or not resolved.is_file():
-            raise JobResourceSnapshotError(f"Template Version 版式配置不存在: {layout_config_path}", status_code=409)
+            raise JobResourceSnapshotError(f"Template Version 版式配置不存在: {layout_config_path}", category="conflict")
         return resolved
 
     def materialize_term_rule_set(
@@ -466,7 +472,7 @@ class JobResourceSnapshotService:
         payload = record.payload or {}
         store_payload = payload.get("store")
         if not isinstance(store_payload, dict):
-            raise JobResourceSnapshotError("Term Rule Version payload 缺少 store。", status_code=409)
+            raise JobResourceSnapshotError("Term Rule Version payload 缺少 store。", category="conflict")
         store = TermRulesStore.model_validate(store_payload)
         job_paths.resource_subscript_config.parent.mkdir(parents=True, exist_ok=True)
         job_paths.resource_subscript_config.write_text(
@@ -487,7 +493,7 @@ class JobResourceSnapshotService:
         except (FileNotFoundError, ValueError) as exc:
             raise JobResourceSnapshotError(
                 f"Translation Profile payload 非法: {exc}",
-                status_code=409,
+                category="conflict",
                 code="translation_profile_payload_invalid",
             ) from exc
 
@@ -501,7 +507,7 @@ class JobResourceSnapshotService:
         if materialized is None:
             raise JobResourceSnapshotError(
                 "任务绑定的 Translation Profile 为空。",
-                status_code=409,
+                category="conflict",
                 code="resource_snapshot_missing_translation_profile",
             )
         return materialized
@@ -515,26 +521,26 @@ class JobResourceSnapshotService:
         if self.translation_term_repository is None:
             raise JobResourceSnapshotError(
                 "当前 stage runtime 缺少 Translation Term Set repository。",
-                status_code=503,
+                category="service_unavailable",
                 code="translation_term_set_unavailable",
             )
         record = self.translation_term_repository.get_version(snapshot.set_id, snapshot.version)
         if record is None:
             raise JobResourceSnapshotError(
                 f"资源快照指向的 Translation Term Set 版本不存在: {snapshot.set_id}@{snapshot.version}",
-                status_code=409,
+                category="conflict",
                 code="translation_term_version_not_found",
             )
         if record.status != "published":
             raise JobResourceSnapshotError(
                 f"资源快照指向了非 published Translation Term Set 版本: {snapshot.set_id}@{snapshot.version}",
-                status_code=409,
+                category="conflict",
                 code="translation_term_version_invalid_status",
             )
         if record.snapshot_hash != snapshot.snapshot_hash:
             raise JobResourceSnapshotError(
                 f"Translation Term Set 快照 hash 不匹配: {snapshot.set_id}@{snapshot.version}",
-                status_code=409,
+                category="conflict",
                 code="translation_term_snapshot_hash_mismatch",
             )
         entries = self.translation_term_repository.load_version(snapshot.language_pair, snapshot.version)
@@ -556,7 +562,7 @@ class JobResourceSnapshotService:
                 return spec.language_pair
         raise JobResourceSnapshotError(
             f"Translation Profile language_pair 无法从绑定资源推断: {translation_profile_id}",
-            status_code=409,
+            category="conflict",
             code="translation_profile_language_pair_missing",
         )
 
@@ -567,7 +573,7 @@ class JobResourceSnapshotService:
         """
 
         if self.resource_version_service is None:
-            raise JobResourceSnapshotError("资源版本服务不可用。", status_code=503, code="resource_snapshot_unavailable")
+            raise JobResourceSnapshotError("资源版本服务不可用。", category="service_unavailable", code="resource_snapshot_unavailable")
         record = self.resource_version_service.repository.get_resource_version(
             snapshot.resource_type,
             snapshot.resource_id,
@@ -576,7 +582,7 @@ class JobResourceSnapshotService:
         if record is None:
             raise JobResourceSnapshotError(
                 f"资源快照指向的版本不存在: {snapshot.resource_type}/{snapshot.resource_id}@{snapshot.version}",
-                status_code=409,
+                category="conflict",
                 code="resource_snapshot_not_found",
             )
         draft_template_is_authorized = (
@@ -587,19 +593,19 @@ class JobResourceSnapshotService:
         if record.status == ResourceVersionStatus.DRAFT and not draft_template_is_authorized:
             raise JobResourceSnapshotError(
                 f"资源快照指向了 draft 版本: {snapshot.resource_type}/{snapshot.resource_id}@{snapshot.version}",
-                status_code=409,
+                category="conflict",
                 code="resource_snapshot_invalid_status",
             )
         if record.snapshot_hash != snapshot.snapshot_hash:
             raise JobResourceSnapshotError(
                 f"资源快照 hash 不匹配: {snapshot.resource_type}/{snapshot.resource_id}@{snapshot.version}",
-                status_code=409,
+                category="conflict",
                 code="resource_snapshot_hash_mismatch",
             )
         if record.payload is None:
             raise JobResourceSnapshotError(
                 f"资源版本 payload 缺失: {snapshot.resource_type}/{snapshot.resource_id}@{snapshot.version}",
-                status_code=409,
+                category="conflict",
                 code="resource_snapshot_payload_missing",
             )
         return record
@@ -625,7 +631,7 @@ class JobResourceSnapshotService:
             joined = ", ".join(selected)
             raise JobResourceSnapshotError(
                 f"{joined} 需要 JOBS_REPOSITORY_BACKEND=mysql 才能绑定资源版本快照。",
-                status_code=503,
+                category="service_unavailable",
                 code="resource_snapshot_unavailable",
             )
 

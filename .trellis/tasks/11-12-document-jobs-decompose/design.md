@@ -139,4 +139,5 @@ router 保留：`request.url_for` + `_externalize_url`（HTTP 关注点）、`au
 - 决策：`app/core/errors.py` 新增 `ApplicationError(code, message, *, reason_code=None)`，`code` 限定为 `ApplicationErrorCode` 子集；`APPLICATION_ERROR_HTTP_STATUS` 与 `http_status_for(error)` 是“错误码 → HTTP 状态”的唯一 owner。`ApiError` 改为继承 `ApplicationError`，构造签名与字段不变（其他领域 169 处不受影响），`http_status_for` 对 `ApiError` 返回其显式状态。
 - API 处理器注册在 `ApplicationError` 上；`except ApiError` 捕获点改为 `except ApplicationError`；读取 `.status_code` 的分支改为按错误码判断，或经 `http_status_for` 取得批量条目中作为合同字段的状态码。
 - 保留的例外：`use_cases/request_snapshot.py` 透传 jobs 域 `JobResourceSnapshotError` 的状态与错误码（其错误码不在映射内，状态由 jobs 域决定），待 jobs 域迁移时一并处理。
+  - **已修复**：`ApplicationError` 增加可选 `category`（语义类别，决定 HTTP 状态），`code` 可为更具体的对外错误码；jobs 域 `JobResourceSnapshotError` 的 `status_code` 改为 `category`（39 处抛出逐一核对 400↔invalid_request、404↔not_found、409↔conflict、503↔service_unavailable，含 4 处按版本是否显式给出而动态决定的类别）；`request_snapshot` 改为 `ApplicationError(exc.code, exc.message, category=exc.category)`，API 专用处理器经中央映射取状态。此后 document_jobs 应用层不再构造 `ApiError`。
 - 验收：错误响应的状态码、`error_code`、`reason_code` 与消息不变；路由与保序 OpenAPI 不变；受影响测试失败集合与 `1fb48844` 一致；document_jobs 应用层（除上述例外）不再构造 `ApiError`。

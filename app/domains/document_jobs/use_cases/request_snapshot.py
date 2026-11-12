@@ -6,7 +6,7 @@ from typing import Any
 
 
 from app.core.config import Settings
-from app.core.errors import ApiError, ApplicationError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobMode, DocumentJobRecord
 from app.domains.document_jobs.use_cases.access import DocumentJobAccess
 from app.domains.files.models import DocumentFileRecord
@@ -312,8 +312,8 @@ class DocumentJobRequestSnapshots:
         except JobResourceSnapshotError as exc:
             if not has_explicit_selection:
                 return None
-            # 唯一保留的 ApiError：透传 jobs 域快照错误的状态与错误码（不在应用层映射内），待 jobs 域迁移时一并处理。
-            raise ApiError(exc.status_code, exc.code, exc.message) from exc
+            # 保留 jobs 域的具体错误码；HTTP 状态由其语义类别经中央映射决定。
+            raise ApplicationError(exc.code, exc.message, category=exc.category) from exc
         if snapshot is None:
             return None
         return snapshot.model_dump(mode="json")

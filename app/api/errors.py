@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.core.errors import ApiErrorCode, ApplicationError, http_status_for
+from app.core.errors import APPLICATION_ERROR_HTTP_STATUS, ApiErrorCode, ApplicationError, http_status_for
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
 from app.domains.mineru.config import MinerUConfigError, MinerUConfigWriteError
 
@@ -39,7 +39,7 @@ def bad_request_http_exception(exc: ValueError) -> HTTPException:
 async def _job_resource_snapshot_error_handler(_request: Request, exc: JobResourceSnapshotError) -> JSONResponse:
     """把资源快照绑定失败映射为创建 job 时的明确 HTTP 响应。"""
 
-    return api_error_response(_request, exc.status_code, "resource_snapshot_error", exc.message)
+    return api_error_response(_request, APPLICATION_ERROR_HTTP_STATUS[exc.category], "resource_snapshot_error", exc.message)
 
 
 async def _api_error_handler(request: Request, exc: ApplicationError) -> JSONResponse:

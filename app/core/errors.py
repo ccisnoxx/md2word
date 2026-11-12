@@ -54,22 +54,29 @@ APPLICATION_ERROR_HTTP_STATUS: dict[str, int] = {
 
 
 class ApplicationError(Exception):
-    """应用层业务错误：只携带稳定错误码、对外消息与可选原因码，不选择 HTTP 状态。"""
+    """应用层业务错误：只携带稳定错误码、对外消息与可选原因码，不选择 HTTP 状态。
 
-    def __init__(self, code: ApplicationErrorCode, message: str, *, reason_code: str | None = None) -> None:
-        if not isinstance(self, ApiError) and code not in APPLICATION_ERROR_HTTP_STATUS:
-            # 未映射的错误码会在响应时退化为 500，在抛出点直接暴露为编程错误。
-            raise ValueError(f"未登记 HTTP 状态映射的应用层错误码: {code}")
+    code 默认同时是语义类别；当对外错误码比类别更具体（如资源快照的
+    resource_snapshot_missing_template）时，以 category 给出语义类别，HTTP 状态按类别映射。
+    """
+
+    def __init__(self, code: str, message: str, *, reason_code: str | None = None,
+                 category: ApplicationErrorCode | None = None) -> None:
+        if not isinstance(self, ApiError) and (category or code) not in APPLICATION_ERROR_HTTP_STATUS:
+            # 未映射的类别会在响应时退化为 500，在抛出点直接暴露为编程错误。
+            raise ValueError(f"未登记 HTTP 状态映射的应用层错误类别: {category or code}")
         super().__init__(message)
         self.code = code
         self.message = message
         self.reason_code = reason_code
+        self.category = category
 
     def __str__(self) -> str:
         return self.message
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(code={self.code!r}, message={self.message!r}, reason_code={self.reason_code!r})"
+        return (f"{type(self).__name__}(code={self.code!r}, message={self.message!r}, "
+                f"reason_code={self.reason_code!r}, category={self.category!r})")
 
 
 class ApiError(ApplicationError):
@@ -85,8 +92,8 @@ class ApiError(ApplicationError):
 
 
 def http_status_for(error: ApplicationError) -> int:
-    """返回错误对应的 HTTP 状态：ApiError 用其显式状态，其余按错误码映射。"""
+    """返回错误对应的 HTTP 状态：ApiError 用其显式状态，其余按语义类别（缺省为错误码）映射。"""
 
     if isinstance(error, ApiError):
         return error.status_code
-    return APPLICATION_ERROR_HTTP_STATUS[error.code]
+    return APPLICATION_ERROR_HTTP_STATUS[error.category or error.code]

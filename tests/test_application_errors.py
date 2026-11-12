@@ -33,3 +33,37 @@ class ApplicationErrorContractTests(TestCase):
     def test_unmapped_application_code_fails_at_raise_site(self):
         with self.assertRaises(ValueError):
             ApplicationError("document_jobs_not_ready", "未就绪。")
+
+    def test_specific_code_with_category_maps_status_by_category(self):
+        error = ApplicationError("resource_snapshot_missing_template", "缺少模板。", category="conflict")
+        self.assertEqual((http_status_for(error), error.code, error.category), (409, "resource_snapshot_missing_template", "conflict"))
+        with self.assertRaises(ValueError):
+            ApplicationError("resource_snapshot_invalid", "非法快照。")
+
+    def test_api_handler_keeps_specific_code_and_category_status(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from app.api.errors import register_api_error_handlers
+        from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
+
+        app = FastAPI()
+        register_api_error_handlers(app)
+
+        @app.get("/translated")
+        def translated():
+            source = JobResourceSnapshotError("Translation Term Set 不存在。", category="not_found",
+                                              code="translation_term_set_not_found")
+            raise ApplicationError(source.code, source.message, category=source.category)
+
+        @app.get("/raw")
+        def raw():
+            raise JobResourceSnapshotError("资源版本服务不可用。", category="service_unavailable")
+
+        with TestClient(app) as client:
+            translated_response = client.get("/translated")
+            raw_response = client.get("/raw")
+        self.assertEqual((translated_response.status_code, translated_response.json()["error_code"]),
+                         (404, "translation_term_set_not_found"))
+        self.assertEqual((raw_response.status_code, raw_response.json()["error_code"]),
+                         (503, "resource_snapshot_error"))
