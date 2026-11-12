@@ -24,18 +24,21 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.domains.templates.manifest import resolve_bundled_template_seed
 from app.services.document_ir.artifact_validator import MinerUArtifactValidationError
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.table_header_review import TableHeaderReview, TableHeaderReviewError
 from app.services.document_ir.table_placeholder import PdfCropSource, TablePlaceholderError
 from app.services.renderer.table_renderer import TableRenderError
+from app.services.renderer.template_conformance import build_template_conformance_summary
 from scripts.dev.formal_mineru_conversion import LOCAL_SOURCE_FILE_ID, parse_table_header_reviews, run_conversion
 from scripts.ops.datasheet_quality_metrics import OBSERVATION_VERSION, build_report
 
 MANIFEST = ROOT / "tests/fixtures/datasheet_quality/local_baseline_manifest.json"
+DEFAULT_TEMPLATE_SEED = resolve_bundled_template_seed(ROOT)
 RESOURCES = {
-    "template_path": ROOT / "resources/templates/default/datasheet_template.docx",
-    "layout_config_path": ROOT / "resources/template_configs/datasheet_template_v2.yaml",
+    "template_path": DEFAULT_TEMPLATE_SEED.template_path,
+    "layout_config_path": DEFAULT_TEMPLATE_SEED.layout_config_path,
     "subscript_config": ROOT / "resources/term_rules/subscripts_dictionary.yaml",
 }
 
@@ -233,6 +236,7 @@ def observation(sample: dict, package: Path, output: Path, *,
         return {**row, "conversion": {"status": "input_mismatch", "reason": "manifest_fingerprint_mismatch"}}
     docx = output / f"{sample_id}.docx"
     started = perf_counter()
+    conformance = None
     try:
         result = run_conversion(
             input_path=str(package), output_path=str(docx), **{key: str(value) for key, value in RESOURCES.items()},
@@ -249,11 +253,15 @@ def observation(sample: dict, package: Path, output: Path, *,
             reason = error.report.first_fatal.code
         if isinstance(error, DocumentIntegrityError):
             reason = ",".join(error.evidence["blocking_quality_flags"])
+            conformance = build_template_conformance_summary(error.evidence.get("template_conformance"))
         if isinstance(error, TableHeaderReviewError):
             reason = f"{error.code}:{error.reason}"
         row["conversion"] = {"status": "failed", "reason": reason}
     else:
         row["conversion"] = {"status": "succeeded", "docx_available": True, "docx_openable": True}
+        conformance = build_template_conformance_summary(result.renderer_metadata.get("template_conformance"))
+    if conformance is not None:
+        row["template_conformance"] = conformance
     row["latency"] = {"kind": "local_replay", "seconds": round(perf_counter() - started, 4)}
     if row["conversion"]["status"] != "succeeded":
         return row

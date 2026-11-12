@@ -8,6 +8,8 @@ from typing import Any
 from app.clients.mineru_client import MinerUError
 from app.core.errors import ApiError
 from app.domains.document_jobs.models import DocumentJobStage
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
+from app.domains.resources.integrity import RENDER_RESOURCE_ERROR_CODES
 from app.domains.translation.document_ir_translator import DocumentIRTranslationError
 from app.domains.translation.integrity import TranslationIntegrityError
 from app.services.document_ir.artifact_validator import MinerUArtifactValidationError
@@ -65,6 +67,8 @@ def worker_failure_message(error: Exception) -> str:
     """Worker 失败消息唯一构造点：只保留由固定码/固定文本构造的消息，任意异常原文不进入任务、事件或日志。"""
     if isinstance(error, DocumentIntegrityError):
         return str(DocumentIntegrityError(error.boundary, build_renderer_event_summary(dict(error.evidence))))
+    if isinstance(error, JobResourceSnapshotError):
+        return "任务渲染资源校验失败。"
     if isinstance(error, MinerUError):
         return "MinerU 外部调用失败。"
     if isinstance(error, OSError):
@@ -87,6 +91,9 @@ def worker_failure_evidence(error: Exception) -> dict[str, Any]:
         evidence["mineru_validation"] = error.mineru_validation_report.model_dump(mode="json")
     elif isinstance(error, DocumentIntegrityError):
         evidence = dict(error.evidence)
+    elif isinstance(error, JobResourceSnapshotError):
+        code = error.code if error.code in RENDER_RESOURCE_ERROR_CODES else "resource_snapshot_invalid"
+        evidence["blocking_quality_flags"] = [code]
     validation_input = getattr(error, "mineru_validation_input", None)
     if validation_input is not None:
         evidence["mineru_validation_input"] = validation_input

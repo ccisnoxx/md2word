@@ -3,8 +3,6 @@ from __future__ import annotations
 # app/domains/document_jobs/use_cases/publication.py: 用例：文档发布、发布记录与发布文件下载、新代请求。
 
 import hashlib
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -267,15 +265,9 @@ class DocumentJobPublication:
             snapshot = self.read_model.new_generation_resource_snapshot(job)
             resources_job = JobRecord(id=job.id, source_filename=job.request_snapshot["source_file"]["original_filename"],
                 status="completed", translation_mode=translation_mode_for_document_job_mode(job.mode), resource_snapshot=snapshot)
-            with TemporaryDirectory(prefix="new-generation-resources-") as temporary:
-                materialized = service.materialize(resources_job, build_job_paths(Path(temporary), job.id))
-                if materialized.template_path is None or materialized.layout_config_path is None:
-                    raise ValueError("原模板实物或版式配置缺失。")
-                record = service._load_snapshot_record(snapshot.template)
-                for name, path in (("docx_sha256", materialized.template_path), ("layout_config_sha256", materialized.layout_config_path)):
-                    actual = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-                    if record.payload.get(name) is not None and record.payload[name] != actual:
-                        raise ValueError("原模板实物完整性核验失败。")
+            materialized = service.materialize(resources_job, build_job_paths(self.settings.data_path, job.id))
+            if materialized.template_path is None or materialized.layout_config_path is None:
+                raise ValueError("原模板实物或版式配置缺失。")
         except (JobResourceSnapshotError, FileNotFoundError, ValueError, KeyError):
             raise ApiError(503, "service_unavailable", "原绑定资源快照或实物不可用。", reason_code="new_generation_resources_unavailable") from None
 

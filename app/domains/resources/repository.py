@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.domains.resources.models import ResourceType, ResourceVersionRecord
+from app.domains.resources.models import ResourceType, ResourceVersionRecord, ResourceVersionStatus
 
 
 class ResourceVersionRepositoryProtocol(Protocol):
@@ -16,6 +16,7 @@ class ResourceVersionRepositoryProtocol(Protocol):
         record: ResourceVersionRecord,
         *,
         expected_snapshot_hash: str,
+        expected_status: ResourceVersionStatus | None = None,
     ) -> ResourceVersionRecord | None: ...
     def create_resource_version(self, record: ResourceVersionRecord) -> ResourceVersionRecord: ...
     def allocate_next_version(self, resource_type: ResourceType, resource_id: str, minimum_next: int) -> int: ...

@@ -181,20 +181,7 @@ class TemplateConfigPackage(BaseModel):
     @classmethod
     def load_content(cls, content: bytes) -> "TemplateConfigPackage":
         """从已冻结字节复用相同校验，确保渲染和输入 hash 使用同一份内容。"""
-        raw = yaml.safe_load(content.decode("utf-8")) or {}
-        if not isinstance(raw, dict):
-            raise ValueError("模板配置必须是 YAML object")
-        if raw.get("schema_version") != SUPPORTED_SCHEMA_VERSION:
-            raise ValueError(f"schema_version 必须是 {SUPPORTED_SCHEMA_VERSION}。")
-        try:
-            package = cls.model_validate(_normalize_legacy_font_fields(raw))
-        except ValidationError as exc:
-            first = exc.errors(include_url=False)[0]
-            path = ".".join(str(item) for item in first["loc"])
-            raise ValueError(f"{path}: {first['msg']}") from exc
-        _validate_package_values(package)
-        _validate_page_body(package.page_setup)
-        return package
+        return _validate_config_model(cls, load_layout_config_yaml(content))
 
     def heading_style_for_level(self, level: int | None) -> TemplateParagraphStyleConfig:
         normalized_level = max(1, min(int(level or 1), 3))
@@ -220,10 +207,13 @@ class TemplateConfigPackage(BaseModel):
         if "_" in language:
             candidates.append(language.split("_", 1)[0])
         selected = next((self.language_overrides[key] for key in candidates if key in self.language_overrides), None)
-        if not selected:
-            return self
+        return self.with_language_override(selected) if selected else self
+
+    def with_language_override(self, override: dict[str, Any]) -> "TemplateConfigPackage":
+        """校验合并后的语言配置，沿用同一模型、值域和相对资源路径约束。"""
+
         raw = self.model_dump(mode="python", exclude={"terminology"})
-        return self.__class__.model_validate(_deep_merge_dicts(raw, selected))
+        return _validate_config_model(self.__class__, _deep_merge_dicts(raw, override))
 
 
 def _field(
@@ -271,8 +261,8 @@ PARAGRAPH_FIELDS = {
     "right_indent_pt": _field("number", "右缩进", unit="pt", minimum=-500, maximum=500, step=0.5),
 }
 
-TEXT_STYLE_FIELDS = {
-    key: PARAGRAPH_FIELDS[key]
+PREVIEW_TEXT_STYLE_FIELDS = {
+    key: {**PARAGRAPH_FIELDS[key], "readonly": True}
     for key in (
         "font_name",
         "western_font_name",
@@ -296,8 +286,8 @@ GROUP_FIELD_SCHEMA: dict[str, dict[str, dict[str, Any]]] = {
         "header_distance": _field("number", "页眉距离", unit="cm", minimum=0, maximum=10, step=0.1),
         "footer_distance": _field("number", "页脚距离", unit="cm", minimum=0, maximum=10, step=0.1),
     },
-    "part_number": TEXT_STYLE_FIELDS,
-    "category": TEXT_STYLE_FIELDS,
+    "part_number": PREVIEW_TEXT_STYLE_FIELDS,
+    "category": PREVIEW_TEXT_STYLE_FIELDS,
     "heading1": PARAGRAPH_FIELDS,
     "heading2": PARAGRAPH_FIELDS,
     "heading3": PARAGRAPH_FIELDS,
@@ -348,8 +338,8 @@ GROUP_FIELD_SCHEMA: dict[str, dict[str, dict[str, Any]]] = {
 
 GROUP_META = {
     "page_setup": ("页面设置", "页面", "控制 A4 页边距和页眉页脚距离。"),
-    "part_number": ("首页型号行", "首页", "控制首页器件型号行。"),
-    "category": ("首页品类行", "首页", "控制首页器件品类行。"),
+    "part_number": ("首页型号行", "首页", "历史样式用于预览，当前不参与正式 Word 渲染。"),
+    "category": ("首页品类行", "首页", "历史样式用于预览，当前不参与正式 Word 渲染。"),
     "heading1": ("一级标题", "标题", "控制一级章节标题。"),
     "heading2": ("二级标题", "标题", "控制二级章节标题。"),
     "heading3": ("三级标题", "标题", "控制三级章节标题。"),
@@ -416,17 +406,38 @@ def validate_layout_config(raw: dict[str, Any]) -> TemplateConfigPackage:
             path=missing_groups[0],
             code="missing_group",
         )
-    normalized_raw = _normalize_legacy_font_fields(raw)
+    return _validate_config_model(TemplateConfigPackage, raw)
+
+
+def _validate_config_model(model: type[TemplateConfigPackage], raw: dict[str, Any]) -> TemplateConfigPackage:
+    if raw.get("schema_version") != SUPPORTED_SCHEMA_VERSION:
+        raise TemplateLayoutValidationError(
+            f"schema_version 必须是 {SUPPORTED_SCHEMA_VERSION}。",
+            path="schema_version",
+            code="unsupported_schema_version",
+        )
     try:
-        package = TemplateConfigPackage.model_validate(normalized_raw)
+        package = model.model_validate(_normalize_legacy_font_fields(raw))
     except ValidationError as exc:
         first = exc.errors(include_url=False)[0]
-        path = ".".join(str(item) for item in first["loc"])
+        fields = []
+        schema = model.model_fields
+        for segment in first["loc"]:
+            if not isinstance(segment, str):
+                break
+            field = schema.get(segment)
+            if field is None:
+                break
+            fields.append(segment)
+            nested = field.annotation
+            schema = nested.model_fields if isinstance(nested, type) and issubclass(nested, BaseModel) else {}
+        field_path = ".".join(fields) or "layout_config"
+        message = "不支持的字段（Extra inputs are not permitted）。" if first["type"] == "extra_forbidden" else "字段类型或取值无效。"
         raise TemplateLayoutValidationError(
-            f"{path}: {first['msg']}",
-            path=path,
+            f"{field_path}: {message}",
+            path=field_path,
             code="schema_validation_failed",
-        ) from exc
+        ) from None
     _validate_package_values(package)
     _validate_page_body(package.page_setup)
     return package
@@ -557,7 +568,12 @@ def _validate_package_values(package: TemplateConfigPackage) -> None:
     normalized = package.model_dump(mode="python", exclude={"terminology"}, exclude_none=True)
     for group_name, group_schema in GROUP_FIELD_SCHEMA.items():
         group_value = normalized[group_name]
-        for field_name, field_schema in group_schema.items():
+        fields = (
+            {**PARAGRAPH_FIELDS, **group_schema}
+            if isinstance(getattr(package, group_name), TemplateParagraphStyleConfig)
+            else group_schema
+        )
+        for field_name, field_schema in fields.items():
             if field_name in group_value:
                 _validate_editor_value(group_value[field_name], field_schema, f"{group_name}.{field_name}")
     logo_path = package.header.logo_path
@@ -615,10 +631,19 @@ def _normalize_legacy_font_fields(raw: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _read_yaml_object(path: Path) -> dict[str, Any]:
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+def load_layout_config_yaml(content: bytes) -> dict[str, Any]:
+    """从已读字节解析 YAML 对象，解析失败不回显配置原文。"""
+
+    try:
+        raw = yaml.safe_load(content.decode("utf-8"))
+    except (UnicodeError, yaml.YAMLError):
+        raise TemplateLayoutValidationError(
+            "版式配置 YAML 无法解析。", path="layout_config", code="layout_yaml_invalid",
+        ) from None
     if not isinstance(raw, dict):
-        raise ValueError(f"模板配置必须是 YAML object: {path}")
+        raise TemplateLayoutValidationError(
+            "版式配置必须是 YAML object。", path="layout_config", code="layout_yaml_invalid",
+        )
     return raw
 
 

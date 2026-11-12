@@ -74,6 +74,39 @@ class DatasheetQualityMetricsTests(unittest.TestCase):
         })
         self.assertEqual(group["blocking_cases"], {"planned": 3, "matched": 1, "mismatch": 1, "not_measured": 1})
 
+    def test_template_conformance_counts_missing_and_blocked_without_private_evidence(self) -> None:
+        conformance = {
+            "schema_version": "template-conformance/v1",
+            "mode": "preserve_template",
+            "broken_relationship_count": 0,
+            "blocking_flags": [],
+            "template_docx_sha256": "a" * 64,
+            "expected_decoration": {"path": "/private/template.docx"},
+        }
+        blocker = "template_conformance:header_media_missing"
+        plans = [plan(sample_id) for sample_id in ("passed", "blocked", "legacy")]
+        observations = [
+            observed("passed", template_conformance=conformance),
+            observed("blocked", conversion={"status": "failed"}, template_conformance={
+                **conformance, "status": "passed", "blocking_flags": [blocker],
+            }),
+            observed("legacy"),
+        ]
+
+        report = build_report(input_payload(plans, observations))
+        self.assertEqual(report["groups"][0]["template_conformance"], {
+            "planned": 3, "passed": 1, "blocked": 1, "not_collected": 1, "blocking_flags": {blocker: 1},
+        })
+        summaries = {row["sample_id"]: row["template_conformance"] for row in report["samples"]}
+        self.assertEqual(summaries["legacy"], {"status": "not_collected"})
+        self.assertEqual(summaries["blocked"]["status"], "blocked")
+        self.assertNotIn("template_docx_sha256", summaries["passed"])
+        self.assertNotIn("expected_decoration", summaries["passed"])
+
+        observations[0] = observed("passed", template_conformance={**conformance, "mode": "未知"})
+        with self.assertRaisesRegex(ValueError, "模板符合性观测"):
+            build_report(input_payload(plans, observations))
+
     def test_table_and_token_ratios_retain_expected_counts_without_an_artifact(self) -> None:
         plans = [
             plan("visible", expected_tables=3, expected_tokens={"number": 4, "unit": 2}),

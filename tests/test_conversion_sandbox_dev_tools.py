@@ -508,6 +508,9 @@ class LocalMinerUDebugConfigTests(TestCase):
             repo_root=repo_root,
         )
 
+        for kwargs in (default_kwargs, direct_kwargs, en2zh_kwargs, ru2zh_kwargs):
+            self.assertIsNone(kwargs["template_path"])
+            self.assertIsNone(kwargs["layout_config_path"])
         self.assertEqual(default_kwargs["translation_mode"], "direct")
         self.assertEqual(direct_kwargs["translation_mode"], "direct")
         self.assertEqual(en2zh_kwargs["translation_mode"], "en2zh")

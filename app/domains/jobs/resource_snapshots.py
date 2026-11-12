@@ -2,8 +2,10 @@ from __future__ import annotations
 
 # app/domains/jobs/resource_snapshots.py: 解析和物化 job 创建时绑定的资源版本快照。
 
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Literal
 
 from app.core.config import Settings
@@ -15,6 +17,7 @@ from app.domains.jobs.models import (
     ResolvedTranslationTermVersion,
 )
 from app.domains.jobs.paths import JobPaths
+from app.domains.resources.integrity import content_sha256, resource_payload_sha256
 from app.domains.resources.models import ResolvedResourceVersion, ResourceType, ResourceVersionRecord, ResourceVersionStatus
 from app.domains.term_rules.models import TermRulesStore
 from app.domains.translation.models import TermVersionSnapshot, TranslationProfileSnapshot
@@ -56,6 +59,78 @@ class MaterializedJobResources:
     translation_term_version: TermVersionSnapshot | None
 
 
+@dataclass(frozen=True, slots=True)
+class MaterializedRenderResources:
+    """本次从任务目录回读并验证的实物及其原版式资产目录。"""
+
+    template_path: Path
+    layout_config_path: Path | None
+    subscript_config_path: Path
+    layout_asset_dir: Path | None
+    template_content: bytes = field(repr=False)
+    layout_config_content: bytes | None = field(repr=False)
+    subscript_content: bytes = field(repr=False)
+    publishable: bool
+
+
+# 发布追加审计字段，原 draft 验证任务仍以自己的 payload 身份核验实物。
+_TEMPLATE_PUBLICATION_FIELDS = frozenset({
+    "verification_job_id", "verification_note", "verified_by", "verified_at",
+    "publish_reason", "published_by", "published_at",
+})
+
+
+def _verify_resource_bytes(content: bytes, expected_sha256: str, code: str) -> None:
+    if content_sha256(content) != expected_sha256:
+        raise JobResourceSnapshotError("任务资源的内容 SHA-256 不匹配。", status_code=409, code=code)
+
+
+def _materialize_verified_file(
+    destination: Path, *, expected_sha256: str, hash_error: str,
+    source: Path | None = None, content: bytes | None = None,
+) -> bytes:
+    """已存在的副本先认证；相同资源的并发发布只会写入同一份已认证内容。"""
+
+    try:
+        try:
+            cached = destination.read_bytes()
+        except FileNotFoundError:
+            cached = None
+        if cached is not None:
+            _verify_resource_bytes(cached, expected_sha256, hash_error)
+            return cached
+        if source is not None:
+            try:
+                content = source.read_bytes()
+            except OSError:
+                raise JobResourceSnapshotError(
+                    "任务绑定的资源文件不可读取。", status_code=409, code="resource_snapshot_file_unavailable",
+                ) from None
+        assert content is not None
+        _verify_resource_bytes(content, expected_sha256, hash_error)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile(dir=destination.parent, prefix=".resource-", delete=False) as handle:
+            temporary = Path(handle.name)
+            try:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+                handle.close()
+                try:
+                    cached = destination.read_bytes()
+                except FileNotFoundError:
+                    temporary.replace(destination)
+                    cached = destination.read_bytes()
+            finally:
+                temporary.unlink(missing_ok=True)
+    except OSError:
+        raise JobResourceSnapshotError(
+            "任务资源副本无法物化或读取。", status_code=409, code="resource_snapshot_materialization_failed",
+        ) from None
+    _verify_resource_bytes(cached, expected_sha256, hash_error)
+    return cached
+
+
 class JobResourceSnapshotService:
     """创建 job resource snapshot；无 resource service 时守住 legacy 兼容路径。"""
 
@@ -77,13 +152,14 @@ class JobResourceSnapshotService:
         source_kind: SourceKind,
         job_id: str,
         allow_draft_template: bool = False,
+        bound_template: ResolvedResourceVersion | None = None,
     ) -> JobResourceSnapshot | None:
         if self.resource_version_service is None:
             self._ensure_no_versioned_selection(options)
             return None
 
         template_id = self._optional_text(options.template_id) or self.settings.default_template_id
-        template = self._resolve_resource(
+        template = bound_template or self._resolve_resource(
             resource_type="template",
             resource_id=template_id,
             version=options.template_version,
@@ -175,31 +251,7 @@ class JobResourceSnapshotService:
                 translation_profile=None,
                 translation_term_version=None,
             )
-        if self.resource_version_service is None:
-            raise JobResourceSnapshotError(
-                "当前 runtime 缺少 resource version service，无法物化 job resource snapshot。",
-                status_code=503,
-                code="resource_snapshot_unavailable",
-            )
-        if snapshot.template is None:
-            raise JobResourceSnapshotError(
-                "job resource snapshot 缺少 Template Version。",
-                status_code=409,
-                code="resource_snapshot_missing_template",
-            )
-        if snapshot.term_rule_set is None:
-            raise JobResourceSnapshotError(
-                "job resource snapshot 缺少 Term Rule Version。",
-                status_code=409,
-                code="resource_snapshot_missing_term_rule_set",
-            )
-        template_path = self._materialize_template(snapshot.template)
-        layout_config_path = self._materialize_template_layout_config(snapshot.template)
-        subscript_config_path = self._materialize_term_rule_set(
-            snapshot.term_rule_set,
-            job_paths,
-            department_id=snapshot.term_rule_department_id,
-        )
+        render_resources = self.materialize_render_resources(snapshot, job_paths)
         translation_profile = (
             self._materialize_translation_profile(snapshot.translation_profile)
             if is_translation_mode(job.translation_mode)
@@ -253,9 +305,9 @@ class JobResourceSnapshotService:
                 code="translation_term_set_language_pair_mismatch",
             )
         return MaterializedJobResources(
-            template_path=template_path,
-            layout_config_path=layout_config_path,
-            subscript_config_path=subscript_config_path,
+            template_path=render_resources.template_path,
+            layout_config_path=render_resources.layout_config_path,
+            subscript_config_path=render_resources.subscript_config_path,
             translation_profile=translation_profile,
             translation_term_version=translation_term_version,
         )
@@ -421,55 +473,113 @@ class JobResourceSnapshotService:
             data_id=job_id if source_kind == "source_pdf" else None,
         )
 
-    def _materialize_template(self, snapshot: ResolvedResourceVersion | None) -> Path | None:
-        if snapshot is None:
-            return None
-        record = self._load_snapshot_record(snapshot)
-        payload = record.payload or {}
-        docx_path = self._payload_text(payload, "docx_path")
-        if docx_path is None:
-            raise JobResourceSnapshotError("Template Version payload 缺少 docx_path。", status_code=409)
-        resolved = self._resolve_payload_path(docx_path)
-        if not resolved.exists() or not resolved.is_file():
-            raise JobResourceSnapshotError(f"Template Version 文件不存在: {docx_path}", status_code=409)
-        return resolved
+    def materialize_render_resources(
+        self, snapshot: JobResourceSnapshot, job_paths: JobPaths,
+    ) -> MaterializedRenderResources:
+        """认证任务绑定的 DOCX、YAML 和格式规则，返回随后渲染消费的同一份字节。"""
 
-    def _materialize_template_layout_config(self, snapshot: ResolvedResourceVersion | None) -> Path | None:
-        """返回 Template Version 绑定的版式 YAML；缺省时交给全局默认配置兜底。"""
+        template = snapshot.template
+        rules = snapshot.term_rule_set
+        if template is None:
+            raise JobResourceSnapshotError(
+                "任务资源快照缺少模板版本。", status_code=409, code="resource_snapshot_missing_template",
+            )
+        if rules is None:
+            raise JobResourceSnapshotError(
+                "任务资源快照缺少格式规则版本。", status_code=409, code="resource_snapshot_missing_term_rule_set",
+            )
+        template_record = self._load_render_record(template, "template")
+        rules_record = self._load_render_record(rules, "term_rule_set")
+        template_payload = template_record.payload
+        rules_payload = rules_record.payload
+        assert template_payload is not None and rules_payload is not None
+        template_source = self._payload_text(template_payload, "docx_path")
+        if template_source is None:
+            raise JobResourceSnapshotError(
+                "模板版本未声明 DOCX 文件。", status_code=409, code="resource_snapshot_payload_missing",
+            )
 
-        if snapshot is None:
-            return None
-        record = self._load_snapshot_record(snapshot)
-        payload = record.payload or {}
-        layout_config_path = self._payload_text(payload, "layout_config_path")
-        if layout_config_path is None:
-            return None
-        resolved = self._resolve_payload_path(layout_config_path)
-        if not resolved.exists() or not resolved.is_file():
-            raise JobResourceSnapshotError(f"Template Version 版式配置不存在: {layout_config_path}", status_code=409)
-        return resolved
-
-    def _materialize_term_rule_set(
-        self,
-        snapshot: ResolvedResourceVersion | None,
-        job_paths: JobPaths,
-        *,
-        department_id: str | None,
-    ) -> Path | None:
-        if snapshot is None:
-            return None
-        record = self._load_snapshot_record(snapshot)
-        payload = record.payload or {}
-        store_payload = payload.get("store")
-        if not isinstance(store_payload, dict):
-            raise JobResourceSnapshotError("Term Rule Version payload 缺少 store。", status_code=409)
-        store = TermRulesStore.model_validate(store_payload)
-        job_paths.resource_subscript_config.parent.mkdir(parents=True, exist_ok=True)
-        job_paths.resource_subscript_config.write_text(
-            self.term_rule_yaml_codec.dump_legacy_runtime_yaml(store, department_id=department_id),
-            encoding="utf-8",
+        # 模板和规则独立定位，显式重绑规则仍可复用原模板副本。
+        template_key = resource_payload_sha256({
+            "id": template.resource_id, "version": template.version, "snapshot_hash": template.snapshot_hash,
+        })
+        template_dir = job_paths.resources_dir / template_key.removeprefix("sha256:")
+        template_path = template_dir / "template.docx"
+        template_content = self._materialize_template_file(
+            template_path, template_source, template_payload.get("docx_sha256"), "template_docx_hash_mismatch",
         )
-        return job_paths.resource_subscript_config
+        layout_source = self._payload_text(template_payload, "layout_config_path")
+        layout_config_path = None
+        layout_config_content = None
+        layout_asset_dir = None
+        if layout_source is not None:
+            layout_config_path = template_dir / "layout.yaml"
+            layout_config_content = self._materialize_template_file(
+                layout_config_path, layout_source, template_payload.get("layout_config_sha256"),
+                "template_layout_config_hash_mismatch",
+            )
+            layout_asset_dir = self._resolve_payload_path(layout_source).parent
+        elif template_payload.get("layout_config_path") is not None or template_payload.get("layout_config_sha256") is not None:
+            raise JobResourceSnapshotError(
+                "模板版式配置绑定不完整。", status_code=409, code="resource_snapshot_payload_missing",
+            )
+
+        department_id = snapshot.term_rule_department_id
+        rules_key = resource_payload_sha256({
+            "id": rules.resource_id, "version": rules.version, "snapshot_hash": rules.snapshot_hash,
+            "department_id": department_id,
+        })
+        rules_path = job_paths.resources_dir / rules_key.removeprefix("sha256:") / job_paths.resource_subscript_config.name
+        try:
+            store = TermRulesStore.model_validate(rules_payload["store"])
+            rules_content = self.term_rule_yaml_codec.dump_legacy_runtime_yaml(store, department_id=department_id).encode("utf-8")
+        except (KeyError, ValueError):
+            raise JobResourceSnapshotError(
+                "格式规则版本内容非法。", status_code=409, code="term_rule_payload_invalid",
+            ) from None
+        rules_content = _materialize_verified_file(
+            rules_path, content=rules_content, expected_sha256=content_sha256(rules_content), hash_error="term_rule_hash_mismatch",
+        )
+        return MaterializedRenderResources(
+            template_path=template_path, layout_config_path=layout_config_path,
+            subscript_config_path=rules_path, layout_asset_dir=layout_asset_dir,
+            template_content=template_content, layout_config_content=layout_config_content,
+            subscript_content=rules_content,
+            publishable=(
+                template.status == "published"
+                and template_record.status == rules_record.status == ResourceVersionStatus.PUBLISHED
+            ),
+        )
+
+    def _materialize_template_file(
+        self, destination: Path, source: str, expected_sha256: object, hash_error: str,
+    ) -> bytes:
+        if not isinstance(expected_sha256, str) or not expected_sha256.startswith("sha256:"):
+            raise JobResourceSnapshotError("模板版本缺少有效的内容 SHA-256。", status_code=409, code=hash_error)
+        return _materialize_verified_file(
+            destination, source=self._resolve_payload_path(source), expected_sha256=expected_sha256, hash_error=hash_error,
+        )
+
+    def _load_render_record(
+        self, snapshot: ResolvedResourceVersion, expected_type: ResourceType,
+    ) -> ResourceVersionRecord:
+        if snapshot.resource_type != expected_type:
+            raise JobResourceSnapshotError("任务资源快照类型不匹配。", status_code=409)
+        record = self._load_snapshot_record(snapshot, allow_template_publication=expected_type == "template")
+        if (record.resource_type, record.resource_id, record.version) != (
+            snapshot.resource_type, snapshot.resource_id, snapshot.version,
+        ):
+            raise JobResourceSnapshotError("任务资源记录的版本身份不匹配。", status_code=409)
+        if expected_type == "template" and record.status not in {ResourceVersionStatus.PUBLISHED, ResourceVersionStatus.DRAFT}:
+            raise JobResourceSnapshotError(
+                "任务绑定的模板版本状态不可用于生成。", status_code=409, code="resource_snapshot_invalid_status",
+            )
+        if record.payload is None or resource_payload_sha256(record.payload) != record.snapshot_hash:
+            raise JobResourceSnapshotError(
+                "任务资源版本的 payload SHA-256 不匹配。", status_code=409,
+                code="resource_snapshot_payload_hash_mismatch",
+            )
+        return record
 
     def _materialize_translation_profile(
         self,
@@ -556,7 +666,9 @@ class JobResourceSnapshotService:
             code="translation_profile_language_pair_missing",
         )
 
-    def _load_snapshot_record(self, snapshot: ResolvedResourceVersion) -> ResourceVersionRecord:
+    def _load_snapshot_record(
+        self, snapshot: ResolvedResourceVersion, *, allow_template_publication: bool = False,
+    ) -> ResourceVersionRecord:
         if self.resource_version_service is None:
             raise JobResourceSnapshotError("资源版本服务不可用。", status_code=503, code="resource_snapshot_unavailable")
         record = self.resource_version_service.repository.get_resource_version(
@@ -581,7 +693,14 @@ class JobResourceSnapshotService:
                 status_code=409,
                 code="resource_snapshot_invalid_status",
             )
-        if record.snapshot_hash != snapshot.snapshot_hash:
+        if record.snapshot_hash != snapshot.snapshot_hash and not (
+            allow_template_publication and snapshot.status == "draft"
+            and record.status == ResourceVersionStatus.PUBLISHED
+            and record.payload is not None and resource_payload_sha256({
+                key: value for key, value in record.payload.items()
+                if key not in _TEMPLATE_PUBLICATION_FIELDS
+            }) == snapshot.snapshot_hash
+        ):
             raise JobResourceSnapshotError(
                 f"资源快照 hash 不匹配: {snapshot.resource_type}/{snapshot.resource_id}@{snapshot.version}",
                 status_code=409,
@@ -598,8 +717,13 @@ class JobResourceSnapshotService:
     def _resolve_payload_path(self, raw_path: str) -> Path:
         path = Path(raw_path)
         if path.is_absolute():
-            return path.resolve()
-        return (self.settings.root_dir / path).resolve()
+            return path
+        try:
+            return (self.settings.root_dir / path).resolve()
+        except (OSError, RuntimeError):
+            raise JobResourceSnapshotError(
+                "任务绑定的资源文件不可读取。", status_code=409, code="resource_snapshot_file_unavailable",
+            ) from None
 
     def _ensure_no_versioned_selection(self, options: ConversionOptions) -> None:
         forbidden = {

@@ -5,19 +5,13 @@ import base64
 from dataclasses import asdict
 import hashlib
 import json
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from app.domains.document_jobs.publication import PublicationConflict
 from app.domains.document_jobs.review import digest
 from app.domains.jobs.models import JobResourceSnapshot
-from app.domains.jobs.paths import build_job_paths
-from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
-from app.domains.resources.models import ResourceVersionStatus
-from app.services.renderer.resource_identity import normalized_resource_identity, renderer_implementation_identity
-from app.services.renderer.word_renderer import DocumentIRRenderOptions
+from app.services.renderer.resource_identity import renderer_implementation_identity
 
 
 class _CallParameters(BaseModel):
@@ -71,49 +65,28 @@ def _save_private_report(job, payload, file_service, filename):
         metadata={"asset_role": "publication_provenance", "generation": job.retry_count})
 
 
-def capture_render_publication_provenance(job, ir_file, document_ir, render_result, *, renderer,
-                                          snapshot_service, file_service):
-    """认证资源声明与实际渲染身份；缺旧证据不补造，不改变原渲染选择。"""
+def capture_render_publication_provenance(job, ir_file, render_result, *, resources_publishable, file_service):
+    """冻结本次渲染实际消费的实物；草稿和无绑定历史任务不产生可发布证明。"""
+
     payload = {"schema_version": "publication-render/v1", "job_id": job.id, "generation": job.retry_count,
         "document_ir_file_id": ir_file.id, "document_ir_sha256": ir_file.checksum_sha256,
         "result_sha256": "sha256:" + hashlib.sha256(render_result.content).hexdigest(),
         "renderer": renderer_implementation_identity(), "status": "unavailable"}
-    if snapshot_service is None or not isinstance(job.request_snapshot.get("resources"), dict):
-        return _save_private_report(job, payload, file_service, "publication-render.json")
-    try:
-        snapshot = JobResourceSnapshot.model_validate(job.request_snapshot["resources"])
-        if snapshot.template is None or snapshot.term_rule_set is None or snapshot.template.status != "published":
-            return _save_private_report(job, payload, file_service, "publication-render.json")
-        template_record = snapshot_service._load_snapshot_record(snapshot.template)
-        rules_record = snapshot_service._load_snapshot_record(snapshot.term_rule_set)
-        if template_record.status != ResourceVersionStatus.PUBLISHED or rules_record.status != ResourceVersionStatus.PUBLISHED:
-            return _save_private_report(job, payload, file_service, "publication-render.json")
-        template_path = snapshot_service._materialize_template(snapshot.template)
-        config_path = snapshot_service._materialize_template_layout_config(snapshot.template)
-        if template_path is None or config_path is None:
-            return _save_private_report(job, payload, file_service, "publication-render.json")
-        with TemporaryDirectory(prefix="publication-resources-") as temporary:
-            rules_path = snapshot_service._materialize_term_rule_set(snapshot.term_rule_set,
-                build_job_paths(Path(temporary), job.id), department_id=snapshot.term_rule_department_id)
-            options = DocumentIRRenderOptions(subscript_config_path=rules_path,
-                document_language=document_ir.metadata.document_language, template_version_id=job.template_version_id)
-            config = renderer._load_template_config(document_ir, config_path, options)
-            logo_path = renderer._resolve_asset_path(config.header.logo_path, config_path)
-            logo = logo_path.read_bytes() if config.header.enabled and logo_path is not None else None
-            template_content = template_path.read_bytes()
-            declared = normalized_resource_identity(template_content=template_content, config=config, logo_content=logo,
-                document_language=document_ir.metadata.document_language)
-            actual = render_result.plan.resource_identity
-            payload.update(status="complete" if declared == actual else "mismatch",
-                resource_identity=actual.model_dump(mode="json"), declared_resource_identity=declared.model_dump(mode="json"),
+    inputs = render_result.resource_inputs
+    if resources_publishable and inputs is not None and inputs.template_config is not None:
+        try:
+            snapshot = JobResourceSnapshot.model_validate(job.request_snapshot["resources"])
+        except ValueError:
+            # direct 历史惰性翻译字段不影响渲染，完整快照无法认证时保留不可发布状态。
+            pass
+        else:
+            identity = render_result.plan.resource_identity.model_dump(mode="json")
+            payload.update(status="complete", resource_identity=identity, declared_resource_identity=identity,
                 declared_resources=snapshot.model_dump(mode="json"), resources={
-                    "template_docx": base64.b64encode(template_content).decode(),
-                    "template_config": base64.b64encode(config_path.read_bytes()).decode(),
-                    "symbol_rules": base64.b64encode(rules_path.read_bytes()).decode() if rules_path is not None else None,
-                    "logo": base64.b64encode(logo).decode() if logo is not None else None})
-    except (JobResourceSnapshotError, FileNotFoundError, ValueError):
-        # 只有已识别的旧来源缺失降为不可发布；未知存储/编程错误继续向外失败。
-        payload["status"] = "unavailable"
+                    "template_docx": base64.b64encode(inputs.template_docx).decode(),
+                    "template_config": base64.b64encode(inputs.template_config).decode(),
+                    "symbol_rules": base64.b64encode(inputs.symbol_rules).decode(),
+                    "logo": base64.b64encode(inputs.logo).decode() if inputs.logo is not None else None})
     translation = ir_file.metadata.get("translation", {})
     payload["translation_provenance_file_id"] = translation.get("publication_provenance_file_id")
     return _save_private_report(job, payload, file_service, "publication-render.json")

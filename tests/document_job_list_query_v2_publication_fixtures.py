@@ -10,6 +10,7 @@ import zipfile
 import zlib
 from unittest.mock import patch
 from uuid import uuid4
+from app.domains.resources.integrity import content_sha256
 from app.domains.resources.models import ResourceVersionRecord, ResourceVersionStatus, utc_now
 from app.domains.resources.service import ResourceVersionService
 from app.domains.jobs.models import JobResourceSnapshot
@@ -141,7 +142,9 @@ class V2PublicationFixture:
         runtime.settings.term_rules_runtime_yaml_path = str(rules_path)
         for resource_type, resource_id, version, payload in (
             ("template", selection.template_id, str(selection.version), {"docx_path": str(selection.template_path),
-                "layout_config_path": str(selection.layout_config_path)}),
+                "docx_sha256": content_sha256(selection.template_path.read_bytes()),
+                "layout_config_path": str(selection.layout_config_path),
+                "layout_config_sha256": content_sha256(selection.layout_config_path.read_bytes())}),
             ("term_rule_set", "publication-rules", "1", {"store": rules_store.model_dump(mode="json")}),
         ):
             repository.save_resource_version(ResourceVersionRecord(resource_type=resource_type, resource_id=resource_id,
@@ -155,7 +158,7 @@ class V2PublicationFixture:
         execution.translation_batches.job_resource_snapshot_service = execution.job_resource_snapshot_service
         replace_dependency(runtime.document_job_use_cases, "job_resource_snapshot_service", snapshots)
         job = runtime.document_job_repository.update_document_job(job.id,
-            request_snapshot={**job.request_snapshot, "resources": snapshot.model_dump(mode="json")})
+            request_snapshot={**job.request_snapshot, "resources": snapshot.model_dump(mode="json") if complete else None})
         return job
 
     def publish(self, runtime, job, admin, *, key=None, note="批准交付", source=None):
