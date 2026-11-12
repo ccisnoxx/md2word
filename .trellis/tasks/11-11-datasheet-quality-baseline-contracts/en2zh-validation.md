@@ -18,6 +18,16 @@
 
 实际译文中的 13 个块和 3 个资产与源 IR 对应，标注技术 Token 3/3。目标表的 4×4 行列与两处合并匹配，新解析结果的 DOCX 未标重复表头，结构完整匹配为 0/1。该 DOCX 为可下载的内部草稿，等待[人工验收](en2zh-human-review.md)。
 
+## 使用本次 MinerU 结果复验 ESD 表头
+
+对照源 PDF 第 6 页，ESD Ratings 表首行是 `VALUE`、`UNIT` 所在的列标题行。在本次 MinerU 包中，该表位于 content list v2 的 `/0/4`。HTML 有 13 个 `<td>`，`<th>` 和 `<thead>` 均为 0，layout 表节点也没有显式表头。已保存的源 Grid、译文渲染 Grid 和实际 Word 的 `w:tblHeader` 行均为空，缺失可定位到上游解析输出。
+
+按[表头来源合同](table-header-review.md)建立[本次校核记录](en2zh-rs2g04-live-header-review.json)。记录绑定实际提交的 PDF、此次 content list 和原始 HTML 的 SHA-256、零基页号 `0` 和表格位置 `/0/4`，确认连续首部行数为 `1`。转换入口接受本次记录，并以 `source_binding` 拒绝同一 PDF 先前解析结果的校核记录。
+
+将同一校核记录核验到已保存的中文 IR 副本，用原模板、布局配置、符号规则和图像渲染。源 Grid、译文渲染 Grid、实际 Word 都得到表头行 `[0]`，4×4 行列和两处合并匹配，中文 IR 块和 Word 表格单元格文字一致，标注技术 Token 3/3。校核版结构完整匹配为 1/1，原始完整链路观测保留 0/1。两个 DOCX 均通过持久化渲染证据重读。[本地定向复验观测](en2zh-rs2g04-live-header-reviewed-observations.json) · [校核版中文 Word](../../../tests/tmp/datasheet-en2zh-live-20261111/rs2g04-live-header-review/RS2G04-p6.zh.header-reviewed.docx)
+
+本地复验使用已保存的解析包和译文，服务费用与 PDF 提交延迟见上方的原始完整链路观测。人工修改次数与验收耗时待实际审核回填，人工验收记录绑定实际审阅的产物指纹。
+
 ## 先前运行
 
 | 路径与样本 | 实测结果 | 计时 | 翻译费用估算 |
@@ -34,9 +44,18 @@
 
 旧 Token 声明的有效期于 2026-07-15 09:30:16（北京时间）结束，更新前使用旧 Token 和 UID 的只读查询得到 `HTTP 401 / A0202`。人工修改次数和验收耗时按实际审核轮次回填。新增门槛待首轮数据齐备后再定。
 
+## SN74AC244 英译中失败批次的离线定位
+
+按历史运行记录核对原 PDF 切片和 MinerU content list 的 SHA-256，重建当时使用的表头校核与翻译计划。分批参数为每批最多 1 页和 5,000 个编码字符，术语版本为空。第三个请求 `document_ir_provider_request_0003` 是原 PDF 第 5 页，含 147 个文本项（137 个来自表格 HTML）、1,248 个源字符和 2,918 个编码字符。三项计数与历史失败摘要唯一吻合，顺序也与第三次供应商响应一致。
+
+四批都用原样编码文本作为本地对照响应，完整性校验通过，恢复结果逐项等于源文本。在第三批保留原有占位符并向一个项加入额外技术数值，校验器返回 `translation_integrity_technical_mismatch`，检查 147 项、失败 1 项。这个对照验证了阻断语义。历史回执保留了错误码和计数，缺少定位具体单元格所需的响应证据，无法确定当时的具体差异。
+
+第三批作为翻译完整性问题的已定位复验输入，和其他转换偏差一起进入后续修复清单。[问题清单](issues.md)
+
 ```bash
 task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 .venv/bin/python scripts/ops/datasheet_quality_metrics.py "$task_dir/en2zh-live-observations.json"
 .venv/bin/python scripts/ops/datasheet_quality_metrics.py "$task_dir/en2zh-replay-observations.json"
 .venv/bin/python scripts/ops/datasheet_quality_metrics.py "$task_dir/en2zh-rs2g04-live-observations.json"
+.venv/bin/python scripts/ops/datasheet_quality_metrics.py "$task_dir/en2zh-rs2g04-live-header-reviewed-observations.json"
 ```
