@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from fastapi import Request, status
 
@@ -17,7 +17,6 @@ from app.domains.document_jobs.models import (
     DocumentJobTranslationBatchRecord,
 )
 from app.domains.document_jobs.schemas.jobs import (
-    DocumentJobAvailableActionResponse,
     DocumentJobBulkItemResponse,
     DocumentJobBulkResponse,
     DocumentJobDeleteExecuteResponse,
@@ -25,15 +24,15 @@ from app.domains.document_jobs.schemas.jobs import (
     DocumentJobDeletePreviewResponse,
     DocumentJobDeleteSafetyResponse,
     DocumentJobEventResponse,
-    DocumentJobResponse,
 )
 from app.domains.document_jobs.schemas.translation import (
-    DocumentJobTranslationQaStateResponse,
     DocumentJobTranslationBatchListResponse,
     DocumentJobTranslationBatchSummaryResponse,
     DocumentJobTranslationBatchExecutionResponse,
 )
 from app.domains.document_jobs.use_cases.queries import TranslationBatchListView
+from app.domains.document_jobs.views.jobs import DocumentJobAvailableActionResponse, DocumentJobResponse
+from app.domains.document_jobs.views.translation import DocumentJobTableReferenceListResponse, DocumentJobTranslationQaStateResponse
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.schemas import DocumentFileSummaryResponse
 from app.domains.translation.modes import translation_mode_for_document_job_mode
@@ -322,3 +321,19 @@ def build_translation_batch_list_response(
             if execution is not None else None
         ),
     )
+
+
+def with_table_reference_content_paths(
+    result: DocumentJobTableReferenceListResponse,
+) -> DocumentJobTableReferenceListResponse:
+    """为可用的表格参考图补齐受认证内容入口；地址绑定当前代与 IR，防止跨代复用旧链接。"""
+
+    items = [
+        item.model_copy(update={"content_path": (
+            f"/api/v1/document-jobs/{quote(result.job_id, safe='')}/table-references/"
+            f"{quote(item.asset_id, safe='')}/content?generation={result.generation}"
+            f"&ir_file_id={quote(result.ir_file_id, safe='')}"
+        )}) if item.availability == "available" else item
+        for item in result.items
+    ]
+    return result.model_copy(update={"items": items})

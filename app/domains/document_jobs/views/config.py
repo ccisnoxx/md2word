@@ -1,8 +1,9 @@
-"""任务创建配置摘要（默认值、可选版本、就绪状态）的响应模型。"""
+"""任务创建配置摘要的用例输出模型。"""
 
 from __future__ import annotations
 
 from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 
 

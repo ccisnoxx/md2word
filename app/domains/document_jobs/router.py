@@ -36,10 +36,10 @@ from app.domains.document_jobs.http_responses import (
     build_translation_batch_list_response,
     build_translation_qa_state_response,
     validate_document_job_bulk_ids,
+    with_table_reference_content_paths,
 )
 from app.domains.document_jobs.publication_router import publication_router
 from app.domains.document_jobs.quality_review_router import quality_review_router
-from app.domains.document_jobs.schemas.config import DocumentJobConfigSummaryResponse
 from app.domains.document_jobs.schemas.jobs import (
     DocumentJobArchiveResponse,
     DocumentJobBulkItemResponse,
@@ -57,18 +57,21 @@ from app.domains.document_jobs.schemas.jobs import (
     DocumentJobEventListResponse,
     DocumentJobFileListResponse,
     DocumentJobListResponse,
-    DocumentJobResponse,
     DocumentJobRetryRequest,
     DocumentJobRetryResponse,
     DocumentJobUnarchiveResponse,
 )
 from app.domains.document_jobs.schemas.translation import (
-    DocumentJobTableReferenceListResponse,
     DocumentJobCallbackMessageSummaryResponse,
-    DocumentJobTranslationQaResponse,
     DocumentJobTranslationQaUpdateRequest,
     DocumentJobTranslationQaUpdateResponse,
     DocumentJobTranslationBatchListResponse,
+)
+from app.domains.document_jobs.views.config import DocumentJobConfigSummaryResponse
+from app.domains.document_jobs.views.jobs import DocumentJobResponse
+from app.domains.document_jobs.views.translation import (
+    DocumentJobTableReferenceListResponse,
+    DocumentJobTranslationQaResponse,
 )
 from app.domains.resources.models import utc_now
 from app.services.auth.models import AuthenticatedUser
@@ -600,7 +603,8 @@ def list_document_job_table_references(
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobTableReferenceListResponse:
     """列出当前权威 IR 的表格参考图，不公开内部存储定位。"""
-    result = runtime.document_job_use_cases.table_references.list_table_references(job_id, user=user, block_id=block_id)
+    result = with_table_reference_content_paths(
+        runtime.document_job_use_cases.table_references.list_table_references(job_id, user=user, block_id=block_id))
     response.headers["Cache-Control"] = "private, no-store"
     runtime.audit_service.record(
         actor=actor_from_user(user), action="document_job.table_reference_list", target_type="document_job",

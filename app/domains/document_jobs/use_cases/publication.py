@@ -46,7 +46,7 @@ from app.domains.document_jobs.review import (
     observed_review_source,
     review_validity,
 )
-from app.domains.document_jobs.schemas.jobs import (
+from app.domains.document_jobs.views.jobs import (
     DocumentJobActionDisabledReasonResponse,
     DocumentJobAvailableActionResponse,
 )

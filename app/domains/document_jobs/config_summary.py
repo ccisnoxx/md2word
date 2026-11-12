@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.runtime import AppRuntime
-from app.domains.document_jobs.schemas.config import (
+from app.domains.document_jobs.views.config import (
     DocumentJobConfigDefaults,
     DocumentJobConfigOptions,
     DocumentJobConfigReadiness,

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from app.domains.document_jobs.publication import PublicationExpectedSource
-from app.domains.document_jobs.schemas.jobs import DocumentJobActionId, DocumentJobAvailableActionResponse
-from app.domains.document_jobs.schemas.quality_review import QualityChecksum
+from app.domains.document_jobs.views.jobs import DocumentJobActionId, DocumentJobAvailableActionResponse
+from app.domains.document_jobs.views.quality_review import QualityChecksum
 
 
 class DocumentPublishRequest(BaseModel):

@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from app.core.config import Settings
 from app.core.errors import ApiError
-from app.domains.document_jobs.schemas.quality_review import QualityChecksum, QualityId
+from app.domains.document_jobs.views.quality_review import QualityChecksum, QualityId
 from app.domains.resources.models import utc_now
 
 

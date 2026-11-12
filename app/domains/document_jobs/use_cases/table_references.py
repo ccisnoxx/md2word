@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import hashlib
 from typing import Any
-from urllib.parse import quote
 
 from app.core.errors import ApiError
 from app.domains.document_jobs.models import DocumentJobRecord
-from app.domains.document_jobs.schemas.translation import (
+from app.domains.document_jobs.views.translation import (
     DocumentJobTableReferenceListResponse,
     DocumentJobTableReferenceResponse,
 )
@@ -68,10 +67,6 @@ class DocumentJobTableReferences:
             asset = reference.asset
             file = self._get_table_reference_file(snapshot, reference) if asset is not None else None
             availability = self._table_reference_availability(file) if asset is not None else "source_" + reference.detail.source_status
-            content_path = None
-            if availability == "available":
-                content_path = (f"/api/v1/document-jobs/{quote(job.id, safe='')}/table-references/"
-                                f"{quote(asset.id, safe='')}/content?generation={job.retry_count}&ir_file_id={quote(ir_file_id, safe='')}")
             items.append(DocumentJobTableReferenceResponse(
                 block_id=reference.block_id, fragment_id=reference.fragment.fragment_id,
                 logical_group_id=reference.logical_group_id, page_index=reference.fragment.source_span.page_index,
@@ -81,7 +76,9 @@ class DocumentJobTableReferences:
                 checksum_sha256=asset.checksum_sha256 if asset else None, size_bytes=file.size_bytes if file else None,
                 warning_codes=(["missing_table_reference"] if reference.detail.source_status == "missing" else
                                ["invalid_table_reference"] if reference.detail.source_status == "invalid" else []),
-                display_supported=asset is not None and asset.mime_type in INLINE_MIME_TYPES, content_path=content_path,
+                display_supported=asset is not None and asset.mime_type in INLINE_MIME_TYPES,
+                # 内容入口是 HTTP 路由地址，由路由层 with_table_reference_content_paths 补齐。
+                content_path=None,
             ))
         self._recheck_table_reference_snapshot(snapshot, user=user)
         return DocumentJobTableReferenceListResponse(

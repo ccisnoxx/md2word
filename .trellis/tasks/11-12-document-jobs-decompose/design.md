@@ -124,3 +124,11 @@ router 保留：`request.url_for` + `_externalize_url`（HTTP 关注点）、`au
 
 1. **用例返回 HTTP 响应模型**：`use_cases/quality_review.py`、`translation_qa.py`、`read_model.py`、`review_content.py` 等直接构造 `schemas` 中的 Pydantic 响应。本任务只做包拆分，不改为独立 DTO——这些模型是严格的只读投影，再造一套 DTO 会成倍增加映射代码。若希望应用层完全不依赖 HTTP 模型，建议另开任务。
 2. **执行顺序**：建议按 `translation_execution → router/use_cases → schemas → preview/render` 分四次提交，每次单独可验证、可回退。
+
+## 8. 应用层不再依赖 HTTP 响应模型（2026-11-12 追加，用户选定方案）
+
+- 决策：用例产出的响应模型迁为应用层读模型包 `app/domains/document_jobs/views/`（子模块沿用 `jobs`、`translation`、`config`、`incidents`、`quality_review`），router 直接以它们作 `response_model`；`schemas/` 只保留请求模型与仅由 HTTP 层组装的响应包装。依赖方向固定为 `schemas → views`、`router → use_cases → views`，应用层模块不得导入 `schemas`。
+- 不采用“独立 dataclass DTO + HTTP 映射”：需新增约 100 个 DTO 与映射，并把严格模型（strict/extra=forbid）的输出校验迁到映射层，改动与回归风险不成比例。
+- 迁移集合 = 应用层直接引用的模型及其字段传递闭包（91 个）；类名不变，OpenAPI 组件名与内容须逐字节不变。
+- `use_cases/table_references.py` 拼接 `/api/v1/document-jobs/.../content` 的 `content_path` 属 HTTP 关注点，移到 `http_responses.py`，由路由在返回前补齐；字符串逐字不变，`review_content` 不消费该字段。
+- 验收：`rg` 确认 `app/` 中除 HTTP 模块外无 `document_jobs.schemas` 导入；路由顺序与保序 OpenAPI 与 `3f918267` 一致；受影响测试失败集合与 `3f918267` 一致。

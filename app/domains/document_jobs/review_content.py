@@ -1,22 +1,23 @@
 """QA-603 专用授权内容读取；只消费现有产物，私有观察不进入 DTO。"""
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import dataclass, field
 import hashlib
 import html
 import json
 import math
 import re
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 
 from bs4 import BeautifulSoup
+
 from app.core.errors import ApiError
 from app.domains.document_jobs.preview_evidence import is_preview_storage_error, PreviewUnavailable, read_artifact, read_current_preview_evidence
 from app.domains.document_jobs.quality_review_projection import (
     ReviewBlocksCursor, ReviewBlockContentCursor, encode_cursor, project_source, project_table_item,
 )
 from app.domains.document_jobs.review import digest
-from app.domains.document_jobs.schemas.quality_review import (
+from app.domains.document_jobs.views.quality_review import (
     DocumentReviewComponentResponse as Component,
     DocumentReviewContentSnapshotResponse as Snapshot,
     DocumentReviewSourceSpanResponse as Span,

@@ -108,7 +108,7 @@ class DocumentJobQualityReview:
 
     def get_document_quality(self, job_id, *, user):
         from app.domains.document_jobs.quality_review_projection import project_source, project_quality_summary, project_review
-        from app.domains.document_jobs.schemas.quality_review import DocumentQualityResponse
+        from app.domains.document_jobs.views.quality_review import DocumentQualityResponse
         job = self.review_api_job(job_id, user)
         file = self.access.review_api_file(job)
         view, actions = self.read_model.build_job_read_view(job, user=user, observed_result=file)
@@ -124,7 +124,7 @@ class DocumentJobQualityReview:
 
     def get_document_review(self, job_id, *, user):
         from app.domains.document_jobs.quality_review_projection import project_source, project_review
-        from app.domains.document_jobs.schemas.quality_review import DocumentCurrentReviewResponse
+        from app.domains.document_jobs.views.quality_review import DocumentCurrentReviewResponse
         job = self.review_api_job(job_id, user)
         file = self.access.review_api_file(job)
         view, actions = self.read_model.build_job_read_view(job, user=user, observed_result=file)
@@ -150,7 +150,7 @@ class DocumentJobQualityReview:
         from app.domains.document_jobs.quality_review_projection import (
             HistoryCursor, encode_cursor, paginate_history, project_review_history_item,
         )
-        from app.domains.document_jobs.schemas.quality_review import DocumentReviewHistoryResponse
+        from app.domains.document_jobs.views.quality_review import DocumentReviewHistoryResponse
         job = self.review_api_job(job_id, user)
         parsed = self.review_cursor(cursor, "history", job.id, limit)
         after, through = (parsed.after_sequence, parsed.through_sequence) if parsed else (0, job.review_sequence)
@@ -167,7 +167,7 @@ class DocumentJobQualityReview:
         from app.domains.document_jobs.quality_review_projection import (
             TableCursor, encode_cursor, project_source, project_table_item, project_table_report,
         )
-        from app.domains.document_jobs.schemas.quality_review import DocumentQualityTablesResponse
+        from app.domains.document_jobs.views.quality_review import DocumentQualityTablesResponse
         job = self.review_api_job(job_id, user)
         parsed = self.review_cursor(cursor, "tables", job.id, limit)
         file = self.access.review_api_file(job)
@@ -225,7 +225,7 @@ class DocumentJobQualityReview:
         from app.domains.document_jobs.quality_review_projection import (
             PreviewCursor, encode_cursor, project_source, project_preview_run, project_preview_page,
         )
-        from app.domains.document_jobs.schemas.quality_review import DocumentPreviewResponse
+        from app.domains.document_jobs.views.quality_review import DocumentPreviewResponse
         job = self.review_api_job(job_id, user)
         parsed = self.review_cursor(cursor, "preview", job.id, limit)
         file = self.access.review_api_file(job)
@@ -256,7 +256,7 @@ class DocumentJobQualityReview:
         from app.domains.document_jobs.quality_review_projection import (
             PageCursor, encode_cursor, project_source, project_page_report, project_page_item,
         )
-        from app.domains.document_jobs.schemas.quality_review import DocumentQualityPagesResponse
+        from app.domains.document_jobs.views.quality_review import DocumentQualityPagesResponse
         job = self.review_api_job(job_id, user)
         parsed = self.review_cursor(cursor, "pages", job.id, limit)
         file = self.access.review_api_file(job)
@@ -286,7 +286,7 @@ class DocumentJobQualityReview:
 
     def submit_document_review_with_source(self, job_id, *, user, review_status, expected_source,
             issue_type=None, note=None, trace_id=None):
-        from app.domains.document_jobs.schemas.quality_review import DocumentReviewUpdateResponse
+        from app.domains.document_jobs.views.quality_review import DocumentReviewUpdateResponse
         expected = ReviewExpectedSource.model_validate(expected_source)
         committed = self.review_writer.submit_document_review(self.review_api_job(job_id, user), user=user,
             review_status=review_status, issue_type=issue_type, note=note, trace_id=trace_id, expected_source=expected)

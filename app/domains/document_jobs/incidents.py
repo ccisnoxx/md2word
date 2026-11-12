@@ -14,7 +14,11 @@ from app.domains.document_jobs.base_quality import DegradedPageSummary, current_
 from app.domains.document_jobs.delivery_state import translation_qa_projection
 from app.domains.document_jobs.failure_diagnostic import project_failure_diagnostic
 from app.domains.document_jobs.models import DocumentJobRecord, DocumentJobStage, DocumentJobStatus
-from app.domains.document_jobs.schemas.incidents import (
+from app.domains.document_jobs.use_cases.access import DocumentJobAccess
+from app.domains.document_jobs.use_cases.queries import DocumentJobQueries
+from app.domains.document_jobs.use_cases.read_model import DocumentJobReadModel
+from app.domains.document_jobs.use_cases.submission import DocumentJobSubmission
+from app.domains.document_jobs.views.incidents import (
     DocumentJobIncidentBulkItemResponse,
     DocumentJobIncidentBulkResponse,
     DocumentJobIncidentDiagnosticResponse,
@@ -28,11 +32,7 @@ from app.domains.document_jobs.schemas.incidents import (
     DocumentJobIncidentSort,
     DocumentJobIncidentSummaryResponse,
 )
-from app.domains.document_jobs.schemas.jobs import DocumentJobAvailableActionResponse, DocumentJobResponse
-from app.domains.document_jobs.use_cases.access import DocumentJobAccess
-from app.domains.document_jobs.use_cases.queries import DocumentJobQueries
-from app.domains.document_jobs.use_cases.read_model import DocumentJobReadModel
-from app.domains.document_jobs.use_cases.submission import DocumentJobSubmission
+from app.domains.document_jobs.views.jobs import DocumentJobAvailableActionResponse, DocumentJobResponse
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.resources.models import utc_now

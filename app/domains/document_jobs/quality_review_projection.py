@@ -2,16 +2,16 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import Mapping, Sequence
 import json
 import re
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, Literal, get_args
 
 from pydantic import Field, TypeAdapter, ValidationError, model_validator
 
 from app.domains.document_jobs.base_quality import Reason as BaseReason, project_base_quality
 from app.domains.document_jobs.review import receipt_identity
-from app.domains.document_jobs.schemas.quality_review import (
+from app.domains.document_jobs.views.quality_review import (
     DocumentQualityBlockCandidateResponse,
     DocumentQualityCellShapeResponse,
     DocumentQualityCountsResponse,

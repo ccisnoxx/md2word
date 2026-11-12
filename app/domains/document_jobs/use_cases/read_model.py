@@ -14,7 +14,7 @@ from app.domains.document_jobs.publication import PublicationConflict
 from app.domains.document_jobs.publication_evidence import prepare_publication_evidence
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.document_jobs.review import effective_review_job
-from app.domains.document_jobs.schemas.jobs import (
+from app.domains.document_jobs.views.jobs import (
     DocumentJobActionDisabledReasonResponse,
     DocumentJobAvailableActionResponse,
 )

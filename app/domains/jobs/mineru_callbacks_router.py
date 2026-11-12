@@ -18,7 +18,7 @@ from app.api.mineru_callback_guards import (
     verify_mineru_callback_result_url,
 )
 from app.core.runtime import AppRuntime
-from app.domains.document_jobs.schemas.jobs import DocumentJobResponse
+from app.domains.document_jobs.views.jobs import DocumentJobResponse
 
 
 router = APIRouter(prefix="/mineru-callbacks", tags=["mineru-callbacks"])

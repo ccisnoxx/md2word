@@ -23,19 +23,19 @@ from app.domains.document_jobs.schemas.quality_review import (
     DocumentJobNewGenerationResponse,
     DocumentJobNewGenerationErrorResponse,
 )
-from app.domains.document_jobs.schemas.quality_review import (
+from app.domains.document_jobs.schemas.quality_review import DocumentReviewUpdateRequest
+from app.domains.document_jobs.use_cases.common import NewGenerationRequestUnavailable
+from app.domains.document_jobs.views.quality_review import (
     DocumentQualityResponse,
     DocumentQualityTablesResponse,
     DocumentQualityPagesResponse,
     DocumentPreviewResponse,
     DocumentCurrentReviewResponse,
     DocumentReviewHistoryResponse,
-    DocumentReviewUpdateRequest,
     DocumentReviewUpdateResponse,
     DocumentReviewBlocksResponse,
     DocumentReviewBlockDetailResponse,
 )
-from app.domains.document_jobs.use_cases.common import NewGenerationRequestUnavailable
 from app.services.auth.models import AuthenticatedUser
 
 
