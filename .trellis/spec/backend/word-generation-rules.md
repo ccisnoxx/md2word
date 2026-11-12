@@ -530,7 +530,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：绑定模板 DOCX、layout config、document language 和 subscript/terminology config。
-- 正式 owner：`app/services/renderer/word_renderer.py::_open_document`、`::_load_template_config`；`app/services/renderer/template_config.py`；版本/API owner 见 [模板布局配置合同](./template-layout-configuration.md)。
+- 正式 owner：`app/services/renderer/word_renderer.py::_open_document`、`::_load_template_config`（渲染器外部调用方——如发布来源核验——只经公开入口 `::load_template_resources` 取得版式配置与 logo 路径）；`app/services/renderer/template_config.py`；版本/API owner 见 [模板布局配置合同](./template-layout-configuration.md)。
 - 预期输出：renderer 清空模板 body 但保留 sectPr 和模板 header/footer，应用绑定版本的页面、段落、表格、字体及术语配置；发布版本不可变性不在本文重复定义。
 - 冲突/例外：模板决定 Word 样式和绝对页面设置，源 layout 决定内容顺序、分栏和方向；显式空字体值保留继承语义。
 - 禁止：为适配 PDF 修改已发布 seed；在 renderer 猜另一套 schema；让源 bbox 覆盖模板字体/边距。

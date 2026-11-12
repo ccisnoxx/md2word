@@ -84,21 +84,20 @@ def capture_render_publication_provenance(job, ir_file, document_ir, render_resu
         snapshot = JobResourceSnapshot.model_validate(job.request_snapshot["resources"])
         if snapshot.template is None or snapshot.term_rule_set is None or snapshot.template.status != "published":
             return _save_private_report(job, payload, file_service, "publication-render.json")
-        template_record = snapshot_service._load_snapshot_record(snapshot.template)
-        rules_record = snapshot_service._load_snapshot_record(snapshot.term_rule_set)
+        template_record = snapshot_service.load_snapshot_record(snapshot.template)
+        rules_record = snapshot_service.load_snapshot_record(snapshot.term_rule_set)
         if template_record.status != ResourceVersionStatus.PUBLISHED or rules_record.status != ResourceVersionStatus.PUBLISHED:
             return _save_private_report(job, payload, file_service, "publication-render.json")
-        template_path = snapshot_service._materialize_template(snapshot.template)
-        config_path = snapshot_service._materialize_template_layout_config(snapshot.template)
+        template_path = snapshot_service.materialize_template(snapshot.template)
+        config_path = snapshot_service.materialize_template_layout_config(snapshot.template)
         if template_path is None or config_path is None:
             return _save_private_report(job, payload, file_service, "publication-render.json")
         with TemporaryDirectory(prefix="publication-resources-") as temporary:
-            rules_path = snapshot_service._materialize_term_rule_set(snapshot.term_rule_set,
+            rules_path = snapshot_service.materialize_term_rule_set(snapshot.term_rule_set,
                 build_job_paths(Path(temporary), job.id), department_id=snapshot.term_rule_department_id)
             options = DocumentIRRenderOptions(subscript_config_path=rules_path,
                 document_language=document_ir.metadata.document_language, template_version_id=job.template_version_id)
-            config = renderer._load_template_config(document_ir, config_path, options)
-            logo_path = renderer._resolve_asset_path(config.header.logo_path, config_path)
+            config, logo_path = renderer.load_template_resources(document_ir, config_path, options)
             logo = logo_path.read_bytes() if config.header.enabled and logo_path is not None else None
             template_content = template_path.read_bytes()
             declared = normalized_resource_identity(template_content=template_content, config=config, logo_content=logo,

@@ -290,7 +290,7 @@ class DocumentJobPublication:
                 materialized = service.materialize(resources_job, build_job_paths(Path(temporary), job.id))
                 if materialized.template_path is None or materialized.layout_config_path is None:
                     raise ValueError("原模板实物或版式配置缺失。")
-                record = service._load_snapshot_record(snapshot.template)
+                record = service.load_snapshot_record(snapshot.template)
                 for name, path in (("docx_sha256", materialized.template_path), ("layout_config_sha256", materialized.layout_config_path)):
                     actual = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
                     if record.payload.get(name) is not None and record.payload[name] != actual:

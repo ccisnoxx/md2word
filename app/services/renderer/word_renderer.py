@@ -111,8 +111,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
 
         config_content = config_path.read_bytes() if config_path is not None else None
         template_content = template_path.read_bytes() if template_path is not None else None
-        template_config = self._load_template_config(document_ir, config_path, options, content=config_content)
-        logo_path = self._resolve_asset_path(template_config.header.logo_path, config_path)
+        template_config, logo_path = self.load_template_resources(document_ir, config_path, options, content=config_content)
         logo_content = logo_path.read_bytes() if template_config.header.enabled and logo_path is not None and logo_path.exists() else None
         from app.services.renderer.resource_identity import normalized_resource_identity
         resources = normalized_resource_identity(template_content=template_content, config=template_config,
@@ -312,6 +311,23 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
             paragraph.append(end)
             names.add(name)
             next_id += 1
+
+    def load_template_resources(
+        self,
+        document_ir: DocumentIR,
+        config_path: Path | None,
+        options: DocumentIRRenderOptions | None,
+        *,
+        content: bytes | None = None,
+    ) -> tuple[TemplateConfigPackage, Path | None]:
+        """按渲染同一规则加载版式配置并解析页眉 logo 路径。
+
+        渲染与发布来源核验共用此入口，保证“声明的资源身份”和“实际渲染使用的资源”出自同一解析规则。
+        content 给出时以字节加载配置，config_path 仅用于解析相对 logo 路径。
+        """
+
+        template_config = self._load_template_config(document_ir, config_path, options, content=content)
+        return template_config, self._resolve_asset_path(template_config.header.logo_path, config_path)
 
     def _load_template_config(
         self,

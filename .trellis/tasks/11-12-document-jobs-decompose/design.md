@@ -107,7 +107,9 @@ router 保留：`request.url_for` + `_externalize_url`（HTTP 关注点）、`au
 
 - `review_content.py::_load/list_blocks/get_block` 把 `DocumentJobQualityReview` 当作旧 `DocumentJobService` 使用，调用其上不存在的 `_ensure_job_not_deleted`、`_review_api_file`、`_file_belongs_to_job`、`_table_reference_snapshot`、`_list_table_references_snapshot`、`get_translation_batch_snapshot`（以及实例上的 `file_repository` / `file_upload_service` 需另核）。`GET /review/blocks`、`/review/blocks/{block_id}` 在 `_load` 第二行即会 `AttributeError`。自 `26706a5d`（use_cases 拆分）起存在；`test_document_job_review_hints` 以 `Mock(spec=[...])` 替代 service，未覆盖真实装配。
   - **已修复**：`DocumentJobQualityReview` 显式注入 `queries`、`table_references`；`review_content` 改经 `service.access.*`、`service.queries.get_translation_batch_snapshot`、`service.table_references.{table_reference_snapshot,list_table_references_snapshot}` 读取；复核用例与表格参考用例被跨模块调用的方法改为公开名（`review_api_job`、`review_cursor`、`finish_review_read`）。新增 `tests/test_document_job_review_blocks_api.py` 以真实 runtime 覆盖列表与详情（含表格分支）；翻译模式下的批次快照分支仅静态核对。
-- `publication_provenance.py` 与 `use_cases/publication.py` 读取 `JobResourceSnapshotService` / renderer 的私有方法（`_load_snapshot_record`、`_materialize_*`、`_load_template_config`、`_resolve_asset_path`），属跨领域私有访问，超出本任务范围。
+- `publication_provenance.py` 与 `use_cases/publication.py` 读取 `JobResourceSnapshotService` / renderer 的私有方法（`_load_snapshot_record`、`_materialize_*`、`_load_template_config`、`_resolve_asset_path`），属跨领域私有访问。
+  - **已修复**：`JobResourceSnapshotService` 的 `load_snapshot_record`、`materialize_template`、`materialize_template_layout_config`、`materialize_term_rule_set` 改为公开方法（沿用已有公开 `materialize_translation_profile` 的形态，补充契约说明，行为不变）；`DocumentIRWordRenderer` 新增公开 `load_template_resources`（版式配置 + logo 路径），`render_to_result` 与发布来源核验共用，保证声明身份与实际渲染同一解析规则。
+- 仍存：`translation_execution/artifacts.py` 调用翻译领域 `DocumentIRTranslationService._target_document_language`（原代码既有），未在本任务处理。
 
 ## 5. 风险与对策
 

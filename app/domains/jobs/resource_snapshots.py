@@ -193,9 +193,9 @@ class JobResourceSnapshotService:
                 status_code=409,
                 code="resource_snapshot_missing_term_rule_set",
             )
-        template_path = self._materialize_template(snapshot.template)
-        layout_config_path = self._materialize_template_layout_config(snapshot.template)
-        subscript_config_path = self._materialize_term_rule_set(
+        template_path = self.materialize_template(snapshot.template)
+        layout_config_path = self.materialize_template_layout_config(snapshot.template)
+        subscript_config_path = self.materialize_term_rule_set(
             snapshot.term_rule_set,
             job_paths,
             department_id=snapshot.term_rule_department_id,
@@ -284,7 +284,7 @@ class JobResourceSnapshotService:
             default_missing_status=409,
         )
         if spec.language_pair is not None:
-            record = self._load_snapshot_record(resolved)
+            record = self.load_snapshot_record(resolved)
             actual_language_pair = self._profile_language_pair(record.resource_id, record.payload or {})
             if actual_language_pair != spec.language_pair:
                 raise JobResourceSnapshotError(
@@ -421,10 +421,12 @@ class JobResourceSnapshotService:
             data_id=job_id if source_kind == "source_pdf" else None,
         )
 
-    def _materialize_template(self, snapshot: ResolvedResourceVersion | None) -> Path | None:
+    def materialize_template(self, snapshot: ResolvedResourceVersion | None) -> Path | None:
+        """返回快照绑定的 Template DOCX 路径；版本记录先经 load_snapshot_record 认证。"""
+
         if snapshot is None:
             return None
-        record = self._load_snapshot_record(snapshot)
+        record = self.load_snapshot_record(snapshot)
         payload = record.payload or {}
         docx_path = self._payload_text(payload, "docx_path")
         if docx_path is None:
@@ -434,12 +436,12 @@ class JobResourceSnapshotService:
             raise JobResourceSnapshotError(f"Template Version 文件不存在: {docx_path}", status_code=409)
         return resolved
 
-    def _materialize_template_layout_config(self, snapshot: ResolvedResourceVersion | None) -> Path | None:
+    def materialize_template_layout_config(self, snapshot: ResolvedResourceVersion | None) -> Path | None:
         """返回 Template Version 绑定的版式 YAML；缺省时交给全局默认配置兜底。"""
 
         if snapshot is None:
             return None
-        record = self._load_snapshot_record(snapshot)
+        record = self.load_snapshot_record(snapshot)
         payload = record.payload or {}
         layout_config_path = self._payload_text(payload, "layout_config_path")
         if layout_config_path is None:
@@ -449,16 +451,18 @@ class JobResourceSnapshotService:
             raise JobResourceSnapshotError(f"Template Version 版式配置不存在: {layout_config_path}", status_code=409)
         return resolved
 
-    def _materialize_term_rule_set(
+    def materialize_term_rule_set(
         self,
         snapshot: ResolvedResourceVersion | None,
         job_paths: JobPaths,
         *,
         department_id: str | None,
     ) -> Path | None:
+        """把快照绑定的 Term Rule 版本写为任务私有运行时 YAML，返回写入路径。"""
+
         if snapshot is None:
             return None
-        record = self._load_snapshot_record(snapshot)
+        record = self.load_snapshot_record(snapshot)
         payload = record.payload or {}
         store_payload = payload.get("store")
         if not isinstance(store_payload, dict):
@@ -477,7 +481,7 @@ class JobResourceSnapshotService:
     ) -> TranslationProfileSnapshot | None:
         if snapshot is None:
             return None
-        record = self._load_snapshot_record(snapshot)
+        record = self.load_snapshot_record(snapshot)
         try:
             return translation_profile_snapshot_from_record(self.settings, record)
         except (FileNotFoundError, ValueError) as exc:
@@ -556,7 +560,12 @@ class JobResourceSnapshotService:
             code="translation_profile_language_pair_missing",
         )
 
-    def _load_snapshot_record(self, snapshot: ResolvedResourceVersion) -> ResourceVersionRecord:
+    def load_snapshot_record(self, snapshot: ResolvedResourceVersion) -> ResourceVersionRecord:
+        """按快照的 ID/version 读取版本记录，并核对状态、snapshot_hash 与 payload 存在。
+
+        不在快照外选择任何“当前”版本；只有快照本身声明为 draft 的模板允许 draft 记录。
+        """
+
         if self.resource_version_service is None:
             raise JobResourceSnapshotError("资源版本服务不可用。", status_code=503, code="resource_snapshot_unavailable")
         record = self.resource_version_service.repository.get_resource_version(
