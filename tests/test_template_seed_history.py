@@ -17,7 +17,7 @@ from pydantic_settings import SettingsConfigDict
 
 from app.core.config import Settings
 from app.domains.document_jobs.models import DocumentJobRecord
-from app.domains.document_jobs.schemas import DocumentJobCreateRequest
+from app.domains.document_jobs.schemas.jobs import DocumentJobCreateRequest
 from app.domains.document_jobs.use_cases import build_document_job_use_cases
 from app.domains.files.models import DocumentFileRecord
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
