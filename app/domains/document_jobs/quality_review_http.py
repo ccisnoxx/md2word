@@ -13,8 +13,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
 from app.api.errors import api_error_response
-from app.core.errors import ApiError
-from app.domains.document_jobs.schemas import QualityReviewErrorResponse
+from app.core.errors import ApplicationError
+from app.domains.document_jobs.schemas.quality_review import QualityReviewErrorResponse
 
 
 SAFE_INTERNAL_ERROR_MESSAGE = "服务内部错误，请凭 trace_id 联系管理员。"
@@ -77,10 +77,10 @@ class QualityReviewApiRoute(APIRoute):
             try:
                 try:
                     response = await original(request)
-                except ApiError as error:
+                except ApplicationError as error:
                     if self.path.endswith(("/publish", "/new-generation")) and error.code == "role_forbidden" and error.reason_code is None:
                         error.reason_code = "admin_required"
-                    response = await request.app.exception_handlers[ApiError](request, error)
+                    response = await request.app.exception_handlers[ApplicationError](request, error)
                 except RequestValidationError as error:
                     if self.path.endswith(("/publish", "/new-generation")):
                         # Pydantic 的 ctx 可含 ValueError 或原始输入；这些命令入口只返回安全定位。

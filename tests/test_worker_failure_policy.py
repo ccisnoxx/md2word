@@ -6,7 +6,7 @@ from unittest import TestCase
 import zipfile
 
 from app.clients.mineru_client import MinerUError
-from app.core.errors import ApiError
+from app.core.errors import ApiError, ApplicationError
 from app.domains.document_jobs import _failure_policy as policy
 from app.domains.translation.document_ir_translator import DocumentIRTranslationError
 from app.domains.translation.integrity import TranslationIntegrityError, TranslationIntegrityEvidence
@@ -59,6 +59,7 @@ def _cases():
         (TypeError(PRIVATE), "ordinary", "Worker 执行失败（TypeError），详见事件 trace_id。", True),
         (Exception(PRIVATE), "ordinary", "Worker 执行失败（Exception），详见事件 trace_id。", True),
         (ApiError(503, "service_unavailable", PRIVATE), "storage", "Worker 执行失败（ApiError），详见事件 trace_id。", False),
+        (ApplicationError("service_unavailable", PRIVATE), "storage", "Worker 执行失败（ApiError），详见事件 trace_id。", False),
         (OSError(PRIVATE), "storage", "Worker 文件或对象存储操作失败。", False),
         (FileNotFoundError(PRIVATE), "storage", "Worker 文件或对象存储操作失败。", False),
         (MinerUError(PRIVATE), "mineru", "MinerU 外部调用失败。", False),

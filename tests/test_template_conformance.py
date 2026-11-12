@@ -19,7 +19,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from lxml import etree
 
-from app.domains.document_jobs.router import _build_document_file_quality_evidence
+from app.domains.document_jobs.http_responses import build_document_file_quality_evidence
 from app.domains.files.models import DocumentFileRecord
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.ooxml_package import DocxPackageError, inspect_docx_package
@@ -424,7 +424,7 @@ class TemplateConformanceTests(unittest.TestCase):
             original_filename="result.docx", mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             size_bytes=len(self.result.content), metadata=metadata,
         )
-        self.assertEqual(_build_document_file_quality_evidence(file)["template_conformance"], conformance)
+        self.assertEqual(build_document_file_quality_evidence(file)["template_conformance"], conformance)
         metadata["template_conformance"]["blocking_flags"] = ["/private/raw/path"]
         safe = build_renderer_event_summary(metadata)["template_conformance"]
         self.assertEqual(safe["status"], "blocked")

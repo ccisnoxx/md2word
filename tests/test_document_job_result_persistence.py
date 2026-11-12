@@ -16,8 +16,8 @@ from threading import Event, current_thread
 from unittest import TestCase
 from unittest.mock import patch
 
-from app.core.errors import ApiError
-from app.domains.document_jobs.router import _build_download_token
+from app.core.errors import ApplicationError
+from app.domains.document_jobs.use_cases.download_tokens import build_file_download_token
 from app.domains.document_jobs.models import DocumentJobPreparedResult, DocumentJobRecord
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.retention import DocumentFileRetentionPlanner
@@ -98,7 +98,7 @@ class DocumentJobResultPersistenceTests(TestCase):
 
     def _install_formula_ir(self, runtime, execution, job, source=r"$\unknown{VOUT}$"):
         """登记新的合成最终 IR，保留源清单与现有结构，不覆写历史文件。"""
-        original = execution.rendering._get_document_ir_file(job)
+        original = execution.rendering.results.get_document_ir_file(job)
         ir = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(original))
         block = next(block for block in ir.blocks if block.type == "paragraph")
         ir = ir.model_copy(update={"blocks": [
@@ -147,7 +147,7 @@ class DocumentJobResultPersistenceTests(TestCase):
             rules.write_text("subscript_rules:\n  symbols:\n    DemoToken: PRIVATE_FORMAT_SENTINEL\n", encoding="utf-8")
             with patch.object(image_evidence, "IMAGE_GENERATION_POLICY", writer_policy):
                 rendered = execution.rendering.word_renderer.render_to_result(ir, template_path=None, config_path=config,
-                    image_loader=execution.rendering._build_image_loader(job), options=DocumentIRRenderOptions(
+                    image_loader=execution.rendering.placeholders.build_image_loader(job), options=DocumentIRRenderOptions(
                         subscript_config_path=rules, template_version_id=job.template_version_id))
             metadata = build_renderer_evidence(ir, rendered.content, formula_report=rendered.formula_report,
                 image_layout_report=rendered.image_layout_report, expected_template_version_id=job.template_version_id,
@@ -225,7 +225,7 @@ class DocumentJobResultPersistenceTests(TestCase):
             job, ir = self._install_image_ir(runtime, execution, job, image_count=image_count, annotations=False)
             with patch.object(image_evidence, "IMAGE_GENERATION_POLICY", writer_policy):
                 rendered = execution.rendering.word_renderer.render_to_result(
-                    ir, template_path=None, config_path=None, image_loader=execution.rendering._build_image_loader(job),
+                    ir, template_path=None, config_path=None, image_loader=execution.rendering.placeholders.build_image_loader(job),
                     options=DocumentIRRenderOptions(template_version_id=job.template_version_id),
                 )
             metadata = build_renderer_evidence(ir, rendered.content, formula_report=rendered.formula_report,
@@ -257,7 +257,7 @@ class DocumentJobResultPersistenceTests(TestCase):
             ):
                 self.assertIsNone(job.prepared_result)
                 with self.assertRaisesRegex(ValueError, "图片布局标记"):
-                    execution.rendering._get_existing_result_file(job)
+                    execution.rendering.results.get_existing_result_file(job)
                 self.assertIsNone(runtime.document_job_repository.get_document_job(job.id).prepared_result)
 
     def test_missing_all_reports_three_recovery_entries_preserve_receipt_and_do_not_rerender(self):
@@ -294,7 +294,7 @@ class DocumentJobResultPersistenceTests(TestCase):
             with self.subTest(policy=policy), self._image_result_without_report_fields(policy, count, marker_free=True) as (
                 runtime, execution, job, word,
             ):
-                self.assertEqual(execution.rendering._get_existing_result_file(job).id, word.id)
+                self.assertEqual(execution.rendering.results.get_existing_result_file(job).id, word.id)
                 with patch.object(execution.rendering.word_renderer, "render_to_result") as render:
                     result = execution.execute_job(job.id)
                 self.assertEqual((result.status, result.result_file_id), ("succeeded", word.id), result.error_message)
@@ -333,7 +333,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                     template = execution.rendering.template_read_service.resolve_template_version(job.template_version_id)
                     rendered = execution.rendering.word_renderer.render_to_result(
                         ir, template_path=template.template_path, config_path=template.layout_config_path,
-                        image_loader=execution.rendering._build_image_loader(job),
+                        image_loader=execution.rendering.placeholders.build_image_loader(job),
                     )
                     content = legacy_image_docx(rendered.content)
                     evidence = build_renderer_evidence(ir, content, formula_report=rendered.formula_report)
@@ -473,7 +473,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                     self.assertNotIn(loser.id, str(listed.json()))
                     denied = client.get(f"/api/v1/document-jobs/{job.id}/download-url", params={"file_id": loser.id}, headers=headers)
                     self.assertEqual(denied.status_code, 409)
-                    token = _build_download_token(runtime, job_id=job.id, file_id=loser.id, expires_at=utc_now() + timedelta(minutes=5))
+                    token = build_file_download_token(runtime.settings, job_id=job.id, file_id=loser.id, expires_at=utc_now() + timedelta(minutes=5))
                     self.assertEqual(client.get(f"/api/v1/document-jobs/{job.id}/download", params={"token": token}).status_code, 409)
                     self.assertFalse(any(event.event_type == "stage_failed" for event in
                         runtime.document_job_event_repository.list_document_job_events(job.id)))
@@ -540,20 +540,20 @@ class DocumentJobResultPersistenceTests(TestCase):
                     error_code="oss_failed", error_message="落选候选的迟到失败", trace_id=None)
                 self.assertEqual(failed.prepared_result, selected.prepared_result)
                 self.assertEqual(failed.status, "running")
-                self._assert_result_bytes(runtime, execution.rendering._render_and_save_word(job, trace_id=None))
+                self._assert_result_bytes(runtime, execution.rendering.render_and_save_word(job, trace_id=None))
 
     def test_late_outer_exception_does_not_fail_another_attempts_stage(self):
         with self._runtime() as (root, runtime, execution, job, client, headers):
             def fail_after_other_attempt(snapshot, **kwargs):
-                with patch.object(execution.rendering, "_render_and_save_word", wraps=real_render):
+                with patch.object(execution.rendering, "render_and_save_word", wraps=real_render):
                     runtime.document_job_repository.update_document_job(job.id, stage="uploading")
                     with patch.object(runtime.document_file_repository, "materialize_prepared_result", side_effect=SimulatedProcessExit):
                         with self.assertRaises(SimulatedProcessExit):
                             real_render(runtime.document_job_repository.get_document_job(job.id), trace_id=None)
                 raise RuntimeError("旧调用退出时的迟到异常")
 
-            real_render = execution.rendering._render_and_save_word
-            with patch.object(execution.rendering, "_render_and_save_word", side_effect=fail_after_other_attempt):
+            real_render = execution.rendering.render_and_save_word
+            with patch.object(execution.rendering, "render_and_save_word", side_effect=fail_after_other_attempt):
                 result = execution.execute_job(job.id)
             self.assertEqual(result.status, "running")
             self.assertIsNotNone(result.prepared_result)
@@ -605,9 +605,9 @@ class DocumentJobResultPersistenceTests(TestCase):
             self.assertNotIn(file_id, str(response.json()))
             response = client.get(f"/api/v1/document-jobs/{job.id}/download-url", params={"file_id": file_id}, headers=headers)
             self.assertEqual(response.status_code, 409, response.text)
-            with self.assertRaises(ApiError):
+            with self.assertRaises(ApplicationError):
                 runtime.document_job_use_cases.downloads.get_file_for_authorized_download(job.id, file_id=file_id)
-            token = _build_download_token(runtime, job_id=job.id, file_id=file_id, expires_at=utc_now() + timedelta(minutes=5))
+            token = build_file_download_token(runtime.settings, job_id=job.id, file_id=file_id, expires_at=utc_now() + timedelta(minutes=5))
             self.assertEqual(client.get(f"/api/v1/document-jobs/{job.id}/download", params={"token": token}).status_code, 409)
             result = execution.execute_job(job.id)
             self.assertEqual(result.result_file_id, file_id)
@@ -964,7 +964,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                 # B 已回到 rendering，但内存渲染中断；A 仍拿着先前 60% 的同代快照。
                 with patch.object(execution.rendering.word_renderer, "render_to_result", side_effect=SimulatedProcessExit):
                     with self.assertRaises(SimulatedProcessExit):
-                        execution.rendering._render_and_save_word(uploading, trace_id=None)
+                        execution.rendering.render_and_save_word(uploading, trace_id=None)
                 self.assertEqual((repository.get_document_job(stale.id).stage, repository.get_document_job(stale.id).progress),
                                  ("rendering", 85))
                 observed = []
@@ -975,7 +975,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                         observed.append((result.stage, result.progress))
                     return result
                 with patch.object(repository, "update_document_job_if_current", side_effect=record_progress):
-                    result = execution.rendering._render_and_save_word(stale, trace_id=None)
+                    result = execution.rendering.render_and_save_word(stale, trace_id=None)
                 self._assert_result_bytes(runtime, result)
                 self.assertEqual(observed[0], ("quality_checking", 85))
                 self.assertTrue(all(progress >= 85 for stage, progress in observed))

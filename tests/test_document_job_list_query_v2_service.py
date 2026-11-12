@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from app.api.dependencies import get_runtime, require_current_user
 from app.api.errors import register_api_error_handlers
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError, http_status_for
 from app.domains.document_jobs.list_query import DocumentJobListProjectionUnavailable
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.review import ReviewBinding, ReviewSubmission, receipt_identity
@@ -206,13 +206,13 @@ class DocumentJobListV2ServiceTests(TestCase):
     def test_projection_unavailable_and_request_validation_keep_error_contract(self):
         with self.environment("file") as (jobs, files, service):
             with patch.object(jobs, "query_document_jobs", side_effect=DocumentJobListProjectionUnavailable()):
-                with self.assertRaises(ApiError) as error:
+                with self.assertRaises(ApplicationError) as error:
                     self.listing(service)
-                self.assertEqual((error.exception.status_code, error.exception.code), (503, "service_unavailable"))
+                self.assertEqual((http_status_for(error.exception), error.exception.code), (503, "service_unavailable"))
                 for parameters in ({"sort": "bad"}, {"translation_qa_status": "bad"}, {"status_group": "bad"}):
-                    with self.assertRaises(ApiError) as error:
+                    with self.assertRaises(ApplicationError) as error:
                         self.listing(service, **parameters)
-                    self.assertEqual(error.exception.status_code, 400)
+                    self.assertEqual(http_status_for(error.exception), 400)
 
     def test_unknown_modern_base_is_pending_in_filter_page_and_actions(self):
         for backend in ("file", "sqlite"):

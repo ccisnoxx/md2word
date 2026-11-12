@@ -9,13 +9,16 @@ from typing import Any, get_args
 
 from fastapi import status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError, http_status_for
 from app.domains.document_jobs.base_quality import DegradedPageSummary, current_base
 from app.domains.document_jobs.delivery_state import translation_qa_projection
 from app.domains.document_jobs.failure_diagnostic import project_failure_diagnostic
 from app.domains.document_jobs.models import DocumentJobRecord, DocumentJobStage, DocumentJobStatus
-from app.domains.document_jobs.schemas import (
-    DocumentJobAvailableActionResponse,
+from app.domains.document_jobs.use_cases.access import DocumentJobAccess
+from app.domains.document_jobs.use_cases.queries import DocumentJobQueries
+from app.domains.document_jobs.use_cases.read_model import DocumentJobReadModel
+from app.domains.document_jobs.use_cases.submission import DocumentJobSubmission
+from app.domains.document_jobs.views.incidents import (
     DocumentJobIncidentBulkItemResponse,
     DocumentJobIncidentBulkResponse,
     DocumentJobIncidentDiagnosticResponse,
@@ -28,12 +31,8 @@ from app.domains.document_jobs.schemas import (
     DocumentJobIncidentRetryCountBucket,
     DocumentJobIncidentSort,
     DocumentJobIncidentSummaryResponse,
-    DocumentJobResponse,
 )
-from app.domains.document_jobs.use_cases.access import DocumentJobAccess
-from app.domains.document_jobs.use_cases.queries import DocumentJobQueries
-from app.domains.document_jobs.use_cases.read_model import DocumentJobReadModel
-from app.domains.document_jobs.use_cases.submission import DocumentJobSubmission
+from app.domains.document_jobs.views.jobs import DocumentJobAvailableActionResponse, DocumentJobResponse
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.resources.models import utc_now
@@ -209,7 +208,7 @@ class DocumentJobIncidentService:
                         item=self._build_item(retried, user=user, now=utc_now()),
                     )
                 )
-            except ApiError as exc:
+            except ApplicationError as exc:
                 items.append(self._build_failure(job_id, exc))
         return self._build_bulk_response("retry", items)
 
@@ -234,7 +233,7 @@ class DocumentJobIncidentService:
                         item=self._build_item(job, user=user, now=utc_now()),
                     )
                 )
-            except ApiError as exc:
+            except ApplicationError as exc:
                 items.append(self._build_failure(job_id, exc))
         return self._build_bulk_response("refresh", items)
 
@@ -315,30 +314,29 @@ class DocumentJobIncidentService:
         sort: str,
     ) -> None:
         if status_filter is not None and status_filter not in get_args(DocumentJobStatus):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "status 查询参数非法。")
+            raise ApplicationError("invalid_request", "status 查询参数非法。")
         if stage_filter is not None and stage_filter not in get_args(DocumentJobStage):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "stage 查询参数非法。")
+            raise ApplicationError("invalid_request", "stage 查询参数非法。")
         if failure_type is not None and failure_type not in DOCUMENT_JOB_INCIDENT_FAILURE_TYPES:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "failure_type 查询参数非法。")
+            raise ApplicationError("invalid_request", "failure_type 查询参数非法。")
         if retry_count is not None and retry_count not in DOCUMENT_JOB_INCIDENT_RETRY_BUCKETS:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "retry_count 查询参数非法。")
+            raise ApplicationError("invalid_request", "retry_count 查询参数非法。")
         if sort not in DOCUMENT_JOB_INCIDENT_SORTS:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "sort 查询参数非法。")
+            raise ApplicationError("invalid_request", "sort 查询参数非法。")
 
     def _validate_bulk_ids(self, job_ids: list[str]) -> list[str]:
         normalized = [job_id.strip() for job_id in job_ids]
         if not normalized:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "job_ids 不能为空。")
+            raise ApplicationError("invalid_request", "job_ids 不能为空。")
         if len(normalized) > DOCUMENT_JOB_INCIDENT_BULK_LIMIT:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"job_ids 最多支持 {DOCUMENT_JOB_INCIDENT_BULK_LIMIT} 个。",
             )
         if any(not job_id for job_id in normalized):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "job_ids 不能包含空值。")
+            raise ApplicationError("invalid_request", "job_ids 不能包含空值。")
         if len(set(normalized)) != len(normalized):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "job_ids 不能重复。")
+            raise ApplicationError("invalid_request", "job_ids 不能重复。")
         return normalized
 
     def _classify_failure(self, job: DocumentJobRecord, *, stalled: bool, degraded: bool = False) -> DocumentJobIncidentFailureType:
@@ -587,11 +585,12 @@ class DocumentJobIncidentService:
             updated_at=file.updated_at,
         )
 
-    def _build_failure(self, job_id: str, exc: ApiError) -> DocumentJobIncidentBulkItemResponse:
+    def _build_failure(self, job_id: str, exc: ApplicationError) -> DocumentJobIncidentBulkItemResponse:
         return DocumentJobIncidentBulkItemResponse(
             job_id=job_id,
             ok=False,
-            status_code=exc.status_code,
+            # 批量条目的 status_code 是响应合同字段，统一经 http_status_for 由错误码映射。
+            status_code=http_status_for(exc),
             error_code=exc.code,
             detail=exc.message,
         )

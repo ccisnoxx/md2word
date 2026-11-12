@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.core.errors import ApiError, ApiErrorCode
+from app.core.errors import APPLICATION_ERROR_HTTP_STATUS, ApiErrorCode, ApplicationError, http_status_for
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
 from app.domains.mineru.config import MinerUConfigError, MinerUConfigWriteError
 
@@ -39,13 +39,13 @@ def bad_request_http_exception(exc: ValueError) -> HTTPException:
 async def _job_resource_snapshot_error_handler(_request: Request, exc: JobResourceSnapshotError) -> JSONResponse:
     """把资源快照绑定失败映射为创建 job 时的明确 HTTP 响应。"""
 
-    return api_error_response(_request, exc.status_code, "resource_snapshot_error", exc.message)
+    return api_error_response(_request, APPLICATION_ERROR_HTTP_STATUS[exc.category], "resource_snapshot_error", exc.message)
 
 
-async def _api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
-    """把应用层 ApiError 输出为统一错误结构。"""
+async def _api_error_handler(request: Request, exc: ApplicationError) -> JSONResponse:
+    """把应用层错误（含显式状态的 ApiError）输出为统一错误结构；状态码经 http_status_for 决定。"""
 
-    return api_error_response(request, exc.status_code, exc.code, exc.message, reason_code=exc.reason_code)
+    return api_error_response(request, http_status_for(exc), exc.code, exc.message, reason_code=exc.reason_code)
 
 
 async def _mineru_config_error_handler(request: Request, exc: MinerUConfigError) -> JSONResponse:
@@ -183,7 +183,7 @@ def _code_and_message_from_detail(status_code: int, detail: object) -> tuple[Api
 def register_api_error_handlers(app: FastAPI) -> None:
     """注册当前 API 认可的领域异常映射。"""
 
-    app.add_exception_handler(ApiError, _api_error_handler)
+    app.add_exception_handler(ApplicationError, _api_error_handler)
     app.add_exception_handler(MinerUConfigError, _mineru_config_error_handler)
     app.add_exception_handler(MinerUConfigWriteError, _mineru_config_write_error_handler)
     app.add_exception_handler(HTTPException, _http_exception_handler)

@@ -1,32 +1,31 @@
 """QA-603 专用授权内容读取；只消费现有产物，私有观察不进入 DTO。"""
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import dataclass, field
 import hashlib
 import html
 import json
 import math
 import re
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 
 from bs4 import BeautifulSoup
-from app.core.errors import ApiError
-from app.domains.document_jobs.preview import (
-    _is_preview_storage_error, _PreviewUnavailable, _read_artifact,
-    read_current_preview_evidence,
-)
+
+from app.core.errors import ApplicationError
+from app.domains.document_jobs.preview_evidence import is_preview_storage_error, PreviewUnavailable, read_artifact, read_current_preview_evidence
 from app.domains.document_jobs.quality_review_projection import (
     ReviewBlocksCursor, ReviewBlockContentCursor, encode_cursor, project_source, project_table_item,
 )
 from app.domains.document_jobs.review import digest
-from app.domains.document_jobs.schemas import (
+from app.domains.document_jobs.views.quality_review import (
     DocumentReviewComponentResponse as Component,
     DocumentReviewContentSnapshotResponse as Snapshot,
     DocumentReviewSourceSpanResponse as Span,
     DocumentReviewLocationResponse as Location,
     DocumentReviewBlockItemResponse as Block,
     DocumentReviewBlockFlagResponse as Flag,
-    DocumentReviewBlocksResponse, DocumentReviewBlockDetailResponse,
+    DocumentReviewBlocksResponse,
+    DocumentReviewBlockDetailResponse,
     DocumentReviewContentPartResponse as Part,
     DocumentReviewTermResponse as Term,
     DocumentReviewBatchResponse as Batch,
@@ -58,7 +57,7 @@ class _ContentLimit(Exception):
 
 
 def _conflict(reason="quality_evidence_conflict"):
-    return ApiError(409, "conflict", "审核内容来源无法确认，请刷新后核对。", reason_code=reason)
+    return ApplicationError("conflict", "审核内容来源无法确认，请刷新后核对。", reason_code=reason)
 
 
 def _changed():
@@ -71,8 +70,8 @@ def _storage():
     try:
         yield
     except Exception as exc:
-        if _is_preview_storage_error(exc):
-            raise ApiError(503, "service_unavailable", "审核内容存储暂不可用。",
+        if is_preview_storage_error(exc):
+            raise ApplicationError("service_unavailable", "审核内容存储暂不可用。",
                            reason_code="quality_storage_unavailable") from None
         raise
 
@@ -135,11 +134,11 @@ class _Read:
         record = self.observe(file_id)
         if record is None:
             if required:
-                raise ApiError(404, "not_found", "当前文档内容不存在。", reason_code="review_content_missing")
+                raise ApplicationError("not_found", "当前文档内容不存在。", reason_code="review_content_missing")
             return None
         if (record.tenant_id, record.company_id, record.job_id) != (
                 self.job.tenant_id, self.job.company_id, self.job.id):
-            raise ApiError(403, "forbidden", "文档内容与任务归属不匹配。", reason_code="review_access_denied")
+            raise ApplicationError("forbidden", "文档内容与任务归属不匹配。", reason_code="review_access_denied")
         if record.file_type != "document_ir" or record.mime_type != "application/json":
             raise _conflict()
         if record.status != "uploaded" or record.expires_at is not None and record.expires_at <= utc_now():
@@ -173,13 +172,13 @@ class _Read:
 
     def read_bytes(self, record, *, required=False):
         if self.service.file_upload_service is None:
-            raise ApiError(503, "service_unavailable", "审核内容存储暂不可用。", reason_code="quality_storage_unavailable")
+            raise ApplicationError("service_unavailable", "审核内容存储暂不可用。", reason_code="quality_storage_unavailable")
         try:
             with _storage():
-                raw = _read_artifact(record, self.service.file_upload_service)
-        except _PreviewUnavailable:
+                raw = read_artifact(record, self.service.file_upload_service)
+        except PreviewUnavailable:
             if required:
-                raise ApiError(404, "not_found", "当前文档内容不存在。", reason_code="review_content_missing") from None
+                raise ApplicationError("not_found", "当前文档内容不存在。", reason_code="review_content_missing") from None
             return None
         except ValueError:
             raise _conflict() from None
@@ -188,17 +187,17 @@ class _Read:
 
     def finish(self):
         with _storage():
-            current = self.service._review_api_job(self.job.id, self.user)
+            current = self.service.review_api_job(self.job.id, self.user)
             if _job_identity(current) != _job_identity(self.job):
                 raise _changed()
-            self.service._finish_review_read(self.job, self.result, self.user, preview=True)
+            self.service.finish_review_read(self.job, self.result, self.user, preview=True)
             for file_id, record in self.observed.items():
                 if self.service.file_repository.get_document_file(file_id) != record:
                     raise _changed()
             if any(record.expires_at is not None and record.expires_at <= utc_now() for record in self.live_files):
                 raise _changed()
             if self.batch_identity is not None:
-                current_job, batches = self.service.get_translation_batch_snapshot(self.job.id, user=self.user)
+                current_job, batches = self.service.queries.get_translation_batch_snapshot(self.job.id, user=self.user)
                 if _batch_identity(current_job, batches) != self.batch_identity:
                     raise _changed()
 
@@ -216,7 +215,7 @@ def _preview(read):
     if state is None or not _confirmed(state.current_run):
         return _component("not_ready", "not_ready"), _component("unavailable", "preview_unavailable")
     if read.service.file_upload_service is None:
-        raise ApiError(503, "service_unavailable", "审核内容存储暂不可用。", reason_code="quality_storage_unavailable")
+        raise ApplicationError("service_unavailable", "审核内容存储暂不可用。", reason_code="quality_storage_unavailable")
     try:
         with _storage():
             evidence = read_current_preview_evidence(read.job, read.service.file_repository,
@@ -296,7 +295,7 @@ def _translation(read):
                 continue
             if (record.tenant_id, record.company_id, record.job_id) != (
                     read.job.tenant_id, read.job.company_id, read.job.id):
-                raise ApiError(403, "forbidden", "翻译证据与任务归属不匹配。", reason_code="review_access_denied")
+                raise ApplicationError("forbidden", "翻译证据与任务归属不匹配。", reason_code="review_access_denied")
             if record.file_type != "ai_call_log" or record.mime_type != "application/json" or record.status != "uploaded":
                 raise _conflict()
             if type(record.metadata.get("attempt")) is not int:
@@ -411,21 +410,21 @@ def _log_evidence(read, batch, record, payload, source_file):
 
 def _load(service, job_id, user):
     with _storage():
-        job = service._review_api_job(job_id, user)
-        service._ensure_job_not_deleted(job, reason_code="job_deleted")
-        result = service._review_api_file(job)
+        job = service.review_api_job(job_id, user)
+        service.access.ensure_job_not_deleted(job, reason_code="job_deleted")
+        result = service.access.review_api_file(job)
     read = _Read(service, user, job, result)
     if is_translation_document_job_mode(job.mode):
         with _storage():
-            snapshot_job, read.batches = service.get_translation_batch_snapshot(job.id, user=user)
+            snapshot_job, read.batches = service.queries.get_translation_batch_snapshot(job.id, user=user)
         if _job_identity(snapshot_job) != _job_identity(job):
             raise _changed()
         read.batch_identity = _batch_identity(snapshot_job, read.batches)
     read.observe(job.source_file_id)
     source_pdf = read.observed[job.source_file_id]
     if source_pdf is not None and ((source_pdf.tenant_id, source_pdf.company_id) != (job.tenant_id, job.company_id)
-            or not service._file_belongs_to_job(job, source_pdf) or source_pdf.file_type != "source_pdf"):
-        raise ApiError(403, "forbidden", "源 PDF 与任务归属不匹配。", reason_code="review_access_denied")
+            or not service.access.file_belongs_to_job(job, source_pdf) or source_pdf.file_type != "source_pdf"):
+        raise ApplicationError("forbidden", "源 PDF 与任务归属不匹配。", reason_code="review_access_denied")
     basis_id = job.document_ir_file_id or job.source_document_ir_file_id
     try:
         read.basis = read.read_ir(basis_id, required=True)
@@ -443,8 +442,8 @@ def _load(service, job_id, user):
             with _storage():
                 evidence = service.get_table_evidence(job.id, user=user, generation=job.retry_count,
                     ir_file_id=job.document_ir_file_id, result_file_id=job.result_file_id)
-                reference_snapshot = service._table_reference_snapshot(job, read.observe(basis_id), read.basis)
-                references = service._list_table_references_snapshot(reference_snapshot, user=user)
+                reference_snapshot = service.table_references.table_reference_snapshot(job, read.observe(basis_id), read.basis)
+                references = service.table_references.list_table_references_snapshot(reference_snapshot, user=user)
             if evidence.report_file_id:
                 read.observe(evidence.report_file_id)
             read.tables = [project_table_item(table) for table in evidence.tables]
@@ -628,22 +627,22 @@ def _page(items, start, limit, *, reserve=65536):
         result.append(item)
         size += length
     if start and start >= count:
-        raise ApiError(400, "invalid_request", "分页游标位置无效。", reason_code="invalid_review_cursor")
+        raise ApplicationError("invalid_request", "分页游标位置无效。", reason_code="invalid_review_cursor")
     return result, next_index
 
 
 def list_blocks(service, job_id, *, user, limit=50, cursor=None, source_page_index=None,
                 block_type=None, problem="all", severity="all"):
     with _storage():
-        service._review_api_job(job_id, user)
-    parsed = service._review_cursor(cursor, "review_blocks", job_id, limit)
+        service.review_api_job(job_id, user)
+    parsed = service.review_cursor(cursor, "review_blocks", job_id, limit)
     if (source_page_index is not None and (type(source_page_index) is not int or source_page_index < 0)
             or block_type not in {None, "heading", "paragraph", "table", "image", "list", "formula"}
             or problem not in {"all", "flagged"} or severity not in {"all", "blocker", "warning", "info"}):
-        raise ApiError(422, "validation_error", "审核筛选条件无效。")
+        raise ApplicationError("validation_error", "审核筛选条件无效。")
     filters = digest(dict(source_page_index=source_page_index, block_type=block_type, problem=problem, severity=severity)).removeprefix("sha256:")
     if parsed and parsed.filter_sha256 != filters:
-        raise ApiError(400, "invalid_request", "分页筛选条件已变化。", reason_code="invalid_review_cursor")
+        raise ApplicationError("invalid_request", "分页筛选条件已变化。", reason_code="invalid_review_cursor")
     read = _load(service, job_id, user)
     if parsed and parsed.snapshot_id != read.snapshot.snapshot_id:
         raise _changed()
@@ -666,28 +665,28 @@ def list_blocks(service, job_id, *, user, limit=50, cursor=None, source_page_ind
 
 def get_block(service, job_id, block_id, *, user, snapshot_id, limit=20, cursor=None):
     with _storage():
-        service._review_api_job(job_id, user)
+        service.review_api_job(job_id, user)
     if type(limit) is not int or not 1 <= limit <= 50:
-        raise ApiError(422, "validation_error", "内容分页数量必须为 1 到 50 的整数。")
-    parsed = service._review_cursor(cursor, "review_block_content", job_id, limit)
+        raise ApplicationError("validation_error", "内容分页数量必须为 1 到 50 的整数。")
+    parsed = service.review_cursor(cursor, "review_block_content", job_id, limit)
     if parsed and (parsed.block_id != block_id or parsed.snapshot_id != snapshot_id):
-        raise ApiError(400, "invalid_request", "内容分页游标不匹配。", reason_code="invalid_review_cursor")
+        raise ApplicationError("invalid_request", "内容分页游标不匹配。", reason_code="invalid_review_cursor")
     if not isinstance(snapshot_id, str) or re.fullmatch(r"[0-9a-f]{64}", snapshot_id) is None:
-        raise ApiError(422, "validation_error", "内容快照标识无效。")
+        raise ApplicationError("validation_error", "内容快照标识无效。")
     read = _load(service, job_id, user)
     if snapshot_id != read.snapshot.snapshot_id:
         raise _changed()
     if read.limited:
-        raise ApiError(409, "conflict", "审核内容超出固定阅读预算。", reason_code="review_content_limit_exceeded")
+        raise ApplicationError("conflict", "审核内容超出固定阅读预算。", reason_code="review_content_limit_exceeded")
     block = next((block for block in read.basis.blocks if block.id == block_id), None) if read.basis else None
     if block is None:
-        raise ApiError(404, "not_found", "当前文档中不存在该内容块。", reason_code="review_block_not_found")
+        raise ApplicationError("not_found", "当前文档中不存在该内容块。", reason_code="review_block_not_found")
     projected = _block(read, block)
     try:
         items, next_index = _page(_parts(read, block), parsed.next_index if parsed else 0, limit,
             reserve=len(projected.model_dump_json().encode()) + 16384)
     except _ContentLimit:
-        raise ApiError(409, "conflict", "该内容块超出固定阅读预算。", reason_code="review_content_limit_exceeded") from None
+        raise ApplicationError("conflict", "该内容块超出固定阅读预算。", reason_code="review_content_limit_exceeded") from None
     response = DocumentReviewBlockDetailResponse(job_id=job_id, source=project_source(read.job, read.result),
         content_snapshot=read.snapshot, block=projected, items=items, next_cursor=encode_cursor(ReviewBlockContentCursor(
             job_id=job_id, snapshot_id=snapshot_id, block_id=block_id, next_index=next_index)) if next_index is not None else None)

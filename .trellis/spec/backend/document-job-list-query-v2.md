@@ -52,7 +52,7 @@ SQL关联当前文件保留原寻址语义：MySQL按file_id列collation寻找�
 | 情况 | 行为 |
 | --- | --- |
 | 真缺件或未通过完成态/归属/type/status观察门 | 按原review规则失效；不能把任意JOIN文件直接传入复核 |
-| 下载检查ApiError、删除预留/到期 | 保留已观察file；删除预留先于expiry比较 |
+| 下载检查ApplicationError、删除预留/到期 | 保留已观察file；删除预留先于expiry比较 |
 | 可达naive/aware错误、descriptor溢出/质量结构错误 | 按原前缀显式失败；前序已返回不额外触发，published不吞异常 |
 | V 域投影或其关联文件缺失/旧版本/坏形状，任务可见性无法可靠判断，或缺列 | 明确不可用/503；不静默漏数、不GET回填或Python全量回退；无关行由全量 verify 检查 |
 | job外层时间或prepared_result.file内嵌两时间缺raw键 | 显式预检阻断，不冻结default now |

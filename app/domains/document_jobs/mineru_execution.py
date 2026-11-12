@@ -52,10 +52,10 @@ class MinerUExecution:
         self.lifecycle = lifecycle
         self.callback_message_store = callback_message_store
         self.mineru_config_resolver = mineru_config_resolver
-        self.mineru_client_factory = mineru_client_factory or self._build_mineru_client
+        self.mineru_client_factory = mineru_client_factory or self.build_mineru_client
         self.logger = logging.getLogger("business")
 
-    def _run_mineru_parse(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
+    def run_parse(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         current, can_continue = self._refresh_mineru_parse_attempt(job, trace_id=trace_id)
         if not can_continue:
             return current
@@ -239,7 +239,7 @@ class MinerUExecution:
         )
         return job, stored_message, created, stored_message.status in {"pending", "running"}
 
-    def _process_replayable_callback_messages(
+    def process_replayable_callback_messages(
         self,
         job: DocumentJobRecord,
         *,
@@ -612,7 +612,7 @@ class MinerUExecution:
         alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
         return "".join(secrets.choice(alphabet) for _ in range(length))
 
-    def _build_mineru_client(self) -> MinerUClient:
+    def build_mineru_client(self) -> MinerUClient:
         config = self.mineru_config_resolver()
         if not config.api_token:
             raise RuntimeError("MINERU_API_TOKEN 未配置，无法提交 MinerU。")

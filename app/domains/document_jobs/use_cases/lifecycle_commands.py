@@ -6,11 +6,10 @@ import hashlib
 import json
 from typing import Any
 
-from fastapi import status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobRecord
-from app.domains.document_jobs.preview import _is_preview_storage_error
+from app.domains.document_jobs.preview_evidence import is_preview_storage_error
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.document_jobs.use_cases.access import DocumentJobAccess
 from app.domains.document_jobs.use_cases.common import (
@@ -62,12 +61,12 @@ class DocumentJobLifecycleCommands:
         if job.archived_at is not None:
             return self.access.effective_job(job)
         if job.status not in ARCHIVABLE_DOCUMENT_JOB_STATUSES:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "只有 succeeded、failed、canceled 终态任务允许归档。")
+            raise ApplicationError("conflict", "只有 succeeded、failed、canceled 终态任务允许归档。")
         now = utc_now()
         archived = self.job_repository.update_document_job_lifecycle_if_current(job.id,
             expected_retry_count=job.retry_count, action="archive", actor_id=user.id, occurred_at=now)
         if archived is None:
-            raise ApiError(409, "conflict", "任务代次或终态已变化，不能归档旧来源。")
+            raise ApplicationError("conflict", "任务代次或终态已变化，不能归档旧来源。")
         self.events.record_event(
             archived,
             event_type="job_archived",
@@ -140,18 +139,17 @@ class DocumentJobLifecycleCommands:
         if confirmation is not None:
             expected_confirmation = self._delete_confirmation_phrase(job)
             if confirmation != expected_confirmation:
-                raise ApiError(
-                    status.HTTP_400_BAD_REQUEST,
+                raise ApplicationError(
                     "invalid_request",
                     f"confirmation 必须为 {expected_confirmation}。",
                 )
         preview = self._build_delete_plan(job, action_mode="delete_preview")
         if preview.preview_hash != preview_hash:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "删除预览已过期，请重新预览后再执行。")
+            raise ApplicationError("conflict", "删除预览已过期，请重新预览后再执行。")
 
         delete_file_ids = [item.file_id for item in preview.files if item.action == "delete"]
         if delete_file_ids and self.file_upload_service is None:
-            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "文件清理服务不可用，无法删除任务文件。")
+            raise ApplicationError("service_unavailable", "文件清理服务不可用，无法删除任务文件。")
         # deleted_at 是持久生命周期预留；确认赢得本代后，才允许取得文件删除 claim。
         now = utc_now()
         try:
@@ -159,12 +157,12 @@ class DocumentJobLifecycleCommands:
                 expected_retry_count=job.retry_count, action="delete", actor_id=user.id, occurred_at=now,
                 delete_reason=normalized_reason)
         except Exception as error:
-            if not _is_preview_storage_error(error):
+            if not is_preview_storage_error(error):
                 raise
-            raise ApiError(503, "service_unavailable", "任务删除预留暂不可确认，请先核对原任务状态。",
+            raise ApplicationError("service_unavailable", "任务删除预留暂不可确认，请先核对原任务状态。",
                 reason_code="document_job_deletion_unknown") from None
         if deleted is None:
-            raise ApiError(409, "conflict", "任务代次、发布或删除状态已变化，未执行文件删除。")
+            raise ApplicationError("conflict", "任务代次、发布或删除状态已变化，未执行文件删除。")
         executed_files = preview.files
         if delete_file_ids:
             try:
@@ -216,9 +214,9 @@ class DocumentJobLifecycleCommands:
         job = self.access.get_authorized_job(job_id, user=user)
         self.access.ensure_job_not_deleted(job)
         if job.archived_at is not None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "已归档文档任务不允许取消。")
+            raise ApplicationError("conflict", "已归档文档任务不允许取消。")
         if job.status not in CANCELABLE_DOCUMENT_JOB_STATUSES:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "只有 pending、queued、running 任务允许取消。")
+            raise ApplicationError("conflict", "只有 pending、queued、running 任务允许取消。")
         now = utc_now()
         canceled = self.job_repository.update_document_job_if_current(
             job.id,
@@ -235,8 +233,7 @@ class DocumentJobLifecycleCommands:
         )
         if canceled is None:
             latest = self.job_repository.get_document_job(job.id) or job
-            raise ApiError(
-                status.HTTP_409_CONFLICT,
+            raise ApplicationError(
                 "conflict",
                 f"任务状态已变化，无法取消: status={latest.status} stage={latest.stage}",
             )
@@ -259,8 +256,8 @@ class DocumentJobLifecycleCommands:
         reason = self.read_model.delete_disabled_reason(job, user=user)
         if reason is not None:
             if user.role != "admin":
-                raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", reason)
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", reason)
+                raise ApplicationError("forbidden", reason)
+            raise ApplicationError("conflict", reason)
 
     def _build_delete_plan(
         self,

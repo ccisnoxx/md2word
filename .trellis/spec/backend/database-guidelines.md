@@ -98,7 +98,7 @@ Do not format user or request values directly into SQL strings.
 
 | 条件 | 必须保持的结果 |
 | --- | --- |
-| 文件缺件 | 原None和调用者原有ApiError/禁用动作处理 |
+| 文件缺件 | 原None和调用者原有ApplicationError/禁用动作处理 |
 | get返回坏JSON、模型或不匹配ID | 原事务已提交后校验并抛出；不变成None，不挪进事务 |
 | 保护关系JSON解析失败或SQL失败 | 当前操作回滚并传播；退出会话关闭连接 |
 | 可达naive/aware、质量或descriptor错误 | 保留原前缀与时钟，不能为了提速跳过正常任务的检查 |

@@ -12,7 +12,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.files.models import DocumentFileRecord, DocumentFileStorageProvider, DocumentFileType
 from app.domains.files.service import FileUploadService
 from app.infrastructure.persistence.file.backend import FilePersistenceBackend
@@ -238,7 +238,7 @@ class GeneratedArtifactIdentityTests(TestCase):
 
     def test_invalid_s3_prefix_is_rejected_before_writing(self) -> None:
         with self._storage("s3", prefix="../unsafe") as (service, client):
-            with self.assertRaises(ApiError) as raised:
+            with self.assertRaises(ApplicationError) as raised:
                 service.register_generated_content(
                     tenant_id="tenant_default",
                     company_id="company_default",

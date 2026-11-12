@@ -9,7 +9,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.use_cases import build_document_job_use_cases
 from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend, MysqlPersistenceConfig
 from app.infrastructure.persistence.mysql.files import MysqlDocumentFileRepository
@@ -147,7 +147,7 @@ class IncidentReadSessionTests(TestCase):
             jobs.create_document_job(fixtures.make_job(status="failed", stage="failed"))
             incidents = build_incident_service(service, files)
             with patch.object(files, "read_session") as session:
-                with self.assertRaises(ApiError):
+                with self.assertRaises(ApplicationError):
                     incidents.list_incidents(**query_values(sort="invalid"))
                 session.assert_not_called()
             events = []

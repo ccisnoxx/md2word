@@ -7,9 +7,10 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError, http_status_for
 from app.domains.document_jobs.models import DocumentJobPreparedResult, DocumentJobRecord
-from app.domains.document_jobs.preview import DocumentJobPreviewService, _preview_storage_io
+from app.domains.document_jobs.preview import DocumentJobPreviewService
+from app.domains.document_jobs.preview_evidence import preview_storage_io
 from app.domains.document_jobs.preview_state import (
     PreviewArtifactObservation, PreviewRun, WordPreviewState, claim_preview,
 )
@@ -144,7 +145,7 @@ class WordPreviewHistoricalReplayTests(TestCase):
                 case.file_service.read_file_content.side_effect = TimeoutError("当前预览对象存储状态未知。")
 
                 def observe(job, file_repository, file_service, *, check_page_quality=False):
-                    with _preview_storage_io():
+                    with preview_storage_io():
                         file_service.read_file_content(file_repository.get_document_file(target))
 
                 with patch("app.domains.document_jobs.preview.observe_current_preview", side_effect=observe) as observer:
@@ -152,9 +153,9 @@ class WordPreviewHistoricalReplayTests(TestCase):
                     self.assertEqual(replay.run, before.word_preview_state.runs_by_request_key[A])
                     self.assertFalse(replay.available)
                     self.assertEqual(replay.job, before)
-                    with self.assertRaises(ApiError) as conflict:
+                    with self.assertRaises(ApplicationError) as conflict:
                         self.retry(case, A, reason="历史A改参")
-                    self.assertEqual((conflict.exception.status_code, conflict.exception.code), (409, "conflict"))
+                    self.assertEqual((http_status_for(conflict.exception), conflict.exception.code), (409, "conflict"))
                     observer.assert_not_called()
                     self.assertEqual(len(case.repository.claims), 2)
                     self.assertTrue(all(observation is None for _, observation in case.repository.claims))

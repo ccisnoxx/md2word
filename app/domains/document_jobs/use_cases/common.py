@@ -6,10 +6,10 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobRecord
-from app.domains.document_jobs.preview import PREVIEW_FILE_TYPES
-from app.domains.document_jobs.schemas import (
+from app.domains.document_jobs.preview_evidence import PREVIEW_FILE_TYPES
+from app.domains.document_jobs.views.jobs import (
     DocumentJobAvailableActionResponse,
     DocumentJobDownloadClassification,
 )
@@ -56,15 +56,14 @@ UNREAD_RESULT = object()
 SYSTEM_LOGGER = logging.getLogger("system")
 
 
-class NewGenerationRequestUnavailable(ApiError):
+class NewGenerationRequestUnavailable(ApplicationError):
     """503 的命令对账上下文；未知结果不携带否定接受声明。"""
 
     def __init__(self, request_id: str, *, reason_code: str, accepted_generation: int | None = None):
         message = ("新代请求暂不可确认，请保留原 request_id 对账。" if accepted_generation is None
             else "新代已接受，Worker 投递结果未确认，请保留原 request_id 对账。" if reason_code == "worker_enqueue_failed"
             else "新代已接受，当前状态暂不可读取，请保留原 request_id 对账。")
-        super().__init__(503, "service_unavailable", message,
-            reason_code=reason_code)
+        super().__init__("service_unavailable", message, reason_code=reason_code)
         self.generation_request_id = request_id
         self.accepted_generation = accepted_generation
 

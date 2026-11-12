@@ -477,7 +477,7 @@ class DocumentJobModesTests(TestCase):
             "llm_ru_to_zh": "ru2zh", "ru_to_zh": "ru2zh",
         }.items():
             self.assertEqual(normalize_translation_mode(alias), expected)
-        from app.domains.document_jobs.schemas import DocumentJobCreateRequest
+        from app.domains.document_jobs.schemas.jobs import DocumentJobCreateRequest
 
         alternatives = DocumentJobCreateRequest.model_json_schema()["properties"]["translation_mode"]["anyOf"]
         self.assertEqual(alternatives[0]["enum"], ["direct", "en2zh", "ru2zh", "zh2en", "zh2ru"])

@@ -96,9 +96,9 @@ class V2PublicationFixture:
             # 在 HTTP 创建前给外部 fake 固定真实源；基础贡献由原转换/渲染/receipt 完成。
             execution.fake_mineru_client.result_zip_bytes = natural_package(table=True) if source_package is None else source_package
             provider = RecordingPreviewProvider(outcomes)
-            execution.rendering.word_preview_service.provider = provider
-            execution.rendering.word_preview_service.audit_service = runtime.audit_service
-            replace_dependency(runtime.document_job_use_cases, "word_preview_service", execution.rendering.word_preview_service)
+            execution.rendering.results.word_preview_service.provider = provider
+            execution.rendering.results.word_preview_service.audit_service = runtime.audit_service
+            replace_dependency(runtime.document_job_use_cases, "word_preview_service", execution.rendering.results.word_preview_service)
             with fixtures.TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
                 job = self._pause_after_ir(runtime, execution, client, headers)
@@ -155,7 +155,7 @@ class V2PublicationFixture:
         execution.job_resource_snapshot_service = snapshots if complete else None
         # 协作者在构造时显式持有该依赖，构造后替换必须同步到实际消费方。
         execution.rendering.job_resource_snapshot_service = execution.job_resource_snapshot_service
-        execution.translation_batches.job_resource_snapshot_service = execution.job_resource_snapshot_service
+        execution.translation_batches.deps.job_resource_snapshot_service = execution.job_resource_snapshot_service
         replace_dependency(runtime.document_job_use_cases, "job_resource_snapshot_service", snapshots)
         job = runtime.document_job_repository.update_document_job(job.id,
             request_snapshot={**job.request_snapshot, "resources": snapshot.model_dump(mode="json") if complete else None})

@@ -11,7 +11,7 @@ source_files:
   - app/clients/mineru_result_url.py
   - app/clients/mineru_client.py
   - app/domains/document_jobs/execution.py
-  - app/domains/document_jobs/schemas.py
+  - app/domains/document_jobs/schemas/jobs.py
   - app/core/config.py
 summary: MinerU callback API 提供 document_jobs 的 callback ingress、payload 归一化、checksum 验签和结果 URL 安全校验。
 tags: [mineru, callback, api, guards]

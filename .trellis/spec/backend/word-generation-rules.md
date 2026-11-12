@@ -40,7 +40,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：本地 MinerU 目录/ZIP，或线上任务已下载的 MinerU 结果 ZIP。
-- 正式 owner：`scripts/dev/formal_mineru_conversion.py::run_conversion`、`::convert_formal_mineru_package`；`app/domains/document_jobs/execution.py::DocumentJobExecutionService._convert_and_save_document_ir`；`app/domains/document_jobs/render_execution.py::WordRenderExecution._render_and_save_word`（由 `DocumentJobExecutionService.rendering` 持有）。
+- 正式 owner：`scripts/dev/formal_mineru_conversion.py::run_conversion`、`::convert_formal_mineru_package`；`app/domains/document_jobs/execution.py::DocumentJobExecutionService._convert_and_save_document_ir`；`app/domains/document_jobs/render_execution.py::WordRenderExecution.render_and_save_word`（由 `DocumentJobExecutionService.rendering` 持有）。
 - 预期输出：先由 `MinerUToDocumentIRService.convert_zip()` 生成并持久化 DocumentIR，再由 `DocumentIRWordRenderer.render_to_result()` 一次生成 DOCX 和完整 `WordRenderResult`；线上 Worker 与本地 adapter 均须将该结果通过 `render_result=` 传给 `build_renderer_evidence`，保留内容合同版本、公式来源覆盖和执行 trace，不得仅抽取公式/图片报告误入历史聚合路径（旧 `render_to_bytes()` 保持 bytes 兼容）；所有正式修复都落在该链路的唯一 owner。
 - 冲突/例外：调试脚本可以包装正式 adapter，但不得切换到旧 runtime；`document-ir/v1` 的 renderer 顺序回退仍属于正式 renderer 内部兼容路径。
 - 资产消费：本地 adapter 与 Worker 均须消费 converter 返回的普通图片、表格参考图和派生占位图三类资产；不能仅接 `image_assets` 而让已认证的表格来源在 writer 阶段丢失。统计字段 `image_assets` 仍保持普通图片计数语义。
@@ -530,7 +530,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：绑定模板 DOCX、layout config、document language 和 subscript/terminology config。
-- 正式 owner：`app/services/renderer/word_renderer.py::_open_document`、`::_load_template_config`；`app/services/renderer/template_config.py`；版本/API owner 见 [模板布局配置合同](./template-layout-configuration.md)。
+- 正式 owner：`app/services/renderer/word_renderer.py::_open_document`、`::_load_template_config`（渲染器外部调用方——如发布来源核验——只经公开入口 `::load_template_resources` 取得版式配置与 logo 路径）；`app/services/renderer/template_config.py`；版本/API owner 见 [模板布局配置合同](./template-layout-configuration.md)。
 - 预期输出：renderer 清空模板 body 但保留 sectPr 和模板 header/footer，应用绑定版本的页面、段落、表格、字体及术语配置；发布版本不可变性不在本文重复定义。
 - 冲突/例外：模板决定 Word 样式和绝对页面设置，源 layout 决定内容顺序、分栏和方向；显式空字体值保留继承语义。
 - 禁止：为适配 PDF 修改已发布 seed；在 renderer 猜另一套 schema；让源 bbox 覆盖模板字体/边距。

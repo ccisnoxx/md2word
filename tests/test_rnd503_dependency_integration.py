@@ -25,7 +25,7 @@ class Rnd503DependencyIntegrationTests(TestCase):
                                 payload["metadata"].pop(key, None)
                             else:
                                 payload["metadata"][key] = None
-                    original = execution.rendering._get_document_ir_file(job)
+                    original = execution.rendering.results.get_document_ir_file(job)
                     ir_file = runtime.file_upload_service.register_generated_content(
                         tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id,
                         created_by=job.created_by, file_type="document_ir", filename="history.document-ir.json",
@@ -37,7 +37,7 @@ class Rnd503DependencyIntegrationTests(TestCase):
                     template = execution.rendering.template_read_service.resolve_template_version(job.template_version_id)
                     rendered = execution.rendering.word_renderer.render_to_result(
                         ir, template_path=template.template_path, config_path=template.layout_config_path,
-                        image_loader=execution.rendering._build_image_loader(job),
+                        image_loader=execution.rendering.placeholders.build_image_loader(job),
                     )
                     content = base.legacy_image_docx(rendered.content)
                     evidence = build_renderer_evidence(ir, content, formula_report=rendered.formula_report)

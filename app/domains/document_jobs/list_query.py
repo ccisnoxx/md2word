@@ -215,7 +215,7 @@ def query_document_job_records(jobs: list[DocumentJobRecord], query: DocumentJob
             if candidate is not None and (candidate.tenant_id, candidate.company_id, candidate.job_id,
                     candidate.file_type, candidate.status) == (job.tenant_id, job.company_id, job.id, "generated_word", "uploaded"):
                 observed = candidate
-                # 删除预留的 ApiError 先发生；其他 ApiError 不影响复核观察，只有比较类型错误会传播。
+                # 删除预留的 ApplicationError 先发生；其他 ApplicationError 不影响复核观察，只有比较类型错误会传播。
                 if candidate.deletion_claim is None and candidate.expires_at is not None:
                     candidate.expires_at <= query.as_of
         observations[job.id] = candidate

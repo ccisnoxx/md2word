@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJobRecord
-from app.domains.document_jobs.schemas import DocumentJobFailureDiagnosticResponse
+from app.domains.document_jobs.views.jobs import DocumentJobFailureDiagnosticResponse
 
 
 def project_failure_diagnostic(

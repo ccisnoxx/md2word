@@ -539,6 +539,7 @@ def build_test_runtime(
         job_resource_snapshot_service,
         document_job_translation_batch_repository=document_job_translation_batch_repository,
         file_upload_service=file_upload_service,
+        translation_generation_summarizer=document_job_execution_service.translation_batches,
     )
     document_job_incident_service = DocumentJobIncidentService(
         file_repository=document_file_repository,
@@ -1282,13 +1283,13 @@ class FastAPIJobsBackendTests(TestCase):
 
     def test_api_v1_schema_imports_use_final_owners_after_resource_split(self):
         from app.api.v1.routers.health_schemas import HealthReadyResponse
-        from app.domains.document_jobs.schemas import DocumentJobCreateResponse
-        from app.domains.document_jobs.schemas import DocumentJobRetryResponse
+        from app.domains.document_jobs.schemas.jobs import DocumentJobCreateResponse
+        from app.domains.document_jobs.schemas.jobs import DocumentJobRetryResponse
         from app.domains.files.schemas import DocumentFileResponse
 
         self.assertEqual(DocumentFileResponse.__module__, "app.domains.files.schemas")
-        self.assertEqual(DocumentJobCreateResponse.__module__, "app.domains.document_jobs.schemas")
-        self.assertEqual(DocumentJobRetryResponse.__module__, "app.domains.document_jobs.schemas")
+        self.assertEqual(DocumentJobCreateResponse.__module__, "app.domains.document_jobs.schemas.jobs")
+        self.assertEqual(DocumentJobRetryResponse.__module__, "app.domains.document_jobs.schemas.jobs")
         self.assertEqual(HealthReadyResponse.__module__, "app.api.v1.routers.health_schemas")
 
     def test_health_ready_reports_runtime_dependencies(self):
@@ -1423,7 +1424,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
             )
-            old_document_client = runtime.document_job_execution_service.mineru._build_mineru_client()
+            old_document_client = runtime.document_job_execution_service.mineru.build_mineru_client()
             app = create_app(runtime)
 
             with TestClient(app) as client:
@@ -1476,7 +1477,7 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=admin_headers,
                 )
 
-            new_document_client = runtime.document_job_execution_service.mineru._build_mineru_client()
+            new_document_client = runtime.document_job_execution_service.mineru.build_mineru_client()
             callback_seed = "runtime-config-uid-seed"
             callback_content = "{}"
             callback_job = JobRecord(
@@ -1585,7 +1586,7 @@ class FastAPIJobsBackendTests(TestCase):
                 get_response = client.get("/api/v1/mineru-config", headers=admin_headers)
                 health_before = client.get("/api/v1/health/ready")
                 with self.assertRaisesRegex(MinerUConfigError, "配置文件"):
-                    runtime.document_job_execution_service.mineru._build_mineru_client()
+                    runtime.document_job_execution_service.mineru.build_mineru_client()
                 invalid_callback_job = JobRecord(
                     id="job_invalid_runtime_config_uid",
                     source_filename="source.pdf",
@@ -9618,7 +9619,7 @@ class FastAPIJobsBackendTests(TestCase):
                 max_items_per_request=3,
                 max_chars_per_request=10_000,
             )
-            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.translation_batches.deps.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
 
@@ -9779,7 +9780,7 @@ class FastAPIJobsBackendTests(TestCase):
                 max_items_per_request=3,
                 max_chars_per_request=10_000,
             )
-            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = (
+            runtime.document_job_execution_service.translation_batches.deps.document_ir_translation_service = (
                 runtime.document_ir_translation_service
             )
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = (
@@ -9848,7 +9849,7 @@ class FastAPIJobsBackendTests(TestCase):
                 translation_debug_archive_enabled=True,
             )
             runtime.document_ir_translation_service = DocumentIRTranslationService(FakeDocumentJobTranslationProvider())
-            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.translation_batches.deps.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
 
@@ -9881,7 +9882,7 @@ class FastAPIJobsBackendTests(TestCase):
             )
             provider = FakeDocumentJobTranslationProvider()
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
-            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.translation_batches.deps.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
 
@@ -9999,7 +10000,7 @@ class FastAPIJobsBackendTests(TestCase):
             )
             provider = FakeDocumentJobTranslationProvider(raise_error=True)
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
-            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.translation_batches.deps.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
 
@@ -10056,7 +10057,7 @@ class FastAPIJobsBackendTests(TestCase):
             )
             provider = TruncatingOnceDocumentJobTranslationProvider()
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
-            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.translation_batches.deps.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
 
@@ -10121,7 +10122,7 @@ class FastAPIJobsBackendTests(TestCase):
             )
             provider = FakeDocumentJobTranslationProvider(raise_error=True)
             runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
-            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.translation_batches.deps.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
 

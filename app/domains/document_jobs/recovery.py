@@ -11,7 +11,7 @@ from uuid import uuid4
 from fastapi import status
 
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.execution import DocumentJobTaskQueueProtocol
 from app.domains.document_jobs.models import (
     DocumentJobEventLevel,
@@ -211,8 +211,7 @@ class DocumentJobRecoveryService:
 
         preview = self.preview_replay(job_id)
         if not preview.eligible or preview.job is None:
-            raise ApiError(
-                status.HTTP_409_CONFLICT,
+            raise ApplicationError(
                 "conflict",
                 f"document_job replay 不满足执行条件: {', '.join(preview.missing_gates) or 'unknown'}",
             )
@@ -246,7 +245,7 @@ class DocumentJobRecoveryService:
                 recovery_events_written += 1
         else:
             if self.task_queue is None:
-                raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "document_jobs worker 未启用。")
+                raise ApplicationError("service_unavailable", "document_jobs worker 未启用。")
             queued_task_id = self.task_queue.enqueue(job.id, trace_id=trace_id, run_inline=run_inline)
             self._record_event(
                 job,

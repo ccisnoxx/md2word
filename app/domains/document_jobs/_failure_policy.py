@@ -6,7 +6,7 @@ import zipfile
 from typing import Any
 
 from app.clients.mineru_client import MinerUError
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobStage
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
 from app.domains.resources.integrity import RENDER_RESOURCE_ERROR_CODES
@@ -26,7 +26,7 @@ from app.services.tables.quality import TableValidationError
 # 消息只由固定错误码或固定文本构造的异常；其消息可原样作为任务 error_message。
 SAFE_MESSAGE_ERRORS = (MinerUArtifactValidationError, TablePlaceholderError, TableRenderError, TableBuildError,
                        TableEvidenceError, TableValidationError, TranslationIntegrityError)
-_EXPECTED_WORKER_ERRORS = (ApiError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile)
+_EXPECTED_WORKER_ERRORS = (ApplicationError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile)
 
 
 def failed_stage_for_current_stage(stage: DocumentJobStage) -> DocumentJobStage:
@@ -55,10 +55,10 @@ def classify_worker_failure(
     if failed_stage in {"rendering", "quality_checking"}:
         return failed_stage, "render_failed"
     if failed_stage in {"translating", "translation_validating"}:
-        if isinstance(exc, (ApiError, FileNotFoundError, OSError)):
+        if isinstance(exc, (ApplicationError, FileNotFoundError, OSError)):
             return failed_stage, "oss_failed"
         return failed_stage, "translation_failed"
-    if failed_stage == "uploading" or isinstance(exc, (ApiError, FileNotFoundError, OSError)):
+    if failed_stage == "uploading" or isinstance(exc, (ApplicationError, FileNotFoundError, OSError)):
         return failed_stage, "oss_failed"
     return failed_stage, "document_job_worker_failed"
 
@@ -78,7 +78,9 @@ def worker_failure_message(error: Exception) -> str:
     if isinstance(error, DocumentIRTranslationError):
         # 该类型会包装上游 str(exc)，只公开机器码。
         return f"翻译处理失败：{error.code}。"
-    return f"Worker 执行失败（{type(error).__name__}），详见事件 trace_id。"
+    # 业务错误迁为 ApplicationError 之前以 ApiError 进入此分支；沿用该名称，保持已持久化、对外可见的任务消息不变。
+    name = "ApiError" if type(error) is ApplicationError else type(error).__name__
+    return f"Worker 执行失败（{name}），详见事件 trace_id。"
 
 
 def worker_failure_evidence(error: Exception) -> dict[str, Any]:
