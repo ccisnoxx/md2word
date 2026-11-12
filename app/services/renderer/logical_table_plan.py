@@ -6,7 +6,8 @@ import re
 from typing import Any
 
 from app.services.document_ir.integrity import is_visible_body_block
-from app.services.document_ir.logical_table_group import VERSION as LOGICAL_TABLE_GROUPS_VERSION, validate_logical_table_groups
+from app.services.document_ir.logical_table_group import VERSION as LOGICAL_TABLE_GROUPS_VERSION
+from app.services.document_ir.logical_table_group import is_compound_table_continuation, validate_logical_table_groups
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock, LogicalTableGroup, TableFragment
 from app.services.document_ir.table_annotations import is_table_context_annotation
 from app.services.document_ir.table_header_review import TableHeaderReview
@@ -129,6 +130,8 @@ def _continuation_caption(text: str, primary: tuple[str, ...]) -> bool:
         return True
     if is_table_context_annotation(text):
         return False
+    if any(is_compound_table_continuation(caption, text) for caption in primary):
+        return True
     match = CAPTION_RE.match(text)
     if match is None or match.group("label").lower() not in {"table", "表"}:
         return False

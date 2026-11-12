@@ -26,9 +26,14 @@ from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.table_placeholder import (
     PdfCropResult, PdfCropSource, TablePlaceholderError, checksum, decode_placeholders,
 )
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.evidence import (
+    build_renderer_evidence, ensure_renderer_integrity, validate_persisted_renderer_content,
+)
 from app.services.renderer import DocumentIRWordRenderer
+from app.services.renderer.layout_plan import build_layout_plan
+from app.services.renderer.logical_table_plan import build_content_table_plan
 from app.services.tables.evidence import read_table_evidence
+from app.services.tables.grid_builder import build_table_grid
 
 
 # 使用可被真实图片解码器完整读取的中性PNG，保护输入资产校验。
@@ -914,6 +919,68 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertIn("layout_caption_binding:block_0003", document.quality_flags)
         self.assertIn("layout_footnote_binding:block_0004", document.quality_flags)
         self.assertEqual(len(result.image_assets), 1)
+
+    def test_compound_table_continuation_reconciles_source_grid_plan_and_word(self) -> None:
+        cases = (
+            ("Table 4-1. Pin Functions", "Table 4-1. Pin Functions (continued)", True),
+            ("Table 4-1. Pin Functions", "Table 4-2. Pin Functions (continued)", False),
+            ("Table 4-1. Pin Functions", "Table 4-1. Terminal Ratings (continued)", False),
+            ("Table 4-1. Pin Functions", "Table 4-1. Pin Functions", False),
+            ("Table 4-1. Pin Functions", None, False),
+            ("Table 4-1.2. Pin Functions", "Table 4-1.2. Pin Functions (continued)", False),
+        )
+        for first, second, continued in cases:
+            with self.subTest(first=first, second=second), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "continuation.zip"
+                blocks = [[{
+                    "type": "table", "bbox": bbox, "content": {
+                        "table_caption": [{"type": "text", "content": caption}] if caption else [],
+                        "html": f"<table><tr><th>Pin</th><th>Value</th></tr>"
+                                f"<tr><td>{index + 1}</td><td>A</td></tr></table>",
+                    },
+                }] for index, (caption, bbox) in enumerate(((first, [20, 650, 980, 980]),
+                                                            (second, [20, 20, 980, 350])))]
+                self._write_zip(path, blocks=blocks, layout={"pdf_info": [
+                    {"page_idx": index, "page_size": [1000, 1000]} for index in range(2)
+                ]})
+                result = MinerUToDocumentIRService().convert_zip(
+                    path, job_id="compound-continuation", source_file_id="source", document_language="en",
+                )
+                document = DocumentIR.model_validate_json(result.document.model_dump_json())
+                groups = document.metadata.logical_table_groups
+                source_hash = document.metadata.mineru_validation.content_list_sha256
+                grids = [build_table_grid(group, source_content_sha256=source_hash).grid for group in groups]
+                self.assertEqual([(grid.rows, grid.columns, grid.header_rows) for grid in grids],
+                                 [(4, 2, [0, 2])] if continued else [(2, 2, [0])] * 2)
+                self.assertEqual([fragment.source_span.json_pointer for group in groups for fragment in group.fragments],
+                                 ["/0/0", "/1/0"])
+
+                layout = build_layout_plan(document)
+                plan = build_content_table_plan(document, layout)
+                self.assertEqual([unit.rows for unit in plan.units], [3] if continued else [2, 2])
+                self.assertEqual([fragment.removed_header_rows for unit in plan.units for fragment in unit.fragments],
+                                 [0, 1] if continued else [0, 0])
+                if continued:
+                    relation, = groups[0].continuation_relations
+                    self.assertEqual(relation.evidence_codes,
+                                     ["adjacent_page_geometry", "same_table_number_continued"])
+                else:
+                    self.assertTrue(all(not group.continuation_relations for group in groups))
+
+                rendered = DocumentIRWordRenderer().render_to_result(
+                    document, template_path=None, config_path=None, image_loader=lambda _asset: None,
+                )
+                word = Document(io.BytesIO(rendered.content))
+                self.assertEqual([[row.cells[0].text for row in table.rows] for table in word.tables],
+                                 [["Pin", "1", "2"]] if continued else [["Pin", "1"], ["Pin", "2"]])
+                for table in word.tables:
+                    self.assertEqual(len(table.columns), 2)
+                    self.assertEqual([i for i, row in enumerate(table.rows) if row._tr.xpath("./w:trPr/w:tblHeader")],
+                                     [0])
+                self.assertFalse(word.element.xpath(".//w:instrText[contains(., 'SEQ')]"))
+                evidence = build_renderer_evidence(document, rendered.content, render_result=rendered)
+                ensure_renderer_integrity(evidence)
+                validate_persisted_renderer_content(document, rendered.content, evidence)
 
     def test_convert_zip_merges_table_placeholder_continuation_and_landscape_orientation(self) -> None:
         crop = _RecordingTableCropProvider("file_continuation", [(792, 612)] * 2)

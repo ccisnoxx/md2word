@@ -244,9 +244,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：heading、表题/表格/表注、长表行和连续表格 placeholder。
 - 正式 owner：`app/services/renderer/word_renderer.py::_render_block`；`app/services/renderer/table_renderer.py::_render_table_captions`、`::_configure_data_table_rows`；`app/services/document_ir/layout_signals.py::merge_table_placeholder_continuations`。
 - 预期输出：heading/table caption 使用 `keep_with_next`；表头可重复，表格行使用 `cantSplit`；空 table placeholder 只并入前一真实表格，不另渲染重复空表。
+- 数字复合表号的续表归组：`logical_table_group.is_compound_table_continuation(primary, following)` 供源归组和 `logical_table_plan` 共用。两段须各有唯一明确的 `数字-数字` 表号，完整编号相同，后段末尾有括号内的 `continued`、`续` 或 `续表`，后段题注正文须为空或与首段一致。源归组继续核验相邻页、正文边界、几何、列数和表头签名；布局兼容时渲染为一张原生表。编号不同、正文冲突、缺续表标记或多重编号时保守分表。该判定不参与 FIELD-002 的 `SEQ` 或 `REF` 生成。
+- 跨页表头去重仍须原生表头签名和续段提示通过核对。缺少可信 `<th>` 时保留源行。空片段归组收据只证明位置关系，未证明上游主片包含次页数据时继续执行 TABLE-004 的占位和阻断。
 - 冲突/例外：`DocumentIRBlockLayout.continuation_heights` 当前只写入、没有 renderer 消费者，不能声称续页高度已参与 Word 排版；Word 最终分页仍由客户端决定。
 - 禁止：把整张长表放进不可跨页容器；因 placeholder 创建第二张空表；把“有 continuation 元数据”写成“已验证不挤压”。
-- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_merges_table_placeholder_continuation_and_landscape_orientation`、`.test_convert_zip_merges_real_mineru_empty_table_continuations`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`。
+- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_merges_table_placeholder_continuation_and_landscape_orientation`、`.test_convert_zip_merges_real_mineru_empty_table_continuations`、`.test_compound_table_continuation_reconciles_source_grid_plan_and_word`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`。
 - 样本证据：SC2167、CM4112 第 3/4 页表格均为 external evidence；没有自动排版后的表格挤压/分页断言。
 - 来源/取代：两个 08-18 归档任务；明确降级“续表已解决”的历史结论。
 

@@ -30,6 +30,8 @@ COMPOSITE_SUFFIX = re.compile(
     re.IGNORECASE,
 )
 CONTINUED = re.compile(r"\bcontinued\b|(?<![\u3400-\u9fff])续(?:表)?(?![\u3400-\u9fff])", re.IGNORECASE)
+COMPOUND_TABLE_NUMBER = re.compile(r"^\s*(?:table|表)\s*([0-9]+-[0-9]+)(?=$|[\s.．:：(（])(.*)$", re.IGNORECASE)
+COMPOUND_CONTINUED = re.compile(r"[（(]\s*(?:continued|续表?)\s*[）)]\s*$", re.IGNORECASE)
 
 
 def _fail(reason: str) -> None:
@@ -214,6 +216,33 @@ def _caption(raw: dict[str, Any]) -> tuple[set[str], bool, bool, bool]:
     return numbers, continuation, ordinary, ambiguous or len(numbers) > 1
 
 
+def _parse_compound_table_caption(text: str) -> tuple[str, str, bool] | None:
+    """提取续表用的完整复合表号、题注正文和末尾续表标记。"""
+    match = COMPOUND_TABLE_NUMBER.match(text)
+    if match is None or len(TABLE_LABEL.findall(text)) != 1:
+        return None
+    number, tail = match.groups()
+    if COMPOSITE_SUFFIX.match(tail.lstrip()):
+        return None
+    marker = COMPOUND_CONTINUED.search(tail)
+    description = tail[:marker.start()] if marker else tail
+    return number, description.strip(" .．:："), marker is not None
+
+
+def is_compound_table_continuation(primary: str, following: str) -> bool:
+    """复合表号只接受续段显式声明，且题注正文不能冲突。"""
+    first = _parse_compound_table_caption(primary)
+    second = _parse_compound_table_caption(following)
+    return (first is not None and second is not None and first[0] == second[0] and second[2]
+            and (not second[1] or second[1] == first[1]))
+
+
+def _same_compound_table_continued(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    fields = ("table_caption", "caption", "captions")
+    before, after = (collect_text_from_fields(source, fields) for source in (left, right))
+    return len(before) == len(after) == 1 and is_compound_table_continuation(before[0], after[0])
+
+
 def _continuation(left: TableFragment, right: TableFragment, document: DocumentIR,
                   body_order: tuple[tuple[str, int | None], ...]) -> tuple[bool, str | None, str | None]:
     """明确独立证据优先；其余候选只在全部保守条件成立时归组。"""
@@ -221,7 +250,9 @@ def _continuation(left: TableFragment, right: TableFragment, document: DocumentI
     right_view = _source_view(right.raw_fragment, right.source_span)
     left_numbers, _left_continued, _left_ordinary, left_ambiguous = _caption(left_view)
     right_numbers, continued, ordinary, right_ambiguous = _caption(right_view)
-    if left_ambiguous or right_ambiguous:
+    # 仅在两段都提供同一明确复合号及后段续表标记时，消解旧判定的复合号歧义。
+    same_compound = left_ambiguous and right_ambiguous and _same_compound_table_continued(left_view, right_view)
+    if (left_ambiguous or right_ambiguous) and not same_compound:
         return False, "insufficient_evidence", None
     if ordinary or (left_numbers and right_numbers and left_numbers != right_numbers):
         return False, None, None
@@ -253,7 +284,7 @@ def _continuation(left: TableFragment, right: TableFragment, document: DocumentI
         return False, "unreliable_columns", None
     if previous.columns != following.columns:
         return False, "column_mismatch", None
-    if len(left_numbers) == len(right_numbers) == 1 and left_numbers == right_numbers and continued:
+    if same_compound or (len(left_numbers) == len(right_numbers) == 1 and left_numbers == right_numbers and continued):
         return True, None, "same_table_number_continued"
     if previous.signature and previous.signature == following.signature and _consecutive(previous, following):
         return True, None, "matching_header_consecutive_ordinal"
