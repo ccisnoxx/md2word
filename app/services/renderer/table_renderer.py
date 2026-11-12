@@ -60,6 +60,7 @@ def table_config_for_columns(
     style_updates = {"font_size": target_size}
     if max_cols >= WIDE_TABLE_COLUMN_COUNT:
         style_updates.update({
+            "alignment": "left",
             "line_spacing": 1.0,
             "space_before": 0,
             "space_after": 0,
@@ -326,10 +327,22 @@ class WordTableRendererMixin:
             terminology=template_config.terminology,
             reference_bookmarks=reference_bookmarks,
         )
+        self._format_table_cell(cell, is_header, template_config)
+
+    def _format_table_cell(self, cell: Any, is_header: bool, template_config: TemplateConfigPackage) -> None:
+        """统一单元格外观，保留窄表的显式段落间距和正文对齐。"""
+
+        paragraph = cell.paragraphs[0]
         self._apply_table_header_run_style(paragraph, is_header, template_config)
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if is_header else WD_ALIGN_PARAGRAPH.LEFT
-        paragraph.paragraph_format.space_before = Pt(0)
-        paragraph.paragraph_format.space_after = Pt(0)
+        if is_header:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        elif paragraph.alignment is None:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        paragraph_format = paragraph.paragraph_format
+        if paragraph_format.space_before is None:
+            paragraph_format.space_before = Pt(0)
+        if paragraph_format.space_after is None:
+            paragraph_format.space_after = Pt(0)
         if is_header and template_config.table_style.header_fill:
             self._set_cell_fill(cell, template_config.table_style.header_fill)
         cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER

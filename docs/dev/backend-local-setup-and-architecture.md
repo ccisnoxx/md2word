@@ -129,10 +129,8 @@ var/
   - `resources/term_rules/term_rules.v2.yaml` 作为版本化 seed
   - `var/config/term_rules_store.json` 作为 live runtime truth
   - `var/config/runtime_subscripts_dictionary.yaml` 作为 conversion 消费的兼容 YAML
-- templates 采用两层结构：
-  - `resources/template_configs/templates_manifest.yaml` 作为版本化模板清单
-  - `var/config/templates/` 作为 API 管理上传模板的版本目录
-  - `var/config/template_state.json` 作为运行态默认模板状态
-- 正式任务的模板选择与默认版本由 DocumentJob 资源快照合同决定。
+- 仓库模板清单定义内置默认版本。目前是 `default@2`，DOCX 承载页眉、页脚和公司 Logo，`datasheet_template_v2.yaml` 承载页面、字体、颜色、段落和表格样式。 [仓库模板清单](../../resources/template_configs/templates_manifest.yaml)
+- `datasheet_template.yaml` 供已发布 `default@1` 的历史绑定读取，路径与字节按登记的 SHA-256 保留。要更新内置默认版式，应新增 YAML 并更新清单版本。
+- `var/config/templates/` 存放管理 API 上传的版本文件，`var/config/template_state.json` 记录运行时默认模板 ID。MySQL 中已设置的默认版本保留，正式任务使用创建时绑定的模板版本。
 - 任务操作使用正式 Document Jobs API 与现有权限合同；旧 Jobs 运维端点已删除。
 - `jobs`、`job_files`、`stage_messages` 三张既有旧空表留待 B08 治理，本次不 DROP、不迁移旧任务；`job_events` 仍用于正式事件读写并保留建表。

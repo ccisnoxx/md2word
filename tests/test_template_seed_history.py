@@ -9,17 +9,26 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import yaml
 from docx import Document
 from pydantic_settings import SettingsConfigDict
 
 from app.core.config import Settings
+from app.domains.document_jobs.models import DocumentJobRecord
+from app.domains.document_jobs.schemas import DocumentJobCreateRequest
+from app.domains.document_jobs.use_cases import build_document_job_use_cases
+from app.domains.files.models import DocumentFileRecord
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
 from app.domains.resources.models import ResourceType, ResourceVersionRecord, ResourceVersionStatus
 from app.domains.resources.service import ResourceVersionService
+from app.domains.templates.package_validator import TemplatePackageValidationError
 from app.domains.templates.read_service import TemplateReadService
 from app.domains.templates.schemas import TemplateAssetResponse
+from app.domains.term_rules.models import TermRulesStore
+from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
+from app.services.auth.models import AuthenticatedUser
 
 
 def _snapshot_hash(payload: dict[str, Any]) -> str:
@@ -45,6 +54,7 @@ class _MemoryResourceVersionRepository:
         self.records: dict[tuple[ResourceType, str, str], ResourceVersionRecord] = {}
         self.defaults: dict[tuple[ResourceType, str], str] = {}
         self.writes: list[tuple[str, ResourceType, str, str]] = []
+        self.next_versions: dict[tuple[ResourceType, str], int] = {}
 
     def create_resource_version(self, record: ResourceVersionRecord) -> ResourceVersionRecord:
         key = (record.resource_type, record.resource_id, record.version)
@@ -59,6 +69,29 @@ class _MemoryResourceVersionRepository:
         self.records[key] = record.model_copy(deep=True)
         self.writes.append(("save", *key))
         return record.model_copy(deep=True)
+
+    def update_resource_version_if_current(
+        self,
+        record: ResourceVersionRecord,
+        *,
+        expected_snapshot_hash: str,
+        expected_status: ResourceVersionStatus | None = None,
+    ) -> ResourceVersionRecord | None:
+        existing = self.get_resource_version(record.resource_type, record.resource_id, record.version)
+        if (
+            existing is None
+            or existing.status != (expected_status if expected_status is not None else record.status)
+            or existing.snapshot_hash != expected_snapshot_hash
+        ):
+            return None
+        return self.save_resource_version(record)
+
+    def allocate_next_version(self, resource_type: ResourceType, resource_id: str, minimum_next: int) -> int:
+        key = (resource_type, resource_id)
+        allocated = max(self.next_versions.get(key, minimum_next), minimum_next)
+        self.next_versions[key] = allocated + 1
+        self.writes.append(("allocate", resource_type, resource_id, str(allocated)))
+        return allocated
 
     def get_resource_version(
         self,
@@ -229,6 +262,216 @@ class TemplateSeedHistoryTests(TestCase):
         before = self._repository_snapshot()
         self.reader.bootstrap_manifest_versions()
         self.assertEqual(self._repository_snapshot(), before)
+
+    def test_bootstrap_preflights_all_new_seeds_before_any_write(self) -> None:
+        invalid_layout = self.root / "invalid-layout.yaml"
+        invalid_layout.write_text("schema_version: template-config/v1\npage_setup: {left_margin: -1}\n")
+        self.settings.templates_manifest_file.write_text(yaml.safe_dump({
+            "templates": [
+                self.manifest_item,
+                {**self.manifest_item, "id": "other", "layout_config_path": self._relative(invalid_layout)},
+            ],
+        }))
+
+        with self.assertRaises(TemplatePackageValidationError) as caught:
+            self.reader.bootstrap_manifest_versions()
+
+        self.assertEqual(caught.exception.code, "below_minimum")
+        self.assertEqual(self._repository_snapshot(), ({}, {}, []))
+
+    def test_bootstrap_rejects_changed_registered_layout_without_overwriting_identity(self) -> None:
+        self.reader.bootstrap_manifest_versions()
+        before = self._repository_snapshot()
+        self._yaml(self._relative(self.layout_path), "另一种字体")
+
+        with self.assertRaises(TemplatePackageValidationError) as caught:
+            self.reader.bootstrap_manifest_versions()
+
+        self.assertEqual(caught.exception.code, "template_layout_config_hash_mismatch")
+        self.assertEqual(self._repository_snapshot(), before)
+
+    def test_invalid_upload_or_layout_leaves_no_draft_files_or_repository_writes(self) -> None:
+        self.reader.bootstrap_manifest_versions()
+        before = self._repository_snapshot()
+        manifest = self.settings.templates_manifest_file.read_bytes()
+        invalid_docx = self.root / "bad.docx"
+        invalid_docx.write_bytes(b"invalid")
+        invalid_layout = self.root / "bad-layout.yaml"
+        invalid_layout.write_text("schema_version: template-config/v1\nnormal: {word_style_name: Table Grid}\n")
+        new_upload = self._docx("uploads/valid.docx", "有效上传")
+        cases = (
+            (
+                lambda: self.reader.create_template(
+                    template_id="custom", name="自定义", description="", source_path=new_upload,
+                    source_filename=new_upload.name, layout_config_path=self._relative(invalid_layout),
+                ),
+                "unknown_word_style",
+            ),
+            (
+                lambda: self.reader.replace_template_file(
+                    "default", source_path=invalid_docx, source_filename=invalid_docx.name,
+                ),
+                "docx_package_invalid",
+            ),
+            (
+                lambda: self.reader.create_template_version(
+                    "default", source_path=new_upload, source_filename=new_upload.name,
+                    layout_config_path=self._relative(invalid_layout),
+                ),
+                "unknown_word_style",
+            ),
+        )
+        for action, code in cases:
+            with self.subTest(code=code):
+                with self.assertRaises(TemplatePackageValidationError) as caught:
+                    action()
+                self.assertEqual(caught.exception.code, code)
+                self.assertTrue(new_upload.is_file())
+                self.assertFalse(self.settings.templates_storage_dir.exists())
+                self.assertEqual(self.settings.templates_manifest_file.read_bytes(), manifest)
+                self.assertEqual(self._repository_snapshot(), before)
+
+    def test_publish_revalidates_draft_bytes_and_verification_binding_before_writing(self) -> None:
+        self.reader.bootstrap_manifest_versions()
+        draft_path = self._docx("history/draft.docx", "发布草稿")
+        draft_content = draft_path.read_bytes()
+        draft = self._register(3, self._payload(3, draft_path), status=ResourceVersionStatus.DRAFT)
+        bound = self.resources.resolve_version("template", "default", "3", allow_draft=True).model_dump(mode="json")
+        job = DocumentJobRecord(
+            id="verification-job", tenant_id="tenant", company_id="company", created_by="admin",
+            source_file_id="source", status="succeeded", stage="completed", template_version_id="default@3",
+            request_snapshot={"resources": {"template": bound}},
+        )
+        self.reader.document_job_repository = Mock(get_document_job=Mock(return_value=job))
+
+        def publish():
+            return self.reader.publish_template_version(
+                "default", 3, make_default=True, publish_reason="通过验收",
+                verification_job_id=job.id, verification_note="验证成功",
+            )
+
+        before = self._repository_snapshot()
+        self._docx(self._relative(draft_path), "验证后替换的合法 DOCX")
+        with self.assertRaises(TemplatePackageValidationError) as caught:
+            publish()
+        self.assertEqual(caught.exception.code, "template_docx_hash_mismatch")
+        self.assertEqual(self._repository_snapshot(), before)
+        self.assertFalse(self.settings.template_state_file.exists())
+        draft_path.write_bytes(draft_content)
+
+        modified_payload = {**draft.payload, "layout_config_path": None, "layout_config_sha256": None}
+        self.repository.save_resource_version(draft.model_copy(update={
+            "payload": modified_payload, "snapshot_hash": _snapshot_hash(modified_payload),
+        }))
+        rebound = self._repository_snapshot()
+        with self.assertRaises(TemplatePackageValidationError) as caught:
+            publish()
+        self.assertEqual(caught.exception.code, "template_verification_resource_mismatch")
+        self.assertEqual(self._repository_snapshot(), rebound)
+        self.assertFalse(self.settings.template_state_file.exists())
+
+        self.repository.save_resource_version(draft)
+        self.assertEqual(publish().status, "published")
+        self.assertEqual(self.repository.get_default_resource_version("template", "default").version, "3")
+
+    def test_publish_and_create_job_without_layout_does_not_consult_manifest_layout(self) -> None:
+        self.reader.bootstrap_manifest_versions()
+        draft_path = self._docx("history/unbound.docx", "只使用 Word 模板")
+        self._register(
+            3, self._payload(3, draft_path, layout_config_path=None, layout_config_sha256=None),
+            status=ResourceVersionStatus.DRAFT,
+        )
+        self.reader.update_template_metadata("default", layout_config_path="missing-manifest-layout.yaml")
+        job = DocumentJobRecord(
+            id="old-verification", tenant_id="tenant", company_id="company", created_by="admin",
+            source_file_id="source", status="succeeded", stage="completed", template_version_id="default@3",
+        )
+        job_repository = Mock(get_document_job=Mock(return_value=job))
+        self.reader.document_job_repository = job_repository
+
+        published = self.reader.publish_template_version(
+            "default", 3, make_default=True, publish_reason="通过验收",
+            verification_job_id=job.id, verification_note="历史验证成功",
+        )
+
+        self.assertEqual(published.status, "published")
+        self.assertTrue(published.is_default)
+        self.assertTrue(self.settings.template_state_file.exists())
+        self.assertFalse(published.layout_config.exists)
+        self.assertIsNone(published.layout_config.file_name)
+        detail = self.reader.get_template_detail("default", url_for=None)
+        self.assertEqual(detail.layout_config, published.layout_config)
+
+        rules_payload = {"store": TermRulesStore().model_dump(mode="json")}
+        self.repository.create_resource_version(ResourceVersionRecord(
+            resource_type="term_rule_set", resource_id=DEFAULT_TERM_RULE_SET_ID, version="seed",
+            status=ResourceVersionStatus.PUBLISHED, snapshot_hash=_snapshot_hash(rules_payload), payload=rules_payload,
+        ))
+        self.repository.set_default_resource_version("term_rule_set", DEFAULT_TERM_RULE_SET_ID, "seed")
+        user = AuthenticatedUser(id="operator", username="operator", role="operator", tenant_id="tenant",
+                                 company_id="company")
+        source = DocumentFileRecord(
+            id="new-source", tenant_id=user.tenant_id, company_id=user.company_id, file_type="source_pdf",
+            storage_provider="local_object", bucket="local", object_key="new-source.pdf",
+            original_filename="new-source.pdf", mime_type="application/pdf", size_bytes=1, status="uploaded",
+            created_by=user.id,
+        )
+        use_cases = build_document_job_use_cases(
+            self.settings,
+            job_repository=job_repository,
+            event_repository=Mock(),
+            file_repository=Mock(get_document_file=Mock(return_value=source)),
+            template_read_service=self.reader,
+            job_resource_snapshot_service=JobResourceSnapshotService(self.settings, self.resources),
+        )
+        request = DocumentJobCreateRequest(source_file_id=source.id)
+        created = use_cases.submission.create_job(user=user, trace_id=None, **request.model_dump())
+        self.assertEqual(created.template_version_id, "default@3")
+        binding = created.request_snapshot["resources"]["template"]
+        self.assertEqual((binding["resource_id"], binding["version"], binding["snapshot_hash"]),
+                         ("default", "3", published.snapshot_hash))
+        job_repository.create_document_job.assert_called_once_with(created)
+
+    def test_publish_cas_refuses_changes_after_preflight_without_switching_default(self) -> None:
+        self.reader.bootstrap_manifest_versions()
+        draft_path = self._docx("history/verified.docx", "已验证的模板")
+        draft = self._register(3, self._payload(3, draft_path), status=ResourceVersionStatus.DRAFT)
+        bound = self.resources.resolve_version("template", "default", "3", allow_draft=True).model_dump(mode="json")
+        job = DocumentJobRecord(
+            id="verification-job", tenant_id="tenant", company_id="company", created_by="admin",
+            source_file_id="source", status="succeeded", stage="completed", template_version_id="default@3",
+            request_snapshot={"resources": {"template": bound}},
+        )
+        self.reader.document_job_repository = Mock(get_document_job=Mock(return_value=job))
+        self.reader.audit_service = Mock()
+        check = self.reader._validate_registered_template_package
+        changed_payload = self._payload(3, self._docx("history/replacement.docx", "未验证的同号模板"))
+        changes = (
+            draft.model_copy(update={"payload": changed_payload, "snapshot_hash": _snapshot_hash(changed_payload)}),
+            draft.model_copy(update={"status": ResourceVersionStatus.DISABLED}),
+        )
+        for changed in changes:
+            with self.subTest(status=changed.status):
+                self.repository.save_resource_version(draft)
+                before = self.repository.writes.copy()
+
+                def preflight_and_change(record):
+                    check(record)
+                    self.repository.save_resource_version(changed)
+
+                with patch.object(self.reader, "_validate_registered_template_package", side_effect=preflight_and_change):
+                    with self.assertRaises(TemplatePackageValidationError) as caught:
+                        self.reader.publish_template_version(
+                            "default", 3, make_default=True, publish_reason="通过验收",
+                            verification_job_id=job.id, verification_note="验证成功",
+                            actor=Mock(actor_id="publisher"),
+                        )
+                self.assertEqual(caught.exception.code, "template_draft_conflict")
+                self.assertEqual(self.repository.get_resource_version("template", "default", "3"), changed)
+                self.assertEqual(self.repository.get_default_resource_version("template", "default").version, "2")
+                self.assertEqual(self.repository.writes, [*before, ("save", "template", "default", "3")])
+                self.assertFalse(self.settings.template_state_file.exists())
+                self.reader.audit_service.record.assert_not_called()
 
     def test_bundled_identity_and_payload_conflicts_fail_without_writes(self) -> None:
         cases = ("docx_path", "docx_sha256", "docx_bytes", "template_id", "version", "snapshot_hash", "draft")

@@ -4,9 +4,20 @@ from __future__ import annotations
 import hashlib
 import marshal
 import sys
+from dataclasses import dataclass, field
 from types import FunctionType
 
 from app.services.renderer.render_plan import ResourceIdentity, content_hash
+
+
+@dataclass(frozen=True, slots=True)
+class RenderResourceInputs:
+    """任务资源认证与单次渲染之间传递的私有输入字节。"""
+
+    template_docx: bytes = field(repr=False)
+    template_config: bytes | None = field(repr=False)
+    symbol_rules: bytes = field(repr=False)
+    logo: bytes | None = field(default=None, repr=False)
 
 
 def normalized_resource_identity(*, template_content, config, logo_content, document_language):

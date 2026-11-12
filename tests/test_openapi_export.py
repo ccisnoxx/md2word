@@ -13,6 +13,7 @@ from unittest.mock import patch
 from scripts.ops.export_openapi import check_openapi_export, export_openapi
 from scripts.ops.check_release import (
     REPO_ROOT,
+    check_bundled_template_package,
     check_frontend_contracts,
     check_golden_sample_preflight,
     check_release,
@@ -82,11 +83,44 @@ class OpenAPIExportTests(TestCase):
             formatted = format_release_report(report)
 
         self.assertTrue(report.ok)
-        self.assertEqual([item.name for item in report.items], ["openapi", "frontend-contract", "frontend-smoke-mock"])
+        self.assertEqual([item.name for item in report.items], [
+            "openapi", "frontend-contract", "frontend-smoke-mock",
+            "default-template-manifest-binding", "template-package-preflight",
+        ])
         self.assertIn("Release check report", formatted)
         self.assertIn("[openapi] ok: True", formatted)
         self.assertIn("[frontend-contract] ok: True", formatted)
         self.assertIn("[frontend-smoke-mock] ok: True", formatted)
+
+    def test_release_template_gate_rejects_missing_binding_and_corrupt_package(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / "resources" / "template_configs"
+            directory.mkdir(parents=True)
+            manifest = directory / "templates_manifest.yaml"
+            manifest.write_text("templates: []\n", encoding="utf-8")
+            binding, preflight = check_bundled_template_package(root)
+            self.assertFalse(binding.ok)
+            self.assertFalse(preflight.ok)
+
+            manifest.write_text(
+                "templates:\n"
+                "  - id: default\n"
+                "    name: 测试模板\n"
+                "    is_default_seed: true\n"
+                "    version: 2\n"
+                "    template_path: template.docx\n"
+                "    layout_config_path: template.yaml\n",
+                encoding="utf-8",
+            )
+            (root / "template.docx").write_bytes(b"broken")
+            (root / "template.yaml").write_bytes(b"schema_version: template-config/v1")
+            binding, preflight = check_bundled_template_package(root)
+
+        self.assertTrue(binding.ok)
+        self.assertFalse(preflight.ok)
+        self.assertIn("docx_package_invalid", preflight.details)
+        self.assertNotIn(str(root), preflight.details)
 
     def test_frontend_contract_check_rejects_action_union_and_optional_field_drift(self):
         frontend_api_root = REPO_ROOT / "frontend/src/api"

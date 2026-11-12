@@ -18,6 +18,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from app.domains.templates.manifest import resolve_bundled_template_seed
+from app.domains.templates.package_validator import TemplatePackageValidationError, validate_template_package
 from scripts.ops.export_openapi import check_openapi_export, format_pretty_report
 
 
@@ -100,28 +102,26 @@ def check_release(
     items.append(check_frontend_contracts(openapi_output_path or (REPO_ROOT / "docs/api/openapi.json")))
     items.append(check_frontend_smoke_mock_contracts())
 
+    binding, preflight = check_bundled_template_package(REPO_ROOT)
+    if unittest_targets and binding.ok:
+        binding_tests = _check_unittests(binding.name, (
+            "tests.test_template_package_contract.TemplatePackageContractTests.test_bundled_template_carries_default_decorations_and_logo",
+            "tests.test_template_package_contract.TemplatePackageContractTests.test_local_defaults_follow_bundled_binding_and_runtime_uses_configured_manifest",
+        ))
+        binding = ReleaseCheckItem(binding.name, binding_tests.ok, binding.summary, binding_tests.details)
+    items.extend((binding, preflight))
     if unittest_targets:
-        result = subprocess.run(
-            [sys.executable, "-m", "unittest", *unittest_targets],
-            cwd=REPO_ROOT,
-            env=_build_unittest_environment(),
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        details = "\n".join(part for part in (result.stdout, result.stderr) if part)
-        items.append(
-            ReleaseCheckItem(
-                name="targeted-unittest",
-                ok=result.returncode == 0,
-                summary=(
-                    f"Targeted unittest passed: {len(unittest_targets)} target(s)"
-                    if result.returncode == 0
-                    else f"Targeted unittest failed with exit code {result.returncode}"
-                ),
-                details=details.strip(),
-            )
-        )
+        items.extend((
+            _check_unittests("template-config-consumer-coverage", (
+                "tests.test_template_config_consumption",
+                "tests.test_template_layout_config_schema.TemplateLayoutConfigSchemaTests.test_published_v1_hash_and_legacy_font_schema_remain_readable",
+                "tests.test_template_layout_config_schema.TemplateLayoutConfigSchemaTests.test_published_v2_hash_is_immutable",
+            )),
+            _check_unittests("default-template-decoration-contract", (
+                "tests.test_template_package_contract.TemplatePackageContractTests.test_renderer_preserves_template_decorations_across_section_transitions",
+            )),
+            _check_unittests("targeted-unittest", unittest_targets),
+        ))
 
     if runtime_url:
         items.append(check_runtime_readiness(runtime_url))
@@ -130,6 +130,55 @@ def check_release(
         items.append(check_golden_sample_preflight(golden_sample_preflight_output_path))
 
     return ReleaseCheckReport(items=tuple(items))
+
+
+def check_bundled_template_package(root_dir: Path) -> tuple[ReleaseCheckItem, ReleaseCheckItem]:
+    """检查仓库当前内置默认绑定及其实际 DOCX/YAML 包。"""
+
+    try:
+        seed = resolve_bundled_template_seed(root_dir)
+        paths = (seed.template_path, seed.layout_config_path)
+        resolved_root = root_dir.resolve()
+        binding_ok = all(path.is_relative_to(resolved_root) and path.is_file() for path in paths)
+    except (OSError, ValueError, RuntimeError):
+        binding_ok = False
+    if not binding_ok:
+        return (
+            ReleaseCheckItem("default-template-manifest-binding", False, "内置默认模板绑定无效。"),
+            ReleaseCheckItem("template-package-preflight", False, "缺少有效的内置模板绑定，无法执行预检。"),
+        )
+
+    identity = f"{seed.item.id}@{seed.item.version}"
+    binding = ReleaseCheckItem("default-template-manifest-binding", True, identity)
+    try:
+        validate_template_package(template_path=seed.template_path, layout_config_path=seed.layout_config_path)
+    except TemplatePackageValidationError as exc:
+        return binding, ReleaseCheckItem("template-package-preflight", False, identity, f"{exc.path} ({exc.code})")
+    return binding, ReleaseCheckItem("template-package-preflight", True, identity)
+
+
+def _check_unittests(name: str, targets: Sequence[str]) -> ReleaseCheckItem:
+    """用发布检查现有的隔离环境运行一组定向单测。"""
+
+    result = subprocess.run(
+        [sys.executable, "-m", "unittest", *targets],
+        cwd=REPO_ROOT,
+        env=_build_unittest_environment(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    details = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
+    return ReleaseCheckItem(
+        name=name,
+        ok=result.returncode == 0,
+        summary=(
+            f"{len(targets)} 个定向测试入口通过。"
+            if result.returncode == 0
+            else f"定向测试失败，退出码 {result.returncode}。"
+        ),
+        details=details,
+    )
 
 
 def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:

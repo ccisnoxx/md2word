@@ -385,6 +385,91 @@ class DocumentJobModesTests(TestCase):
                 self.assertEqual(clone.status_code, 201, clone.json())
                 self._assert_no_translation_calls(spies)
 
+    def test_create_and_clone_snapshot_bind_selected_custom_default_template(self):
+        from app.domains.templates.models import TemplateManifestItem
+        from tests.test_template_package_contract import bundled_template_paths
+
+        with self._client_runtime(versioned=True) as (runtime, client, operator, _admin):
+            _, original = self._create_direct(client, operator)
+            bundled_docx, bundled_yaml = bundled_template_paths()
+            custom_path = fixtures.publish_template_resource_version(
+                runtime, template_id="custom", version="1",
+                content=bundled_docx.read_bytes(), make_default=True,
+            )
+            reader = runtime.template_read_service
+            manifest = reader._load_manifest()
+            with patch.object(reader, "_manifest_cache", manifest.model_copy(update={
+                "templates": [*manifest.templates, TemplateManifestItem(
+                    id="custom", name="自定义模板", template_path=str(custom_path),
+                    layout_config_path=str(bundled_yaml),
+                )],
+            })):
+                reader.set_default_template("custom")
+                _, created = self._create_direct(client, operator)
+                clone = client.post(f"/api/v1/document-jobs/{original}/clone", headers=operator,
+                                    json={"config_strategy": "use_current_defaults"})
+                self.assertEqual(clone.status_code, 201, clone.json())
+                for job_id in (created, clone.json()["job"]["id"]):
+                    record = runtime.document_job_repository.get_document_job(job_id)
+                    self.assertEqual(record.template_version_id, "custom@1")
+                    binding = record.request_snapshot["resources"]["template"]
+                    self.assertEqual((binding["resource_id"], binding["version"]), ("custom", "1"))
+
+    def test_template_default_change_after_selection_does_not_rebind_new_job(self):
+        from tests.test_template_package_contract import bundled_template_paths
+
+        with self._client_runtime(versioned=True) as (runtime, client, operator, _admin):
+            bundled_docx, _ = bundled_template_paths()
+            fixtures.publish_template_resource_version(runtime, version="1", content=bundled_docx.read_bytes(),
+                                                       make_default=False)
+            reader = runtime.template_read_service
+            resolve = reader.resolve_template_version
+
+            def select_then_change_default(*args, **kwargs):
+                selection = resolve(*args, **kwargs)
+                runtime.resource_version_service.set_default("template", "default", "1")
+                return selection
+
+            with patch.object(reader, "resolve_template_version", side_effect=select_then_change_default):
+                _, job_id = self._create_direct(client, operator)
+            record = runtime.document_job_repository.get_document_job(job_id)
+            self.assertEqual(record.template_version_id, "default@2")
+            self.assertEqual(record.request_snapshot["resources"]["template"]["version"], "2")
+
+    def test_explicit_rule_retry_keeps_old_template_and_bound_department(self):
+        from tests.test_template_package_contract import bundled_template_paths
+
+        with self._client_runtime(versioned=True) as (runtime, client, _operator, admin):
+            bundled_docx, _ = bundled_template_paths()
+            fixtures.publish_template_resource_version(runtime, version="1", content=bundled_docx.read_bytes(),
+                                                       make_default=True)
+            for binding in ("legacy_exact", "legacy_alias", "snapshot"):
+                with self.subTest(binding=binding):
+                    _, job_id = self._create_direct(client, admin)
+                    record = runtime.document_job_repository.get_document_job(job_id)
+                    snapshot = deepcopy(record.request_snapshot)
+                    self.assertEqual(record.template_version_id, "default@1")
+                    if binding != "snapshot":
+                        snapshot["resources"] = None
+                    else:
+                        snapshot["resources"]["term_rule_department_id"] = "hardware"
+                    runtime.document_job_repository.update_document_job(
+                        job_id, request_snapshot=snapshot, status="failed", stage="failed",
+                        template_version_id="default" if binding == "legacy_alias" else record.template_version_id,
+                        failed_stage="parsing", error_code="mineru_failed",
+                    )
+                    runtime.resource_version_service.set_default("template", "default", "2")
+                    retry = client.post(f"/api/v1/document-jobs/{job_id}/retry", headers=admin,
+                                        json={"use_latest_term_assets": True})
+                    self.assertEqual(retry.status_code, 200, retry.json())
+                    retried = runtime.document_job_repository.get_document_job(job_id)
+                    version = "2" if binding == "legacy_alias" else "1"
+                    self.assertEqual(retried.template_version_id, f"default@{version}")
+                    resources = retried.request_snapshot["resources"]
+                    self.assertEqual(resources["template"]["version"], version)
+                    self.assertEqual(resources["term_rule_department_id"], "hardware" if binding == "snapshot" else None)
+                    runtime.resource_version_service.set_default("template", "default", "1")
+
     def test_internal_aliases_remain_supported_and_schema_enum_remains_canonical(self):
         for alias, expected in {
             "none": "direct", "zh2zh": "direct", "zh_to_zh": "direct",

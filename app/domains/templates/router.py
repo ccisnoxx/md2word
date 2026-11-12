@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from app.api.dependencies import get_runtime, get_trace_id, require_admin_actor
 from app.api.errors import bad_request_http_exception, not_found_http_exception
 from app.domains.audit.models import ActorContext
+from app.core.errors import ApiError
 from app.core.runtime import AppRuntime
 from app.domains.templates.schemas import (
     TemplateDeleteResponse,
@@ -27,6 +28,7 @@ from app.domains.templates.schemas import (
 )
 from app.domains.templates.read_service import TemplateLayoutConfigConflict
 from app.domains.templates.layout_config_schema import TemplateLayoutValidationError
+from app.domains.templates.package_validator import TemplatePackageValidationError
 
 
 router = APIRouter(prefix="/templates", tags=["templates"])
@@ -83,6 +85,14 @@ def _template_versioning_unavailable_http_exception(exc: RuntimeError) -> HTTPEx
     return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
 
 
+def _template_write_bad_request(exc: ValueError) -> HTTPException | ApiError:
+    if isinstance(exc, TemplatePackageValidationError):
+        if exc.code in {"template_draft_conflict", "template_version_conflict"}:
+            return ApiError(409, "conflict", str(exc), reason_code=exc.code)
+        return ApiError(400, "invalid_request", str(exc), reason_code=exc.code)
+    return bad_request_http_exception(exc)
+
+
 @router.get("", response_model=TemplateListResponse)
 def list_templates(
     request: Request,
@@ -124,7 +134,7 @@ async def create_template(
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
         temp_path.unlink(missing_ok=True)
-        raise bad_request_http_exception(exc) from exc
+        raise _template_write_bad_request(exc) from exc
 
     detail = runtime.template_read_service.get_template_detail(template_id, url_for=request.url_for)
     assert detail is not None
@@ -174,7 +184,7 @@ async def create_template_version(
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
         temp_path.unlink(missing_ok=True)
-        raise bad_request_http_exception(exc) from exc
+        raise _template_write_bad_request(exc) from exc
 
 
 @router.get("/{template_id}/versions", response_model=TemplateVersionListResponse)
@@ -280,7 +290,7 @@ def publish_template_version(
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
-        raise bad_request_http_exception(exc) from exc
+        raise _template_write_bad_request(exc) from exc
 
 
 @router.post("/{template_id}/versions/{version}/set-default", response_model=TemplateVersionResponse)
@@ -426,7 +436,7 @@ async def replace_template_file(
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
         temp_path.unlink(missing_ok=True)
-        raise bad_request_http_exception(exc) from exc
+        raise _template_write_bad_request(exc) from exc
 
     detail = runtime.template_read_service.get_template_detail(template_id, url_for=request.url_for)
     assert detail is not None

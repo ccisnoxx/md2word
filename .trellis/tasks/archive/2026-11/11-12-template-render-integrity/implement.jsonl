@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/template-layout-configuration.md", "reason": "模板版本、编辑 schema、发布资源哈希与历史兼容"}
+{"file": ".trellis/spec/backend/document-job-mode-contract.md", "reason": "direct、翻译模式与历史快照边界"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "稳定业务错误和 Worker 失败映射"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "定向测试和 release check"}
+{"file": ".trellis/tasks/11-12-template-render-integrity/implement.md", "reason": "实施顺序、回归门禁和 Word 生成规则索引"}

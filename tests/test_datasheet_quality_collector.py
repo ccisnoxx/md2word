@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from docx import Document
 
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.renderer.docx_quality import analyze_docx_quality_bytes
-from scripts.dev.run_datasheet_quality_baseline import table_and_token_observations
+from scripts.dev.run_datasheet_quality_baseline import observation, sha256, table_and_token_observations
 
 
 class DatasheetQualityCollectorTests(unittest.TestCase):
@@ -67,3 +71,37 @@ class DatasheetQualityCollectorTests(unittest.TestCase):
         self.assertEqual([reason["reason"] for reason in table["reasons"]],
                          ["native_table_claimed_by_multiple_annotations"] * 2)
         self.assertEqual(tokens["matched"], {})
+
+    def test_observation_keeps_safe_conformance_for_success_and_failure(self) -> None:
+        summary = {
+            "schema_version": "template-conformance/v1", "mode": "preserve_template",
+            "broken_relationship_count": 0, "blocking_flags": [], "template_docx_sha256": "a" * 64,
+        }
+        blocker = "template_conformance:header_media_missing"
+        with TemporaryDirectory() as temporary:
+            package = Path(temporary)
+            source = package / "sample_origin.pdf"
+            source.write_bytes(b"PDF fixture")
+            layout = package / "sample_content_list_v2.json"
+            layout.write_bytes(b"[]")
+            sample = {"sample_id": "sample", "pdf_sha256": sha256(source), "content_list_v2_sha256": sha256(layout)}
+
+            def convert(**kwargs):
+                self.document.save(kwargs["output_path"])
+                return SimpleNamespace(pages=1, quality_flags=[], renderer_metadata={
+                    "template_conformance": summary, "table_evidence": {"tables": [], "status": "pass"},
+                    "mineru_validation": {"package_sha256": "fixture"},
+                })
+
+            with patch("scripts.dev.run_datasheet_quality_baseline.run_conversion", side_effect=convert):
+                passed = observation(sample, package, package)
+            self.assertEqual(passed["template_conformance"]["status"], "passed")
+            self.assertNotIn("template_docx_sha256", passed["template_conformance"])
+
+            error = DocumentIntegrityError("DocumentIR→DOCX", {
+                "blocking_quality_flags": [blocker], "template_conformance": {**summary, "blocking_flags": [blocker]},
+            })
+            with patch("scripts.dev.run_datasheet_quality_baseline.run_conversion", side_effect=error):
+                blocked = observation(sample, package, package)
+            self.assertEqual(blocked["conversion"]["status"], "failed")
+            self.assertEqual(blocked["template_conformance"]["status"], "blocked")

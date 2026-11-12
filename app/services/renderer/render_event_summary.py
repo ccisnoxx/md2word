@@ -8,9 +8,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.domains.resources.integrity import RENDER_RESOURCE_ERROR_CODES
 from app.services.renderer.logical_table_plan import (
     TABLE_RENDERING_VERSION, QUALITY_BLOCKERS, QUALITY_WARNINGS, SAFE_COUNT_KEYS,
 )
+from app.services.renderer.template_conformance import TEMPLATE_CONFORMANCE_FLAGS, build_template_conformance_summary
 
 
 RENDER_EVIDENCE_CODES = frozenset({
@@ -25,7 +27,7 @@ FIXED_FLAGS = frozenset({"formula_text_fallback", "image_group_uncertain", "capt
     "ir_docx_integrity:table_anchor_mismatch", "ir_docx_integrity:table_row_count_mismatch", "ir_docx_integrity:table_header_mismatch",
     "ir_docx_integrity:table_geometry_mismatch", "ir_docx_integrity:table_fragment_anchor_mismatch",
     "ir_docx_integrity:table_fragment_map_mismatch", "table_placeholder_integrity_failed", "table_noneditable_placeholder"
-}) | RENDER_EVIDENCE_CODES | QUALITY_BLOCKERS | QUALITY_WARNINGS
+}) | RENDER_EVIDENCE_CODES | QUALITY_BLOCKERS | QUALITY_WARNINGS | RENDER_RESOURCE_ERROR_CODES | TEMPLATE_CONFORMANCE_FLAGS
 COUNT_FLAG_RE = re.compile(r"(?:docx_latex_residue|docx_manual_list_markers|docx_plain_toc_entries|docx_unstyled_heading_candidates|final_promotional_page_filtered):[0-9]+\Z")
 
 
@@ -131,6 +133,9 @@ def build_renderer_event_summary(evidence: dict[str, Any]) -> dict[str, Any]:
             elif value.get("analysis_error"):
                 projected["analysis_error"] = "document_xml_parse_error"
             summary[key] = projected
+    conformance = build_template_conformance_summary(evidence.get("template_conformance"))
+    if conformance is not None:
+        summary["template_conformance"] = conformance
     if "mineru_validation" in evidence:
         summary["mineru_validation"] = _safe_mineru_report(evidence["mineru_validation"])
     if "failure_context" in evidence:

@@ -8,11 +8,19 @@ import hashlib
 import json
 import math
 import re
+import sys
 from collections import Counter, defaultdict
 from decimal import Decimal
 from pathlib import Path
 from statistics import fmean
 from typing import Any
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.services.renderer.template_conformance import build_template_conformance_summary
 
 
 OBSERVATION_VERSION = "datasheet-quality-observations/v1"
@@ -340,10 +348,18 @@ def _analyze(plan: dict, observation: dict) -> dict:
     outcome = plan.get("expected_outcome")
     conversion = _conversion(_optional_object(observation, "conversion"))
     missing = _optional_object(observation, "missing") or {}
+    raw_conformance = _optional_object(observation, "template_conformance")
+    if raw_conformance is None:
+        conformance = {"status": "not_collected"}
+    else:
+        conformance = build_template_conformance_summary(raw_conformance)
+        if conformance is None:
+            raise ValueError("模板符合性观测的版本或结构无效。")
     row = {
         **identity,
         "expected_outcome": outcome,
         "conversion": conversion,
+        "template_conformance": conformance,
         "cost": measure_cost(_optional_object(observation, "cost"), missing.get("cost")),
         "latency_seconds": _latency(_optional_object(observation, "latency"), missing.get("latency")),
     }
@@ -426,6 +442,13 @@ def _summarize(rows: list[dict]) -> dict:
             "failure_reasons": dict(Counter(row["conversion"]["reason"] for row in normal if not row["conversion"]["success"])),
         },
         "blocking_cases": {"planned": len(blockers), **Counter(blocker["status"] for blocker in blockers)},
+        "template_conformance": {
+            "planned": len(rows),
+            **Counter(row["template_conformance"]["status"] for row in rows),
+            "blocking_flags": dict(Counter(
+                flag for row in rows for flag in row["template_conformance"].get("blocking_flags", ())
+            )),
+        },
         "table_structure": {
             **_combined_ratio(table),
             "unexpected": sum(item.get("unexpected", 0) for item in table),

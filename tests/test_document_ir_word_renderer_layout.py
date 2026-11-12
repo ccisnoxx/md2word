@@ -16,6 +16,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Cm, Emu
 
+from app.domains.templates.manifest import resolve_bundled_template_seed
 from app.services.document_ir.models import (
     DocumentIR,
     DocumentIRAsset,
@@ -45,7 +46,7 @@ MINIMAL_PNG_BYTES = (
 class DocumentIRWordRendererLayoutTests(unittest.TestCase):
     def test_seed_config_declares_western_and_complex_fonts_for_all_text_groups(self) -> None:
         config = TemplateConfigPackage.load(
-            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template_v2.yaml"
+            resolve_bundled_template_seed(Path(__file__).resolve().parents[1]).layout_config_path
         )
 
         for group_name in (
@@ -742,13 +743,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
             content = renderer.render_to_bytes(
                 document,
-                template_path=(
-                    Path(__file__).resolve().parents[1]
-                    / "resources"
-                    / "templates"
-                    / "default"
-                    / "datasheet_template.docx"
-                ),
+                template_path=resolve_bundled_template_seed(Path(__file__).resolve().parents[1]).template_path,
                 config_path=config_path,
                 image_loader=lambda _asset: None,
             )
