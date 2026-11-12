@@ -290,7 +290,8 @@ def _manual(raw: dict | None, missing: dict) -> tuple[dict, dict]:
     )
 
 
-def _cost(raw: dict | None, reason: str | None) -> dict:
+def measure_cost(raw: dict | None, reason: str | None = None) -> dict:
+    """校验费用口径并计算已覆盖全部分项的总额。"""
     if raw is None:
         return _measurement(None, reason or "cost_not_recorded")
     complete = raw.get("complete")
@@ -310,6 +311,8 @@ def _cost(raw: dict | None, reason: str | None) -> dict:
     if components.keys() - {"parser", "translation"} or complete and components.keys() != {"parser", "translation"}:
         raise ValueError("费用分项必须使用 parser 和 translation，完整费用须包含两项。")
     amount = float(sum(Decimal(str(value)) for value in components.values())) if complete else None
+    if amount is not None and not math.isfinite(amount):
+        raise ValueError("费用合计必须为有限数值。")
     return {
         **_measurement(amount, None if complete else raw.get("reason") or reason or "partial_cost"),
         "currency": currency,
@@ -341,7 +344,7 @@ def _analyze(plan: dict, observation: dict) -> dict:
         **identity,
         "expected_outcome": outcome,
         "conversion": conversion,
-        "cost": _cost(_optional_object(observation, "cost"), missing.get("cost")),
+        "cost": measure_cost(_optional_object(observation, "cost"), missing.get("cost")),
         "latency_seconds": _latency(_optional_object(observation, "latency"), missing.get("latency")),
     }
     if outcome == "blocked":
@@ -501,7 +504,8 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict:
     return result
 
 
-def _read_json(path: Path) -> tuple[dict, str]:
+def read_metrics_input(path: Path) -> tuple[dict, str]:
+    """拒绝重复 JSON 字段，并保留原始字节的指纹。"""
     content = path.read_bytes()
     payload = json.loads(content.decode("utf-8"), object_pairs_hook=_unique_object)
     return _object(payload, "输入 JSON"), hashlib.sha256(content).hexdigest()
@@ -589,12 +593,12 @@ def _build_baseline(payload: dict, directory: Path, input_paths: list[Path]) -> 
         run_ids.add(run_id)
         observation_path = _manifest_input(directory, run.get("observations"), "runs.observations")
         input_paths.append(observation_path)
-        observations, observation_hash = _read_json(observation_path)
+        observations, observation_hash = read_metrics_input(observation_path)
         entry = {"id": run_id, "observations_sha256": observation_hash}
         if "manual_reviews" in run:
             manual_path = _manifest_input(directory, run["manual_reviews"], "runs.manual_reviews")
             input_paths.append(manual_path)
-            manual, entry["manual_reviews_sha256"] = _read_json(manual_path)
+            manual, entry["manual_reviews_sha256"] = read_metrics_input(manual_path)
             observations = _attach_manual_reviews(observations, manual)
         entry["report"] = build_report(observations)
         reports.append(entry)
@@ -608,7 +612,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     try:
         input_paths = [args.observations]
-        payload, _ = _read_json(args.observations)
+        payload, _ = read_metrics_input(args.observations)
         report = (_build_baseline(payload, args.observations.parent, input_paths)
                   if payload.get("schema_version") == BASELINE_VERSION else build_report(payload))
         if args.output is not None and any(

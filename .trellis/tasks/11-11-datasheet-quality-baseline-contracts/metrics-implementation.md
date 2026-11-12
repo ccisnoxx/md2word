@@ -14,6 +14,29 @@ mkdir -p tests/tmp/datasheet-quality-metrics
 
 [基线清单](metrics-baseline.json)固定六份已保存的观测。统一报告为 `datasheet-quality-baseline-report/v1`，每次运行保留原观测 SHA-256 和一份原格式 `datasheet-quality-metrics/v1`。直接传入一份历史 `datasheet-quality-observations/v1` 仍可复算原报告。清单路径相对清单所在目录，输出路径与输入分开。
 
+## 常规回归出表
+
+使用 [Golden Sample 常规回归入口](../../../scripts/ops/run_golden_sample_regression.py)。运行目录中的 `observations.json` 和 `metrics.json` 与原有 P0 验收报告一起生成。启用的 manifest 项形成固定分母，每项关联模式及 `GOLDEN_SAMPLE_METRICS_EVIDENCE_LEVEL` 指定的运行证据层级，默认值为 `golden_sample_api`。
+
+任务终态、下载授权和实际下载分别记录。成功计时从首次创建文档任务请求前到取得对应主 DOCX 的下载授权，取得有效且可打开的文件后才计成功。失败和超时各自计时。原 P0 报告的 `elapsed_seconds` 仍包含源 PDF 上传、下载传输和检查。
+
+设置 `GOLDEN_SAMPLE_COST_EVIDENCE` 可接入本批费用凭据。回归结束时读取 `golden-sample-cost-evidence/v1` JSON 的 `receipts` 数组，每项按 `job_id` 和 `retry_count` 归属。内层 `cost` 沿用指标 v1 的 `currency`、`basis`、`reference`、`components` 和 `complete`。完整凭据须覆盖解析、翻译和截至该代的全部尝试。凭据缺失、无效、代次错配或只取得分项时，总费用记录为缺测。普通回归中没有采集的表格标注、技术 Token、视觉及人工数据分别记录缺测原因。
+
+本地以原 P0 清单的四份 PDF 运行正式 CLI，任务和费用响应由回环服务提供，报告证据层级为 `local_http_fixture`。四项分别模拟有效主件、坏 DOCX、任务失败和下载失败。指标成功率为 1/4，P0 目标继续为 100%。完整、部分和代次不匹配的测试凭据分别得到总额、已知分项和缺测结果。直接复算 `observations.json` 与自动生成的 `metrics.json` 逐项一致。[回环复验入口](../../../tests/tmp/datasheet-quality-regression/replay.py)
+
+常规入口、P0 报告和指标采集的 42 项定向测试通过，另有 2 项 P1 清单兼容检查通过。无效费用凭据保留转换和时延结果，终态身份错配保留费用缺测。机器指标先于可选 P0 人工签字文件保存。3 个本轮 Python 文件通过语法编译，`git diff --check` 通过。
+
+### 固定清单隔离实链验收
+
+2026-11-12 使用同一 P0 固定清单运行常规 CLI。环境为隔离的本地 API、Celery、Redis、SQLite 和本地对象存储，实际调用 MinerU `vlm` 解析。证据层级为 `isolated_live_api_celery_sqlite`。运行依据为提交 `e3e4be94` 及当时工作区，代码指纹见对账记录。[实链对账记录](../../../tests/tmp/datasheet-quality-regression-live/20261112T033738667332Z/verification.json)
+
+- 转换成功 4/4，CLI 退出码为 0。四份实际下载的主 DOCX 均可打开，任务主件 ID、登记文件字节数和 SHA-256、下载件 SHA-256 与观测相符。四项任务重试代次均为 0。
+- `observations.json` 按固定清单复算，与自动生成的 `metrics.json` 逐项一致。任务提交至取得下载授权的 P50 为 22.158 秒，P95 为 22.203 秒，样本数 4。状态轮询间隔为 2 秒。
+- 本批四个 MinerU 结果查询均返回 HTTP 200，批次 ID 和 `data_id` 均能对上本地任务。结果响应没有可用于本轮结算的金额字段，本批未提供费用凭据。总成本 4/4 缺测，原文转换产生的翻译批次数为 0。
+- 旧 P0 报告的自动链路目标达成。P0 发布资格继续等待管理员 Word 质量签字。隔离实链证据单列，保留原有回环验收与历史基线。
+
+[自动观测](../../../tests/tmp/datasheet-quality-regression-live/20261112T033738667332Z/runs/20261112T033741Z/observations.json) · [自动指标](../../../tests/tmp/datasheet-quality-regression-live/20261112T033738667332Z/runs/20261112T033741Z/metrics.json) · [本地验收目录](../../../tests/tmp/datasheet-quality-regression-live/20261112T033738667332Z/runs/20261112T033741Z/)
+
 | 指标 | 报告字段和读法 |
 | --- | --- |
 | 转换成功率 | `conversion_success` 记录正常计划项分子、分母、已评估数及失败原因。完整链路要求主 DOCX 可下载且可打开。本地回放单列。 |
