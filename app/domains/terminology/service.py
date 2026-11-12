@@ -8,9 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from fastapi import status as http_status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.resources.models import ResourceVersionStatus
 from app.domains.resources.service import ResourceVersionService
 from app.domains.terminology.models import (
@@ -75,7 +74,7 @@ class TerminologyReleaseService:
 
         record = self.repository.get_release(release_id.strip(), version.strip() if version else None)
         if record is None:
-            raise ApiError(http_status.HTTP_404_NOT_FOUND, "not_found", "术语治理包发布不存在。")
+            raise ApplicationError("not_found", "术语治理包发布不存在。")
         return record
 
     def preflight(self, request: TerminologyReleaseCreateRequest) -> TerminologyGovernanceValidationReport:
@@ -154,14 +153,14 @@ class TerminologyReleaseService:
 
         report = self.preflight(request)
         if report.blocking:
-            status_code = http_status.HTTP_409_CONFLICT if any(item.code == "duplicate_scope" for item in report.errors) else http_status.HTTP_400_BAD_REQUEST
-            raise ApiError(status_code, "conflict" if status_code == http_status.HTTP_409_CONFLICT else "invalid_request", "术语治理包发布前校验未通过。")
+            duplicate = any(item.code == "duplicate_scope" for item in report.errors)
+            raise ApplicationError("conflict" if duplicate else "invalid_request", "术语治理包发布前校验未通过。")
 
         scope = self._normalize_scope(request.scope.project, request.scope.language_pair, request.scope.content_type)
         term_context = self._resolve_translation_terms(request, [])
         rule_asset = self._resolve_rule_asset(request, [])
         if term_context.asset is None or rule_asset is None:
-            raise ApiError(http_status.HTTP_400_BAD_REQUEST, "invalid_request", "术语治理包引用不完整。")
+            raise ApplicationError("invalid_request", "术语治理包引用不完整。")
 
         release_id = self._release_id(scope)
         now = utc_now()
@@ -188,7 +187,7 @@ class TerminologyReleaseService:
 
         record = self.get_release(release_id)
         if record.status != "active":
-            raise ApiError(http_status.HTTP_409_CONFLICT, "conflict", "只有生效中的术语治理包可以回滚。")
+            raise ApplicationError("conflict", "只有生效中的术语治理包可以回滚。")
         now = utc_now()
         return self.repository.save_release(
             record.model_copy(

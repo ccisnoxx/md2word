@@ -13,11 +13,10 @@ from datetime import datetime, timedelta
 from typing import Literal, Protocol
 from uuid import uuid4
 
-from fastapi import status
 
 from app.api.v1.routers.health_schemas import HealthOpsAlertItem
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.audit.models import AuditEvent
 from app.domains.audit.repository import AuditEventRepositoryProtocol
 from app.domains.resources.models import utc_now
@@ -359,10 +358,9 @@ class OpsRealAlertDeliveryService:
 
         normalized_reason = reason.strip()
         if not normalized_reason:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "reason 不能为空。")
+            raise ApplicationError("invalid_request", "reason 不能为空。")
         if confirmation != REAL_ALERT_DELIVERY_CONFIRMATION_PHRASE:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"confirmation 必须为 {REAL_ALERT_DELIVERY_CONFIRMATION_PHRASE}。",
             )
@@ -455,8 +453,7 @@ class OpsRealAlertDeliveryService:
 
         self._validate_exact_request(alert_codes=alert_codes, destination_ids=destination_ids)
         if dedupe_window_minutes != REAL_ALERT_DELIVERY_DEDUPE_WINDOW_MINUTES:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"dedupe_window_minutes 必须为 {REAL_ALERT_DELIVERY_DEDUPE_WINDOW_MINUTES}。",
             )
@@ -490,14 +487,12 @@ class OpsRealAlertDeliveryService:
         normalized_alerts = [item.strip() for item in alert_codes]
         normalized_destinations = [item.strip() for item in destination_ids]
         if normalized_alerts != [REAL_ALERT_DELIVERY_ALERT_CODE]:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"alert_codes 必须精确等于 [{REAL_ALERT_DELIVERY_ALERT_CODE}]。",
             )
         if normalized_destinations != [REAL_ALERT_DELIVERY_DESTINATION_ID]:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"destination_ids 必须精确等于 [{REAL_ALERT_DELIVERY_DESTINATION_ID}]。",
             )
@@ -508,8 +503,7 @@ class OpsRealAlertDeliveryService:
         for alert in self.current_alerts:
             if alert.code == REAL_ALERT_DELIVERY_ALERT_CODE:
                 return alert
-        raise ApiError(
-            status.HTTP_409_CONFLICT,
+        raise ApplicationError(
             "conflict",
             f"alert code 当前未激活: {REAL_ALERT_DELIVERY_ALERT_CODE}",
         )
@@ -525,14 +519,12 @@ class OpsRealAlertDeliveryService:
             destination_ids=[REAL_ALERT_DELIVERY_DESTINATION_ID],
         )
         if report.config_errors:
-            raise ApiError(
-                status.HTTP_409_CONFLICT,
+            raise ApplicationError(
                 "conflict",
                 f"alert destination 配置无效: {'; '.join(report.config_errors)}",
             )
         if len(report.destinations) != 1:
-            raise ApiError(
-                status.HTTP_409_CONFLICT,
+            raise ApplicationError(
                 "conflict",
                 f"destination 未配置: {REAL_ALERT_DELIVERY_DESTINATION_ID}",
             )

@@ -7,9 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 
-from fastapi import status
-
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.audit.models import AuditEvent
 from app.domains.audit.repository import AuditEventRepositoryProtocol
 from app.domains.document_jobs.models import DocumentJobRecord
@@ -234,10 +232,9 @@ class OpsProviderCancellationService:
 
         normalized_reason = reason.strip()
         if not normalized_reason:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "reason 不能为空。")
+            raise ApplicationError("invalid_request", "reason 不能为空。")
         if confirmation != PROVIDER_CANCELLATION_CONFIRMATION_PHRASE:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"confirmation 必须为 {PROVIDER_CANCELLATION_CONFIRMATION_PHRASE}。",
             )
@@ -248,8 +245,7 @@ class OpsProviderCancellationService:
             provider=provider,
         )
         if missing_gates:
-            raise ApiError(
-                status.HTTP_409_CONFLICT,
+            raise ApplicationError(
                 "conflict",
                 f"provider cancellation fake 目标不满足 gate: {', '.join(missing_gates)}",
             )
@@ -298,13 +294,13 @@ class OpsProviderCancellationService:
         """按目标类型读取 metadata 并计算 missing gates。"""
 
         if provider != "mineru":
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", f"不支持 provider={provider}。")
+            raise ApplicationError("invalid_request", f"不支持 provider={provider}。")
         normalized_target_id = target_id.strip()
         if not normalized_target_id:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "target_id 不能为空。")
+            raise ApplicationError("invalid_request", "target_id 不能为空。")
         if target_type == "document_job":
             return self._build_document_job_context(normalized_target_id, provider=provider)
-        raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", f"不支持 target_type={target_type}。")
+        raise ApplicationError("invalid_request", f"不支持 target_type={target_type}。")
 
     def _build_document_job_context(
         self,

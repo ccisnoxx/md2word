@@ -7,10 +7,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import status as http_status
 from pydantic import ValidationError
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.acceptance.defaults import build_default_acceptance_runs
 from app.domains.acceptance.models import (
     AcceptanceLatestOverallStatus,
@@ -50,7 +49,7 @@ class AcceptanceRunService:
 
         record = self.repository.get_acceptance_run(run_id.strip())
         if record is None:
-            raise ApiError(http_status.HTTP_404_NOT_FOUND, "not_found", "验收运行不存在。")
+            raise ApplicationError("not_found", "验收运行不存在。")
         return record
 
     def upsert_run(
@@ -88,7 +87,7 @@ class AcceptanceRunService:
                 updated_at=utc_now(),
             )
         except (ValidationError, ValueError) as exc:
-            raise ApiError(http_status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc)) from exc
+            raise ApplicationError("invalid_request", str(exc)) from exc
         return self.repository.save_acceptance_run(record)
 
     def bootstrap_default_runs_if_empty(self) -> list[AcceptanceRunRecord]:
@@ -205,7 +204,7 @@ class AcceptanceRunService:
     def _normalize_required_text(self, value: str, field_name: str) -> str:
         normalized = value.strip()
         if not normalized:
-            raise ApiError(http_status.HTTP_400_BAD_REQUEST, "invalid_request", f"{field_name} 不能为空。")
+            raise ApplicationError("invalid_request", f"{field_name} 不能为空。")
         return normalized
 
     def _normalize_optional_text(self, value: str | None) -> str | None:

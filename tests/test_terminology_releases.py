@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest import TestCase
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError, http_status_for
 from app.domains.resources.models import ResourceVersionRecord, ResourceVersionStatus
 from app.domains.resources.service import ResourceVersionService
 from app.domains.terminology.models import TerminologyReleaseRecord, TerminologyReleaseStatus
@@ -171,10 +171,10 @@ class TerminologyReleaseServiceTests(TestCase):
         request = self._request(term_version="2026.06.20-1")
         self.service.publish(request, actor_id="admin-1")
 
-        with self.assertRaises(ApiError) as caught:
+        with self.assertRaises(ApplicationError) as caught:
             self.service.publish(request, actor_id="admin-1")
 
-        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(http_status_for(caught.exception), 409)
         self.assertEqual(caught.exception.code, "conflict")
 
     def test_preflight_flags_overlapping_scope_with_different_rule_configuration(self) -> None:

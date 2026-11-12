@@ -8,7 +8,7 @@ from unittest import TestCase
 
 from fastapi import status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError, http_status_for
 from app.domains.saved_views.models import SavedViewPageKey, SavedViewRecord
 from app.domains.saved_views.repository import SavedViewScope
 from app.domains.saved_views.service import SAVED_VIEW_MAX_PER_PAGE, SavedViewService
@@ -73,7 +73,7 @@ class SavedViewServiceTests(TestCase):
 
         self.assertEqual(record.name, "Failed jobs")
         self.assertEqual(record.filters, {"status": "failed", "q": "invoice"})
-        with self.assertRaises(ApiError) as duplicate:
+        with self.assertRaises(ApplicationError) as duplicate:
             self.service.create_view(
                 user=self.user,
                 page_key="jobs",
@@ -81,9 +81,9 @@ class SavedViewServiceTests(TestCase):
                 filters={"status": "failed"},
                 sort="updated_at_desc",
             )
-        self.assertEqual(duplicate.exception.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(http_status_for(duplicate.exception), status.HTTP_409_CONFLICT)
 
-        with self.assertRaises(ApiError) as ephemeral_filter:
+        with self.assertRaises(ApplicationError) as ephemeral_filter:
             self.service.create_view(
                 user=self.user,
                 page_key="translation_qa",
@@ -91,10 +91,10 @@ class SavedViewServiceTests(TestCase):
                 filters={"qa_job_id": "docjob_1"},
                 sort="updated_at_desc",
             )
-        self.assertEqual(ephemeral_filter.exception.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(http_status_for(ephemeral_filter.exception), status.HTTP_400_BAD_REQUEST)
 
     def test_validation_rejects_cross_field_conflicts_and_invalid_sorts(self) -> None:
-        with self.assertRaises(ApiError) as cross_field:
+        with self.assertRaises(ApplicationError) as cross_field:
             self.service.create_view(
                 user=self.user,
                 page_key="jobs",
@@ -102,9 +102,9 @@ class SavedViewServiceTests(TestCase):
                 filters={"status": "failed", "status_group": "active"},
                 sort="updated_at_desc",
             )
-        self.assertEqual(cross_field.exception.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(http_status_for(cross_field.exception), status.HTTP_400_BAD_REQUEST)
 
-        with self.assertRaises(ApiError) as invalid_sort:
+        with self.assertRaises(ApplicationError) as invalid_sort:
             self.service.create_view(
                 user=self.user,
                 page_key="incidents",
@@ -112,7 +112,7 @@ class SavedViewServiceTests(TestCase):
                 filters={"retryable": True},
                 sort="not_a_sort",
             )
-        self.assertEqual(invalid_sort.exception.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(http_status_for(invalid_sort.exception), status.HTTP_400_BAD_REQUEST)
 
     def test_default_view_uniqueness_prefers_new_or_updated_default(self) -> None:
         first = self.service.create_view(
@@ -150,7 +150,7 @@ class SavedViewServiceTests(TestCase):
             )
             for index in range(SAVED_VIEW_MAX_PER_PAGE)
         ]
-        with self.assertRaises(ApiError) as max_views:
+        with self.assertRaises(ApplicationError) as max_views:
             self.service.create_view(
                 user=self.user,
                 page_key="incidents",
@@ -158,15 +158,15 @@ class SavedViewServiceTests(TestCase):
                 filters={"status": "failed"},
                 sort="priority",
             )
-        self.assertEqual(max_views.exception.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(http_status_for(max_views.exception), status.HTTP_409_CONFLICT)
 
-        with self.assertRaises(ApiError) as incomplete_reorder:
+        with self.assertRaises(ApplicationError) as incomplete_reorder:
             self.service.reorder_views(
                 user=self.user,
                 page_key="incidents",
                 view_ids=[record.view_id for record in created[:-1]],
             )
-        self.assertEqual(incomplete_reorder.exception.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(http_status_for(incomplete_reorder.exception), status.HTTP_400_BAD_REQUEST)
 
         reordered = self.service.reorder_views(
             user=self.user,
@@ -186,8 +186,8 @@ class SavedViewServiceTests(TestCase):
             sort="updated_at_desc",
         )
 
-        with self.assertRaises(ApiError) as denied:
+        with self.assertRaises(ApplicationError) as denied:
             self.service.list_views(user=restricted_user, page_key="translation_qa")
 
-        self.assertEqual(denied.exception.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(http_status_for(denied.exception), status.HTTP_403_FORBIDDEN)
         self.assertEqual(denied.exception.code, "role_forbidden")

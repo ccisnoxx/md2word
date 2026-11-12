@@ -11,9 +11,8 @@ from datetime import datetime
 from typing import Any, Callable, get_args
 from uuid import uuid4
 
-from fastapi import status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.incidents import (
     DOCUMENT_JOB_INCIDENT_FAILURE_TYPES,
     DOCUMENT_JOB_INCIDENT_RETRY_BUCKETS,
@@ -84,7 +83,7 @@ class SavedViewService:
         scope = self._scope(user)
         current = self._ordered(self.repository.list_saved_views(scope, page_key))
         if len(current) >= SAVED_VIEW_MAX_PER_PAGE:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "当前页面个人视图数量已达上限。")
+            raise ApplicationError("conflict", "当前页面个人视图数量已达上限。")
         normalized_name = self._normalize_name(name)
         self._ensure_unique_name(current, normalized_name)
         normalized_filters, normalized_sort = self._validate_state(page_key, filters, sort)
@@ -171,12 +170,12 @@ class SavedViewService:
         self._ensure_supported_page(page_key)
         self._ensure_page_access(user, page_key)
         if len(view_ids) != len(set(view_ids)):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "view_ids 不能重复。")
+            raise ApplicationError("invalid_request", "view_ids 不能重复。")
         scope = self._scope(user)
         current = self._ordered(self.repository.list_saved_views(scope, page_key))
         by_id = {record.view_id: record for record in current}
         if set(view_ids) != set(by_id):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "reorder 必须提交当前页面完整个人视图 ID。")
+            raise ApplicationError("invalid_request", "reorder 必须提交当前页面完整个人视图 ID。")
         reordered = [by_id[view_id].model_copy(update={"updated_at": utc_now()}) for view_id in view_ids]
         return self.repository.replace_saved_views_for_page(scope, page_key, self._normalize_positions(reordered))
 
@@ -190,11 +189,11 @@ class SavedViewService:
     def _find_owned(self, scope: SavedViewScope, view_id: str) -> SavedViewRecord:
         normalized_view_id = view_id.strip()
         if not normalized_view_id:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", "saved view 不存在。")
+            raise ApplicationError("not_found", "saved view 不存在。")
         for record in self.repository.list_all_saved_views(scope):
             if record.view_id == normalized_view_id:
                 return record
-        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", "saved view 不存在。")
+        raise ApplicationError("not_found", "saved view 不存在。")
 
     def _persist_and_get(
         self,
@@ -251,23 +250,23 @@ class SavedViewService:
         for index, record in enumerate(records):
             if record.view_id == view_id:
                 return index
-        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", "saved view 不存在。")
+        raise ApplicationError("not_found", "saved view 不存在。")
 
     def _ensure_supported_page(self, page_key: str) -> None:
         if page_key not in SAVED_VIEW_PAGE_KEYS:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "page_key 不支持。")
+            raise ApplicationError("invalid_request", "page_key 不支持。")
 
     def _ensure_page_access(self, user: AuthenticatedUser, page_key: SavedViewPageKey) -> None:
         required_permission = _SAVED_VIEW_PAGE_PERMISSIONS[page_key]
         if required_permission not in set(user.token_scopes):
-            raise ApiError(status.HTTP_403_FORBIDDEN, "role_forbidden", "当前角色无权限访问该页面。")
+            raise ApplicationError("role_forbidden", "当前角色无权限访问该页面。")
 
     def _normalize_name(self, name: str) -> str:
         normalized = _WHITESPACE_RE.sub(" ", name.strip())
         if not normalized:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "saved view 名称不能为空。")
+            raise ApplicationError("invalid_request", "saved view 名称不能为空。")
         if len(normalized) > SAVED_VIEW_NAME_MAX_LENGTH:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "saved view 名称过长。")
+            raise ApplicationError("invalid_request", "saved view 名称过长。")
         return normalized
 
     def _ensure_unique_name(
@@ -282,7 +281,7 @@ class SavedViewService:
             if record.view_id == ignore_view_id:
                 continue
             if record.name.casefold() == normalized:
-                raise ApiError(status.HTTP_409_CONFLICT, "conflict", "同一页面下 saved view 名称已存在。")
+                raise ApplicationError("conflict", "同一页面下 saved view 名称已存在。")
 
     def _validate_state(
         self,
@@ -292,16 +291,16 @@ class SavedViewService:
     ) -> tuple[dict[str, Any], str]:
         spec = _PAGE_SPECS[page_key]
         if sort not in spec.allowed_sorts:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "sort 查询参数非法。")
+            raise ApplicationError("invalid_request", "sort 查询参数非法。")
         if not isinstance(filters, dict):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "filters 必须是 JSON object。")
+            raise ApplicationError("invalid_request", "filters 必须是 JSON object。")
         if "sort" in filters:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "sort 必须作为顶层字段保存。")
+            raise ApplicationError("invalid_request", "sort 必须作为顶层字段保存。")
         normalized: dict[str, Any] = {}
         for key, value in filters.items():
             validator = spec.allowed_filters.get(key)
             if validator is None:
-                raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", f"filters.{key} 不允许保存。")
+                raise ApplicationError("invalid_request", f"filters.{key} 不允许保存。")
             normalized_value = validator(value)
             if normalized_value is not None:
                 normalized[key] = normalized_value
@@ -310,12 +309,12 @@ class SavedViewService:
 
     def _validate_cross_field(self, page_key: SavedViewPageKey, filters: dict[str, Any]) -> None:
         if page_key == "jobs" and filters.get("status") and filters.get("status_group"):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "status 与 status_group 不能同时保存。")
+            raise ApplicationError("invalid_request", "status 与 status_group 不能同时保存。")
         created_from = filters.get("created_from")
         created_to = filters.get("created_to")
         if page_key == "jobs" and isinstance(created_from, str) and isinstance(created_to, str):
             if _parse_datetime(created_from) > _parse_datetime(created_to):
-                raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "created_from 不能晚于 created_to。")
+                raise ApplicationError("invalid_request", "created_from 不能晚于 created_to。")
 
 
 def _string_enum(values: set[str], field_name: str, *, trim: bool = True) -> FilterValidator:
@@ -324,7 +323,7 @@ def _string_enum(values: set[str], field_name: str, *, trim: bool = True) -> Fil
             return None
         normalized = value.strip() if trim and isinstance(value, str) else value
         if not isinstance(normalized, str) or normalized not in values:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", f"{field_name} 查询参数非法。")
+            raise ApplicationError("invalid_request", f"{field_name} 查询参数非法。")
         return normalized
 
     return validate
@@ -334,7 +333,7 @@ def _optional_string(value: Any) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
-        raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "字符串筛选值非法。")
+        raise ApplicationError("invalid_request", "字符串筛选值非法。")
     normalized = value.strip()
     return normalized or None
 
@@ -344,14 +343,14 @@ def _boolean(value: Any) -> bool | None:
         return None
     if isinstance(value, bool):
         return value
-    raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "布尔筛选值非法。")
+    raise ApplicationError("invalid_request", "布尔筛选值非法。")
 
 
 def _positive_int(value: Any) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "正整数筛选值非法。")
+        raise ApplicationError("invalid_request", "正整数筛选值非法。")
     return value
 
 
@@ -367,7 +366,7 @@ def _parse_datetime(value: str) -> datetime:
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "日期筛选值必须是 ISO datetime。") from exc
+        raise ApplicationError("invalid_request", "日期筛选值必须是 ISO datetime。") from exc
 
 
 _DOCUMENT_JOB_STATUSES = set(get_args(DocumentJobStatus))

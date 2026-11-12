@@ -7,9 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from fastapi import status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.document_jobs.workflow import TERMINAL_DOCUMENT_JOB_STATUSES
@@ -216,8 +215,7 @@ class OpsRecoveryActionService:
 
         action = self._get_action_definition(request.action_id)
         if request.target_type != action.target_type:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"target_type 与 action 不匹配: action={action.action_id} expected={action.target_type}",
             )
@@ -232,7 +230,7 @@ class OpsRecoveryActionService:
         for action in OPS_RECOVERY_ACTIONS:
             if action.action_id == action_id:
                 return action
-        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"Ops recovery action 不存在: {action_id}")
+        raise ApplicationError("not_found", f"Ops recovery action 不存在: {action_id}")
 
     def _build_action_response(self, action: OpsRecoveryActionDefinition) -> OpsRecoveryActionResponse:
         """把静态定义映射为包含动态可用性的 API 条目。"""

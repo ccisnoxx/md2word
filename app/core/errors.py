@@ -38,6 +38,7 @@ ApplicationErrorCode = Literal[
     "not_found",
     "conflict",
     "service_unavailable",
+    "file_too_large",
 ]
 
 # 应用层只表达语义错误码；HTTP 状态只在这里决定，API 处理器与批量条目投影都经 http_status_for 读取。
@@ -50,6 +51,7 @@ APPLICATION_ERROR_HTTP_STATUS: dict[str, int] = {
     "not_found": 404,
     "conflict": 409,
     "service_unavailable": 503,
+    "file_too_large": 413,
 }
 
 

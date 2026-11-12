@@ -6,9 +6,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 
 
 _PDF_MIME_TYPES = {"application/pdf", "application/x-pdf"}
@@ -40,12 +39,11 @@ def validate_pdf_upload(
         max_bytes=max_bytes,
     )
     if not content.startswith(b"%PDF-"):
-        raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "上传文件不是合法 PDF。")
+        raise ApplicationError("invalid_request", "上传文件不是合法 PDF。")
 
     page_count = estimate_pdf_page_count(content)
     if page_count > max_pages:
-        raise ApiError(
-            status.HTTP_400_BAD_REQUEST,
+        raise ApplicationError(
             "invalid_request",
             f"PDF 页数超过限制 {max_pages} 页。",
         )
@@ -63,19 +61,17 @@ def validate_pdf_metadata(
 
     normalized_filename = Path(filename).name.strip()
     if not normalized_filename or not normalized_filename.lower().endswith(".pdf"):
-        raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "上传文件必须是 .pdf 格式。")
+        raise ApplicationError("invalid_request", "上传文件必须是 .pdf 格式。")
     normalized_content_type = _normalize_content_type(content_type)
     if normalized_content_type and normalized_content_type not in _PDF_MIME_TYPES:
-        raise ApiError(
-            status.HTTP_400_BAD_REQUEST,
+        raise ApplicationError(
             "invalid_request",
             f"不支持的 PDF content-type: {content_type}",
         )
     if size_bytes <= 0:
-        raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "上传文件不能为空。")
+        raise ApplicationError("invalid_request", "上传文件不能为空。")
     if size_bytes > max_bytes:
-        raise ApiError(
-            status.HTTP_413_CONTENT_TOO_LARGE,
+        raise ApplicationError(
             "file_too_large",
             f"上传文件超过大小限制 {max_bytes} bytes。",
         )

@@ -14,7 +14,7 @@ from fastapi.concurrency import run_in_threadpool
 from app.api.dependencies import get_runtime, get_trace_id, require_admin_user, require_current_user
 from app.domains.audit.models import ActorContext, AuditDetails
 from app.services.auth.models import AuthenticatedUser
-from app.core.errors import ApiError
+from app.core.errors import ApiError, ApplicationError
 from app.domains.files.cleanup_execution import FileRetentionCleanupRunReport, FileRetentionCleanupRunService
 from app.domains.files.cleanup_history import (
     FileRetentionCleanupPlanValidationError,
@@ -591,7 +591,8 @@ def execute_file_retention_cleanup_run(
                 error_code=exc.error_code,
                 error_message=exc.message,
             )
-            raise ApiError(exc.status_code, exc.error_code if exc.status_code == 400 else "conflict", exc.message) from exc
+            raise ApplicationError(exc.error_code if exc.category == "invalid_request" else "conflict", exc.message,
+                                   category=exc.category) from exc
     try:
         report = service.execute(
             file_ids=payload.file_ids,
@@ -601,7 +602,7 @@ def execute_file_retention_cleanup_run(
             confirmation=payload.confirmation,
             run_id=payload.run_id,
         )
-    except ApiError as exc:
+    except ApplicationError as exc:
         if payload.run_id:
             history_service.record_failed_execute(
                 run_id=payload.run_id,

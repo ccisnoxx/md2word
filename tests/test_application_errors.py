@@ -16,7 +16,8 @@ class ApplicationErrorContractTests(TestCase):
     def test_every_application_code_has_one_http_status(self):
         self.assertEqual(set(get_args(ApplicationErrorCode)), set(APPLICATION_ERROR_HTTP_STATUS))
         expected = {"invalid_request": 400, "validation_error": 422, "unauthorized": 401, "forbidden": 403,
-                    "role_forbidden": 403, "not_found": 404, "conflict": 409, "service_unavailable": 503}
+                    "role_forbidden": 403, "not_found": 404, "conflict": 409, "service_unavailable": 503,
+                    "file_too_large": 413}
         self.assertEqual(APPLICATION_ERROR_HTTP_STATUS, expected)
 
     def test_application_error_carries_no_http_status(self):

@@ -9,9 +9,8 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from fastapi import status as http_status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.users.models import (
     InternalUserRecord,
     InternalUserRole,
@@ -79,7 +78,7 @@ class InternalUserManagementService:
         normalized_username = self._validate_username(username)
         self._validate_password(initial_password)
         if self.repository.get_internal_user_by_username(normalized_username) is not None:
-            raise ApiError(http_status.HTTP_409_CONFLICT, "user_conflict", "用户名已存在。")
+            raise ApplicationError("user_conflict", "用户名已存在。", category="conflict")
         now = utc_now()
         record = InternalUserRecord(
             id=f"user_{uuid4().hex[:12]}",
@@ -160,7 +159,7 @@ class InternalUserManagementService:
         self._validate_password(new_password)
         record = self._get_user_or_404(user_id)
         if record.status != "active" or not verify_password(current_password, record.password_hash):
-            raise ApiError(http_status.HTTP_400_BAD_REQUEST, "invalid_request", "当前密码不正确。")
+            raise ApplicationError("invalid_request", "当前密码不正确。")
         record.password_hash = hash_password(new_password)
         record.token_version += 1
         record.updated_at = utc_now()
@@ -170,20 +169,20 @@ class InternalUserManagementService:
     def _get_user_or_404(self, user_id: str) -> InternalUserRecord:
         record = self.repository.get_internal_user(user_id.strip())
         if record is None:
-            raise ApiError(http_status.HTTP_404_NOT_FOUND, "not_found", "用户不存在。")
+            raise ApplicationError("not_found", "用户不存在。")
         return record
 
     def _validate_username(self, username: str) -> str:
         normalized = normalize_username(username)
         if not normalized:
-            raise ApiError(http_status.HTTP_400_BAD_REQUEST, "invalid_request", "用户名不能为空。")
+            raise ApplicationError("invalid_request", "用户名不能为空。")
         return normalized
 
     def _validate_password(self, password: str) -> None:
         if not password or not password.strip():
-            raise ApiError(http_status.HTTP_400_BAD_REQUEST, "invalid_request", "密码不能为空。")
+            raise ApplicationError("invalid_request", "密码不能为空。")
         if len(password) < MIN_PASSWORD_LENGTH:
-            raise ApiError(http_status.HTTP_400_BAD_REQUEST, "invalid_request", "密码不符合最小强度要求。")
+            raise ApplicationError("invalid_request", "密码不符合最小强度要求。")
 
     def _ensure_not_last_active_admin(
         self,
@@ -202,7 +201,7 @@ class InternalUserManagementService:
             if user.id != record.id
         ]
         if not other_active_admins:
-            raise ApiError(http_status.HTTP_409_CONFLICT, "last_admin_conflict", "不能禁用或降级最后一个可用管理员。")
+            raise ApplicationError("last_admin_conflict", "不能禁用或降级最后一个可用管理员。", category="conflict")
 
     def _normalize_optional_text(self, value: str | None) -> str | None:
         if value is None:
@@ -213,5 +212,5 @@ class InternalUserManagementService:
     def _normalize_department_id(self, value: str | None) -> str:
         normalized = str(value or "").strip()
         if not normalized:
-            raise ApiError(http_status.HTTP_400_BAD_REQUEST, "invalid_request", "department_id 不能为空。")
+            raise ApplicationError("invalid_request", "department_id 不能为空。")
         return normalized
