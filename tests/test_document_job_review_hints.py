@@ -78,13 +78,14 @@ class DocumentJobReviewHintsTests(unittest.TestCase):
             )
         self.user = object()
         self.service = Mock(spec=[
-            "_review_api_job", "_ensure_job_not_deleted", "_review_api_file", "_file_belongs_to_job",
-            "_review_cursor", "_finish_review_read", "file_repository", "file_upload_service",
+            "review_api_job", "review_cursor", "finish_review_read", "access", "file_repository",
+            "file_upload_service",
         ])
-        self.service._review_api_job.return_value = self.job
-        self.service._review_api_file.return_value = self.records["word_current"]
-        self.service._file_belongs_to_job.return_value = True
-        self.service._review_cursor.side_effect = lambda cursor, kind, job_id, limit: (
+        self.service.review_api_job.return_value = self.job
+        self.service.access = Mock(spec=["ensure_job_not_deleted", "review_api_file", "file_belongs_to_job"])
+        self.service.access.review_api_file.return_value = self.records["word_current"]
+        self.service.access.file_belongs_to_job.return_value = True
+        self.service.review_cursor.side_effect = lambda cursor, kind, job_id, limit: (
             decode_cursor(cursor, kind, job_id) if cursor is not None else None)
         self.service.file_repository = Mock(spec=["get_document_file"])
         self.service.file_repository.get_document_file.side_effect = self.records.get
@@ -186,8 +187,8 @@ class DocumentJobReviewHintsTests(unittest.TestCase):
                                              problem="flagged", severity="warning")
         self.assertEqual([row.block_id for row in warnings.items], ["block_0001", "block_0002"])
         self.assertEqual((self.job.model_dump(mode="json"), self.records, self.payloads), before)
-        self.assertEqual(self.service._finish_review_read.call_count, 3)
-        self.service._finish_review_read.assert_called_with(
+        self.assertEqual(self.service.finish_review_read.call_count, 3)
+        self.service.finish_review_read.assert_called_with(
             self.job, self.records["word_current"], self.user, preview=True)
         self.assertEqual({call.args[0].id for call in self.service.file_upload_service.read_file_content.call_args_list},
                          {"ir_current"})
@@ -198,14 +199,14 @@ class DocumentJobReviewHintsTests(unittest.TestCase):
             review_content.list_blocks(self.service, self.job.id, user=self.user,
                                        problem="flagged", severity="warning", limit=1, cursor=first.next_cursor)
         self.assertEqual(filtered.exception.reason_code, "invalid_review_cursor")
-        self.service._review_api_job.return_value = self.job.model_copy(update={"retry_count": 3})
+        self.service.review_api_job.return_value = self.job.model_copy(update={"retry_count": 3})
         with self.assertRaises(ApiError) as changed:
             review_content.list_blocks(self.service, self.job.id, user=self.user,
                                        problem="flagged", limit=1, cursor=first.next_cursor)
         self.assertEqual(changed.exception.reason_code, "quality_source_changed")
 
     def test_access_denied_prevents_content_read(self):
-        self.service._review_api_job.side_effect = ApiError(403, "forbidden", "无权读取该任务。")
+        self.service.review_api_job.side_effect = ApiError(403, "forbidden", "无权读取该任务。")
         with self.assertRaises(ApiError) as denied:
             review_content.list_blocks(self.service, self.job.id, user=self.user, problem="flagged")
         self.assertEqual(denied.exception.status_code, 403)
@@ -234,11 +235,11 @@ class DocumentJobReviewHintsTests(unittest.TestCase):
 
     def test_read_completion_rejects_generation_changed_after_projection(self):
         changed = self.job.model_copy(update={"retry_count": 3})
-        self.service._review_api_job.side_effect = [self.job, self.job, changed]
+        self.service.review_api_job.side_effect = [self.job, self.job, changed]
         with self.assertRaises(ApiError) as conflict:
             review_content.list_blocks(self.service, self.job.id, user=self.user, problem="flagged")
         self.assertEqual(conflict.exception.reason_code, "quality_source_changed")
-        self.service._finish_review_read.assert_not_called()
+        self.service.finish_review_read.assert_not_called()
 
 
 if __name__ == "__main__":

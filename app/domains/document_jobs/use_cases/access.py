@@ -9,7 +9,7 @@ from fastapi import status
 
 from app.core.errors import ApiError
 from app.domains.document_jobs.models import DocumentJobRecord
-from app.domains.document_jobs.preview import PREVIEW_FILE_TYPES, verified_current_preview_files
+from app.domains.document_jobs.preview_evidence import PREVIEW_FILE_TYPES, verified_current_preview_files
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.document_jobs.review import effective_review_job
 from app.domains.document_jobs.use_cases.common import (

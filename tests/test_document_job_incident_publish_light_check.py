@@ -9,7 +9,7 @@ from app.domains.document_jobs.incidents import (
     DOCUMENT_JOB_INCIDENT_FAILURE_TYPES,
     DOCUMENT_JOB_INCIDENT_SORTS,
 )
-from app.domains.document_jobs.schemas import DocumentJobIncidentListResponse
+from app.domains.document_jobs.schemas.incidents import DocumentJobIncidentListResponse
 from app.domains.document_jobs.publication_evidence import prepare_publication_evidence
 from tests import test_document_job_list_query_v2_service as fixtures
 from tests import test_fastapi_jobs_backend as support

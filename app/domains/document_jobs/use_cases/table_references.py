@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 from app.core.errors import ApiError
 from app.domains.document_jobs.models import DocumentJobRecord
-from app.domains.document_jobs.schemas import (
+from app.domains.document_jobs.schemas.translation import (
     DocumentJobTableReferenceListResponse,
     DocumentJobTableReferenceResponse,
 )
@@ -54,9 +54,9 @@ class DocumentJobTableReferences:
             return DocumentJobTableReferenceListResponse(job_id=job.id, generation=job.retry_count,
                                                         ir_file_id=None, evidence_status="not_ready")
         snapshot = self._load_table_reference_snapshot(job)
-        return self._list_table_references_snapshot(snapshot, user=user, block_id=block_id)
+        return self.list_table_references_snapshot(snapshot, user=user, block_id=block_id)
 
-    def _list_table_references_snapshot(
+    def list_table_references_snapshot(
         self, snapshot: TableReferenceSnapshot, *, user: AuthenticatedUser, block_id: str | None = None,
     ) -> DocumentJobTableReferenceListResponse:
         """只投影已认证观察；新内容 reader 可复用原 IR，免于重复读取字节。"""
@@ -137,9 +137,9 @@ class DocumentJobTableReferences:
             document = DocumentIR.model_validate_json(content)
         except (ValueError, TypeError, KeyError) as error:
             raise ApiError(409, "conflict", "当前文档的表格参考资产合同无效。") from error
-        return self._table_reference_snapshot(job, file, document)
+        return self.table_reference_snapshot(job, file, document)
 
-    def _table_reference_snapshot(
+    def table_reference_snapshot(
         self, job: DocumentJobRecord, file: DocumentFileRecord, document: DocumentIR,
     ) -> TableReferenceSnapshot:
         """沿原引用 owner 校验已认证 IR 的绑定及转换来源，不执行额外对象读取。"""

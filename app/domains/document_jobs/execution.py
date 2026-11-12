@@ -147,7 +147,7 @@ class DocumentJobExecutionService:
             return None
         latest = job
         try:
-            job = self.mineru._process_replayable_callback_messages(job, trace_id=trace_id)
+            job = self.mineru.process_replayable_callback_messages(job, trace_id=trace_id)
             latest = job
             if job.status in {"succeeded", "failed", "canceled"}:
                 return job
@@ -170,25 +170,19 @@ class DocumentJobExecutionService:
             if latest is None:
                 return None
             if latest.status == "running" and latest.stage == "parsing":
-                latest = self.mineru._run_mineru_parse(latest, trace_id=trace_id)
+                latest = self.mineru.run_parse(latest, trace_id=trace_id)
             if latest.status == "running" and latest.stage == "parsed":
                 latest = self._mark_ir_converting_started(latest, trace_id=trace_id)
             if latest.status == "running" and latest.stage == "ir_converting":
                 latest = self._convert_and_save_document_ir(latest, trace_id=trace_id)
             elif latest.status == "running" and latest.stage == "translating":
-                source_file, source_document_ir = self.translation_batches._read_translation_source(
-                    latest, latest.source_document_ir_file_id,
-                )
-                del source_file
-                latest = self.translation_batches._ensure_translation_batches_and_enqueue(
-                    latest, source_document_ir, trace_id=trace_id,
-                )
+                latest = self.translation_batches.start_generation(latest, trace_id=trace_id)
             elif latest.status == "running" and latest.stage == "translation_validating":
-                latest = self.translation_batches._finalize_translation_generation(
+                latest = self.translation_batches.finalize_generation(
                     latest.id, generation=latest.retry_count, trace_id=trace_id,
                 )
             if latest.status == "running" and latest.stage in {"rendering", "quality_checking", "uploading"}:
-                return self.rendering._render_and_save_word(latest, trace_id=trace_id)
+                return self.rendering.render_and_save_word(latest, trace_id=trace_id)
             return latest
         except Exception as exc:
             # latest 是本次阶段调用实际接收的快照，不能拿事后读到的新代归属旧错误。
@@ -305,8 +299,7 @@ class DocumentJobExecutionService:
             )
             return rendering or self.job_repository.get_document_job(job.id) or job
         if is_translation_document_job_mode(job.mode) and job.source_document_ir_file_id:
-            _source_file, source_document_ir = self.translation_batches._read_translation_source(job, job.source_document_ir_file_id)
-            return self.translation_batches._ensure_translation_batches_and_enqueue(job, source_document_ir, trace_id=trace_id)
+            return self.translation_batches.start_generation(job, trace_id=trace_id)
 
         raw_file = self._get_mineru_raw_result_file(job)
         with tempfile.TemporaryDirectory(prefix="document_job_ir_") as temp_dir:
@@ -323,7 +316,7 @@ class DocumentJobExecutionService:
                     job_id=job.id,
                     source_file_id=job.source_file_id,
                     document_language=job.document_language,
-                    placeholder_source_loader=lambda: self.rendering._load_placeholder_source(job),
+                    placeholder_source_loader=lambda: self.rendering.placeholders.load_source(job),
                 )
             except (MinerUArtifactValidationError, DocumentIntegrityError, TablePlaceholderError) as error:
                 error.mineru_validation_input = validation_input
@@ -573,7 +566,7 @@ class DocumentJobExecutionService:
             document_ir=document_ir,
             trace_id=trace_id,
         )
-        return self.translation_batches._ensure_translation_batches_and_enqueue(updated, document_ir, trace_id=trace_id)
+        return self.translation_batches.start_generation(updated, document_ir, trace_id=trace_id)
 
     def _record_source_ir_events(
         self,

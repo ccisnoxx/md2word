@@ -13,7 +13,7 @@ from unittest.mock import patch
 from docx import Document
 from fastapi.testclient import TestClient
 
-from app.domains.document_jobs.router import _build_download_token
+from app.domains.document_jobs.use_cases.download_tokens import build_file_download_token
 from app.domains.resources.models import utc_now
 from app.main import create_app
 from app.services.auth.models import AuthenticatedUser
@@ -45,7 +45,7 @@ class DocumentJobDeliveryStateApiTests(TestCase):
                 document_jobs_worker_backend="eager" if eager else "disabled",
             )
             translator = DocumentIRTranslationService(fixtures.FakeDocumentJobTranslationProvider())
-            runtime.document_job_execution_service.translation_batches.document_ir_translation_service = translator
+            runtime.document_job_execution_service.translation_batches.deps.document_ir_translation_service = translator
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
             with TestClient(create_app(runtime), raise_server_exceptions=raise_server_exceptions) as client:
                 yield runtime, client, fixtures.build_auth_header(client)
@@ -384,11 +384,11 @@ class DocumentJobDeliveryStateApiTests(TestCase):
                 self.assertNotIn(candidate.id, [item["id"] for item in files])
                 self.assertEqual(client.get(f"/api/v1/document-jobs/{job_id}/download-url", headers=headers,
                                             params={"file_id": candidate.id}).status_code, 409)
-                candidate_token = _build_download_token(runtime, job_id=job_id, file_id=candidate.id,
+                candidate_token = build_file_download_token(runtime.settings, job_id=job_id, file_id=candidate.id,
                                                         expires_at=utc_now() + timedelta(minutes=1))
                 self.assertEqual(client.get(f"/api/v1/document-jobs/{job_id}/download",
                                             params={"token": candidate_token}).status_code, 409)
-                expired = _build_download_token(runtime, job_id=job_id, file_id=file.id,
+                expired = build_file_download_token(runtime.settings, job_id=job_id, file_id=file.id,
                                                 expires_at=utc_now() - timedelta(seconds=5))
                 self.assertEqual(client.get(f"/api/v1/document-jobs/{job_id}/download",
                                             params={"token": expired}).status_code, 403)

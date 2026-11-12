@@ -6,7 +6,7 @@ status: current
 source_files:
   - app/api/v1/router.py
   - app/domains/document_jobs/router.py
-  - app/domains/document_jobs/schemas.py
+  - app/domains/document_jobs/schemas/jobs.py
   - app/domains/document_jobs/models.py
   - app/domains/document_jobs/service.py
   - app/domains/document_jobs/execution.py

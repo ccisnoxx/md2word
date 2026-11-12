@@ -11,22 +11,20 @@ import re
 
 from bs4 import BeautifulSoup
 from app.core.errors import ApiError
-from app.domains.document_jobs.preview import (
-    _is_preview_storage_error, _PreviewUnavailable, _read_artifact,
-    read_current_preview_evidence,
-)
+from app.domains.document_jobs.preview_evidence import is_preview_storage_error, PreviewUnavailable, read_artifact, read_current_preview_evidence
 from app.domains.document_jobs.quality_review_projection import (
     ReviewBlocksCursor, ReviewBlockContentCursor, encode_cursor, project_source, project_table_item,
 )
 from app.domains.document_jobs.review import digest
-from app.domains.document_jobs.schemas import (
+from app.domains.document_jobs.schemas.quality_review import (
     DocumentReviewComponentResponse as Component,
     DocumentReviewContentSnapshotResponse as Snapshot,
     DocumentReviewSourceSpanResponse as Span,
     DocumentReviewLocationResponse as Location,
     DocumentReviewBlockItemResponse as Block,
     DocumentReviewBlockFlagResponse as Flag,
-    DocumentReviewBlocksResponse, DocumentReviewBlockDetailResponse,
+    DocumentReviewBlocksResponse,
+    DocumentReviewBlockDetailResponse,
     DocumentReviewContentPartResponse as Part,
     DocumentReviewTermResponse as Term,
     DocumentReviewBatchResponse as Batch,
@@ -71,7 +69,7 @@ def _storage():
     try:
         yield
     except Exception as exc:
-        if _is_preview_storage_error(exc):
+        if is_preview_storage_error(exc):
             raise ApiError(503, "service_unavailable", "审核内容存储暂不可用。",
                            reason_code="quality_storage_unavailable") from None
         raise
@@ -176,8 +174,8 @@ class _Read:
             raise ApiError(503, "service_unavailable", "审核内容存储暂不可用。", reason_code="quality_storage_unavailable")
         try:
             with _storage():
-                raw = _read_artifact(record, self.service.file_upload_service)
-        except _PreviewUnavailable:
+                raw = read_artifact(record, self.service.file_upload_service)
+        except PreviewUnavailable:
             if required:
                 raise ApiError(404, "not_found", "当前文档内容不存在。", reason_code="review_content_missing") from None
             return None
@@ -188,17 +186,17 @@ class _Read:
 
     def finish(self):
         with _storage():
-            current = self.service._review_api_job(self.job.id, self.user)
+            current = self.service.review_api_job(self.job.id, self.user)
             if _job_identity(current) != _job_identity(self.job):
                 raise _changed()
-            self.service._finish_review_read(self.job, self.result, self.user, preview=True)
+            self.service.finish_review_read(self.job, self.result, self.user, preview=True)
             for file_id, record in self.observed.items():
                 if self.service.file_repository.get_document_file(file_id) != record:
                     raise _changed()
             if any(record.expires_at is not None and record.expires_at <= utc_now() for record in self.live_files):
                 raise _changed()
             if self.batch_identity is not None:
-                current_job, batches = self.service.get_translation_batch_snapshot(self.job.id, user=self.user)
+                current_job, batches = self.service.queries.get_translation_batch_snapshot(self.job.id, user=self.user)
                 if _batch_identity(current_job, batches) != self.batch_identity:
                     raise _changed()
 
@@ -411,20 +409,20 @@ def _log_evidence(read, batch, record, payload, source_file):
 
 def _load(service, job_id, user):
     with _storage():
-        job = service._review_api_job(job_id, user)
-        service._ensure_job_not_deleted(job, reason_code="job_deleted")
-        result = service._review_api_file(job)
+        job = service.review_api_job(job_id, user)
+        service.access.ensure_job_not_deleted(job, reason_code="job_deleted")
+        result = service.access.review_api_file(job)
     read = _Read(service, user, job, result)
     if is_translation_document_job_mode(job.mode):
         with _storage():
-            snapshot_job, read.batches = service.get_translation_batch_snapshot(job.id, user=user)
+            snapshot_job, read.batches = service.queries.get_translation_batch_snapshot(job.id, user=user)
         if _job_identity(snapshot_job) != _job_identity(job):
             raise _changed()
         read.batch_identity = _batch_identity(snapshot_job, read.batches)
     read.observe(job.source_file_id)
     source_pdf = read.observed[job.source_file_id]
     if source_pdf is not None and ((source_pdf.tenant_id, source_pdf.company_id) != (job.tenant_id, job.company_id)
-            or not service._file_belongs_to_job(job, source_pdf) or source_pdf.file_type != "source_pdf"):
+            or not service.access.file_belongs_to_job(job, source_pdf) or source_pdf.file_type != "source_pdf"):
         raise ApiError(403, "forbidden", "源 PDF 与任务归属不匹配。", reason_code="review_access_denied")
     basis_id = job.document_ir_file_id or job.source_document_ir_file_id
     try:
@@ -443,8 +441,8 @@ def _load(service, job_id, user):
             with _storage():
                 evidence = service.get_table_evidence(job.id, user=user, generation=job.retry_count,
                     ir_file_id=job.document_ir_file_id, result_file_id=job.result_file_id)
-                reference_snapshot = service._table_reference_snapshot(job, read.observe(basis_id), read.basis)
-                references = service._list_table_references_snapshot(reference_snapshot, user=user)
+                reference_snapshot = service.table_references.table_reference_snapshot(job, read.observe(basis_id), read.basis)
+                references = service.table_references.list_table_references_snapshot(reference_snapshot, user=user)
             if evidence.report_file_id:
                 read.observe(evidence.report_file_id)
             read.tables = [project_table_item(table) for table in evidence.tables]
@@ -635,8 +633,8 @@ def _page(items, start, limit, *, reserve=65536):
 def list_blocks(service, job_id, *, user, limit=50, cursor=None, source_page_index=None,
                 block_type=None, problem="all", severity="all"):
     with _storage():
-        service._review_api_job(job_id, user)
-    parsed = service._review_cursor(cursor, "review_blocks", job_id, limit)
+        service.review_api_job(job_id, user)
+    parsed = service.review_cursor(cursor, "review_blocks", job_id, limit)
     if (source_page_index is not None and (type(source_page_index) is not int or source_page_index < 0)
             or block_type not in {None, "heading", "paragraph", "table", "image", "list", "formula"}
             or problem not in {"all", "flagged"} or severity not in {"all", "blocker", "warning", "info"}):
@@ -666,10 +664,10 @@ def list_blocks(service, job_id, *, user, limit=50, cursor=None, source_page_ind
 
 def get_block(service, job_id, block_id, *, user, snapshot_id, limit=20, cursor=None):
     with _storage():
-        service._review_api_job(job_id, user)
+        service.review_api_job(job_id, user)
     if type(limit) is not int or not 1 <= limit <= 50:
         raise ApiError(422, "validation_error", "内容分页数量必须为 1 到 50 的整数。")
-    parsed = service._review_cursor(cursor, "review_block_content", job_id, limit)
+    parsed = service.review_cursor(cursor, "review_block_content", job_id, limit)
     if parsed and (parsed.block_id != block_id or parsed.snapshot_id != snapshot_id):
         raise ApiError(400, "invalid_request", "内容分页游标不匹配。", reason_code="invalid_review_cursor")
     if not isinstance(snapshot_id, str) or re.fullmatch(r"[0-9a-f]{64}", snapshot_id) is None:

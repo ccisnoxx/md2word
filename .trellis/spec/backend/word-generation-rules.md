@@ -40,7 +40,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：本地 MinerU 目录/ZIP，或线上任务已下载的 MinerU 结果 ZIP。
-- 正式 owner：`scripts/dev/formal_mineru_conversion.py::run_conversion`、`::convert_formal_mineru_package`；`app/domains/document_jobs/execution.py::DocumentJobExecutionService._convert_and_save_document_ir`；`app/domains/document_jobs/render_execution.py::WordRenderExecution._render_and_save_word`（由 `DocumentJobExecutionService.rendering` 持有）。
+- 正式 owner：`scripts/dev/formal_mineru_conversion.py::run_conversion`、`::convert_formal_mineru_package`；`app/domains/document_jobs/execution.py::DocumentJobExecutionService._convert_and_save_document_ir`；`app/domains/document_jobs/render_execution.py::WordRenderExecution.render_and_save_word`（由 `DocumentJobExecutionService.rendering` 持有）。
 - 预期输出：先由 `MinerUToDocumentIRService.convert_zip()` 生成并持久化 DocumentIR，再由 `DocumentIRWordRenderer.render_to_result()` 一次生成 DOCX 和完整 `WordRenderResult`；线上 Worker 与本地 adapter 均须将该结果通过 `render_result=` 传给 `build_renderer_evidence`，保留内容合同版本、公式来源覆盖和执行 trace，不得仅抽取公式/图片报告误入历史聚合路径（旧 `render_to_bytes()` 保持 bytes 兼容）；所有正式修复都落在该链路的唯一 owner。
 - 冲突/例外：调试脚本可以包装正式 adapter，但不得切换到旧 runtime；`document-ir/v1` 的 renderer 顺序回退仍属于正式 renderer 内部兼容路径。
 - 资产消费：本地 adapter 与 Worker 均须消费 converter 返回的普通图片、表格参考图和派生占位图三类资产；不能仅接 `image_assets` 而让已认证的表格来源在 writer 阶段丢失。统计字段 `image_assets` 仍保持普通图片计数语义。

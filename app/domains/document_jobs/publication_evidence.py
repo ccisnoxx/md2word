@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 
-from app.domains.document_jobs.preview import read_current_preview_evidence
+from app.domains.document_jobs.preview_evidence import read_current_preview_evidence
 from app.domains.document_jobs.publication import (
     PublicationConflict, ensure_publication_object_identities, publication_file_available,
 )

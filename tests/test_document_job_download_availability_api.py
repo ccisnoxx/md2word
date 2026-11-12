@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from unittest import TestCase
 from unittest.mock import patch
 
-from app.domains.document_jobs.router import _build_download_token
+from app.domains.document_jobs.use_cases.download_tokens import build_file_download_token
 from app.domains.resources.models import utc_now
 from tests import test_document_job_delivery_state_api as state_fixtures
 from tests import test_fastapi_jobs_backend as fixtures
@@ -175,7 +175,7 @@ class DocumentJobDownloadAvailabilityApiTests(TestCase):
             rejected = client.get(f"/api/v1/document-jobs/{job_id}/download-url", headers=headers, params={"file_id": candidate.id})
             self.assertEqual(rejected.status_code, 409)
             self.assertEqual(rejected.json()["error"]["reason_code"], "file_not_current")
-            token = _build_download_token(runtime, job_id=job.id, file_id=candidate.id, expires_at=utc_now() + timedelta(minutes=1))
+            token = build_file_download_token(runtime.settings, job_id=job.id, file_id=candidate.id, expires_at=utc_now() + timedelta(minutes=1))
             self.assertEqual(client.get(f"/api/v1/document-jobs/{job_id}/download", params={"token": token}).status_code, 409)
             for username, password in (("operator2", "operator2-pass"), ("other_tenant", "operator-pass"),
                                        ("other_company", "operator-pass")):

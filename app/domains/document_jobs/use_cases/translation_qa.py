@@ -16,7 +16,7 @@ from app.domains.document_jobs.models import (
     DocumentJobTranslationQaIssueType,
     DocumentJobTranslationQaStatus,
 )
-from app.domains.document_jobs.schemas import (
+from app.domains.document_jobs.schemas.translation import (
     DocumentJobTranslationQaAiCallResponse,
     DocumentJobTranslationQaArtifactsResponse,
     DocumentJobTranslationQaResponse,

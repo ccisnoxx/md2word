@@ -11,7 +11,7 @@ from fastapi import status
 from app.core.errors import ApiError
 from app.domains.document_jobs.delivery_state import translation_qa_projection
 from app.domains.document_jobs.models import DocumentJobRecord
-from app.domains.document_jobs.preview import _is_preview_storage_error
+from app.domains.document_jobs.preview_evidence import is_preview_storage_error
 from app.domains.document_jobs.quality_state import effective_quality_status
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.document_jobs.review import (
@@ -106,8 +106,8 @@ class DocumentReviewWriter:
             except FileNotFoundError as exc:
                 raise conflict("当前主 DOCX 不可用，不能批准复核。", "review_result_unavailable") from exc
             except Exception as exc:
-                from app.domains.document_jobs.preview import _is_preview_storage_error
-                if expected_source is not None and _is_preview_storage_error(exc):
+                from app.domains.document_jobs.preview_evidence import is_preview_storage_error
+                if expected_source is not None and is_preview_storage_error(exc):
                     raise ApiError(503, "service_unavailable", "复核文件存储暂不可用。", reason_code="quality_storage_unavailable") from None
                 raise
             actual_hash = f"sha256:{hashlib.sha256(content).hexdigest()}"

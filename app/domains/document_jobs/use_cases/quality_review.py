@@ -16,8 +16,10 @@ from app.domains.document_jobs.review import (
     review_validity,
 )
 from app.domains.document_jobs.use_cases.access import DocumentJobAccess
+from app.domains.document_jobs.use_cases.queries import DocumentJobQueries
 from app.domains.document_jobs.use_cases.read_model import DocumentJobReadModel
 from app.domains.document_jobs.use_cases.review_writer import DocumentReviewWriter
+from app.domains.document_jobs.use_cases.table_references import DocumentJobTableReferences
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.files.result_registration import file_lifecycle_unavailable
 from app.domains.resources.models import utc_now
@@ -36,6 +38,8 @@ class DocumentJobQualityReview:
         access: DocumentJobAccess,
         read_model: DocumentJobReadModel,
         review_writer: DocumentReviewWriter,
+        queries: DocumentJobQueries,
+        table_references: DocumentJobTableReferences,
     ) -> None:
         self.job_repository = job_repository
         self.file_repository = file_repository
@@ -43,8 +47,11 @@ class DocumentJobQualityReview:
         self.access = access
         self.read_model = read_model
         self.review_writer = review_writer
+        # 仅供复核内容 reader（review_content）复用同一快照：翻译批次快照与已认证 IR 的表格参考投影。
+        self.queries = queries
+        self.table_references = table_references
 
-    def _review_api_job(self, job_id, user):
+    def review_api_job(self, job_id, user):
         """只在新接口的授权入口附固定原因，不改变旧端点错误。"""
         try:
             return self.access.get_authorized_job(job_id, user=user)
@@ -64,9 +71,9 @@ class DocumentJobQualityReview:
             fields.update({"word_preview_state", "request_snapshot"})
         return digest(job.model_dump(mode="json", include=fields))
 
-    def _finish_review_read(self, job, file, user, *, preview=False, artifacts=()):
+    def finish_review_read(self, job, file, user, *, preview=False, artifacts=()):
         """全部相关 I/O 后复核同次来源；不重试，也不把读投影写回仓储。"""
-        current = self._review_api_job(job.id, user)
+        current = self.review_api_job(job.id, user)
         if (self._review_read_identity(current, preview=preview) != self._review_read_identity(job, preview=preview)
                 or self.access.review_api_file(current) != file):
             raise ApiError(409, "conflict", "质量来源已变化，请重新读取。", reason_code="quality_source_changed")
@@ -85,7 +92,7 @@ class DocumentJobQualityReview:
         return records[0]
 
     @staticmethod
-    def _review_cursor(cursor, kind, job_id, limit):
+    def review_cursor(cursor, kind, job_id, limit):
         from app.domains.document_jobs.quality_review_projection import decode_cursor, InvalidReviewCursor
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ApiError(422, "validation_error", "分页数量必须为 1 到 100 的整数。")
@@ -101,8 +108,8 @@ class DocumentJobQualityReview:
 
     def get_document_quality(self, job_id, *, user):
         from app.domains.document_jobs.quality_review_projection import project_source, project_quality_summary, project_review
-        from app.domains.document_jobs.schemas import DocumentQualityResponse
-        job = self._review_api_job(job_id, user)
+        from app.domains.document_jobs.schemas.quality_review import DocumentQualityResponse
+        job = self.review_api_job(job_id, user)
         file = self.access.review_api_file(job)
         view, actions = self.read_model.build_job_read_view(job, user=user, observed_result=file)
         summary, producers = project_quality_summary(job.quality_summary, generation=job.retry_count)
@@ -112,19 +119,19 @@ class DocumentJobQualityReview:
             states={"execution_status": view.status, "quality_status": view.quality_status,
                 "review_status": view.review_status, "delivery_status": view.delivery_status},
             summary=summary, producers=producers, review=review, available_actions=actions)
-        self._finish_review_read(job, file, user)
+        self.finish_review_read(job, file, user)
         return response
 
     def get_document_review(self, job_id, *, user):
         from app.domains.document_jobs.quality_review_projection import project_source, project_review
-        from app.domains.document_jobs.schemas import DocumentCurrentReviewResponse
-        job = self._review_api_job(job_id, user)
+        from app.domains.document_jobs.schemas.quality_review import DocumentCurrentReviewResponse
+        job = self.review_api_job(job_id, user)
         file = self.access.review_api_file(job)
         view, actions = self.read_model.build_job_read_view(job, user=user, observed_result=file)
         response = DocumentCurrentReviewResponse(job_id=job.id, source=project_source(job, file),
             review=project_review(self._current_review_record(job), effective_status=view.review_status,
                 validity_reason=review_validity(job, file, now=utc_now())), available_actions=actions)
-        self._finish_review_read(job, file, user)
+        self.finish_review_read(job, file, user)
         return response
 
     def list_document_review_blocks(self, job_id, *, user, limit=50, cursor=None,
@@ -143,15 +150,15 @@ class DocumentJobQualityReview:
         from app.domains.document_jobs.quality_review_projection import (
             HistoryCursor, encode_cursor, paginate_history, project_review_history_item,
         )
-        from app.domains.document_jobs.schemas import DocumentReviewHistoryResponse
-        job = self._review_api_job(job_id, user)
-        parsed = self._review_cursor(cursor, "history", job.id, limit)
+        from app.domains.document_jobs.schemas.quality_review import DocumentReviewHistoryResponse
+        job = self.review_api_job(job_id, user)
+        parsed = self.review_cursor(cursor, "history", job.id, limit)
         after, through = (parsed.after_sequence, parsed.through_sequence) if parsed else (0, job.review_sequence)
         if not 0 <= after <= through <= job.review_sequence:
             raise ApiError(400, "invalid_request", "复核历史游标窗口无效。", reason_code="invalid_review_cursor")
         records = self.job_repository.list_document_job_reviews(job.id, after_sequence=after, limit=limit + 1)
         items, next_after = paginate_history(records, after_sequence=after, through_sequence=through, limit=limit)
-        self._review_api_job(job.id, user)
+        self.review_api_job(job.id, user)
         return DocumentReviewHistoryResponse(job_id=job.id, through_sequence=through,
             items=[project_review_history_item(record) for record in items], next_cursor=encode_cursor(
                 HistoryCursor(job_id=job.id, after_sequence=next_after, through_sequence=through)) if next_after is not None else None)
@@ -160,9 +167,9 @@ class DocumentJobQualityReview:
         from app.domains.document_jobs.quality_review_projection import (
             TableCursor, encode_cursor, project_source, project_table_item, project_table_report,
         )
-        from app.domains.document_jobs.schemas import DocumentQualityTablesResponse
-        job = self._review_api_job(job_id, user)
-        parsed = self._review_cursor(cursor, "tables", job.id, limit)
+        from app.domains.document_jobs.schemas.quality_review import DocumentQualityTablesResponse
+        job = self.review_api_job(job_id, user)
+        parsed = self.review_cursor(cursor, "tables", job.id, limit)
         file = self.access.review_api_file(job)
         self._review_cursor_binding(parsed, dict(generation=job.retry_count,
             ir_file_id=job.document_ir_file_id, result_file_id=job.result_file_id))
@@ -180,16 +187,16 @@ class DocumentJobQualityReview:
             report=project_table_report(evidence) if evidence.evidence_status == "available" else None,
             items=[project_table_item(table) for table in evidence.tables[start:end]], next_cursor=encode_cursor(
                 TableCursor(job_id=job.id, **binding, next_index=end)) if end < len(evidence.tables) else None)
-        self._finish_review_read(job, file, user)
+        self.finish_review_read(job, file, user)
         return response
 
     def _read_api_preview(self, job, *, include_page_quality=False):
-        from app.domains.document_jobs.preview import read_current_preview_evidence, _PreviewStorageError, _frozen_page_policy
+        from app.domains.document_jobs.preview_evidence import read_current_preview_evidence, PreviewStorageError, frozen_page_policy
         from app.domains.document_jobs.preview_state import _confirmed
         from app.services.preview.models import PreviewPolicy
         try:
             if include_page_quality:
-                quality_policy = _frozen_page_policy(job)
+                quality_policy = frozen_page_policy(job)
                 if quality_policy is None:
                     return "legacy_unavailable", None
                 if not quality_policy.enabled:
@@ -201,10 +208,10 @@ class DocumentJobQualityReview:
             if state is None or not _confirmed(state.current_run):
                 return "not_ready", None
             if self.file_upload_service is None:
-                raise _PreviewStorageError()
+                raise PreviewStorageError()
             evidence = read_current_preview_evidence(job, self.file_repository, self.file_upload_service,
                 include_page_quality=include_page_quality)
-        except _PreviewStorageError:
+        except PreviewStorageError:
             raise ApiError(503, "service_unavailable", "质量产物存储暂不可用。", reason_code="quality_storage_unavailable") from None
         except ValueError:
             raise ApiError(409, "conflict", "预览质量证据无法认证。", reason_code="quality_evidence_conflict") from None
@@ -218,9 +225,9 @@ class DocumentJobQualityReview:
         from app.domains.document_jobs.quality_review_projection import (
             PreviewCursor, encode_cursor, project_source, project_preview_run, project_preview_page,
         )
-        from app.domains.document_jobs.schemas import DocumentPreviewResponse
-        job = self._review_api_job(job_id, user)
-        parsed = self._review_cursor(cursor, "preview", job.id, limit)
+        from app.domains.document_jobs.schemas.quality_review import DocumentPreviewResponse
+        job = self.review_api_job(job_id, user)
+        parsed = self.review_cursor(cursor, "preview", job.id, limit)
         file = self.access.review_api_file(job)
         state = job.word_preview_state
         run = state.current_run if state else None
@@ -242,16 +249,16 @@ class DocumentJobQualityReview:
             page_count=body["page_count"] if body else None, items=[project_preview_page(page) for page in pages[start:end]],
             next_cursor=encode_cursor(PreviewCursor(job_id=job.id, **binding, next_index=end)) if end < len(pages) else None)
         artifacts = evidence.observation.files if evidence and evidence.observation.available else ()
-        self._finish_review_read(job, file, user, preview=True, artifacts=artifacts)
+        self.finish_review_read(job, file, user, preview=True, artifacts=artifacts)
         return response
 
     def get_document_quality_pages(self, job_id, *, user, limit=50, cursor=None):
         from app.domains.document_jobs.quality_review_projection import (
             PageCursor, encode_cursor, project_source, project_page_report, project_page_item,
         )
-        from app.domains.document_jobs.schemas import DocumentQualityPagesResponse
-        job = self._review_api_job(job_id, user)
-        parsed = self._review_cursor(cursor, "pages", job.id, limit)
+        from app.domains.document_jobs.schemas.quality_review import DocumentQualityPagesResponse
+        job = self.review_api_job(job_id, user)
+        parsed = self.review_cursor(cursor, "pages", job.id, limit)
         file = self.access.review_api_file(job)
         state = job.word_preview_state
         run = state.current_run if state else None
@@ -274,14 +281,14 @@ class DocumentJobQualityReview:
             items=[project_page_item(page) for page in pages[start:end]], next_cursor=encode_cursor(
                 PageCursor(job_id=job.id, **binding, next_index=end)) if end < len(pages) else None)
         artifacts = evidence.observation.files if evidence and evidence.observation.available else ()
-        self._finish_review_read(job, file, user, preview=True, artifacts=artifacts)
+        self.finish_review_read(job, file, user, preview=True, artifacts=artifacts)
         return response
 
     def submit_document_review_with_source(self, job_id, *, user, review_status, expected_source,
             issue_type=None, note=None, trace_id=None):
-        from app.domains.document_jobs.schemas import DocumentReviewUpdateResponse
+        from app.domains.document_jobs.schemas.quality_review import DocumentReviewUpdateResponse
         expected = ReviewExpectedSource.model_validate(expected_source)
-        committed = self.review_writer.submit_document_review(self._review_api_job(job_id, user), user=user,
+        committed = self.review_writer.submit_document_review(self.review_api_job(job_id, user), user=user,
             review_status=review_status, issue_type=issue_type, note=note, trace_id=trace_id, expected_source=expected)
         try:
             current = self.get_document_review(job_id, user=user)

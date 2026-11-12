@@ -143,7 +143,7 @@ entries:
     source_files:
       - app/api/v1/router.py
       - app/domains/document_jobs/router.py
-      - app/domains/document_jobs/schemas.py
+      - app/domains/document_jobs/schemas/jobs.py
       - app/domains/document_jobs/models.py
       - app/domains/document_jobs/service.py
       - app/domains/document_jobs/execution.py
@@ -163,7 +163,7 @@ entries:
       - app/domains/jobs/mineru_callback.py
       - app/core/config.py
       - app/domains/document_jobs/execution.py
-      - app/domains/document_jobs/schemas.py
+      - app/domains/document_jobs/schemas/jobs.py
     doc_path: docs/api/mineru-callbacks.md
     status: current
     note: "Document Jobs 的 MinerU callback ingress、鉴权、payload 归一化和结果地址安全校验。"

@@ -180,6 +180,7 @@ def build_document_pipeline(
         file_upload_service=file_upload_service,
         word_preview_service=word_preview_service,
         audit_service=audit_service,
+        translation_generation_summarizer=document_job_execution_service.translation_batches,
     )
     return DocumentPipeline(
         document_ir_service=document_ir_service,

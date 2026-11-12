@@ -10,7 +10,7 @@ from fastapi import status
 
 from app.core.errors import ApiError
 from app.domains.document_jobs.models import DocumentJobRecord
-from app.domains.document_jobs.preview import _is_preview_storage_error
+from app.domains.document_jobs.preview_evidence import is_preview_storage_error
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.document_jobs.use_cases.access import DocumentJobAccess
 from app.domains.document_jobs.use_cases.common import (
@@ -159,7 +159,7 @@ class DocumentJobLifecycleCommands:
                 expected_retry_count=job.retry_count, action="delete", actor_id=user.id, occurred_at=now,
                 delete_reason=normalized_reason)
         except Exception as error:
-            if not _is_preview_storage_error(error):
+            if not is_preview_storage_error(error):
                 raise
             raise ApiError(503, "service_unavailable", "任务删除预留暂不可确认，请先核对原任务状态。",
                 reason_code="document_job_deletion_unknown") from None

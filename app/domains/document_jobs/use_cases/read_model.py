@@ -9,12 +9,12 @@ from app.core.config import Settings
 from app.core.errors import ApiError
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.new_generation import NewGenerationConflict, new_generation_eligibility_reason
-from app.domains.document_jobs.preview import _is_preview_storage_error
+from app.domains.document_jobs.preview_evidence import is_preview_storage_error
 from app.domains.document_jobs.publication import PublicationConflict
 from app.domains.document_jobs.publication_evidence import prepare_publication_evidence
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.document_jobs.review import effective_review_job
-from app.domains.document_jobs.schemas import (
+from app.domains.document_jobs.schemas.jobs import (
     DocumentJobActionDisabledReasonResponse,
     DocumentJobAvailableActionResponse,
 )
@@ -299,7 +299,7 @@ class DocumentJobReadModel:
             except PublicationConflict as error:
                 evidence_check.update(status="blocked", reason_code=error.reason_code, message=str(error))
             except Exception as error:
-                if not _is_preview_storage_error(error):
+                if not is_preview_storage_error(error):
                     raise
                 evidence_check.update(status="blocked", reason_code="publication_storage_unavailable", message="发布存储暂不可用。")
             if evidence_check["status"] == "blocked":

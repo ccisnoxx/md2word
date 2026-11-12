@@ -9,7 +9,8 @@ from unittest.mock import Mock, patch
 
 from app.core.errors import ApiError
 from app.domains.document_jobs.models import DocumentJobPreparedResult, DocumentJobRecord
-from app.domains.document_jobs.preview import DocumentJobPreviewService, _preview_storage_io
+from app.domains.document_jobs.preview import DocumentJobPreviewService
+from app.domains.document_jobs.preview_evidence import preview_storage_io
 from app.domains.document_jobs.preview_state import (
     PreviewArtifactObservation, PreviewRun, WordPreviewState, claim_preview,
 )
@@ -144,7 +145,7 @@ class WordPreviewHistoricalReplayTests(TestCase):
                 case.file_service.read_file_content.side_effect = TimeoutError("当前预览对象存储状态未知。")
 
                 def observe(job, file_repository, file_service, *, check_page_quality=False):
-                    with _preview_storage_io():
+                    with preview_storage_io():
                         file_service.read_file_content(file_repository.get_document_file(target))
 
                 with patch("app.domains.document_jobs.preview.observe_current_preview", side_effect=observe) as observer:

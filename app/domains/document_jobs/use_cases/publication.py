@@ -3,6 +3,8 @@ from __future__ import annotations
 # app/domains/document_jobs/use_cases/publication.py: 用例：文档发布、发布记录与发布文件下载、新代请求。
 
 import hashlib
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -22,7 +24,7 @@ from app.domains.document_jobs.new_generation import (
     new_generation_eligibility_reason,
     new_generation_request_sha256,
 )
-from app.domains.document_jobs.preview import _is_preview_storage_error
+from app.domains.document_jobs.preview_evidence import is_preview_storage_error
 from app.domains.document_jobs.publication import (
     PublicationConflict,
     PublicationExpectedSource,
@@ -44,13 +46,18 @@ from app.domains.document_jobs.review import (
     observed_review_source,
     review_validity,
 )
-from app.domains.document_jobs.schemas import (
+from app.domains.document_jobs.schemas.jobs import (
     DocumentJobActionDisabledReasonResponse,
     DocumentJobAvailableActionResponse,
 )
 from app.domains.document_jobs.use_cases.access import DocumentJobAccess
 from app.domains.document_jobs.use_cases.common import NewGenerationRequestUnavailable, SYSTEM_LOGGER
 from app.domains.document_jobs.use_cases.dispatcher import DocumentJobDispatcher
+from app.domains.document_jobs.use_cases.download_tokens import (
+    PublicationDownloadClaims,
+    build_publication_download_token,
+    verify_publication_download_token,
+)
 from app.domains.document_jobs.use_cases.events import DocumentJobEventWriter
 from app.domains.document_jobs.use_cases.read_model import DocumentJobReadModel
 from app.domains.files.models import DocumentFileRecord
@@ -62,6 +69,18 @@ from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import translation_mode_for_document_job_mode
 from app.services.auth.models import AuthenticatedUser
+
+
+@dataclass(frozen=True)
+class PublicationDownloadGrant:
+    """最终件下载授权结果：presigned_url 与 token 恰有一个非空。"""
+
+    job: DocumentJobRecord
+    record: PublicationRecord
+    file: DocumentFileRecord
+    expires_at: datetime
+    presigned_url: str | None
+    token: str | None
 
 
 class DocumentJobPublication:
@@ -120,7 +139,7 @@ class DocumentJobPublication:
         except ApiError:
             raise
         except Exception as error:
-            if not _is_preview_storage_error(error):
+            if not is_preview_storage_error(error):
                 raise
             raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
 
@@ -165,7 +184,7 @@ class DocumentJobPublication:
         except ApiError:
             raise
         except Exception as error:
-            if not _is_preview_storage_error(error):
+            if not is_preview_storage_error(error):
                 raise
             raise NewGenerationRequestUnavailable(key, reason_code="new_generation_storage_unavailable") from None
         if not replayed and self.task_queue is not None:
@@ -185,7 +204,7 @@ class DocumentJobPublication:
             try:
                 current = self.job_repository.get_document_job(job.id)
             except Exception as error:
-                if not _is_preview_storage_error(error):
+                if not is_preview_storage_error(error):
                     raise
                 raise NewGenerationRequestUnavailable(key, reason_code="new_generation_storage_unavailable",
                     accepted_generation=acceptance.accepted_generation) from None
@@ -203,7 +222,7 @@ class DocumentJobPublication:
         except NewGenerationConflict as error:
             raise ApiError(409, "conflict", "该请求不能由当前身份读取。", reason_code=error.reason_code) from None
         except Exception as error:
-            if not isinstance(error, NewGenerationCommitUnknownError) and not _is_preview_storage_error(error):
+            if not isinstance(error, NewGenerationCommitUnknownError) and not is_preview_storage_error(error):
                 raise
             raise NewGenerationRequestUnavailable(key, reason_code="new_generation_acceptance_unknown") from None
         if result is None:
@@ -217,7 +236,7 @@ class DocumentJobPublication:
         try:
             return self.access.get_authorized_job(job_id, user=user)
         except Exception as error:
-            if not _is_preview_storage_error(error):
+            if not is_preview_storage_error(error):
                 raise
             raise NewGenerationRequestUnavailable(request_id, reason_code="new_generation_acceptance_unknown") from None
 
@@ -225,7 +244,7 @@ class DocumentJobPublication:
         try:
             current = self.access.effective_job(current)
         except Exception as error:
-            if not _is_preview_storage_error(error):
+            if not is_preview_storage_error(error):
                 raise
             raise NewGenerationRequestUnavailable(acceptance.request_id, reason_code="new_generation_storage_unavailable",
                 accepted_generation=acceptance.accepted_generation) from None
@@ -359,7 +378,7 @@ class DocumentJobPublication:
                 raise ApiError(404, "not_found", "发布结果实物不存在。", reason_code="publication_result_unavailable") from None
             raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
         except Exception as error:
-            if not _is_preview_storage_error(error):
+            if not is_preview_storage_error(error):
                 raise
             raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
 
@@ -390,9 +409,57 @@ class DocumentJobPublication:
                 action="document_job.publication_download_authorize" if record is not None else "document_job.publication_download_rejected",
                 target_type="document_job", target_id=job.id, trace_id=trace_id, details=details)
         except Exception as error:
-            if not _is_preview_storage_error(error):
+            if not is_preview_storage_error(error):
                 raise
             raise ApiError(503, "service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable") from None
+
+    def authorize_publication_download(self, job_id: str, publication_id: str, *,
+        user: AuthenticatedUser, trace_id: str,
+    ) -> PublicationDownloadGrant:
+        """签发绑定不可变记录的短期最终件入口；审计失败不交付令牌或预签名 URL。
+
+        本地存储返回签名令牌，由路由拼接下载地址；S3 返回预签名 URL。
+        """
+        job, record, file = self.get_publication_file_for_download(
+            job_id, publication_id, user=user, trace_id=trace_id)
+        presigned_url = token = None
+        try:
+            expires_seconds = self.settings.oss_download_presign_expires_seconds
+            if expires_seconds <= 0:
+                raise ApiError(503, "service_unavailable", "最终件下载有效期配置不可用。", reason_code="publication_storage_unavailable")
+            expires_at = (utc_now() + timedelta(seconds=expires_seconds)).replace(microsecond=0)
+            if file.storage_provider == "s3":
+                presigned_url = self.file_upload_service.create_presigned_download_url(file, expires_seconds=expires_seconds)
+            else:
+                token = build_publication_download_token(self.settings, PublicationDownloadClaims(job_id=job.id,
+                    publication_id=record.id, result_file_id=file.id, result_sha256=record.result_sha256,
+                    expires_ts=int(expires_at.timestamp())))
+            self.check_publication_download_current(job, record, file)
+        except ApiError as error:
+            self.record_publication_download_audit(job, user=user, trace_id=trace_id, reason_code=error.reason_code)
+            raise
+        except Exception as error:
+            if not is_preview_storage_error(error):
+                raise
+            self.record_publication_download_audit(job, user=user, trace_id=trace_id,
+                reason_code="publication_storage_unavailable")
+            raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
+        self.record_publication_download_audit(job, user=user, trace_id=trace_id, record=record)
+        if expires_at <= utc_now():
+            raise ApiError(403, "forbidden", "最终件下载链接已过期，请重新申请。", reason_code="publication_download_token_expired")
+        return PublicationDownloadGrant(job=job, record=record, file=file, expires_at=expires_at,
+                                        presigned_url=presigned_url, token=token)
+
+    def resolve_publication_download(self, job_id: str, publication_id: str, *, token: str,
+    ) -> tuple[DocumentFileRecord, Path]:
+        """能力取件：验签后重验记录、descriptor、真实字节，返回本地安全路径；不伪造 JWT 审计。"""
+        claims = verify_publication_download_token(self.settings, job_id=job_id, publication_id=publication_id,
+                                                   token=token)
+        _record, file = self.get_publication_file_for_authorized_download(job_id, publication_id,
+            result_file_id=claims.result_file_id, result_sha256=claims.result_sha256)
+        if file.storage_provider == "s3":
+            raise ApiError(409, "conflict", "发布结果存储身份已变化。", reason_code="publication_download_source_changed")
+        return file, self.file_upload_service.resolve_file_object_path(file)
 
     def publish_document(self, job_id: str, *, user: AuthenticatedUser, request_id: str, note: str,
                          expected_source: PublicationExpectedSource, trace_id: str):
@@ -455,7 +522,7 @@ class DocumentJobPublication:
             self._publication_rejected(job, user, error.reason_code or "publication_state_conflict", trace_id)
             raise
         except Exception as error:
-            if not _is_preview_storage_error(error):
+            if not is_preview_storage_error(error):
                 raise
             self._publication_rejected(job, user, "publication_storage_unavailable", trace_id)
             raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
@@ -476,6 +543,6 @@ class DocumentJobPublication:
                 action="document_job.publish_rejected", target_type="document_job", target_id=job.id,
                 trace_id=trace_id, details={"reason_code": reason_code, "generation": job.retry_count})
         except Exception as error:
-            if not _is_preview_storage_error(error):
+            if not is_preview_storage_error(error):
                 raise
             raise ApiError(503, "service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable") from None

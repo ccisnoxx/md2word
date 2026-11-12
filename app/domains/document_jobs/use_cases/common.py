@@ -8,8 +8,8 @@ from typing import Any
 
 from app.core.errors import ApiError
 from app.domains.document_jobs.models import DocumentJobRecord
-from app.domains.document_jobs.preview import PREVIEW_FILE_TYPES
-from app.domains.document_jobs.schemas import (
+from app.domains.document_jobs.preview_evidence import PREVIEW_FILE_TYPES
+from app.domains.document_jobs.schemas.jobs import (
     DocumentJobAvailableActionResponse,
     DocumentJobDownloadClassification,
 )

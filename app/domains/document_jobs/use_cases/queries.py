@@ -2,8 +2,9 @@ from __future__ import annotations
 
 # app/domains/document_jobs/use_cases/queries.py: 用例：任务列表、事件、文件与翻译批次查询。
 
+from dataclasses import dataclass
 from datetime import datetime
-from typing import get_args
+from typing import Protocol, get_args
 
 from fastapi import status
 
@@ -28,12 +29,32 @@ from app.domains.document_jobs.repository import (
 from app.domains.document_jobs.use_cases.access import DocumentJobAccess
 from app.domains.document_jobs.use_cases.common import DOCUMENT_JOB_LIST_SORTS, DocumentJobListResult
 from app.domains.document_jobs.use_cases.read_model import DocumentJobReadModel
-from app.domains.document_jobs.workflow import DOCUMENT_JOB_STATUS_GROUPS
+from app.domains.document_jobs.workflow import DOCUMENT_JOB_STATUS_GROUPS, TranslationGenerationSummary
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileReaderProtocol
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import is_translation_document_job_mode
 from app.services.auth.models import AuthenticatedUser
+
+
+class TranslationGenerationSummarizer(Protocol):
+    """按当前 source/config 重算权威代次结论的窄端口，由翻译执行门面实现。"""
+
+    def summarize_generation(
+        self,
+        job: DocumentJobRecord,
+        batches: list[DocumentJobTranslationBatchRecord] | None = None,
+    ) -> TranslationGenerationSummary | None:
+        ...
+
+
+@dataclass(frozen=True)
+class TranslationBatchListView:
+    """翻译批次诊断视图：job 与 batches 来自同一仓储快照；summary 为 None 表示无法给出权威结论。"""
+
+    job: DocumentJobRecord
+    batches: list[DocumentJobTranslationBatchRecord]
+    summary: TranslationGenerationSummary | None
 
 
 class DocumentJobQueries:
@@ -45,12 +66,14 @@ class DocumentJobQueries:
         job_repository: DocumentJobRepositoryProtocol,
         event_repository: DocumentJobEventRepositoryProtocol,
         document_job_translation_batch_repository: DocumentJobTranslationBatchRepositoryProtocol | None,
+        translation_generation_summarizer: TranslationGenerationSummarizer | None,
         access: DocumentJobAccess,
         read_model: DocumentJobReadModel,
     ) -> None:
         self.job_repository = job_repository
         self.event_repository = event_repository
         self.document_job_translation_batch_repository = document_job_translation_batch_repository
+        self.translation_generation_summarizer = translation_generation_summarizer
         self.access = access
         self.read_model = read_model
 
@@ -141,6 +164,26 @@ class DocumentJobQueries:
         return self.document_job_translation_batch_repository.list_translation_batches(
             job.id,
             generation=job.retry_count,
+        )
+
+    def get_translation_batch_view(
+        self,
+        job_id: str,
+        *,
+        user: AuthenticatedUser,
+    ) -> TranslationBatchListView:
+        """在同一仓储快照上返回已授权任务、当前代批次与权威代次结论。"""
+
+        job, batches = self.get_translation_batch_snapshot(job_id, user=user)
+        if not is_translation_document_job_mode(job.mode):
+            # direct 任务不加载翻译资源，结论恒为空。
+            return TranslationBatchListView(job=job, batches=batches, summary=None)
+        if self.translation_generation_summarizer is None:
+            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "翻译批次结论服务未配置。")
+        return TranslationBatchListView(
+            job=job,
+            batches=batches,
+            summary=self.translation_generation_summarizer.summarize_generation(job, batches),
         )
 
     def get_translation_batch_snapshot(

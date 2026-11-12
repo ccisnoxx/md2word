@@ -13,7 +13,7 @@ from app.domains.document_jobs.incidents import (
     DOCUMENT_JOB_INCIDENT_RETRY_BUCKETS,
     DOCUMENT_JOB_INCIDENT_SORTS,
 )
-from app.domains.document_jobs.schemas import (
+from app.domains.document_jobs.schemas.incidents import (
     DocumentJobIncidentBulkRequest,
     DocumentJobIncidentBulkResponse,
     DocumentJobIncidentDiagnosticResponse,
