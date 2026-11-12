@@ -25,7 +25,7 @@ resources/template_configs/templates_manifest.yaml
 
 默认 YAML 中 `header.enabled=false`、`footer.enabled=false`，其语义是保留 DOCX 模板原有页眉、页脚和 Logo，而不是从 YAML 重新生成。
 
-Renderer 当前会打开模板 DOCX、清除正文、保留 Section 属性，并在此基础上生成正文、表格、公式和图片；只有显式启用页眉或页脚覆盖时，才重写模板装饰。 
+Renderer 当前会打开模板 DOCX、清除正文、保留 Section 属性，并在此基础上生成正文、表格、公式和图片；只有显式启用页眉或页脚覆盖时，才重写模板装饰。
 
 ---
 
@@ -966,7 +966,7 @@ TPL-EDIT-003 Reduce direct formatting by style group
 
 # 12. 建议 PR 划分
 
-以下为原计划的 PR 划分。实施和验证按五组记录，最终汇总为第 3 节所列的本地实现提交，远端 PR 尚未创建。 [实施与验证记录](../.trellis/tasks/archive/2026-11/11-12-template-render-integrity/validation.md)
+以下为原计划的 PR 划分。实施和验证按五组记录，最终汇总为第 3 节所列的实现提交，远端评审见 PR #48。 [PR #48](https://github.com/ccisnoxx/md2word/pull/48) · [实施与验证记录](../.trellis/tasks/archive/2026-11/11-12-template-render-integrity/validation.md)
 
 ## PR 1：基线与资源快照闭环
 

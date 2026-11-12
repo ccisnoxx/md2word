@@ -17,11 +17,18 @@ from pydantic_settings import SettingsConfigDict
 
 from app.core.config import Settings
 from app.domains.document_jobs.models import DocumentJobRecord
+from app.domains.document_jobs.schemas import DocumentJobCreateRequest
+from app.domains.document_jobs.use_cases import build_document_job_use_cases
+from app.domains.files.models import DocumentFileRecord
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
 from app.domains.resources.models import ResourceType, ResourceVersionRecord, ResourceVersionStatus
 from app.domains.resources.service import ResourceVersionService
 from app.domains.templates.package_validator import TemplatePackageValidationError
 from app.domains.templates.read_service import TemplateReadService
 from app.domains.templates.schemas import TemplateAssetResponse
+from app.domains.term_rules.models import TermRulesStore
+from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
+from app.services.auth.models import AuthenticatedUser
 
 
 def _snapshot_hash(payload: dict[str, Any]) -> str:
@@ -367,7 +374,7 @@ class TemplateSeedHistoryTests(TestCase):
         self.assertEqual(publish().status, "published")
         self.assertEqual(self.repository.get_default_resource_version("template", "default").version, "3")
 
-    def test_publish_without_layout_does_not_consult_new_manifest_layout(self) -> None:
+    def test_publish_and_create_job_without_layout_does_not_consult_manifest_layout(self) -> None:
         self.reader.bootstrap_manifest_versions()
         draft_path = self._docx("history/unbound.docx", "只使用 Word 模板")
         self._register(
@@ -379,7 +386,8 @@ class TemplateSeedHistoryTests(TestCase):
             id="old-verification", tenant_id="tenant", company_id="company", created_by="admin",
             source_file_id="source", status="succeeded", stage="completed", template_version_id="default@3",
         )
-        self.reader.document_job_repository = Mock(get_document_job=Mock(return_value=job))
+        job_repository = Mock(get_document_job=Mock(return_value=job))
+        self.reader.document_job_repository = job_repository
 
         published = self.reader.publish_template_version(
             "default", 3, make_default=True, publish_reason="通过验收",
@@ -389,6 +397,40 @@ class TemplateSeedHistoryTests(TestCase):
         self.assertEqual(published.status, "published")
         self.assertTrue(published.is_default)
         self.assertTrue(self.settings.template_state_file.exists())
+        self.assertFalse(published.layout_config.exists)
+        self.assertIsNone(published.layout_config.file_name)
+        detail = self.reader.get_template_detail("default", url_for=None)
+        self.assertEqual(detail.layout_config, published.layout_config)
+
+        rules_payload = {"store": TermRulesStore().model_dump(mode="json")}
+        self.repository.create_resource_version(ResourceVersionRecord(
+            resource_type="term_rule_set", resource_id=DEFAULT_TERM_RULE_SET_ID, version="seed",
+            status=ResourceVersionStatus.PUBLISHED, snapshot_hash=_snapshot_hash(rules_payload), payload=rules_payload,
+        ))
+        self.repository.set_default_resource_version("term_rule_set", DEFAULT_TERM_RULE_SET_ID, "seed")
+        user = AuthenticatedUser(id="operator", username="operator", role="operator", tenant_id="tenant",
+                                 company_id="company")
+        source = DocumentFileRecord(
+            id="new-source", tenant_id=user.tenant_id, company_id=user.company_id, file_type="source_pdf",
+            storage_provider="local_object", bucket="local", object_key="new-source.pdf",
+            original_filename="new-source.pdf", mime_type="application/pdf", size_bytes=1, status="uploaded",
+            created_by=user.id,
+        )
+        use_cases = build_document_job_use_cases(
+            self.settings,
+            job_repository=job_repository,
+            event_repository=Mock(),
+            file_repository=Mock(get_document_file=Mock(return_value=source)),
+            template_read_service=self.reader,
+            job_resource_snapshot_service=JobResourceSnapshotService(self.settings, self.resources),
+        )
+        request = DocumentJobCreateRequest(source_file_id=source.id)
+        created = use_cases.submission.create_job(user=user, trace_id=None, **request.model_dump())
+        self.assertEqual(created.template_version_id, "default@3")
+        binding = created.request_snapshot["resources"]["template"]
+        self.assertEqual((binding["resource_id"], binding["version"], binding["snapshot_hash"]),
+                         ("default", "3", published.snapshot_hash))
+        job_repository.create_document_job.assert_called_once_with(created)
 
     def test_publish_cas_refuses_changes_after_preflight_without_switching_default(self) -> None:
         self.reader.bootstrap_manifest_versions()

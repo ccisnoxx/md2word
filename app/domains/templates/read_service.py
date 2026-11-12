@@ -1127,11 +1127,7 @@ class TemplateReadService:
         path = self._template_version_path(template, version, payload)
         if path is None or not path.exists():
             raise FileNotFoundError(f"模板版本文件不存在: {template.id}@{version}")
-        # 版本显式未绑定 YAML 时，激活也使用相同资源选择。
-        layout_path = (
-            None if payload is not None and "layout_config_path" in payload and payload["layout_config_path"] is None
-            else self._template_version_layout_config_path(template, payload)
-        )
+        layout_path = self._template_version_layout_config_path(template, payload)
         if layout_path is not None and not layout_path.exists():
             raise FileNotFoundError(f"模板版式配置不存在: {template.id}@{version}")
         self._write_state(TemplateState(default_template_id=template.id))
@@ -1153,9 +1149,6 @@ class TemplateReadService:
             if resolved_default_version is not None
             else template.id == self.get_default_template_id() and version == template.version
         )
-        layout_config_path = self._payload_text(payload, "layout_config_path")
-        if layout_config_path is None:
-            layout_config_path = template.layout_config_path
         render_policy = self._payload_dict(payload, "render_policy")
         if render_policy is None:
             render_policy = template.render_policy
@@ -1177,7 +1170,7 @@ class TemplateReadService:
             published_at=self._payload_datetime(payload, "published_at"),
             template=self._build_asset(path=template_path, label="Word 模板", download_url=None),
             layout_config=self._build_asset(
-                path=self._resolve_manifest_path(layout_config_path) if layout_config_path else None,
+                path=self._template_version_layout_config_path(template, payload),
                 label="页面布局 YAML",
                 download_url=None,
             ),
@@ -1228,9 +1221,13 @@ class TemplateReadService:
         template: TemplateManifestItem,
         payload: dict[str, Any] | None,
     ) -> Path | None:
+        """显式空值表示版本未绑定 YAML，旧记录缺少字段时仍可使用 manifest。"""
+
+        if payload is not None and "layout_config_path" in payload and payload["layout_config_path"] is None:
+            return None
         payload_path = self._payload_text(payload, "layout_config_path")
-        manifest_path = payload_path or template.layout_config_path
-        return self._resolve_manifest_path(manifest_path) if manifest_path else None
+        layout_path = payload_path or template.layout_config_path
+        return self._resolve_manifest_path(layout_path) if layout_path else None
 
     def _parse_template_version_id(self, template_version_id: str | None) -> tuple[str | None, int | None]:
         normalized = self._normalize_optional_text(template_version_id)
