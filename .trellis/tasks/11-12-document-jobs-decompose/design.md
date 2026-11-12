@@ -109,7 +109,7 @@ router 保留：`request.url_for` + `_externalize_url`（HTTP 关注点）、`au
   - **已修复**：`DocumentJobQualityReview` 显式注入 `queries`、`table_references`；`review_content` 改经 `service.access.*`、`service.queries.get_translation_batch_snapshot`、`service.table_references.{table_reference_snapshot,list_table_references_snapshot}` 读取；复核用例与表格参考用例被跨模块调用的方法改为公开名（`review_api_job`、`review_cursor`、`finish_review_read`）。新增 `tests/test_document_job_review_blocks_api.py` 以真实 runtime 覆盖列表与详情（含表格分支）；翻译模式下的批次快照分支仅静态核对。
 - `publication_provenance.py` 与 `use_cases/publication.py` 读取 `JobResourceSnapshotService` / renderer 的私有方法（`_load_snapshot_record`、`_materialize_*`、`_load_template_config`、`_resolve_asset_path`），属跨领域私有访问。
   - **已修复**：`JobResourceSnapshotService` 的 `load_snapshot_record`、`materialize_template`、`materialize_template_layout_config`、`materialize_term_rule_set` 改为公开方法（沿用已有公开 `materialize_translation_profile` 的形态，补充契约说明，行为不变）；`DocumentIRWordRenderer` 新增公开 `load_template_resources`（版式配置 + logo 路径），`render_to_result` 与发布来源核验共用，保证声明身份与实际渲染同一解析规则。
-- 仍存：`translation_execution/artifacts.py` 调用翻译领域 `DocumentIRTranslationService._target_document_language`（原代码既有），未在本任务处理。
+- **已修复**：`translation_execution/artifacts.py` 原调用翻译领域私有静态方法 `DocumentIRTranslationService._target_document_language`；改为直接使用已在手的公开模式规格 `spec.target_document_language`（对 en2zh/ru2zh/zh2en/zh2ru 四种模式逐一核对结果一致）。此后 `document_jobs`、`composition`、`workers` 中无跨对象私有调用。
 
 ## 5. 风险与对策
 

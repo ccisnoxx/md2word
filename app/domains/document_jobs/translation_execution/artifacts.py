@@ -184,7 +184,8 @@ class TranslationArtifactStore:
         spec = spec_for_document_job_mode(job.mode)
         if spec.language_pair is None:
             raise DocumentIRTranslationError("当前任务不是翻译任务。")
-        translated.metadata.document_language = self.deps.document_ir_translation_service._target_document_language(spec.language_pair)
+        # 目标文档语言以模式规格为唯一来源，与翻译服务按 language_pair 推导的结果对全部翻译模式一致。
+        translated.metadata.document_language = spec.target_document_language
         ai_call_log_file_ids = [
             file_id
             for batch in succeeded_batches
