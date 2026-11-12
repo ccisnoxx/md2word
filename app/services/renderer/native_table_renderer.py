@@ -6,12 +6,10 @@ from dataclasses import dataclass
 from html import escape
 from typing import Any, Literal
 
-from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.oxml.table import CT_Tc
-from docx.shared import Emu, Pt, Twips
+from docx.shared import Emu, Twips
 from docx.table import _Cell
 
 from app.conversion.docx_rules.formula import MathSpan, content_math_spans, formula_block_span
@@ -101,17 +99,6 @@ class WordNativeTableRendererMixin:
         if merge is not None:
             tc.vMerge = merge
         return cell
-
-    def _format_table_cell(self, cell: Any, is_header: bool, template_config: TemplateConfigPackage) -> None:
-        """大小表共用外观配置；合并延续不写内容但继承 owner 的表头外观。"""
-        paragraph = cell.paragraphs[0]
-        self._apply_table_header_run_style(paragraph, is_header, template_config)
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if is_header else WD_ALIGN_PARAGRAPH.LEFT
-        paragraph.paragraph_format.space_before = Pt(0)
-        paragraph.paragraph_format.space_after = Pt(0)
-        if is_header and template_config.table_style.header_fill:
-            self._set_cell_fill(cell, template_config.table_style.header_fill)
-        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
     def _fill_native_grid_runs(self, paragraph, runs, config, *, reference_bookmarks=None):
         """保留 native run 的脚本/保护边界，普通文字继续原 text owner 叶链。"""

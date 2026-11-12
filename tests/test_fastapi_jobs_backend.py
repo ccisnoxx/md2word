@@ -895,6 +895,14 @@ def read_legacy_callback_seed(runtime: AppRuntime, job_id: str) -> str:
     return seed
 
 
+def template_docx_content(text: str) -> bytes:
+    document = Document()
+    document.add_paragraph(text)
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
 def write_templates_manifest(path: Path, entries: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump({"templates": entries}, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -944,6 +952,7 @@ def publish_template_resource_version(
     template_path = runtime.settings.data_path / "test_resources" / "templates" / template_id / f"v{version}.docx"
     template_path.parent.mkdir(parents=True, exist_ok=True)
     template_path.write_bytes(content)
+    layout_path = runtime.settings.layout_config_path
     payload = {
         "template_id": template_id,
         "version": version,
@@ -951,8 +960,8 @@ def publish_template_resource_version(
         "description": "test template resource",
         "docx_path": str(template_path.resolve()),
         "docx_sha256": f"sha256:{hashlib.sha256(content).hexdigest()}",
-        "layout_config_path": str(runtime.settings.layout_config_path) if runtime.settings.layout_config_path else None,
-        "layout_config_sha256": None,
+        "layout_config_path": str(layout_path) if layout_path is not None else None,
+        "layout_config_sha256": f"sha256:{hashlib.sha256(layout_path.read_bytes()).hexdigest()}" if layout_path is not None else None,
         "render_policy": {},
     }
     service.create_or_update_draft(
@@ -7219,32 +7228,10 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
             )
             publish_default_job_resources(runtime, include_translation=False)
-            service = runtime.resource_version_service
-            self.assertIsNotNone(service)
-            assert service is not None
-            template_path = runtime.settings.default_template_path
-            layout_path = runtime.settings.layout_config_path
-            self.assertIsNotNone(template_path)
-            self.assertIsNotNone(layout_path)
-            assert template_path is not None and layout_path is not None
-            payload = {
-                "template_id": "default",
-                "version": "2",
-                "name": "Draft Template 2",
-                "description": "admin validation draft",
-                "docx_path": str(template_path.resolve()),
-                "docx_sha256": f"sha256:{hashlib.sha256(template_path.read_bytes()).hexdigest()}",
-                "layout_config_path": str(layout_path.resolve()),
-                "layout_config_sha256": f"sha256:{hashlib.sha256(layout_path.read_bytes()).hexdigest()}",
-                "render_policy": {},
-            }
-            service.create_or_update_draft(
-                resource_type="template",
-                resource_id="default",
-                version="2",
-                snapshot_hash=resource_payload_hash(payload),
-                payload_ref="template:default@2",
-                payload=payload,
+            draft_upload = Path(temp_dir) / "draft-template.docx"
+            draft_upload.write_bytes(template_docx_content("待验证的模板草稿"))
+            draft = runtime.template_read_service.create_template_version(
+                "default", source_path=draft_upload, source_filename=draft_upload.name,
             )
             app = create_app(runtime)
 
@@ -7258,7 +7245,7 @@ class FastAPIJobsBackendTests(TestCase):
                         "source_file_id": operator_source["id"],
                         "mode": "direct_pdf_to_word",
                         "document_language": "en",
-                        "template_version_id": "default@2",
+                        "template_version_id": draft.template_version_id,
                     },
                 )
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
@@ -7270,14 +7257,14 @@ class FastAPIJobsBackendTests(TestCase):
                         "source_file_id": admin_source["id"],
                         "mode": "direct_pdf_to_word",
                         "document_language": "en",
-                        "template_version_id": "default@2",
+                        "template_version_id": draft.template_version_id,
                     },
                 )
 
         self.assertEqual(operator_response.status_code, 400)
         self.assertIn("draft", operator_response.json()["detail"])
         self.assertEqual(admin_response.status_code, 201)
-        self.assertEqual(admin_response.json()["job"]["template_version_id"], "default@2")
+        self.assertEqual(admin_response.json()["job"]["template_version_id"], draft.template_version_id)
         self.assertEqual(admin_response.json()["job"]["request_snapshot"]["resources"]["template"]["status"], "draft")
 
     def test_document_job_retry_resource_selection_requires_admin_and_rebinds_term_assets(self):
@@ -11086,6 +11073,8 @@ class FastAPIJobsBackendTests(TestCase):
 
 
     def test_templates_crud_replace_and_versions_preserve_uploaded_file(self):
+        v1_content = template_docx_content("上传模板第一版")
+        v2_content = template_docx_content("上传模板第二版")
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
             manifest_path = temp_root / "templates_manifest.yaml"
@@ -11111,6 +11100,18 @@ class FastAPIJobsBackendTests(TestCase):
             )
             app = create_app(runtime)
             with TestClient(app) as client:
+                bad_upload = client.post(
+                    "/api/v1/templates",
+                    data={"template_id": "bad", "name": "无效模板"},
+                    files={"template": ("bad.docx", b"invalid package")},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(bad_upload.status_code, 400)
+                self.assertEqual(bad_upload.json()["error"]["reason_code"], "docx_package_invalid")
+                self.assertIsInstance(bad_upload.json()["detail"], str)
+                self.assertNotIn(str(temp_root), bad_upload.json()["detail"])
+                self.assertFalse((runtime.settings.templates_storage_dir / "bad").exists())
+
                 create_response = client.post(
                     "/api/v1/templates",
                     data={
@@ -11121,7 +11122,7 @@ class FastAPIJobsBackendTests(TestCase):
                     files={
                         "template": (
                             "managed.docx",
-                            b"managed-template-v1",
+                            v1_content,
                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         )
                     },
@@ -11143,7 +11144,7 @@ class FastAPIJobsBackendTests(TestCase):
                     files={
                         "template": (
                             "managed-v2.docx",
-                            b"managed-template-v2",
+                            v2_content,
                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         )
                     },
@@ -11164,7 +11165,7 @@ class FastAPIJobsBackendTests(TestCase):
                 missing_response = client.get("/api/v1/templates/managed")
 
         self.assertEqual(download_response.status_code, 200)
-        self.assertEqual(download_response.content, b"managed-template-v2")
+        self.assertEqual(download_response.content, v2_content)
         self.assertEqual(versions_response.status_code, 200)
         self.assertEqual([item["version"] for item in versions_response.json()["items"]], [2, 1])
         self.assertTrue(versions_response.json()["items"][0]["is_current"])
@@ -11175,6 +11176,8 @@ class FastAPIJobsBackendTests(TestCase):
     def test_template_profile_versioning_publishes_defaults_and_disables_versions(self):
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
+        v1_content = template_docx_content("上传模板第一版")
+        v2_content = template_docx_content("上传模板第二版")
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
             manifest_path = temp_root / "templates_manifest.yaml"
@@ -11217,7 +11220,7 @@ class FastAPIJobsBackendTests(TestCase):
                     files={
                         "template": (
                             "managed.docx",
-                            b"managed-template-v1",
+                            v1_content,
                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         )
                     },
@@ -11252,7 +11255,7 @@ class FastAPIJobsBackendTests(TestCase):
                     files={
                         "template": (
                             "managed-v2.docx",
-                            b"managed-template-v2",
+                            v2_content,
                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         )
                     },
@@ -11326,7 +11329,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(publish_v2_response.status_code, 200)
         self.assertEqual(set_default_v2_response.status_code, 200)
         self.assertTrue(set_default_v2_response.json()["is_default"])
-        self.assertEqual(download_response.content, b"managed-template-v2")
+        self.assertEqual(download_response.content, v2_content)
         self.assertEqual(disable_v1_response.status_code, 200)
         self.assertEqual(disable_v1_response.json()["status"], "disabled")
         self.assertEqual(disable_v2_response.status_code, 400)
@@ -11371,6 +11374,88 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(audit_events[4].reason, "switch production to compact density")
         self.assertEqual(audit_events[-1].target_id, "managed@1")
         self.assertNotIn("term_rules", records["2"].payload)
+
+    def test_template_file_replacement_preserves_version_published_outside_manifest(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            manifest_path = temp_root / "templates_manifest.yaml"
+            manifest_path.write_bytes((root / "resources/template_configs/templates_manifest.yaml").read_bytes())
+            runtime = build_mysql_test_runtime(
+                temp_root, admin_token="secret-admin", templates_manifest_path=str(manifest_path),
+            )
+            service = runtime.resource_version_service
+            assert service is not None
+            headers = {"X-Admin-Token": "secret-admin"}
+            verified = template_docx_content("发布版本的模板")
+            replacement = template_docx_content("后续替换的模板")
+            filename = "same-name.docx"
+
+            with TestClient(create_app(runtime)) as client:
+                created = client.post(
+                    "/api/v1/templates/default/versions",
+                    files={"template": (filename, verified)},
+                    headers=headers,
+                )
+                self.assertEqual(created.status_code, 201)
+                self.assertEqual(created.json()["version"], 3)
+                create_template_verification_job(
+                    runtime, job_id="verified-v3", template_version_id="default@3",
+                )
+                draft_record = service.repository.get_resource_version("template", "default", "3")
+                changed_payload = {**draft_record.payload, "description": "预检后被并发改写"}
+                changed_draft = draft_record.model_copy(update={
+                    "payload": changed_payload, "snapshot_hash": resource_payload_hash(changed_payload),
+                })
+                preflight = runtime.template_read_service._validate_registered_template_package
+
+                def validate_then_replace(record):
+                    preflight(record)
+                    service.repository.save_resource_version(changed_draft)
+
+                with patch.object(
+                    runtime.template_read_service, "_validate_registered_template_package",
+                    side_effect=validate_then_replace,
+                ):
+                    stale_publish = client.post(
+                        "/api/v1/templates/default/versions/3/publish",
+                        json={
+                            "make_default": True, "publish_reason": "验证通过",
+                            "verification_job_id": "verified-v3", "verification_note": "验收通过",
+                        },
+                        headers=headers,
+                    )
+                self.assertEqual(stale_publish.status_code, 409)
+                self.assertEqual(stale_publish.json()["error"]["reason_code"], "template_draft_conflict")
+                self.assertEqual(service.repository.get_resource_version("template", "default", "3"), changed_draft)
+                self.assertEqual(service.repository.get_default_resource_version("template", "default").version, "2")
+                service.repository.save_resource_version(draft_record)
+
+                published = client.post(
+                    "/api/v1/templates/default/versions/3/publish",
+                    json={
+                        "make_default": False, "publish_reason": "验证通过",
+                        "verification_job_id": "verified-v3", "verification_note": "验收通过",
+                    },
+                    headers=headers,
+                )
+                self.assertEqual(published.status_code, 200)
+                published_record = service.repository.get_resource_version("template", "default", "3")
+                self.assertEqual(yaml.safe_load(manifest_path.read_bytes())["templates"][0]["version"], 2)
+
+                replaced = client.put(
+                    "/api/v1/templates/default/file",
+                    files={"template": (filename, replacement)},
+                    headers=headers,
+                )
+                self.assertEqual(replaced.status_code, 200)
+
+            storage = runtime.settings.templates_storage_dir / "default"
+            self.assertEqual((storage / "v3" / filename).read_bytes(), verified)
+            self.assertEqual((storage / "v4" / filename).read_bytes(), replacement)
+            self.assertEqual(service.repository.get_resource_version("template", "default", "3"), published_record)
+            self.assertEqual(service.repository.get_resource_version("template", "default", "4").status.value, "draft")
+            self.assertEqual(service.repository.get_default_resource_version("template", "default").version, "2")
 
     def test_template_layout_config_admin_creates_draft_version_without_mutating_source_yaml(self):
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
@@ -11602,7 +11687,7 @@ class FastAPIJobsBackendTests(TestCase):
                 {
                     "path": "table_style.style_name",
                     "code": "unknown_word_style",
-                    "message": "table_style.style_name 在模板文档中不存在: Not A Real Table Style",
+                    "message": "table_style.style_name: 模板文档中不存在指定的 Word 表格样式。",
                 },
             )
             self.assertEqual(draft_read_response.status_code, 200)

@@ -567,7 +567,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：本地正式 CLI/adapter 的显式 template/layout config、缺省参数与 `no_template`，以及线上已固化 Template Version。
-- 正式 owner：本地默认资源选择由 `scripts/dev/formal_mineru_conversion.py::run_conversion` 负责；默认路径来自 `app/core/config.py::Settings`；线上继续由 `TemplateReadService.resolve_template_version()` 与 `DocumentJobExecutionService._render_and_save_word()` 负责。
+- 正式 owner：本地默认资源选择由 `scripts/dev/formal_mineru_conversion.py::run_conversion` 负责；默认路径来自 `app/core/config.py::Settings`；带资源快照的正式任务由 `WordRenderExecution._resolve_render_resources()` 与 `JobResourceSnapshotService.materialize_render_resources()` 负责；无快照的历史任务沿用 `TemplateReadService.resolve_template_version()`。
 - 预期输出：本地显式路径优先；省略时使用当前 `Settings.default_template_path/layout_config_path`，`no_template=true` 只禁用 DOCX 模板而不禁用 layout config。本地所需默认资源不存在时显式失败，不以空配置继续；共享 renderer 只消费调用者传入路径，线上版本缺失/损坏继续失败关闭，不回退 bundled 配置。
 - 冲突/例外：`DocumentIRWordRenderer` 的低层 `template_path=None/config_path=None` 仍表示无模板/空配置；字体安装由目标系统负责。可见 Word 文本受 STYLE-003 四槽约束，OMML 公式由独立 `m:mathFont` 控制。
 - 禁止：省略本地参数时静默使用空 `TemplateConfigPackage`；在 renderer 读取全局 Settings；以本机字体别名改写已发布 seed；把 OMML run 错计为缺少段落字体槽。
@@ -583,6 +583,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 预期输出：记录可编辑段落/表格、heading、numbering、TOC clue、keepNext、表头/cantSplit、宽表、横向节、图片和 LaTeX residue 等 OOXML 指标，并对无可编辑内容、图片化、手写列表、静态目录、未样式化标题、公式残留等风险生成 flag。
 - 来源感知诊断：只有图片报告完整认证后，其 annotation 物理锚点才可从正文标题候选中排除；图片说明不按 `Figure` 或括号文本猜测，不改变显式 IR heading 与实际 heading 的计数核对。未认证说明和真实无样式正文标题仍走既有诊断；严格图片分组的不确定提示保留。
 - 质量版本与恢复：非空正式质量结果记录 `analysis_version=docx-quality/v2`；无版本历史字典按原算法完整重算并逐值比较，未知或空版本拒绝。空分析结果保持 `{}` 与 `docx_quality_unavailable`，版本标记不得把不可用结果包装成成功。新质量版本落盘后，回退必须保留兼容 reader；文件、prepared receipt、当前及历史复核绑定、发布快照均在版本检查范围内。
+- 模板符合性：`WordRenderResult.template_conformance` 使用实际输入和最终 DOCX 生成 `template-conformance/v1`。按有效 Section 引用核验未覆盖一侧的装饰与媒体 SHA-256，已覆盖一侧校验输出关系。清除多节模板正文前固定末节生效的继承引用。报告失败并入既有质量门。历史缺字段保留原认证，已存报告重验产物及模板/配置身份。事件和管理文件摘要只投影布尔状态、计数和受控码，私有哈希留在证据。专项回归为 `tests.test_template_conformance`、`tests.test_template_package_contract`。
 - 冲突/例外：指标或 flag 只证明包内结构，不证明 Word 实际页数、溢出、栏平衡、表格不挤压或图片清晰；`wide_table_count`/`landscape_sections` 当前不会自动形成方向风险 flag。
 - 禁止：把 `quality_flags=[]` 当作视觉验收通过；把“可打开”当作质量通过；用 analyzer 指标替代真客户端排版。
 - 自动验证：`tests.test_golden_sample_manifest.GoldenSampleManifestTests.test_docx_quality_analysis_reads_ooxml_structure_without_python_docx`、`.test_docx_quality_flags_obvious_word_semantics_risks`、`.test_docx_quality_analysis_flags_image_only_docx`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_renderer_evidence_summarizes_layout_and_docx_quality`；`tests.test_formula_rendering_compatibility` 与 `tests.test_image_group_rendering` 覆盖字面标识符、真实残留、图注来源认证、真实标题、空分析、旧新质量重放与未知版本拒绝。

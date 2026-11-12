@@ -179,9 +179,10 @@ def build_document_file_quality_evidence(file: DocumentFileRecord) -> dict[str, 
     if file.file_type not in {"generated_word", "document_ir"}:
         return {}
     metadata = file.metadata or {}
+    renderer_summary = build_renderer_event_summary(metadata)
     if file.file_type == "generated_word" and (
             "renderer_content_contract_version" in metadata or "formula_source_coverage" in metadata):
-        metadata = build_renderer_event_summary(metadata)
+        metadata = renderer_summary
     evidence: dict[str, Any] = {}
     for key in DOCUMENT_JOB_QUALITY_METADATA_KEYS:
         value = metadata.get(key)
@@ -193,7 +194,7 @@ def build_document_file_quality_evidence(file: DocumentFileRecord) -> dict[str, 
     layout_quality_flags = controlled_quality_flags(metadata.get("layout_quality_flags"))
     if layout_quality_flags:
         evidence["layout_quality_flags"] = layout_quality_flags
-    docx_quality = build_renderer_event_summary(metadata).get("docx_quality")
+    docx_quality = renderer_summary.get("docx_quality")
     if isinstance(docx_quality, dict):
         safe_docx_quality = {
             key: value
@@ -202,6 +203,8 @@ def build_document_file_quality_evidence(file: DocumentFileRecord) -> dict[str, 
         }
         if safe_docx_quality:
             evidence["docx_quality"] = safe_docx_quality
+    if file.file_type == "generated_word" and "template_conformance" in renderer_summary:
+        evidence["template_conformance"] = renderer_summary["template_conformance"]
     return evidence
 
 

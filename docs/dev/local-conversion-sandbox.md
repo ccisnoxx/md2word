@@ -77,8 +77,6 @@ scripts.dev.formal_mineru_conversion.run_conversion(...)
   "output_path": "tests/tmp/local_mineru_debug/direct/OPA228_P1.docx",
   "document_language": "en",
   "translation_mode": "direct",
-  "template_path": "resources/templates/default/datasheet_template.docx",
-  "layout_config_path": "resources/template_configs/datasheet_template_v2.yaml",
   "subscript_config": "resources/term_rules/subscripts_dictionary.yaml",
   "no_template": false,
   "use_mineru_header_footer": false,
@@ -89,6 +87,7 @@ scripts.dev.formal_mineru_conversion.run_conversion(...)
 
 路径规则：
 
+- 省略模板和版式路径时，通过仓库模板清单绑定内置默认版本。指定路径时使用该输入，适合复现历史版本。 [仓库模板清单](../../resources/template_configs/templates_manifest.yaml)
 - 相对路径从正式项目根目录 `${PROJECT_ROOT}` 解析。
 - 新样例优先放在正式项目根目录的 `mineru_result/`。
 - 历史样例可以先复制或同步到正式项目 `mineru_result/` 后再运行；不要从 `md2word_main` 启动转换。

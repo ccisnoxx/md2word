@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.domains.resources.models import ResourceType, ResourceVersionRecord, utc_now
+from app.domains.resources.models import ResourceType, ResourceVersionRecord, ResourceVersionStatus, utc_now
 from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend
 
 
@@ -50,8 +50,9 @@ class MysqlResourceVersionRepository:
         record: ResourceVersionRecord,
         *,
         expected_snapshot_hash: str,
+        expected_status: ResourceVersionStatus | None = None,
     ) -> ResourceVersionRecord | None:
-        """以 snapshot_hash 为条件原子更新草稿，过期写入返回 None。"""
+        """按旧状态和指纹原子更新资源版本，条件不再成立时返回 None。"""
 
         with self.backend.connect() as connection:
             with connection.cursor() as cursor:
@@ -61,7 +62,8 @@ class MysqlResourceVersionRepository:
                     SET snapshot_hash = %s,
                         payload_ref = %s,
                         payload = %s,
-                        updated_at = %s
+                        updated_at = %s,
+                        status = %s
                     WHERE resource_type = %s
                       AND resource_id = %s
                       AND version = %s
@@ -75,10 +77,11 @@ class MysqlResourceVersionRepository:
                         if record.payload is not None
                         else None,
                         record.updated_at.isoformat(),
+                        record.status.value,
                         record.resource_type,
                         record.resource_id,
                         record.version,
-                        record.status.value,
+                        (expected_status if expected_status is not None else record.status).value,
                         expected_snapshot_hash,
                     ),
                 )

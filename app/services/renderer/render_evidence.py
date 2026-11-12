@@ -27,6 +27,12 @@ from app.services.renderer.render_evidence_validation import (
     validate_persisted_render_evidence,
     validate_render_result,
 )
+from app.services.renderer.template_conformance import (
+    BINDING_MISMATCH,
+    REPORT_INVALID,
+    TemplateConformanceError,
+    verify_template_conformance_report,
+)
 
 
 if TYPE_CHECKING:
@@ -302,12 +308,18 @@ def build_renderer_evidence(document_ir: DocumentIR, word_content: bytes, layout
                             block_render_evidence: BlockRenderEvidence | dict[str, Any] | None = None,
                             block_anchor_evidence: BlockAnchorEvidence | dict[str, Any] | None = None,
                             renderer_content_contract_version: Any = _UNSET,
-                            formula_source_coverage: Any = _UNSET) -> dict[str, Any]:
+                            formula_source_coverage: Any = _UNSET,
+                            template_conformance: Any = _UNSET) -> dict[str, Any]:
     """原内容认证保持严格；恢复时只消费已存 trace，可选锚点失败局部降级。"""
     if render_result is not None:
         if formula_report is not None and formula_report != render_result.formula_report or image_layout_report is not None and image_layout_report != render_result.image_layout_report:
             raise render_contract_failure(ValueError("ir_render_evidence:binding_mismatch"))
         formula_report, image_layout_report = render_result.formula_report, render_result.image_layout_report
+        if render_result.template_conformance is None:
+            raise render_contract_failure(TemplateConformanceError(REPORT_INVALID))
+        if template_conformance is not _UNSET and template_conformance != render_result.template_conformance:
+            raise render_contract_failure(TemplateConformanceError(BINDING_MISMATCH))
+        template_conformance = render_result.template_conformance
         if (renderer_content_contract_version is not _UNSET
                 and renderer_content_contract_version != render_result.renderer_content_contract_version
                 or formula_source_coverage is not _UNSET and formula_source_coverage != render_result.formula_source_coverage):
@@ -360,7 +372,33 @@ def build_renderer_evidence(document_ir: DocumentIR, word_content: bytes, layout
                 **{key: count for key, count in render_result.block_anchor_counts.items()
                    if key in {"created", "name_conflict", "target_unavailable", "limit_exceeded", "generation_disabled"}
                    and type(count) is int and count >= 0}}
+    if template_conformance is not _UNSET:
+        _add_template_conformance(evidence, word_content, template_conformance, plan=plan)
     return evidence
+
+
+def _add_template_conformance(
+    evidence: dict[str, Any], word_content: bytes, value: Any, *, plan: RenderPlan | None = None,
+) -> None:
+    """只消费上游已校验的图片输入身份和可用的 RenderPlan。"""
+
+    image_report = evidence.get("image_layout_report")
+    if image_report is None:
+        raise render_contract_failure(TemplateConformanceError(BINDING_MISMATCH))
+    identity = image_report["render_inputs"]["template"]
+    try:
+        report = verify_template_conformance_report(
+            value, word_content,
+            template_docx_sha256=identity["docx"]["sha256"],
+            layout_config_sha256=identity["config"]["sha256"],
+            resource_identity=plan.resource_identity if plan is not None else None,
+        )
+    except TemplateConformanceError as error:
+        raise render_contract_failure(error) from None
+    evidence["template_conformance"] = report.model_dump(mode="json")
+    evidence["blocking_quality_flags"] = list(dict.fromkeys([
+        *evidence["blocking_quality_flags"], *report.blocking_flags,
+    ]))
 
 
 def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: bytes, metadata: dict[str, Any], *,
@@ -381,7 +419,8 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
             formula_report=metadata.get("formula_report"), image_layout_report=metadata.get("image_layout_report"),
             expected_template_version_id=expected_template_version_id,
             render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"),
-            block_anchor_evidence=metadata.get("block_anchor_evidence"))
+            block_anchor_evidence=metadata.get("block_anchor_evidence"),
+            template_conformance=metadata.get("template_conformance", _UNSET))
         _restore_legacy_docx_quality(actual, word_content, metadata)
         ensure_renderer_integrity(actual)
         optional = {"render_trace_status", "render_plan", "block_render_evidence", "block_anchor_evidence", "block_anchor_summary"}
@@ -419,6 +458,8 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
         if "table_evidence" in metadata and not actual["blocking_quality_flags"]:
             actual["table_evidence"] = _build_table_evidence(document_ir, word_content, actual).model_dump(mode="json", warnings=False)
     _restore_legacy_docx_quality(actual, word_content, metadata)
+    if "template_conformance" in metadata:
+        _add_template_conformance(actual, word_content, metadata["template_conformance"])
     ensure_renderer_integrity(actual)
     comparable = deepcopy(actual)
     if isinstance(metadata.get("docx_quality"), dict) and "table_observations" not in metadata["docx_quality"]:

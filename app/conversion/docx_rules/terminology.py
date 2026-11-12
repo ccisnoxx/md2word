@@ -32,6 +32,14 @@ class TerminologyReplacer:
         self.content_sha256: str | None = None
         self._load_rules()
 
+    @classmethod
+    def from_content(cls, content: bytes) -> "TerminologyReplacer":
+        """执行同一次任务读取并验证的规则字节。"""
+
+        replacer = cls()
+        replacer._load_content(content)
+        return replacer
+
     def freeze_rules(self) -> list[dict]:
         """仅保存执行所需白名单值；数组顺序就是已经生效的规则顺序。"""
         return [{"pattern": rule.pattern, "replacement": rule.replacement,
@@ -84,7 +92,9 @@ class TerminologyReplacer:
         if not self.config_path or not self.config_path.exists():
             return
 
-        content = self.config_path.read_bytes()
+        self._load_content(self.config_path.read_bytes())
+
+    def _load_content(self, content: bytes) -> None:
         self.content_sha256 = hashlib.sha256(content).hexdigest()
         config = yaml.safe_load(content.decode("utf-8")) or {}
         rules_data = config.get("subscript_rules", {})

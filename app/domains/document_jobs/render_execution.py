@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -25,8 +26,13 @@ from app.domains.document_jobs.table_evidence import save_report, verify_report
 from app.domains.files import FileUploadService
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
-from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
+from app.domains.jobs.models import JobResourceSnapshot
+from app.domains.jobs.paths import build_job_paths
+from app.domains.jobs.resource_snapshots import (
+    JobResourceSnapshotError, JobResourceSnapshotService, MaterializedRenderResources,
+)
 from app.domains.resources.models import utc_now
+from app.domains.templates.read_service import TemplateVersionSelection
 from app.domains.translation.modes import is_translation_document_job_mode
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.integrity import DocumentIntegrityError
@@ -43,6 +49,7 @@ from app.services.renderer.layout_plan import build_layout_plan
 from app.services.renderer.render_event_summary import build_renderer_event_summary
 from app.services.renderer.render_evidence import build_renderer_evidence
 from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
+from app.services.renderer.resource_identity import RenderResourceInputs
 
 
 class WordRenderExecution:
@@ -84,6 +91,54 @@ class WordRenderExecution:
         self.results = WordResultFinalizer(
             job_repository=job_repository, file_repository=file_repository, file_service=file_service,
             lifecycle=lifecycle, word_preview_service=word_preview_service, placeholders=self.placeholders)
+
+    def _resolve_render_resources(
+        self, job: DocumentJobRecord,
+    ) -> tuple[TemplateVersionSelection, MaterializedRenderResources | None]:
+        raw = job.request_snapshot.get("resources")
+        if raw is None:
+            return self.template_read_service.resolve_template_version(job.template_version_id), None
+        if not isinstance(raw, dict):
+            raise JobResourceSnapshotError("任务资源快照格式非法。", category="conflict")
+        service = self.job_resource_snapshot_service
+        if service is None:
+            raise JobResourceSnapshotError(
+                "当前 Worker 无法认证任务资源快照。", category="service_unavailable", code="resource_snapshot_unavailable",
+            )
+        try:
+            # 渲染只需要模板和格式规则；direct 的历史惰性翻译字段不参与。
+            snapshot = JobResourceSnapshot.model_validate({
+                key: raw[key] for key in ("template", "term_rule_set", "term_rule_department_id") if key in raw
+            })
+        except ValueError:
+            raise JobResourceSnapshotError("任务资源快照格式非法。", category="conflict") from None
+        template = snapshot.template
+        if template is None:
+            raise JobResourceSnapshotError(
+                "任务资源快照缺少模板版本。", category="conflict", code="resource_snapshot_missing_template",
+            )
+        if (
+            not template.version.isdecimal() or job.template_version_id != f"{template.resource_id}@{template.version}"
+        ):
+            raise JobResourceSnapshotError(
+                "任务模板版本与绑定资源不一致。", category="conflict", code="resource_snapshot_template_version_mismatch",
+            )
+        version = int(template.version)
+        try:
+            self.template_read_service.resolve_template_render_state(template.resource_id, version)
+        except (ValueError, FileNotFoundError):
+            raise JobResourceSnapshotError(
+                "任务绑定的模板版本未启用。", category="conflict", code="resource_snapshot_invalid_status",
+            ) from None
+        resources = service.materialize_render_resources(snapshot, build_job_paths(self.settings.data_path, job.id))
+        return TemplateVersionSelection(
+            template_id=template.resource_id,
+            version=version,
+            template_version_id=job.template_version_id,
+            template_path=resources.template_path,
+            layout_config_path=resources.layout_config_path,
+            render_policy={},
+        ), resources
 
     def render_and_save_word(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         attempt = job
@@ -148,19 +203,16 @@ class WordRenderExecution:
                 document_ir = DocumentIR.model_validate_json(ir_bytes)
             except ValueError:
                 raise TablePlaceholderError("table_placeholder_integrity_failed") from None
-            snapshot_resources = rendering.request_snapshot.get("resources")
-            snapshot_template = snapshot_resources.get("template") if isinstance(snapshot_resources, dict) else None
-            draft_was_authorized_at_creation = (
-                isinstance(snapshot_template, dict)
-                and snapshot_template.get("status") == "draft"
-                and rendering.template_version_id
-                == f"{snapshot_template.get('resource_id')}@{snapshot_template.get('version')}"
+            template_selection, render_resources = self._resolve_render_resources(rendering)
+            verified_inputs = (
+                RenderResourceInputs(
+                    template_docx=render_resources.template_content,
+                    template_config=render_resources.layout_config_content,
+                    symbol_rules=render_resources.subscript_content,
+                )
+                if render_resources is not None else None
             )
-            # 仅允许执行创建阶段已固化 draft 快照的验证任务，legacy 或不一致记录继续按 published 校验。
-            template_selection = self.template_read_service.resolve_template_version(
-                rendering.template_version_id,
-                allow_draft=draft_was_authorized_at_creation,
-            )
+
             def render(job: DocumentJobRecord, document: DocumentIR):
                 return self.word_renderer.render_to_result(
                     document,
@@ -168,9 +220,14 @@ class WordRenderExecution:
                     config_path=template_selection.layout_config_path,
                     image_loader=self.placeholders.build_image_loader(job, document),
                     options=DocumentIRRenderOptions(
-                        subscript_config_path=self.settings.subscript_config_path,
+                        subscript_config_path=(
+                            render_resources.subscript_config_path
+                            if render_resources is not None else self.settings.subscript_config_path
+                        ),
                         document_language=document.metadata.document_language,
                         template_version_id=template_selection.template_version_id,
+                        resource_inputs=verified_inputs,
+                        layout_asset_dir=render_resources.layout_asset_dir if render_resources is not None else None,
                     ),
                 )
 
@@ -191,6 +248,11 @@ class WordRenderExecution:
                     rendering, ir_file, ir_bytes, document_ir = degraded
                     attempt = rendering
                     degradation_attempts += 1
+            if verified_inputs is not None and (
+                render_result.resource_inputs is None
+                or replace(render_result.resource_inputs, logo=None) != verified_inputs
+            ):
+                raise JobResourceSnapshotError("渲染未使用本次认证的任务资源。", category="conflict")
             layout_plan = build_layout_plan(document_ir)
             word_content = render_result.content
             checking = self.job_repository.update_document_job_if_current(
@@ -270,8 +332,11 @@ class WordRenderExecution:
                 trace_id=trace_id,
             )
             renderer_metadata, preparation = save_report(uploading, ir_file, ir_bytes, renderer_metadata, self.file_service)
-            publication_provenance = capture_render_publication_provenance(uploading, ir_file, document_ir, render_result,
-                renderer=self.word_renderer, snapshot_service=self.job_resource_snapshot_service, file_service=self.file_service)
+            publication_provenance = capture_render_publication_provenance(
+                uploading, ir_file, render_result,
+                resources_publishable=render_resources is not None and render_resources.publishable,
+                file_service=self.file_service,
+            )
             renderer_metadata["publication_provenance_file_id"] = publication_provenance.id
             word_file = self.file_service.register_result_candidate(
                 tenant_id=uploading.tenant_id,

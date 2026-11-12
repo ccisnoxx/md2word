@@ -34,12 +34,13 @@ class _MemoryResourceVersionRepository:
         record: ResourceVersionRecord,
         *,
         expected_snapshot_hash: str,
+        expected_status: ResourceVersionStatus | None = None,
     ) -> ResourceVersionRecord | None:
         key = (record.resource_type, record.resource_id, record.version)
         existing = self.records.get(key)
         if (
             existing is None
-            or existing.status != ResourceVersionStatus.DRAFT
+            or existing.status != (expected_status if expected_status is not None else record.status)
             or existing.snapshot_hash != expected_snapshot_hash
         ):
             return None

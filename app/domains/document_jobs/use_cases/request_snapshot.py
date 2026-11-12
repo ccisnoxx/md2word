@@ -12,6 +12,7 @@ from app.domains.document_jobs.use_cases.access import DocumentJobAccess
 from app.domains.files.models import DocumentFileRecord
 from app.domains.jobs.models import ConversionOptions
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
+from app.domains.resources.models import ResolvedResourceVersion
 from app.domains.translation.modes import (
     TranslationMode,
     document_job_mode_for_translation_mode,
@@ -180,7 +181,8 @@ class DocumentJobRequestSnapshots:
                 job_id=new_job_id,
                 mode=source_job.mode,
                 document_language=document_language,
-                template_version_id=resolved_template_version_id if self.access.normalize_optional_text(selected_template_version_id) else None,
+                template_version_id=resolved_template_version_id,
+                template_selection_explicit=bool(self.access.normalize_optional_text(selected_template_version_id)),
                 term_rule_set_id=selected_term_rule_set_id,
                 term_rule_set_version=selected_term_rule_set_version,
                 translation_term_set_id=selected_translation_term_set_id,
@@ -235,13 +237,21 @@ class DocumentJobRequestSnapshots:
         if not use_latest_term_assets and not has_selection:
             return None
         snapshot = dict(job.request_snapshot)
+        previous_resources = self.read_snapshot_record(snapshot, "resources")
+        previous_template = previous_resources.get("template") if previous_resources is not None else None
+        try:
+            bound_template = ResolvedResourceVersion.model_validate(previous_template) if previous_template is not None else None
+        except ValueError:
+            raise ApplicationError("resource_snapshot_error", "任务模板资源快照格式非法。", category="conflict") from None
         resource_snapshot = self.build_resource_snapshot(
             job_id=job.id,
             mode=job.mode,
             document_language=job.document_language,
-            template_version_id=None,
+            template_version_id=job.template_version_id,
+            bound_template=bound_template,
             term_rule_set_id=term_rule_set_id,
             term_rule_set_version=None if use_latest_term_assets else term_rule_set_version,
+            term_rule_department_id=self.read_snapshot_string(previous_resources, "term_rule_department_id"),
             translation_term_set_id=translation_term_set_id,
             translation_term_version=None if use_latest_term_assets else translation_term_version,
             translation_profile_id=None,
@@ -256,6 +266,11 @@ class DocumentJobRequestSnapshots:
             "translation_term_version": self.access.normalize_optional_text(translation_term_version),
         }
         snapshot["resources"] = resource_snapshot
+        snapshot["template_version_id"] = job.template_version_id
+        if resource_snapshot is not None and bound_template is None:
+            # 旧任务可能只保存 template id。首次升级快照时同时固化解析出的版本。
+            template = resource_snapshot["template"]
+            snapshot["template_version_id"] = f"{template['resource_id']}@{template['version']}"
         return snapshot
 
     def build_resource_snapshot(
@@ -273,13 +288,14 @@ class DocumentJobRequestSnapshots:
         translation_profile_version: str | None,
         term_rule_department_id: str | None = None,
         allow_draft_template: bool = False,
+        template_selection_explicit: bool = False,
+        bound_template: ResolvedResourceVersion | None = None,
     ) -> dict | None:
         if self.job_resource_snapshot_service is None:
             return None
-        has_explicit_selection = any(
+        has_explicit_selection = template_selection_explicit or any(
             self.access.normalize_optional_text(value)
             for value in (
-                template_version_id,
                 term_rule_set_id,
                 term_rule_set_version,
                 translation_term_set_id,
@@ -308,6 +324,7 @@ class DocumentJobRequestSnapshots:
                 source_kind="source_pdf",
                 job_id=job_id,
                 allow_draft_template=allow_draft_template,
+                bound_template=bound_template,
             )
         except JobResourceSnapshotError as exc:
             if not has_explicit_selection:

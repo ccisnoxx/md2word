@@ -36,6 +36,8 @@
 - `ResourceVersionRepositoryProtocol.create_resource_version(record)`：只插入，不覆盖。
 - `ResourceVersionRepositoryProtocol.allocate_next_version(type, id, minimum_next)`：MySQL 事务内分配不复用整数。
 - 内部 `TemplateConfigPackage.load_content(content: bytes)`：与 `load(path)` 共享既有 YAML object、schema、归一化和字段值校验；renderer 单次读取字节后同时计算 hash 和解析，不增加 API/schema 字段。
+- 内部 `resolve_bundled_template_seed(root_dir)` 返回 manifest 唯一启用的内置默认版本及 DOCX/YAML 路径。
+- 内部 `validate_template_package(template_path=..., layout_config_path=...)` 返回已预检字节的 SHA-256；失败提供固定 `code` 和逻辑 `path`。
 - bundled seed 清单：`default@2` 指向 `resources/template_configs/datasheet_template_v2.yaml`；已发布 `default@1` payload 继续指向 `resources/template_configs/datasheet_template.yaml`。
 
 ### 3. Contracts
@@ -44,7 +46,7 @@
 
 - `changes` 只能出现编辑 schema 中 `readonly=false` 的叶子字段，服务从 exact base 合并后做完整严格模型校验。
 - `schema_version`、`template_name`、`output_filename`、`sample_content`、隐藏 renderer 字段和页面宽高不允许修改。
-- 保存只创建 draft；只有真实验证任务成功后才能 publish，只有 published 才能 set-default。
+- 保存只创建 draft；只有真实验证任务成功后才能 publish，只有 published 才能 set-default。带模板快照的验证任务须绑定同一草稿的 SHA-256。发布以预检时的 DRAFT 状态和快照哈希为条件，一次写入发布状态与验证字段。旧替换入口与版本创建共用版本分配，目录和记录仅创建。
 - MySQL 模式下 `resource_default_versions` 是版本默认指针唯一来源；manifest 只登记 seed，`template_state.json` 只登记默认 template id。
 - Job 创建时固化 Template Version；普通用户只能选 published，admin 可显式创建 draft 验证任务，Worker 只消费已固化版本。
 - 版本 YAML 缺失、损坏、schema 不支持或 hash 不匹配时失败关闭，不回退其他 YAML 或 renderer 默认值。
@@ -66,7 +68,7 @@
 - 已发布 seed 的版本号、资源路径和文件字节共同构成不可变合同；`default@1` YAML 的 SHA-256 固定为 `1a9ce13488a491367fbfde8d143d22b6cf7c0ce064c99c224ae09ef93f5b3818`。
 - 新默认配置必须新建版本文件并提升 manifest `version`；不得原地修改历史路径、覆盖数据库 payload、放松 hash 校验或增加双路径 fallback。
 - `bootstrap_manifest_versions()` 只登记 manifest 中缺失的 published 版本；数据库已有默认指针时保持不变，空库才把 manifest 版本设为初始默认。
-- `Settings.layout_config_path`、legacy runtime helper 和本地正式转换工具的“当前内置配置”路径指向 v2；显式 Resource Version 读取始终以其持久化 payload 为 owner。
+- 当前内置默认资源由仓库 manifest 的唯一启用 seed 解析；`Settings` 和本地转换缺省使用该入口。正式快照与发布预检的显式版本资源由持久化 payload 定位；MySQL 默认版本继续由数据库指针决定。历史 YAML 的身份说明写在 manifest 和维护文档中，保留发布路径与原始字节。
 - 同号冲突核对只适用于 `is_default_seed=true`、真实路径位于 `root_dir/resources/templates` 且不属于当前 `template_id/v{version}` 受管目录的内置 DOCX。自定义上传或替换默认模板的已有 draft 不纳入该核对，即使存储根位于 `resources/templates` 内。
 - 已有内置 seed 的 `payload.template_id/version`、`docx_sha256` 必须与该 seed 一致；`docx_path` 按 `root_dir` 解析相对路径并规范化真实路径后，允许等于 seed 路径或位于 `settings.templates_storage_dir/<template_id>/v<version>/` 内。该规则允许同内容的受管上传记录与 bundled seed 共存，仅用于启动身份判定，不改登记路径、不探测备用文件。其他模板/版本目录或任意其他路径仍为冲突。
 - `snapshot_hash` 必须匹配持久化 payload 自身；同号 draft 或身份/完整性冲突抛出含 `template_id@version` 的 `ValueError`，不覆写该记录或移动其默认指针。
@@ -80,6 +82,13 @@
 - 对已有 record 的目录、manifest 与补回条目，均复用 `_template_version_path(template, version, record.payload)`；不得以目录首个残留 DOCX 或新 seed 遮蔽登记路径。无 record 的目录条目保留原候选。
 - payload 指向的原文件丢失时，现有 asset builder 返回 `exists=false`；不借用其他版本充数。列表展示不替代生成时的授权和 YAML 严格校验，生产 `resolve_template_version()` 不用作列表过滤器。
 - 新增补回逻辑不保存资源版本或移动数据库默认指针；既有默认 template id 的 legacy 懒初始化保持原行为。持久化 hash 的 `sha256:` 前缀与列表 asset 的裸 hex 格式保持不变。
+
+#### 3.5 联合预检与任务实物
+
+- 模板创建、替换、版式草稿、发布和 seed bootstrap 共用联合预检。输入为实际 DOCX 与可选 YAML 字节，校验 OPC 内部关系、可达装饰媒体、Word 样式、页面几何和语言配置变体。版式草稿的严格编辑规则继续由 `apply_layout_changes` 拥有。
+- `part_number` 和 `category` 保留历史配置与预览值，编辑器两组均只读。消费测试登记每个可编辑叶子及适用的 OOXML 分支。
+- 正式任务的 `request_snapshot.resources` 固化同一已解析模板版本和格式规则。快照记录及 canonical payload 自洽后，按内容 SHA-256 核验 DOCX、YAML 和部门规则，从任务目录使用同次已认证字节。任务路径按绑定身份定位，文件以同目录临时文件、flush、fsync、原子 replace 写入，已有副本先对账。
+- 普通重试保留绑定。显式术语重绑保留模板版本和原部门，允许重新绑定规则版本。正式渲染与发布证明共用实际资源身份。没有资源快照的历史任务继续通过既有模板与规则入口。
 
 ### 4. Validation & Error Matrix
 
@@ -105,6 +114,10 @@
 | 默认模板已替换成受管目录的已有 draft | 初始化保留 draft，不误判内置冲突或自动发布 |
 | 历史 record 不在受管目录或当前 manifest | 按原 payload 补入版本列表 |
 | 登记文件丢失但目录/manifest 有其他 DOCX | 该版本显示 exists=false，不换件 |
+| DOCX、关系、媒体或 YAML 联合预检失败 | 写入前返回逻辑字段和稳定原因码。默认指针、草稿目录和资源记录不写入 |
+| 预检后的草稿状态或快照身份发生变化 | HTTP 409 `template_draft_conflict`，不切换默认指针 |
+| 初次物化时源或任务副本内容与绑定不符 | 失败码 `template_docx_hash_mismatch`、`template_layout_config_hash_mismatch` 或 `term_rule_hash_mismatch`，事件不含文件系统路径 |
+| 默认模板切换或共享文件在首次物化后被改写 | 已绑定任务核验并复用其副本，新任务使用新默认绑定 |
 
 ### 5. Good / Base / Bad Cases
 
@@ -131,6 +144,11 @@
 - set-default 测试：只有 published 版本可切换，理由写入审计；发布回滚演练先恢复默认指针，再切换旧代码。
 - 配置 API/schema 变化后运行前端 unit/build；smoke mock 至少验证三种字体标签可见。
 - `tests.test_template_seed_history`：真实读取/版本服务、临时自有资源和最小内存仓储端口，覆盖登记幂等与默认保留、内置冲突、元数据/关闭状态、上传 draft 排除、历史补全、登记路径优先/丢失和去重/legacy。该证据只保护服务层与文件快照合同，不推断真实 MySQL 并发或 Word 外观结论；具体运行范围遵守当前用户授权。
+
+- `tests.test_template_package_validator`、`tests.test_template_seed_history`：校验实际模板包、失败无写入、草稿发布 CAS 和 seed 历史。
+- `tests.test_job_render_resources`：校验文件、payload、并发物化、部门规则、旧任务和同次发布证明。
+- `tests.test_template_config_consumption`：检查完整 editor 字段集合，逐叶变异 OOXML。
+- `python scripts/ops/check_release.py`：检查内置默认绑定、联合预检、消费覆盖和装饰合同。
 
 ### 7. Wrong vs Correct
 

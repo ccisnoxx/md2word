@@ -116,7 +116,8 @@ class DocumentJobSubmission:
                 job_id=job_id,
                 mode=mode,
                 document_language=document_language,
-                template_version_id=normalized_template_version_id if self.access.normalize_optional_text(template_version_id) else None,
+                template_version_id=normalized_template_version_id,
+                template_selection_explicit=bool(self.access.normalize_optional_text(template_version_id)),
                 term_rule_set_id=term_rule_set_id,
                 term_rule_set_version=term_rule_set_version,
                 term_rule_department_id=user.department_id,
@@ -423,6 +424,9 @@ class DocumentJobSubmission:
         )
         if next_request_snapshot is not None:
             patch["request_snapshot"] = next_request_snapshot
+            next_template_version_id = next_request_snapshot["template_version_id"]
+            if next_template_version_id != job.template_version_id:
+                patch["template_version_id"] = next_template_version_id
             selected_term_version = self.request_snapshot.legacy_translation_term_version_id(
                 job.mode,
                 None if use_latest_term_assets else job.term_version_id,

@@ -30,6 +30,15 @@ class LocalMinerUQualityMatrixTests(TestCase):
         self.assertEqual(samples[0].document_language, "ru")
         self.assertIn("диод анод сверху", samples[0].input_glob)
 
+    def test_explicit_template_paths_work_without_the_bundled_manifest(self) -> None:
+        with TemporaryDirectory() as temporary, mock.patch.object(quality_matrix, "ROOT", Path(temporary)):
+            args = quality_matrix.parse_args([
+                "--template-path", "explicit.docx", "--layout-config-path", "explicit.yaml",
+            ])
+            config = quality_matrix.build_config(args)
+        self.assertEqual(config.template_path, Path("explicit.docx"))
+        self.assertEqual(config.layout_config_path, Path("explicit.yaml"))
+
     def test_dry_run_writes_report_with_mineru_stats_and_qa_command(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

@@ -13,6 +13,12 @@ from app.services.renderer.render_event_summary import (
     build_renderer_event_summary,
     is_valid_table_rendering_evidence,
 )
+from app.services.renderer.template_conformance import (
+    TEMPLATE_CONFORMANCE_FLAGS,
+    TemplateConformanceError,
+    read_template_conformance_report,
+    template_conformance_blocking_flags,
+)
 
 
 if TYPE_CHECKING:
@@ -42,13 +48,26 @@ def ensure_renderer_integrity(evidence: dict[str, Any]) -> None:
                 or output.actual.model_dump(mode="json") != observations[output.actual.table_index]
                 for table in report.tables for output in table.outputs):
             raise TableEvidenceError("table_evidence_integrity")
+    if "template_conformance" in evidence:
+        try:
+            report = read_template_conformance_report(evidence["template_conformance"])
+        except TemplateConformanceError as error:
+            evidence = {key: value for key, value in evidence.items() if key != "template_conformance"}
+            template_flags = [str(error)]
+        else:
+            template_flags = template_conformance_blocking_flags(report)
+        if template_flags:
+            existing = evidence.get("blocking_quality_flags")
+            evidence = {**evidence, "blocking_quality_flags": [
+                *(existing if isinstance(existing, list) else []), *template_flags,
+            ]}
     if evidence.get("blocking_quality_flags"):
         raise DocumentIntegrityError("DocumentIR→DOCX", build_renderer_event_summary(evidence))
 
 
 def render_contract_failure(error: Exception) -> DocumentIntegrityError:
     """只公开固定机器码，不把 ValidationError/源身份写入异常载体。"""
-    code = str(error) if str(error) in RENDER_EVIDENCE_CODES else "ir_render_evidence:invalid_contract"
+    code = str(error) if str(error) in RENDER_EVIDENCE_CODES | TEMPLATE_CONFORMANCE_FLAGS else "ir_render_evidence:invalid_contract"
     return DocumentIntegrityError("DocumentIR→DOCX", {"blocking_quality_flags": [code]})
 
 

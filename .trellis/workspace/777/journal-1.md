@@ -1642,3 +1642,35 @@ Worker 失败消息只保留固定码构造的消息，其余输出异常类型�
 ### Next Steps
 
 - 用真实账号登录核对 expires_in 为 604800
+
+
+## Session 50: 模板与渲染资源完整性收尾
+
+**Date**: 2026-11-12
+**Task**: 模板与渲染资源完整性收尾
+**Branch**: `codex/template-render-integrity`
+
+### Summary
+
+按七项实施清单完成本地交付并归档任务。详细变更、命令、结果及历史失败对照见 [实施与验证记录](../../tasks/archive/2026-11/11-12-template-render-integrity/validation.md)。
+
+### Main Changes
+
+- 按 SHA-256 核验并原子物化任务 DOCX、YAML 和术语规则，渲染、重试和发布证明使用同次认证资源。
+- 加入装饰符合性、联合预检、字段消费矩阵及四项发布检查。默认 DOCX 与已发布 v1、v2 YAML 的 SHA-256 均与基线一致。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2a6a4cb03e93be398f20990b4bf695847c8d42d6` | (see git log) |
+
+### Testing
+
+- [OK] 沿用既有验证。184 项定向测试通过，绑定门禁调整后 5 项专项复核通过，python scripts/ops/check_release.py 全部 8 项通过。169 个可编辑字段完成单字段 OOXML 变异验证。
+- [OK] OPA228 本地组件样本通过。默认多节样本的 19 个 DOCX 部件与基线逐字节一致，同一 LibreOffice 进程导出的 3 页像素一致。
+- [OK] 扩展回归中的历史失败在未修改的 main 上复现。远程 Golden Sample preflight、在线模板验证任务和 Word preview 本轮未采集。此次归档未重跑测试。
+
+### Status
+
+[OK] **Completed**

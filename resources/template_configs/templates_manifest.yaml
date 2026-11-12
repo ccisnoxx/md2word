@@ -1,3 +1,5 @@
+# 此清单绑定仓库内置默认模板的 DOCX 与版式 YAML。
+# 同目录 datasheet_template.yaml 仅供已发布的 default@1 历史版本读取，保留原字节。
 templates:
   - id: default
     name: datasheet_template

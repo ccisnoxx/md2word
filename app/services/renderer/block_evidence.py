@@ -16,6 +16,8 @@ from app.services.document_ir.models import DocumentIR
 from app.services.renderer.render_plan import RenderContract, RenderPlan, ResourceIdentity, Sha256, content_hash
 
 if TYPE_CHECKING:
+    from app.services.renderer.resource_identity import RenderResourceInputs
+    from app.services.renderer.template_conformance import TemplateConformanceReport
     from app.services.renderer.block_anchors import BlockAnchorEvidence, _BlockAnchorOwnership
 
 Disposition = Literal["rendered", "coalesced", "suppressed", "superseded", "not_emitted"]
@@ -188,6 +190,8 @@ class WordRenderResult:
     block_anchor_evidence: BlockAnchorEvidence | None = None
     _anchor_ownership: _BlockAnchorOwnership | None = field(default=None, repr=False)
     block_anchor_counts: dict[str, int] = field(default_factory=dict)
+    resource_inputs: RenderResourceInputs | None = field(default=None, repr=False)
+    template_conformance: TemplateConformanceReport | None = field(default=None, repr=False)
 
 
 @dataclass(slots=True)

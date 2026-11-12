@@ -776,17 +776,18 @@ class _FakeMysqlCursor:
                 payload_ref,
                 payload,
                 updated_at,
+                new_status,
                 resource_type,
                 resource_id,
                 version,
-                status,
+                expected_status,
                 expected_snapshot_hash,
             ) = params
             key = (resource_type, resource_id, version)
             row = self.database.resource_versions.get(key)
             if (
                 row is not None
-                and row["status"] == status
+                and row["status"] == expected_status
                 and row["snapshot_hash"] == expected_snapshot_hash
             ):
                 row.update(
@@ -795,6 +796,7 @@ class _FakeMysqlCursor:
                         "payload_ref": payload_ref,
                         "payload": payload,
                         "updated_at": updated_at,
+                        "status": new_status,
                     }
                 )
                 self.rowcount = 1

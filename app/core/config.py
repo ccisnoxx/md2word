@@ -8,6 +8,12 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.domains.templates.manifest import (
+    BUNDLED_TEMPLATE_MANIFEST,
+    BundledTemplateSeed,
+    resolve_bundled_template_seed,
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -150,7 +156,7 @@ class Settings(BaseSettings):
     translation_terms_path: str = "resources/term_rules/translation_terms.csv"
     default_translation_term_version_id: str = "en2zh@v1"
     default_template_id: str = "default"
-    templates_manifest_path: str = "resources/template_configs/templates_manifest.yaml"
+    templates_manifest_path: str = BUNDLED_TEMPLATE_MANIFEST
     templates_storage_path: str = "var/config/templates"
     template_state_path: str = "var/config/template_state.json"
     term_rules_seed_path: str = "resources/term_rules/term_rules.v2.yaml"
@@ -253,16 +259,23 @@ class Settings(BaseSettings):
         return [item for item in values if item]
 
     @property
+    def bundled_template_seed(self) -> BundledTemplateSeed | None:
+        """读取仓库内置默认绑定。部署自定义清单由模板服务处理。"""
+
+        try:
+            return resolve_bundled_template_seed(self.root_dir)
+        except FileNotFoundError:
+            return None
+
+    @property
     def template_candidates(self) -> tuple[Path, ...]:
-        return (
-            self.root_dir / "resources" / "templates" / "default" / "datasheet_template.docx",
-        )
+        seed = self.bundled_template_seed
+        return (seed.template_path,) if seed is not None else ()
 
     @property
     def layout_config_candidates(self) -> tuple[Path, ...]:
-        return (
-            self.root_dir / "resources" / "template_configs" / "datasheet_template_v2.yaml",
-        )
+        seed = self.bundled_template_seed
+        return (seed.layout_config_path,) if seed is not None else ()
 
     @property
     def subscript_config_candidates(self) -> tuple[Path, ...]:
@@ -312,14 +325,14 @@ class Settings(BaseSettings):
     @property
     def default_template_path(self) -> Path | None:
         for candidate in self.template_candidates:
-            if candidate.exists():
+            if candidate.is_file():
                 return candidate.resolve()
         return None
 
     @property
     def layout_config_path(self) -> Path | None:
         for candidate in self.layout_config_candidates:
-            if candidate.exists():
+            if candidate.is_file():
                 return candidate.resolve()
         return None
 

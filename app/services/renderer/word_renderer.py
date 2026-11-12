@@ -5,12 +5,12 @@ from __future__ import annotations
 import io
 import hashlib
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from docx import Document
-from docx.enum.section import WD_SECTION_START
+from docx.enum.section import WD_HEADER_FOOTER, WD_SECTION_START
 from docx.enum.text import WD_BREAK
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -30,9 +30,11 @@ from app.services.renderer.block_evidence import RenderCollector, WordRenderResu
 from app.services.renderer.block_anchors import bookmark_inventory, materialize_block_anchors
 from app.services.renderer.table_renderer import WordTableRendererMixin
 from app.services.renderer.template_config import TemplateConfigPackage
+from app.services.renderer.template_conformance import build_template_conformance_report
 from app.services.renderer.text_renderer import WordTextRendererMixin
 from app.services.renderer.content_contract import CONTENT_VERSION, build_formula_source_coverage, formula_sources, content_failure
 from app.services.renderer.render_evidence_validation import render_contract_failure
+from app.services.renderer.resource_identity import RenderResourceInputs, normalized_resource_identity
 from app.services.renderer.render_preparation import PreparedRender, _source_page_context, prepare_render
 from app.services.document_ir.table_placeholder import decode_placeholders
 
@@ -47,6 +49,8 @@ class DocumentIRRenderOptions:
     subscript_config_path: Path | None = None
     document_language: str | None = None
     template_version_id: str | None = None
+    resource_inputs: RenderResourceInputs | None = field(default=None, repr=False)
+    layout_asset_dir: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,11 +113,15 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
     ) -> WordRenderResult:
         """以单次文档上下文生成字节和私有报告，兼容入口共用此核心。"""
 
-        config_content = config_path.read_bytes() if config_path is not None else None
-        template_content = template_path.read_bytes() if template_path is not None else None
+        verified_inputs = options.resource_inputs if options is not None else None
+        if verified_inputs is None:
+            config_content = config_path.read_bytes() if config_path is not None else None
+            template_content = template_path.read_bytes() if template_path is not None else None
+        else:
+            config_content = verified_inputs.template_config
+            template_content = verified_inputs.template_docx
         template_config, logo_path = self.load_template_resources(document_ir, config_path, options, content=config_content)
         logo_content = logo_path.read_bytes() if template_config.header.enabled and logo_path is not None and logo_path.exists() else None
-        from app.services.renderer.resource_identity import normalized_resource_identity
         resources = normalized_resource_identity(template_content=template_content, config=template_config,
             logo_content=logo_content, document_language=options.document_language if options and options.document_language else document_ir.metadata.document_language)
         prepared = prepare_render(document_ir, template_config, resources)
@@ -123,7 +131,16 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
         for operation_index, operation in enumerate(prepared.plan.operations):
             self._dispatch_operation(document, document_ir, operation_index, operation, prepared,
                                      template_config, render_context)
-        return self._freeze_result(document, document_ir, prepared, render_context, reserved_bookmarks)
+        result = self._freeze_result(document, document_ir, prepared, render_context, reserved_bookmarks)
+        conformance = build_template_conformance_report(
+            result.content, template_content=template_content, layout_config_content=config_content,
+            header_override=template_config.header.enabled, footer_override=template_config.footer.enabled,
+            resource_hashes_verified=verified_inputs is not None,
+        )
+        return replace(
+            result, template_conformance=conformance,
+            resource_inputs=replace(verified_inputs, logo=logo_content) if verified_inputs is not None else None,
+        )
 
     def _open_document(self, document_ir: DocumentIR, prepared: PreparedRender,
                        template_config: TemplateConfigPackage, *, template_content: bytes | None,
@@ -136,7 +153,9 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
         # 资源快照和计划在创建 Word 对象前固定；后续 writer 只消费同一计划。
         document = Document(io.BytesIO(template_content)) if template_content is not None else Document()
         reserved_bookmarks = bookmark_inventory(document)
-        self._clear_body(document)
+        self._clear_body(
+            document, preserve_header=not template_config.header.enabled, preserve_footer=not template_config.footer.enabled,
+        )
         self._apply_page_setup(document, template_config)
         self._apply_header_footer(document, template_config, logo_bytes=logo_content)
         self._apply_document_settings(document, document_ir)
@@ -320,14 +339,14 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
         *,
         content: bytes | None = None,
     ) -> tuple[TemplateConfigPackage, Path | None]:
-        """按渲染同一规则加载版式配置并解析页眉 logo 路径。
-
-        渲染与发布来源核验共用此入口，保证“声明的资源身份”和“实际渲染使用的资源”出自同一解析规则。
-        content 给出时以字节加载配置，config_path 仅用于解析相对 logo 路径。
-        """
+        """加载版式配置，并从原版式目录解析相对页眉 Logo 路径。"""
 
         template_config = self._load_template_config(document_ir, config_path, options, content=content)
-        return template_config, self._resolve_asset_path(template_config.header.logo_path, config_path)
+        asset_dir = options.layout_asset_dir if options is not None else None
+        logo_path = self._resolve_asset_path(
+            template_config.header.logo_path, asset_dir or (config_path.parent if config_path is not None else None),
+        )
+        return template_config, logo_path
 
     def _load_template_config(
         self,
@@ -343,29 +362,45 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
             else document_ir.metadata.document_language
         )
         template_config = (TemplateConfigPackage.load_content(content) if content is not None else TemplateConfigPackage.load(config_path)).for_document_language(document_language)
-        subscript_config_path = options.subscript_config_path if options is not None else None
-        if subscript_config_path is not None:
-            terminology = TerminologyReplacer(subscript_config_path)
-            if terminology.rules:
-                template_config.terminology = terminology
+        terminology = None
+        if options is not None and options.resource_inputs is not None:
+            terminology = TerminologyReplacer.from_content(options.resource_inputs.symbol_rules)
+        elif options is not None and options.subscript_config_path is not None:
+            terminology = TerminologyReplacer(options.subscript_config_path)
+        if terminology is not None and terminology.rules:
+            template_config.terminology = terminology
         return template_config
 
-    def _clear_body(self, document: Any) -> None:
+    def _clear_body(self, document: Any, *, preserve_header: bool, preserve_footer: bool) -> None:
         body = document._body._element
         sect_pr = body.sectPr
+        sections = document.element.sectPr_lst
+        # 清除前面的分节时，将末节沿用的引用固定下来，避免一同丢失。
+        if sect_pr is not None and len(sections) > 1:
+            for reference_type in WD_HEADER_FOOTER:
+                if preserve_header and sect_pr.get_headerReference(reference_type) is None:
+                    for source in reversed(sections[:-1]):
+                        if (reference := source.get_headerReference(reference_type)) is not None:
+                            sect_pr.add_headerReference(reference_type, reference.rId)
+                            break
+                if preserve_footer and sect_pr.get_footerReference(reference_type) is None:
+                    for source in reversed(sections[:-1]):
+                        if (reference := source.get_footerReference(reference_type)) is not None:
+                            sect_pr.add_footerReference(reference_type, reference.rId)
+                            break
         for child in list(body):
             if child is sect_pr:
                 continue
             body.remove(child)
 
-    def _resolve_asset_path(self, raw_path: str | None, config_path: Path | None) -> Path | None:
+    def _resolve_asset_path(self, raw_path: str | None, asset_dir: Path | None) -> Path | None:
         if not raw_path:
             return None
         candidate = Path(raw_path)
         if candidate.is_absolute():
             return candidate
-        if config_path is not None:
-            return (config_path.parent / candidate).resolve()
+        if asset_dir is not None:
+            return (asset_dir / candidate).resolve()
         return candidate.resolve()
 
     def _render_block(

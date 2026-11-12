@@ -27,13 +27,12 @@ if str(ROOT) not in sys.path:
 
 from app.clients.openai_sdk import DEFAULT_MODEL
 from app.core.conversion_config import APP_CONFIG
+from app.domains.templates.manifest import resolve_bundled_template_seed
 from app.services.renderer.docx_quality import analyze_docx_quality_file, build_docx_quality_flags
 from scripts.dev import formal_mineru_conversion
 
 
 DEFAULT_RUNS_DIR = ROOT / "tests" / "tmp" / "local_mineru_quality"
-DEFAULT_TEMPLATE_PATH = ROOT / "resources" / "templates" / "default" / "datasheet_template.docx"
-DEFAULT_LAYOUT_CONFIG_PATH = ROOT / "resources" / "template_configs" / "datasheet_template_v2.yaml"
 DEFAULT_SUBSCRIPT_CONFIG_PATH = ROOT / "resources" / "term_rules" / "subscripts_dictionary.yaml"
 RENDER_DOCX_SCRIPT = (
     Path.home()
@@ -85,8 +84,8 @@ class MatrixConfig:
     sample_ids: tuple[str, ...] = ()
     modes: tuple[str, ...] = (MODE_DIRECT,)
     timestamped: bool = True
-    template_path: Path = DEFAULT_TEMPLATE_PATH
-    layout_config_path: Path = DEFAULT_LAYOUT_CONFIG_PATH
+    template_path: Path = field(default_factory=lambda: resolve_bundled_template_seed(ROOT).template_path)
+    layout_config_path: Path = field(default_factory=lambda: resolve_bundled_template_seed(ROOT).layout_config_path)
     subscript_config_path: Path = DEFAULT_SUBSCRIPT_CONFIG_PATH
     translation_response_dir: Path | None = None
     translation_model: str = APP_CONFIG.openai_model or DEFAULT_MODEL
@@ -218,8 +217,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--mode", action="append", choices=ALL_MODES, default=[], help="Mode to run. Defaults to direct.")
     parser.add_argument("--output-dir", default=str(DEFAULT_RUNS_DIR), help="Directory for run outputs.")
     parser.add_argument("--no-timestamp", action="store_true", help="Write directly into --output-dir.")
-    parser.add_argument("--template-path", default=str(DEFAULT_TEMPLATE_PATH))
-    parser.add_argument("--layout-config-path", default=str(DEFAULT_LAYOUT_CONFIG_PATH))
+    parser.add_argument("--template-path")
+    parser.add_argument("--layout-config-path")
     parser.add_argument("--subscript-config-path", default=str(DEFAULT_SUBSCRIPT_CONFIG_PATH))
     parser.add_argument("--translation-response-dir", help="Directory containing <sample_id>.translation-response.json files.")
     parser.add_argument("--translation-model", default=APP_CONFIG.openai_model or DEFAULT_MODEL)
@@ -235,14 +234,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def build_config(args: argparse.Namespace) -> MatrixConfig:
     modes = tuple(dict.fromkeys(args.mode or [MODE_DIRECT]))
+    explicit_paths = {
+        key: Path(path) for key, path in (
+            ("template_path", args.template_path),
+            ("layout_config_path", args.layout_config_path),
+        ) if path is not None
+    }
     return MatrixConfig(
         output_dir=Path(args.output_dir),
         sample_set=str(args.sample_set),
         sample_ids=tuple(args.sample_id),
         modes=modes,
         timestamped=not args.no_timestamp,
-        template_path=Path(args.template_path),
-        layout_config_path=Path(args.layout_config_path),
         subscript_config_path=Path(args.subscript_config_path),
         translation_response_dir=Path(args.translation_response_dir) if args.translation_response_dir else None,
         translation_model=str(args.translation_model),
@@ -252,6 +255,7 @@ def build_config(args: argparse.Namespace) -> MatrixConfig:
         translation_max_chars=int(args.translation_max_chars),
         dry_run=bool(args.dry_run),
         allow_blockers=bool(args.allow_blockers),
+        **explicit_paths,
     )
 
 
