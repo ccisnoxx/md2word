@@ -54,6 +54,12 @@
 - 来源 IR 在空片段记录 `upstream_coverage`，绑定包、内容列表、版面、前后处理定位、主片与空片的身份和行摘要。覆盖区间 `[row_start, row_end)` 是主片内零基行。Grid 保留两处来源位置，行数只来自主片。渲染投影通过 `upstream_covered_rows` 记录同一原生 Word 表内的实际区间，空片新增输出行仍为零。
 - 已绑定空片免除本次空表诊断与非编辑占位。重读时用 IR 中的主片重算规范化行摘要，和片段身份、包身份及已记录区间对账。版面原始节点可用同指纹包回查。历史无绑定证据时继续按原记录处理。现有表头证据独立决定 `w:tblHeader`。
 
+#### 图表来源分类
+
+- 在 MinerU v2 来源映射处处理同块图表分类冲突。只有唯一明确的编号图题与该块有效图像相互支持、且无表题或其他对象题注冲突时，才采用图片语义。普通正文提及 Figure、混合题注、缺图或坏图继续按表格输入校验。
+- 记录原始块类型、源位置及图片身份，复用正式图片资产和题注输出。确认后的示意图退出表格 Grid 与续表输入，其他同块来源文字仍可核对。明确表题的真实表格继续使用原生 Grid 和可编辑 Word 投影。
+- 用 TPLD2001 同页 Figure 4-1、Figure 4-2 和 Table 4-1 对账图片字节、题注、独立文字、原生表和行覆盖。保留修复前的意外多表计数与原始结构基线。
+
 ## 4. 质量、审核、发布和交付合同
 
 遵循 [Document Jobs API](../../../docs/api/document-jobs.md)及当前 [质量聚合](../../../app/domains/document_jobs/quality_state.py)、[审核记录](../../../app/domains/document_jobs/review.py)、[发布提交](../../../app/domains/document_jobs/publication.py)和[状态更新](../../../app/domains/document_jobs/delivery_state.py)的写入边界。

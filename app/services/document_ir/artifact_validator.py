@@ -27,6 +27,7 @@ from app.conversion.runtime.table_html_parser import parse_html_table
 from app.services.document_ir.mineru_package import (
     DEFAULT_POLICY, MinerUPackageError, MinerUValidationPolicy, resolve_asset_path,
 )
+from app.services.document_ir.table_figure import select_table_figure
 
 
 ALLOWED_RASTER_FORMATS = frozenset({"PNG", "JPEG", "GIF", "BMP", "TIFF", "WEBP"})
@@ -245,8 +246,11 @@ class _HTMLSignals(HTMLParser):
         super().__init__()
         self.reasons: set[str] = set()
         self.table_depth = 0
+        self.has_explicit_table_semantics = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"caption", "thead", "tfoot", "th"}:
+            self.has_explicit_table_semantics = True
         if tag == "table":
             self.table_depth += 1
             if self.table_depth > 1:
@@ -429,7 +433,10 @@ class MinerUArtifactValidator:
             locator = MinerUSourceLocator.model_validate(block["_mineru_source"])
             if locator.json_pointer in degradable_tables:
                 block["_mineru_degradable"] = locator.json_pointer
-            if classify_mineru_block(block, locator.source_type or "") == "image":
+            if block.get("_mineru_table_figure") is True:
+                if block["_mineru_validated_asset"].normalized_from is not None:
+                    self._report_normalized_image(locator)
+            elif classify_mineru_block(block, locator.source_type or "") == "image":
                 asset, status = self._validate_asset(block, locator, package_root, content_list_path.parent,
                                                      required=True, defer_fatal=True)
                 block["_mineru_validated_asset"] = asset
@@ -593,6 +600,7 @@ class MinerUArtifactValidator:
                                                       "index_gap": locator.page_index - previous_page - 1})
                             previous_page = locator.page_index
                 copied = dict(block)
+                copied.pop("_mineru_table_figure", None)
                 if locator.page_index is not None:
                     copied["page_idx"] = locator.page_index
                 copied["_mineru_source"] = locator.model_dump()
@@ -624,7 +632,19 @@ class MinerUArtifactValidator:
                     if status in {"valid", "missing", "invalid"}:
                         table_references[pointer] = ValidatedTableReference(status, asset)
                     if effective_type == "table":
-                        self._validate_table(block, locator, status, asset)
+                        unlabelled_grid = self._validate_table(block, locator, status, asset)
+                        if (source_type == "table" and unlabelled_grid and block_key is not None and asset is not None
+                                and content_list_path.name.endswith("content_list_v2.json")
+                                and (figure_path := select_table_figure(block)) is not None
+                                and [(field, value) for field, value in self._asset_paths(block, locator) if value]
+                                == [(f"{pointer}/content/image_source/path", figure_path)]
+                                and _word_supported(asset.content)):
+                            # 只改 validator 的消费视图，locator 继续记录原始 table。
+                            copied["type"] = "image"
+                            copied["_mineru_table_figure"] = True
+                            copied["_mineru_validated_asset"] = asset
+                            copied.pop("_mineru_image_fallback", None)
+                            copied.pop("_mineru_degradable", None)
                 if self.report.fatal_count == before:
                     inventory["valid_block_count"] += 1
                     if merged_residue:
@@ -1028,8 +1048,7 @@ class MinerUArtifactValidator:
                     inspection.word_supported = True
         if required and inspection.normalized_from is not None:
             # 只对写入正文的必需图片记 warning；参考图仅供 QA 或已由占位阻断项覆盖，记录会成为噪音。
-            self.add_issue("image_asset_normalized", locator, severity="warning", stops_conversion=False,
-                           field="image_source", facts={"reason": "word_incompatible_raster"})
+            self._report_normalized_image(locator)
         elif required and not inspection.word_supported:
             self.add_issue(code, locator, stops_conversion=not defer_fatal, field="image_source",
                            facts={"reason": "unreadable_or_unsupported_image"})
@@ -1038,7 +1057,13 @@ class MinerUArtifactValidator:
         return ValidatedImage(selected.relative_to(root.resolve()).as_posix(), inspection.mime_type,
                               inspection.content, selected_resolution, inspection.normalized_from), "valid"
 
-    def _validate_table(self, block: dict[str, Any], locator: MinerUSourceLocator, reference_status: str, reference_image: ValidatedImage | None) -> None:
+    def _report_normalized_image(self, locator: MinerUSourceLocator) -> None:
+        self.add_issue("image_asset_normalized", locator, severity="warning", stops_conversion=False,
+                       field="image_source", facts={"reason": "word_incompatible_raster"})
+
+    def _validate_table(self, block: dict[str, Any], locator: MinerUSourceLocator,
+                        reference_status: str, reference_image: ValidatedImage | None) -> bool:
+        """记录原表校验，返回可解析且没有显式表语义的候选状态。"""
         html = select_mineru_table_html(block)
         explicit_values: list[Any] = []
         def collect(node: Any) -> None:
@@ -1080,3 +1105,4 @@ class MinerUArtifactValidator:
             row_count=row_count, cell_count=cell_count, reference_status=reference_status,
             reference_resolution=reference_image.resolution if reference_image is not None else None, parseable=parsed is not None))
         self.check_report_limits()
+        return parsed is not None and not invalid_type and not signals.has_explicit_table_semantics

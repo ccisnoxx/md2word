@@ -22,6 +22,7 @@
 - [ ] 对照已有真实样本和小夹具，覆盖宽表、多级表头、正常跨页续表及缺片段。记录每种风险的实际 OOXML、可编辑性、覆盖层级和质量状态。修复批次形成后，按受影响合同选择定向回归。
 - [x] 首批处理复合表号：源归组器确认相同完整编号，渲染计划复用同一题注判定。合并正例、相邻独立反例、TPLD2001 原始 v2 与两段完整 HTML、真实缺片段负例均已对照 Grid、投影及 Word。[首批复验](continuation-contract-validation.md)
 - [x] 预合并来源绑定以 TPLD2001 原始 MinerU 包和 SN74AC244 缺片段负例复验 Grid、Word 和质量证据。原始结构基线保留。[来源绑定复验](upstream-table-coverage-validation.md)
+- [x] 图表分类以 TPLD2001 同页 Figure 4-1、Figure 4-2 和 Table 4-1 对照。核对图片字节、章节顺序、原生表格、可编辑性及持久化证据。[图表来源复验](table-figure-validation.md)
 - [ ] 人工指标待审阅回填，翻译版视觉偏差待同模式批准基准。
 
 ## 3. 明确并验证状态合同（AC5、AC6）

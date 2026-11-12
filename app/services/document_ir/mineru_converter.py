@@ -58,6 +58,9 @@ from app.services.document_ir.page_degradation import (
     PAGE_RASTER_SOURCE_PATH, PageDegradationPolicy, degradation_closure, replace_degraded_pages,
 )
 from app.services.document_ir.table_annotations import split_table_annotation_texts
+from app.services.document_ir.table_figure import (
+    FIGURE_SECTION_ROLE, TABLE_FIGURE_FIELD, TableFigureBinding, caption_source_sha256, split_table_figure_caption,
+)
 from app.services.document_ir.table_header_review import TableHeaderReview, attach_table_header_reviews
 from app.services.document_ir.table_reference_assets import RASTER_EXTENSIONS, TableReferenceAsset, attach_table_references
 from app.services.document_ir.table_placeholder import (
@@ -230,8 +233,10 @@ class MinerUToDocumentIRService:
             # 降级前提不满足时在构建 IR 之前中止，不产生半合法 IR。
             self._abort_deferred(raw_blocks, validator)
 
+        inserted_sections = 0
         for index, raw_block in enumerate(raw_blocks):
             block_id = f"block_{index + 1:04d}"
+            order = index + inserted_sections
             source_type = str(raw_block.get("type") or raw_block.get("block_type") or "text").strip().lower()
             block_type = classify_mineru_block(raw_block, source_type)
             block_role = role_for_source_type(source_type)
@@ -262,7 +267,8 @@ class MinerUToDocumentIRService:
             table_contexts: list[str] = []
             if block_type == "table" and captions:
                 captions, table_contexts = split_table_annotation_texts(captions)
-            footnotes = self._footnotes(raw_block, source_type)
+            figure_from_table = raw_block.get("_mineru_table_figure") is True
+            footnotes = self._footnotes(raw_block, "table" if figure_from_table else source_type)
             if table_contexts:
                 quality_flags.append(f"layout_table_context_binding:{block_id}")
             if captions:
@@ -288,11 +294,35 @@ class MinerUToDocumentIRService:
                     image = raw_block.get("_mineru_validated_asset")
                     if not isinstance(image, ValidatedImage):
                         raise ValueError("MinerU 图片缺少已验证资产。")
+                    asset_checksum = None
+                    if figure_from_table:
+                        asset_checksum = checksum(image.content)
+                        raw_caption = raw_block["content"]["table_caption"]
+                        sections, _caption = split_table_figure_caption(raw_caption)
+                        metadata[TABLE_FIGURE_FIELD] = TableFigureBinding(
+                            source_pointer=raw_block["_mineru_source"]["json_pointer"],
+                            content_list_sha256=validation_report.content_list_sha256,
+                            caption_index=len(sections),
+                            caption_source_sha256=caption_source_sha256(raw_caption),
+                            asset_sha256=asset_checksum.removeprefix("sha256:"),
+                        ).model_dump(mode="json")
+                        for section_index, section in enumerate(sections):
+                            blocks.append(DocumentIRBlock(
+                                id=f"{block_id}_section_{section_index + 1:04d}", type="heading",
+                                order=order, page_index=page_index, text=section,
+                                level=infer_source_heading_level(section, source_level=1),
+                                layout=layout.model_copy(update={"bbox": None, "column_hint": "wide"}),
+                                metadata={"source_block_id": block_id, "annotation_role": FIGURE_SECTION_ROLE},
+                            ))
+                            order += 1
+                        inserted_sections += len(sections)
                     image_assets.append(MinerUImageAsset(
                         asset_id=asset_id, block_id=block_id, source_path=image.source_path,
                         mime_type=image.mime_type, content=image.content, normalized_from=image.normalized_from,
                     ))
-                    ir_assets.append(DocumentIRAsset(id=asset_id, kind="image", source_path=image.source_path))
+                    ir_assets.append(DocumentIRAsset(
+                        id=asset_id, kind="image", source_path=image.source_path, checksum_sha256=asset_checksum,
+                    ))
             for context_index, context_text in enumerate(table_contexts):
                 context_metadata = dict(metadata)
                 context_metadata.pop("caption_reconciliation", None)
@@ -307,7 +337,7 @@ class MinerUToDocumentIRService:
                     DocumentIRBlock(
                         id=f"{block_id}_context_{context_index + 1:04d}",
                         type="paragraph",
-                        order=index,
+                        order=order,
                         page_index=page_index,
                         text=context_text,
                         layout=layout,
@@ -322,7 +352,7 @@ class MinerUToDocumentIRService:
                 DocumentIRBlock(
                     id=block_id,
                     type=block_type,
-                    order=index,
+                    order=order,
                     page_index=page_index,
                     text=text,
                     level=(

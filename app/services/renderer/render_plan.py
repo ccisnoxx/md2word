@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from app.conversion.docx_rules.formula import content_math_spans
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
+from app.services.document_ir.table_figure import FIGURE_SECTION_ROLE
 from app.services.renderer.layout_plan import (
     LayoutPage, LayoutPlan, LayoutRegion, build_image_plan, complete_two_column_tails, image_annotations, is_exclusive_degraded_block, is_exclusive_page, split_two_col_blocks,
 )
@@ -334,6 +335,12 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
     from app.services.renderer.image_evidence import IMAGE_GENERATION_POLICY, source_image_position
     spans = {block_id: span for span in build_image_plan(document_ir) for block_id in span.block_ids}
     source_blocks = sorted(document_ir.blocks, key=lambda block: block.order)
+    figure_sections: dict[str, list[DocumentIRBlock]] = {}
+    for block in source_blocks:
+        if block.metadata.get("annotation_role") == FIGURE_SECTION_ROLE:
+            span = spans[block.metadata["source_block_id"]]
+            figure_sections.setdefault(span.id, []).append(block)
+    figure_section_ids = {block.id for headings in figure_sections.values() for block in headings}
     consumed_images = set()
     legacy = layout_plan.mode == "legacy_v1_fallback"
 
@@ -399,7 +406,8 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
             suffix_min = [len(positions)] * (len(positions) + 1)
             for index in range(len(positions) - 1, -1, -1):
                 suffix_min[index] = min(positions[index], suffix_min[index + 1])
-            overlay_spans, prefix_max = set(), -1
+            anchored_spans = {spans[block_id].id for block_id in source_images} & figure_sections.keys()
+            overlay_spans, prefix_max = set(anchored_spans), -1
             for index, block_id in enumerate(native_images):
                 span = spans[block_id]
                 if (positions[index] < prefix_max or positions[index] > suffix_min[index + 1]
@@ -409,6 +417,7 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
             overlay_ids = {block_id for block_id in source_images if spans[block_id].id in overlay_spans}
             if overlay_ids:
                 scheduled_regions, regions, pending = regions, [], set()
+                sections_placed = set()
                 def flush_pending():
                     for region_index, region in scheduled_regions:
                         blocks = [block for block in region.blocks if block.id in pending]
@@ -416,14 +425,20 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
                             regions.append((region_index, LayoutRegion(region.kind, blocks)))
                     pending.clear()
                 for block in source_blocks:
-                    if block.id not in body_ids:
+                    if block.id not in body_ids or block.id in figure_section_ids:
                         continue
                     if block.id in overlay_ids:
                         flush_pending()
-                        regions.append((-1, LayoutRegion("one_col", [block])))
+                        span_id = spans[block.id].id
+                        # 章节来自同块题注且没有独立 bbox，随所属图片 span 进入原生调度。
+                        headings = figure_sections.get(span_id, []) if span_id not in sections_placed else []
+                        sections_placed.add(span_id)
+                        regions.append((-1, LayoutRegion("one_col", [*headings, block])))
                     else:
                         pending.add(block.id)
                 flush_pending()
+                if anchored_spans and page_index > 0 and not new_page:
+                    break_id = semantic_page_break_block_id(page, regions=[region for _, region in regions])
         for region_index, region in regions:
             if region.kind == "two_col":
                 current = section(page, columns=2, start="continuous", landscape=landscape)

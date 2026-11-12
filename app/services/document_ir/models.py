@@ -247,9 +247,11 @@ class DocumentIR(BaseModel):
     def _validate_logical_tables(self) -> DocumentIR:
         # 同一 owner 校验首次构建和 Artifact 重读，避免损坏新合同被静默接受。
         from app.services.document_ir.logical_table_group import validate_logical_table_groups
+        from app.services.document_ir.table_figure import validate_table_figure_bindings
         from app.services.document_ir.table_reference_assets import decode_table_references
 
         validate_logical_table_groups(self)
+        validate_table_figure_bindings(self)
         decode_table_references(self)
         from app.services.document_ir.table_placeholder import decode_placeholders
         decode_placeholders(self)

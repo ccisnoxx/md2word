@@ -318,7 +318,7 @@ def _has_substantive_structure(blocks: list[dict[str, Any]]) -> bool:
     for block in blocks:
         source_type = _source_type(block)
         nested_types = {str(value).strip().lower() for value in find_values_by_key(block, "type")}
-        if source_type == "table" and extract_first_html(block):
+        if (source_type == "table" or block.get("_mineru_table_figure") is True) and extract_first_html(block):
             return True
         if source_type in FORMULA_TYPES or nested_types & FORMULA_TYPES:
             return True

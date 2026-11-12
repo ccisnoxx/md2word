@@ -30,7 +30,7 @@ from app.services.renderer.evidence import (
     build_renderer_evidence, ensure_renderer_integrity, validate_persisted_renderer_content,
 )
 from app.services.renderer import DocumentIRWordRenderer
-from app.services.renderer.layout_plan import build_layout_plan
+from app.services.renderer.layout_plan import build_image_plan, build_layout_plan
 from app.services.renderer.logical_table_plan import build_content_table_plan
 from app.services.tables.evidence import read_table_evidence
 from app.services.tables.grid_builder import build_table_grid
@@ -981,6 +981,158 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                 evidence = build_renderer_evidence(document, rendered.content, render_result=rendered)
                 ensure_renderer_integrity(evidence)
                 validate_persisted_renderer_content(document, rendered.content, evidence)
+
+    def test_v2_table_reclassifies_only_verified_same_block_figure(self) -> None:
+        section = "3 Device Connections"
+        title = "Figure 3-2. Package schematic"
+        figure = {
+            "type": "table", "bbox": [80, 90, 380, 320],
+            "content": {
+                "image_source": {"path": "images/diagram.png"},
+                "html": "<table><tr><td>Diagram pin</td></tr></table>",
+                "table_caption": [{"type": "text", "content": text} for text in (section, title)],
+            },
+        }
+        table = {
+            "type": "table", "bbox": [90, 400, 920, 640],
+            "content": {
+                "html": "<table><tr><th>PIN</th><th>Role</th></tr><tr><td>2</td><td>Input</td></tr></table>",
+                "table_caption": [{"type": "text", "content": "Table 3-2. Pin functions"}],
+            },
+        }
+        cases = ("figure", "grouped_figure", "body_reference", "other_figure", "table_conflict", "outside_table_caption",
+                 "html_table_caption", "html_table_header", "other_body_text", "extra_asset_reference", "missing_image",
+                 "bad_image", "forged_marker", "legacy")
+        with tempfile.TemporaryDirectory() as directory:
+            for case in cases:
+                with self.subTest(case=case):
+                    candidate = copy.deepcopy(figure)
+                    caption = candidate["content"]["table_caption"]
+                    if case == "body_reference":
+                        caption[-1]["content"] = "See Figure 3-2. Package schematic"
+                    elif case == "other_figure":
+                        caption.insert(1, {"type": "text", "content": "Figure 3-1. Pinout"})
+                    elif case == "table_conflict":
+                        caption.insert(1, {"type": "text", "content": "Table 3-1. Ratings"})
+                    elif case == "outside_table_caption":
+                        candidate["table_caption"] = [{"type": "text", "content": "Table 3-1. Ratings"}]
+                    elif case == "html_table_caption":
+                        candidate["content"]["html"] = candidate["content"]["html"].replace(
+                            "<table>", "<table><caption>Table 3-1. Ratings</caption>",
+                        )
+                    elif case == "html_table_header":
+                        candidate["content"]["html"] = "<table><tr><th>Part</th></tr><tr><td>Connector</td></tr></table>"
+                    elif case == "other_body_text":
+                        candidate["content"]["description"] = "Data for each package variant."
+                    elif case == "extra_asset_reference":
+                        candidate["image_path"] = "images/diagram.png"
+                    elif case == "forged_marker":
+                        candidate["_mineru_table_figure"] = True
+                        caption[-1]["content"] = "Table 3-1. Pinout"
+                    page = [candidate, table]
+                    if case == "grouped_figure":
+                        page.insert(1, {"type": "image", "bbox": [410, 90, 710, 320], "content": {
+                            "image_source": {"path": "images/diagram.png"},
+                            "image_caption": [{"type": "text", "content": "Figure 4 Other connector"}],
+                        }})
+                    archive_path = Path(directory) / f"{case}.zip"
+                    with zipfile.ZipFile(archive_path, "w") as archive:
+                        name = "result_content_list.json" if case == "legacy" else "result_content_list_v2.json"
+                        archive.writestr(name, json.dumps([page]))
+                        if case != "missing_image":
+                            archive.writestr("images/diagram.png", b"invalid image" if case == "bad_image" else MINIMAL_PNG_BYTES)
+                    result = MinerUToDocumentIRService().convert_zip(
+                        archive_path, job_id="job_figure", source_file_id="file_figure", document_language="en",
+                    )
+                    document = result.document
+                    pointers = [f.source_span.json_pointer for g in document.metadata.logical_table_groups for f in g.fragments]
+                    if case not in {"figure", "grouped_figure"}:
+                        self.assertEqual([block.type for block in document.blocks], ["table", "table"])
+                        self.assertEqual(pointers, ["/0/0", "/0/1"])
+                        self.assertFalse(result.image_assets)
+                        continue
+
+                    heading, image, *siblings, editable = document.blocks
+                    if siblings:
+                        span, = build_image_plan(document)
+                        self.assertEqual((span.mode, span.block_ids), ("group", (image.id, siblings[0].id)))
+                    self.assertEqual((heading.type, heading.text, heading.metadata["source_block_id"]),
+                                     ("heading", section, image.id))
+                    self.assertEqual((image.type, image.captions, image.html), ("image", [title], None))
+                    self.assertEqual((image.metadata["source_type"], image.metadata["mineru_source"]["json_pointer"]),
+                                     ("table", "/0/0"))
+                    binding = image.metadata["mineru_table_figure"]
+                    self.assertEqual(binding["asset_sha256"], hashlib.sha256(MINIMAL_PNG_BYTES).hexdigest())
+                    self.assertEqual(binding["content_list_sha256"], result.validation_report.content_list_sha256)
+                    self.assertEqual(pointers, [f"/0/{len(page) - 1}"])
+                    self.assertEqual(editable.type, "table")
+                    image_contents = {asset.asset_id: asset.content for asset in result.image_assets}
+                    self.assertEqual(len(image_contents), 1 + len(siblings))
+                    rendered = DocumentIRWordRenderer().render_to_result(
+                        document, template_path=None, config_path=None,
+                        image_loader=lambda asset: image_contents.get(asset.id),
+                    )
+                    word = Document(io.BytesIO(rendered.content))
+                    self.assertEqual(len(word.inline_shapes), 1 + len(siblings))
+                    native, = (item for item in word.tables if item.cell(0, 0).text == "PIN")
+                    self.assertEqual([[cell.text for cell in row.cells] for row in native.rows], [["PIN", "Role"], ["2", "Input"]])
+                    paragraphs = ["".join(p.xpath(".//w:t/text()")) for p in word.element.body.xpath(".//w:p")]
+                    for expected in (section, title):
+                        self.assertEqual(paragraphs.count(expected), 1)
+                    body = list(word.element.body)
+                    heading_paragraph = next(paragraph for paragraph in word.paragraphs if paragraph.text == section)
+                    drawing_index = next(index for index, child in enumerate(body) if child.xpath(".//w:drawing"))
+                    self.assertLess(body.index(heading_paragraph._p), drawing_index)
+                    self.assertLess(drawing_index, body.index(native._tbl))
+                    evidence = build_renderer_evidence(document, rendered.content, render_result=rendered)
+                    ensure_renderer_integrity(evidence)
+                    validate_persisted_renderer_content(document, rendered.content, evidence)
+
+                    if siblings:
+                        continue
+                    corrupt = document.model_dump(mode="json")
+                    corrupt["blocks"][1]["metadata"]["caption_reconciliation"]["originals"][0]["value"][-1]["content"] = (
+                        "Figure 3-2. Other schematic"
+                    )
+                    with self.assertRaisesRegex(ValueError, "MinerU 图表题注绑定无效"):
+                        DocumentIR.model_validate(corrupt)
+                    corrupt = document.model_dump(mode="json")
+                    corrupt["blocks"][1]["captions"] = ["Figure 3-2. Other schematic"]
+                    with self.assertRaisesRegex(ValueError, "MinerU 图表题注绑定无效"):
+                        DocumentIR.model_validate(corrupt)
+                    corrupt = document.model_dump(mode="json")
+                    corrupt["assets"][0]["checksum_sha256"] = "sha256:" + "0" * 64
+                    with self.assertRaisesRegex(ValueError, "MinerU 图表来源绑定无效"):
+                        DocumentIR.model_validate(corrupt)
+                    corrupt = document.model_dump(mode="json")
+                    metadata = corrupt["blocks"][1]["metadata"]
+                    metadata["mineru_table_figure"]["source_pointer"] = "/0/99"
+                    metadata["mineru_source"]["json_pointer"] = "/0/99"
+                    metadata["caption_reconciliation"]["originals"][0]["json_pointer"] = "/0/99/content/table_caption"
+                    with self.assertRaisesRegex(ValueError, "MinerU 图表来源绑定无效"):
+                        DocumentIR.model_validate(corrupt)
+
+    def test_reclassified_figure_keeps_substantive_last_page(self) -> None:
+        blocks = [[{"type": "paragraph", "bbox": [10, 10, 190, 50], "content": "Board specifications"}], [
+            {"type": "table", "bbox": [10, 80, 190, 150], "content": {
+                "image_source": {"path": "images/diagram.png"},
+                "html": "<table><tr><td>PIN</td></tr></table>",
+                "table_caption": [{"type": "text", "content": "Fig. 2: Board connector"}],
+            }},
+            {"type": "paragraph", "bbox": [10, 180, 190, 230], "content": "使用微信扫码打开设备设置。"},
+        ]]
+        with tempfile.TemporaryDirectory() as directory:
+            archive_path = Path(directory) / "last-page.zip"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("result_content_list_v2.json", json.dumps(blocks, ensure_ascii=False))
+                archive.writestr("images/diagram.png", MINIMAL_PNG_BYTES)
+            result = MinerUToDocumentIRService().convert_zip(
+                archive_path, job_id="job_figure", source_file_id="file_figure", document_language="en",
+            )
+        self.assertEqual([page.index for page in result.document.pages], [0, 1])
+        self.assertEqual([(block.type, block.page_index) for block in result.document.blocks],
+                         [("paragraph", 0), ("image", 1), ("paragraph", 1)])
+        self.assertEqual(result.validation_report.normalization["filtered_block_count"], 0)
 
     def test_convert_zip_merges_table_placeholder_continuation_and_landscape_orientation(self) -> None:
         crop = _RecordingTableCropProvider("file_continuation", [(792, 612)] * 2)
