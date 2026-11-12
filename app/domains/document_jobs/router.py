@@ -18,7 +18,7 @@ from app.api.dependencies import (
     require_current_user,
     require_current_user_or_admin_token_user,
 )
-from app.core.errors import ApiError
+from app.core.errors import ApiError, ApplicationError
 from app.core.runtime import AppRuntime
 from app.domains.document_jobs.config_summary import build_document_job_config_summary
 from app.domains.document_jobs.downloads_router import downloads_router
@@ -224,7 +224,7 @@ def bulk_retry_document_jobs(
                 translation_term_version=payload.translation_term_version,
                 trace_id=trace_id,
             )
-        except ApiError as exc:
+        except ApplicationError as exc:
             items.append(build_document_job_bulk_failure(job_id, exc))
             continue
         runtime.audit_service.record(
@@ -253,7 +253,7 @@ def bulk_archive_document_jobs(
     for job_id in job_ids:
         try:
             job = runtime.document_job_use_cases.lifecycle_commands.archive_job(job_id, user=user, trace_id=trace_id)
-        except ApiError as exc:
+        except ApplicationError as exc:
             items.append(build_document_job_bulk_failure(job_id, exc))
             continue
         runtime.audit_service.record(
@@ -281,7 +281,7 @@ def bulk_cancel_document_jobs(
     for job_id in job_ids:
         try:
             job = runtime.document_job_use_cases.lifecycle_commands.cancel_job(job_id, user=user, trace_id=trace_id)
-        except ApiError as exc:
+        except ApplicationError as exc:
             items.append(build_document_job_bulk_failure(job_id, exc))
             continue
         runtime.audit_service.record(

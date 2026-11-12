@@ -132,3 +132,11 @@ router 保留：`request.url_for` + `_externalize_url`（HTTP 关注点）、`au
 - 迁移集合 = 应用层直接引用的模型及其字段传递闭包（91 个）；类名不变，OpenAPI 组件名与内容须逐字节不变。
 - `use_cases/table_references.py` 拼接 `/api/v1/document-jobs/.../content` 的 `content_path` 属 HTTP 关注点，移到 `http_responses.py`，由路由在返回前补齐；字符串逐字不变，`review_content` 不消费该字段。
 - 验收：`rg` 确认 `app/` 中除 HTTP 模块外无 `document_jobs.schemas` 导入；路由顺序与保序 OpenAPI 与 `3f918267` 一致；受影响测试失败集合与 `3f918267` 一致。
+
+## 9. document_jobs 应用层错误不再携带 HTTP 状态（2026-11-12 追加，用户选定范围：仅 document_jobs）
+
+- 现状：`error-handling.md` 原约定“业务校验在服务层 raise `ApiError`”，`ApiError(status_code, code, message)` 让用例直接选择 HTTP 状态。document_jobs 应用层 217 处调用中，状态码与错误码始终一一配对（409↔conflict、503↔service_unavailable、400↔invalid_request、404↔not_found、403↔forbidden/role_forbidden、422↔validation_error、401↔unauthorized）。
+- 决策：`app/core/errors.py` 新增 `ApplicationError(code, message, *, reason_code=None)`，`code` 限定为 `ApplicationErrorCode` 子集；`APPLICATION_ERROR_HTTP_STATUS` 与 `http_status_for(error)` 是“错误码 → HTTP 状态”的唯一 owner。`ApiError` 改为继承 `ApplicationError`，构造签名与字段不变（其他领域 169 处不受影响），`http_status_for` 对 `ApiError` 返回其显式状态。
+- API 处理器注册在 `ApplicationError` 上；`except ApiError` 捕获点改为 `except ApplicationError`；读取 `.status_code` 的分支改为按错误码判断，或经 `http_status_for` 取得批量条目中作为合同字段的状态码。
+- 保留的例外：`use_cases/request_snapshot.py` 透传 jobs 域 `JobResourceSnapshotError` 的状态与错误码（其错误码不在映射内，状态由 jobs 域决定），待 jobs 域迁移时一并处理。
+- 验收：错误响应的状态码、`error_code`、`reason_code` 与消息不变；路由与保序 OpenAPI 不变；受影响测试失败集合与 `1fb48844` 一致；document_jobs 应用层（除上述例外）不再构造 `ApiError`。

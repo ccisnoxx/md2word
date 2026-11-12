@@ -15,11 +15,10 @@ import json
 from datetime import datetime
 from typing import Literal
 
-from fastapi import status
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.views.quality_review import QualityChecksum, QualityId
 from app.domains.resources.models import utc_now
 
@@ -27,8 +26,7 @@ from app.domains.resources.models import utc_now
 def download_token_secret(settings: Settings) -> str:
     secret = settings.auth_jwt_secret_key.strip()
     if not secret:
-        raise ApiError(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
+        raise ApplicationError(
             "service_unavailable",
             "AUTH_JWT_SECRET_KEY 未配置，无法生成临时下载链接。",
         )
@@ -54,14 +52,14 @@ def verify_file_download_token(settings: Settings, *, job_id: str, token: str) -
 
     parts = token.split(".")
     if len(parts) != 3:
-        raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载链接无效。")
+        raise ApplicationError("forbidden", "下载链接无效。")
     file_id, raw_expires_ts, signature = parts
     try:
         expires_ts = int(raw_expires_ts)
     except ValueError as exc:
-        raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载链接无效。") from exc
+        raise ApplicationError("forbidden", "下载链接无效。") from exc
     if expires_ts < int(utc_now().timestamp()):
-        raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载链接已过期。")
+        raise ApplicationError("forbidden", "下载链接已过期。")
     message = f"{job_id}:{file_id}:{expires_ts}"
     expected = hmac.new(
         download_token_secret(settings).encode("utf-8"),
@@ -69,7 +67,7 @@ def verify_file_download_token(settings: Settings, *, job_id: str, token: str) -
         hashlib.sha256,
     ).hexdigest()
     if not hmac.compare_digest(signature, expected):
-        raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载链接无效。")
+        raise ApplicationError("forbidden", "下载链接无效。")
     return file_id
 
 
@@ -94,7 +92,7 @@ def build_publication_download_token(settings: Settings, claims: PublicationDown
 def verify_publication_download_token(
     settings: Settings, *, job_id: str, publication_id: str, token: str,
 ) -> PublicationDownloadClaims:
-    invalid = ApiError(403, "forbidden", "最终件下载链接无效。", reason_code="publication_download_token_invalid")
+    invalid = ApplicationError("forbidden", "最终件下载链接无效。", reason_code="publication_download_token_invalid")
     if len(token) > 2048:
         raise invalid
     try:
@@ -112,5 +110,5 @@ def verify_publication_download_token(
     except (ValueError, TypeError, UnicodeError, binascii.Error):
         raise invalid from None
     if claims.expires_ts <= utc_now().timestamp():
-        raise ApiError(403, "forbidden", "最终件下载链接已过期。", reason_code="publication_download_token_expired")
+        raise ApplicationError("forbidden", "最终件下载链接已过期。", reason_code="publication_download_token_expired")
     return claims

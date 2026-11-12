@@ -14,6 +14,7 @@ from fastapi.responses import Response
 
 from app.api.dependencies import get_runtime, get_trace_id, require_admin_user, require_current_user
 from app.api.errors import api_error_response
+from app.core.errors import http_status_for
 from app.core.runtime import AppRuntime
 from app.domains.document_jobs.http_responses import actor_from_user
 from app.domains.document_jobs.quality_review_http import QualityReviewApiRoute, QUALITY_REVIEW_RESPONSES
@@ -199,13 +200,13 @@ _NEW_GENERATION_RESPONSES = {
 
 
 def _new_generation_unavailable_response(request: Request, error: NewGenerationRequestUnavailable):
-    response = api_error_response(request, error.status_code, error.code, error.message, reason_code=error.reason_code)
+    response = api_error_response(request, http_status_for(error), error.code, error.message, reason_code=error.reason_code)
     content = json.loads(response.body)
     content["error"]["generation_request_id"] = error.generation_request_id
     if error.accepted_generation is not None:
         content["error"].update(accepted=True, accepted_generation=error.accepted_generation)
     from fastapi.responses import JSONResponse
-    return JSONResponse(content, status_code=error.status_code)
+    return JSONResponse(content, status_code=http_status_for(error))
 
 
 @quality_review_router.post("/{job_id}/new-generation", response_model=DocumentJobNewGenerationResponse,

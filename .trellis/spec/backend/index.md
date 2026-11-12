@@ -42,7 +42,7 @@ Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when t
 | [Directory Structure](./directory-structure.md) | FastAPI composition root, domain layout, services, conversion, workers, resources, and tests | Current |
 | [数据库指南](./database-guidelines.md) | file/sqlite/MySQL 元数据、schema 维护、仓储端口、任务列表查询投影与显式回填 | 当前 |
 | [任务列表有效复核 v2](./document-job-list-query-v2.md) | 双表静态事实、请求时刻、完整下推、窄实时重核与隔离验证 | 当前（已本地接回） |
-| [Error Handling](./error-handling.md) | `ApiError`, unified API error responses, workflow errors, validation, trace IDs, bulk failures | Current |
+| [Error Handling](./error-handling.md) | `ApplicationError`/`ApiError`, unified API error responses, workflow errors, validation, trace IDs, bulk failures | Current |
 | [任务模式与 direct 资源合同](./document-job-mode-contract.md) | 服务端 alias、direct 零翻译加载、阶段/事件/恢复、历史快照及 UI 展示边界 | 当前 |
 | [ProtectedTokenCodec 内部合同](./protected-token-codec.md) | 纯函数检测、批次唯一、碰撞保护、整批计数验证、精确恢复与隐私边界 | 当前 |
 | [翻译完整性验证与消费合同](./translation-integrity-validator.md) | 共享编码准备、整批校验、稳定错误、fan-in evidence、默认表示隐私及存储身份边界 | 当前 |

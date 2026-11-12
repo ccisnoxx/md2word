@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError, http_status_for
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.files.models import DocumentFileRecord
 from app.domains.resources.models import utc_now
@@ -134,9 +134,9 @@ class DocumentJobDownloadAvailabilityTests(TestCase):
                 self.assertIsNone(download.warning_code)
                 self.assertFalse(actions["publish"].eligible)
                 self.assertEqual(actions["publish"].disabled_reason_code, code)
-                with self.assertRaises(ApiError) as caught:
+                with self.assertRaises(ApplicationError) as caught:
                     self.service.downloads.get_file_for_download(job.id, user=self.operator, file_id=None)
-                self.assertEqual((caught.exception.status_code, caught.exception.reason_code), (http_status, code))
+                self.assertEqual((http_status_for(caught.exception), caught.exception.reason_code), (http_status, code))
 
     def test_ordinary_artifacts_remain_downloadable_without_main_document_classification(self):
         job, file = self._result(status="running", stage="uploading")

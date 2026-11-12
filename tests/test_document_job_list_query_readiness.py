@@ -6,7 +6,7 @@ import json
 from types import SimpleNamespace
 from unittest import TestCase
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError, http_status_for
 from app.domains.document_jobs.list_query import DocumentJobListProjectionUnavailable
 from app.infrastructure.persistence.document_job_list_query import query_document_jobs_sql
 from tests import test_document_job_list_query_v2 as sql_fixtures
@@ -192,6 +192,6 @@ class DocumentJobListReadinessTests(TestCase):
                 self.assertEqual(fixture.listing(service).total, 1)
                 with jobs.backend.connect() as connection:
                     connection.execute(f"UPDATE {table} SET {column} = NULL")
-                with self.assertRaises(ApiError) as error:
+                with self.assertRaises(ApplicationError) as error:
                     fixture.listing(service, q="absent")
-                self.assertEqual((error.exception.status_code, error.exception.code), (503, "service_unavailable"))
+                self.assertEqual((http_status_for(error.exception), error.exception.code), (503, "service_unavailable"))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.document_jobs.review import (
@@ -55,11 +55,12 @@ class DocumentJobQualityReview:
         """只在新接口的授权入口附固定原因，不改变旧端点错误。"""
         try:
             return self.access.get_authorized_job(job_id, user=user)
-        except ApiError as exc:
-            reason = {403: "review_access_denied", 404: "document_job_not_found"}.get(exc.status_code)
+        except ApplicationError as exc:
+            reason = {"forbidden": "review_access_denied", "role_forbidden": "review_access_denied",
+                      "not_found": "document_job_not_found"}.get(exc.code)
             if reason is None:
                 raise
-            raise ApiError(exc.status_code, exc.code, exc.message, reason_code=reason) from None
+            raise ApplicationError(exc.code, exc.message, reason_code=reason) from None
 
     @staticmethod
     def _review_read_identity(job, *, preview=False):
@@ -76,11 +77,11 @@ class DocumentJobQualityReview:
         current = self.review_api_job(job.id, user)
         if (self._review_read_identity(current, preview=preview) != self._review_read_identity(job, preview=preview)
                 or self.access.review_api_file(current) != file):
-            raise ApiError(409, "conflict", "质量来源已变化，请重新读取。", reason_code="quality_source_changed")
+            raise ApplicationError("conflict", "质量来源已变化，请重新读取。", reason_code="quality_source_changed")
         for artifact in artifacts:
             if (self.file_repository.get_document_file(artifact.id) != artifact
                     or artifact.expires_at is None or file_lifecycle_unavailable(artifact, self.file_repository, now=utc_now())):
-                raise ApiError(409, "conflict", "质量产物来源已变化，请重新读取。", reason_code="quality_source_changed")
+                raise ApplicationError("conflict", "质量产物来源已变化，请重新读取。", reason_code="quality_source_changed")
 
     def _current_review_record(self, job):
         if job.current_review_record_id is None:
@@ -95,16 +96,16 @@ class DocumentJobQualityReview:
     def review_cursor(cursor, kind, job_id, limit):
         from app.domains.document_jobs.quality_review_projection import decode_cursor, InvalidReviewCursor
         if type(limit) is not int or not 1 <= limit <= 100:
-            raise ApiError(422, "validation_error", "分页数量必须为 1 到 100 的整数。")
+            raise ApplicationError("validation_error", "分页数量必须为 1 到 100 的整数。")
         try:
             return decode_cursor(cursor, kind=kind, job_id=job_id) if cursor is not None else None
         except InvalidReviewCursor:
-            raise ApiError(400, "invalid_request", "分页游标无效。", reason_code="invalid_review_cursor") from None
+            raise ApplicationError("invalid_request", "分页游标无效。", reason_code="invalid_review_cursor") from None
 
     @staticmethod
     def _review_cursor_binding(parsed, expected):
         if parsed is not None and any(getattr(parsed, key) != value for key, value in expected.items()):
-            raise ApiError(409, "conflict", "质量分页来源已变化，请重新读取。", reason_code="quality_source_changed")
+            raise ApplicationError("conflict", "质量分页来源已变化，请重新读取。", reason_code="quality_source_changed")
 
     def get_document_quality(self, job_id, *, user):
         from app.domains.document_jobs.quality_review_projection import project_source, project_quality_summary, project_review
@@ -155,7 +156,7 @@ class DocumentJobQualityReview:
         parsed = self.review_cursor(cursor, "history", job.id, limit)
         after, through = (parsed.after_sequence, parsed.through_sequence) if parsed else (0, job.review_sequence)
         if not 0 <= after <= through <= job.review_sequence:
-            raise ApiError(400, "invalid_request", "复核历史游标窗口无效。", reason_code="invalid_review_cursor")
+            raise ApplicationError("invalid_request", "复核历史游标窗口无效。", reason_code="invalid_review_cursor")
         records = self.job_repository.list_document_job_reviews(job.id, after_sequence=after, limit=limit + 1)
         items, next_after = paginate_history(records, after_sequence=after, through_sequence=through, limit=limit)
         self.review_api_job(job.id, user)
@@ -180,7 +181,7 @@ class DocumentJobQualityReview:
         self._review_cursor_binding(parsed, binding)
         start = parsed.next_index if parsed else 0
         if start > len(evidence.tables):
-            raise ApiError(400, "invalid_request", "表格分页游标无效。", reason_code="invalid_review_cursor")
+            raise ApplicationError("invalid_request", "表格分页游标无效。", reason_code="invalid_review_cursor")
         end = start + limit
         response = DocumentQualityTablesResponse(job_id=job.id, source=project_source(job, file),
             availability=evidence.evidence_status, reason_code=None,
@@ -212,9 +213,9 @@ class DocumentJobQualityReview:
             evidence = read_current_preview_evidence(job, self.file_repository, self.file_upload_service,
                 include_page_quality=include_page_quality)
         except PreviewStorageError:
-            raise ApiError(503, "service_unavailable", "质量产物存储暂不可用。", reason_code="quality_storage_unavailable") from None
+            raise ApplicationError("service_unavailable", "质量产物存储暂不可用。", reason_code="quality_storage_unavailable") from None
         except ValueError:
-            raise ApiError(409, "conflict", "预览质量证据无法认证。", reason_code="quality_evidence_conflict") from None
+            raise ApplicationError("conflict", "预览质量证据无法认证。", reason_code="quality_evidence_conflict") from None
         if not evidence.observation.available or state.current_run.status != "succeeded":
             return "unavailable", evidence
         if include_page_quality and evidence.page_quality_run is None:
@@ -240,7 +241,7 @@ class DocumentJobQualityReview:
         pages = body["pages"] if body else []
         start = parsed.next_index if parsed else 0
         if start > len(pages):
-            raise ApiError(400, "invalid_request", "预览分页游标无效。", reason_code="invalid_review_cursor")
+            raise ApplicationError("invalid_request", "预览分页游标无效。", reason_code="invalid_review_cursor")
         end = start + limit
         response = DocumentPreviewResponse(job_id=job.id, source=project_source(job, file),
             status=run.status if run else (availability if availability in {"disabled", "not_ready"} else "unavailable"), availability=availability,
@@ -273,7 +274,7 @@ class DocumentJobQualityReview:
         pages = report["pages"] if report else []
         start = parsed.next_index if parsed else 0
         if start > len(pages):
-            raise ApiError(400, "invalid_request", "页面质量游标无效。", reason_code="invalid_review_cursor")
+            raise ApplicationError("invalid_request", "页面质量游标无效。", reason_code="invalid_review_cursor")
         end = start + limit
         response = DocumentQualityPagesResponse(job_id=job.id, source=project_source(job, file),
             availability=availability, reason_code="preview_artifact_unavailable" if availability == "unavailable" else None,
@@ -292,7 +293,7 @@ class DocumentJobQualityReview:
             review_status=review_status, issue_type=issue_type, note=note, trace_id=trace_id, expected_source=expected)
         try:
             current = self.get_document_review(job_id, user=user)
-        except ApiError as exc:
+        except ApplicationError as exc:
             # 正式记录已提交；后置读取故障不能伪装成未接受的前置冲突。
             raise RuntimeError("复核已进入正式提交后的响应读取阶段。") from exc
         return DocumentReviewUpdateResponse(job_id=job_id, accepted_record_id=committed.accepted_record_id,
@@ -306,13 +307,13 @@ class DocumentJobQualityReview:
             TableEvidenceView, has_evidence, verify_report, ensure_selected_result_descriptor, recheck_verified_report,
         )
         if not isinstance(user, AuthenticatedUser):
-            raise ApiError(401, "unauthorized", "表格证据查询需要认证。")
+            raise ApplicationError("unauthorized", "表格证据查询需要认证。")
         from app.services.tables.evidence import TableEvidenceError
         job = self.access.get_job(job_id, user=user)
         self.access.ensure_job_not_deleted(job)
         if (type(generation) is not int or generation != job.retry_count or ir_file_id != job.document_ir_file_id
                 or result_file_id != job.result_file_id):
-            raise ApiError(409, "conflict", "表格证据所属任务快照已变化，请刷新。", reason_code="quality_source_changed")
+            raise ApplicationError("conflict", "表格证据所属任务快照已变化，请刷新。", reason_code="quality_source_changed")
         base = dict(job_id=job.id, generation=job.retry_count, ir_file_id=ir_file_id, result_file_id=result_file_id)
         if result_file_id is None:
             return TableEvidenceView(**base, evidence_status="not_ready", summary={"status": "pending"}, tables=[])
@@ -320,34 +321,34 @@ class DocumentJobQualityReview:
         try:
             ensure_selected_result_descriptor(job, result)
         except TableEvidenceError:
-            raise ApiError(409, "conflict", "当前主件与选定表格证据凭据冲突，请刷新。", reason_code="quality_evidence_conflict") from None
+            raise ApplicationError("conflict", "当前主件与选定表格证据凭据冲突，请刷新。", reason_code="quality_evidence_conflict") from None
         if not has_evidence(result.metadata):
             return TableEvidenceView(**base, evidence_status="legacy_unavailable", summary={"status": "pending"}, tables=[])
         if self.file_upload_service is None:
-            raise ApiError(503, "service_unavailable", "表格证据存储暂不可用。", reason_code="quality_storage_unavailable")
+            raise ApplicationError("service_unavailable", "表格证据存储暂不可用。", reason_code="quality_storage_unavailable")
         try:
             verified = verify_report(job, result, file_repository=self.file_repository,
                 file_service=self.file_upload_service, job_repository=self.job_repository)
         except FileNotFoundError:
-            raise ApiError(404, "not_found", "表格证据文件或内容不存在。", reason_code="quality_artifact_missing") from None
+            raise ApplicationError("not_found", "表格证据文件或内容不存在。", reason_code="quality_artifact_missing") from None
         except TableEvidenceError:
-            raise ApiError(409, "conflict", "表格证据绑定或当前快照无效，请刷新。", reason_code="quality_evidence_conflict") from None
+            raise ApplicationError("conflict", "表格证据绑定或当前快照无效，请刷新。", reason_code="quality_evidence_conflict") from None
         except RuntimeError:
-            raise ApiError(503, "service_unavailable", "表格证据存储暂不可用。", reason_code="quality_storage_unavailable") from None
+            raise ApplicationError("service_unavailable", "表格证据存储暂不可用。", reason_code="quality_storage_unavailable") from None
         current = self.access.get_job(job_id, user=user)
         self.access.ensure_job_not_deleted(current)
         if (current.retry_count, current.document_ir_file_id, current.result_file_id) != (generation, ir_file_id, result_file_id):
-            raise ApiError(409, "conflict", "表格证据所属任务快照已变化，请刷新。", reason_code="quality_source_changed")
+            raise ApplicationError("conflict", "表格证据所属任务快照已变化，请刷新。", reason_code="quality_source_changed")
         try:
             recheck_verified_report(verified, file_repository=self.file_repository, job_repository=self.job_repository)
         except TableEvidenceError:
-            raise ApiError(409, "conflict", "表格证据绑定或当前快照无效，请刷新。", reason_code="quality_evidence_conflict") from None
+            raise ApplicationError("conflict", "表格证据绑定或当前快照无效，请刷新。", reason_code="quality_evidence_conflict") from None
         envelope, summary = verified.envelope, verified.summary
         tables = envelope.report.tables
         if table_id is not None:
             tables = [table for table in tables if table.table_id == table_id]
             if not tables:
-                raise ApiError(404, "not_found", "当前报告未引用该表格。")
+                raise ApplicationError("not_found", "当前报告未引用该表格。")
         return TableEvidenceView(**base, evidence_status="available", report_file_id=summary["report_file_id"],
             report_sha256=envelope.report.report_sha256, summary=summary,
             tables=[table.model_dump(mode="json", warnings=False) for table in tables])

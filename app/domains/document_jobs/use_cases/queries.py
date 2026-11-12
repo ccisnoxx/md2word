@@ -6,9 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, get_args
 
-from fastapi import status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.list_query import (
     DocumentJobListProjectionUnavailable,
     DocumentJobListQuery,
@@ -95,18 +94,18 @@ class DocumentJobQueries:
         """返回当前用户可见的 document_jobs 分页列表。"""
 
         if status_filter is not None and status_group is not None:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "status 与 status_group 不能同时使用。")
+            raise ApplicationError("invalid_request", "status 与 status_group 不能同时使用。")
         if status_filter is not None and status_filter not in get_args(DocumentJobStatus):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "status 查询参数非法。")
+            raise ApplicationError("invalid_request", "status 查询参数非法。")
         if status_group is not None and status_group not in DOCUMENT_JOB_STATUS_GROUPS:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "status_group 查询参数非法。")
+            raise ApplicationError("invalid_request", "status_group 查询参数非法。")
         translation_qa_filters = set(get_args(DocumentJobTranslationQaStatus)) | {"all"}
         if translation_qa_status is not None and translation_qa_status not in translation_qa_filters:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "translation_qa_status 查询参数非法。")
+            raise ApplicationError("invalid_request", "translation_qa_status 查询参数非法。")
         if sort not in DOCUMENT_JOB_LIST_SORTS:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "sort 查询参数非法。")
+            raise ApplicationError("invalid_request", "sort 查询参数非法。")
         if created_from is not None and created_to is not None and created_from > created_to:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "created_from 不能晚于 created_to。")
+            raise ApplicationError("invalid_request", "created_from 不能晚于 created_to。")
         normalized_q = self.access.normalize_optional_text(q)
         query = DocumentJobListQuery(
             tenant_id=user.tenant_id,
@@ -132,7 +131,7 @@ class DocumentJobQueries:
                 observed_result=result.observed_results[job.id], as_of=query.as_of,
                 check_publication_evidence=False) for job in result.items]
         except DocumentJobListProjectionUnavailable as error:
-            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable",
+            raise ApplicationError("service_unavailable",
                 "任务列表查询事实尚未就绪，请完成校准后重试。") from error
         return DocumentJobListResult(
             items=items,
@@ -160,7 +159,7 @@ class DocumentJobQueries:
         if not is_translation_document_job_mode(job.mode):
             return []
         if self.document_job_translation_batch_repository is None:
-            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "翻译批次诊断仓储未配置。")
+            raise ApplicationError("service_unavailable", "翻译批次诊断仓储未配置。")
         return self.document_job_translation_batch_repository.list_translation_batches(
             job.id,
             generation=job.retry_count,
@@ -179,7 +178,7 @@ class DocumentJobQueries:
             # direct 任务不加载翻译资源，结论恒为空。
             return TranslationBatchListView(job=job, batches=batches, summary=None)
         if self.translation_generation_summarizer is None:
-            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "翻译批次结论服务未配置。")
+            raise ApplicationError("service_unavailable", "翻译批次结论服务未配置。")
         return TranslationBatchListView(
             job=job,
             batches=batches,
@@ -200,12 +199,12 @@ class DocumentJobQueries:
         if not is_translation_document_job_mode(job.mode):
             return job, []
         if self.document_job_translation_batch_repository is None:
-            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "翻译批次诊断仓储未配置。")
+            raise ApplicationError("service_unavailable", "翻译批次诊断仓储未配置。")
         snapshot_job, batches = self.document_job_translation_batch_repository.get_translation_batch_snapshot(
             job.id,
         )
         if not self.access.is_visible(snapshot_job, user):
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", "文档任务不存在。")
+            raise ApplicationError("not_found", "文档任务不存在。")
         # 当前三类 adapter 的 generation=None 快照会带回历史记录；按同一锁快照返回的
         # job.retry_count 过滤，避免历史批次进入当前代 API 投影。
         return self.access.effective_job(snapshot_job), [batch for batch in batches if batch.generation == snapshot_job.retry_count]

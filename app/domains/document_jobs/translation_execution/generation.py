@@ -7,7 +7,7 @@ from __future__ import annotations
 import sqlite3
 import time
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs import _failure_policy as failure_policy
 from app.domains.document_jobs.models import DocumentJobRecord, DocumentJobTranslationBatchRecord
 from app.domains.document_jobs.repository import TranslationBatchTreeInvalidError
@@ -224,7 +224,7 @@ class TranslationGenerationCoordinator:
                 )
             except Exception as exc:
                 error_code = (
-                    "oss_failed" if isinstance(exc, (ApiError, FileNotFoundError, OSError))
+                    "oss_failed" if isinstance(exc, (ApplicationError, FileNotFoundError, OSError))
                     else "translation_failed"
                 )
                 return self.deps.lifecycle.mark_failed(

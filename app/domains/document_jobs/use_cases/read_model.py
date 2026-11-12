@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.new_generation import NewGenerationConflict, new_generation_eligibility_reason
 from app.domains.document_jobs.preview_evidence import is_preview_storage_error
@@ -243,7 +243,7 @@ class DocumentJobReadModel:
         try:
             file = self.access.get_completed_result_file(job, observed_result=observed_result, file_reader=file_reader)
             self.access.ensure_file_not_expired(file, as_of=as_of, file_reader=file_reader)
-        except ApiError as exc:
+        except ApplicationError as exc:
             reason = exc.message
             if exc.reason_code == "job_not_completed":
                 reason = "只有 succeeded 文档任务允许下载结果。"
@@ -294,7 +294,7 @@ class DocumentJobReadModel:
                 evidence = prepare_publication_evidence(job, file_repository=self.file_repository,
                     file_service=self.file_upload_service, job_repository=self.job_repository)
                 if any(self.file_repository.get_document_file(item.id) != item for item in evidence.files):
-                    raise ApiError(409, "conflict", "发布证据在读取期间发生变化。", reason_code="publication_source_changed")
+                    raise ApplicationError("conflict", "发布证据在读取期间发生变化。", reason_code="publication_source_changed")
                 evidence_check.update(status="passed", message="预览、实物、执行快照及保留能力检查通过。")
             except PublicationConflict as error:
                 evidence_check.update(status="blocked", reason_code=error.reason_code, message=str(error))
@@ -355,7 +355,7 @@ class DocumentJobReadModel:
             return "无权限访问该文档任务。"
         try:
             self.access.get_source_file_for_clone(job)
-        except ApiError as exc:
+        except ApplicationError as exc:
             return exc.message
         return None
 

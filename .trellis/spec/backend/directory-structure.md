@@ -65,7 +65,7 @@ Examples:
 `app/core/` owns cross-cutting runtime primitives:
 
 - `config.py` defines `Settings` and path derivation.
-- `errors.py` defines `ApiError` and stable API error codes.
+- `errors.py` defines `ApplicationError` (semantic business errors without HTTP status), `ApiError` (explicit-status subclass for the HTTP layer and not-yet-migrated domains), stable error codes, and `http_status_for` — the single code→HTTP-status mapping.
 - `logging.py` configures runtime logging.
 - `runtime.py` stores the process-wide `AppRuntime`.
 

@@ -6,7 +6,7 @@ import zipfile
 from typing import Any
 
 from app.clients.mineru_client import MinerUError
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobStage
 from app.domains.translation.document_ir_translator import DocumentIRTranslationError
 from app.domains.translation.integrity import TranslationIntegrityError
@@ -24,7 +24,7 @@ from app.services.tables.quality import TableValidationError
 # 消息只由固定错误码或固定文本构造的异常；其消息可原样作为任务 error_message。
 SAFE_MESSAGE_ERRORS = (MinerUArtifactValidationError, TablePlaceholderError, TableRenderError, TableBuildError,
                        TableEvidenceError, TableValidationError, TranslationIntegrityError)
-_EXPECTED_WORKER_ERRORS = (ApiError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile)
+_EXPECTED_WORKER_ERRORS = (ApplicationError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile)
 
 
 def failed_stage_for_current_stage(stage: DocumentJobStage) -> DocumentJobStage:
@@ -53,10 +53,10 @@ def classify_worker_failure(
     if failed_stage in {"rendering", "quality_checking"}:
         return failed_stage, "render_failed"
     if failed_stage in {"translating", "translation_validating"}:
-        if isinstance(exc, (ApiError, FileNotFoundError, OSError)):
+        if isinstance(exc, (ApplicationError, FileNotFoundError, OSError)):
             return failed_stage, "oss_failed"
         return failed_stage, "translation_failed"
-    if failed_stage == "uploading" or isinstance(exc, (ApiError, FileNotFoundError, OSError)):
+    if failed_stage == "uploading" or isinstance(exc, (ApplicationError, FileNotFoundError, OSError)):
         return failed_stage, "oss_failed"
     return failed_stage, "document_job_worker_failed"
 

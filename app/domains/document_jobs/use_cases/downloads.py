@@ -7,10 +7,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import status
 
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.preview_evidence import preview_download_ttl
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
@@ -117,7 +116,7 @@ class DocumentJobDownloads:
             return FileTokenDownload(file=file, redirect_url=download_url, local_path=None)
         path = self.file_upload_service.resolve_file_object_path(file)
         if not path.exists():
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文件不存在: {file.id}")
+            raise ApplicationError("not_found", f"文件不存在: {file.id}")
         return FileTokenDownload(file=file, redirect_url=None, local_path=path)
 
     def _expires_seconds(self, job: DocumentJobRecord, file: DocumentFileRecord) -> int:
@@ -164,10 +163,10 @@ class DocumentJobDownloads:
 
         job = self.job_repository.get_document_job(job_id)
         if job is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文档任务不存在: {job_id}")
+            raise ApplicationError("not_found", f"文档任务不存在: {job_id}")
         file = self.access.get_downloadable_completed_result_file(job)
         if file.id != file_id:
-            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载链接与结果文件不匹配。")
+            raise ApplicationError("forbidden", "下载链接与结果文件不匹配。")
         return job, file
 
     def get_file_for_authorized_download(
@@ -180,7 +179,7 @@ class DocumentJobDownloads:
 
         job = self.job_repository.get_document_job(job_id)
         if job is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文档任务不存在: {job_id}")
+            raise ApplicationError("not_found", f"文档任务不存在: {job_id}")
         return job, self._get_downloadable_task_file(job, file_id=file_id)
 
     def record_download_authorized(
@@ -215,16 +214,16 @@ class DocumentJobDownloads:
         self.access.ensure_job_not_deleted(job, reason_code="job_deleted")
         file = self.file_repository.get_document_file(file_id)
         if file is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文件不存在: {file_id}")
+            raise ApplicationError("not_found", f"文件不存在: {file_id}")
         if file.tenant_id != job.tenant_id or file.company_id != job.company_id:
-            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载文件与文档任务不匹配。")
+            raise ApplicationError("forbidden", "下载文件与文档任务不匹配。")
         if not self.access.file_belongs_to_job(job, file):
-            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载文件与文档任务不匹配。")
+            raise ApplicationError("forbidden", "下载文件与文档任务不匹配。")
         if file.file_type not in DOCUMENT_JOB_DOWNLOAD_FILE_TYPES:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "该文件类型不支持从任务详情下载。")
+            raise ApplicationError("conflict", "该文件类型不支持从任务详情下载。")
         if not self.access.is_current_downloadable_job_file(job, file):
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "该文件不属于当前任务重试轮次，不能从任务详情下载。", reason_code="file_not_current")
+            raise ApplicationError("conflict", "该文件不属于当前任务重试轮次，不能从任务详情下载。", reason_code="file_not_current")
         if file.status != "uploaded":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件尚未完成上传，不能下载。", reason_code="result_file_not_uploaded")
+            raise ApplicationError("conflict", "文件尚未完成上传，不能下载。", reason_code="result_file_not_uploaded")
         self.access.ensure_file_not_expired(file)
         return file

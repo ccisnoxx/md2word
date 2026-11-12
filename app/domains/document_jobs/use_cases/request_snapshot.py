@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import status
 
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApiError, ApplicationError
 from app.domains.document_jobs.models import DocumentJobMode, DocumentJobRecord
 from app.domains.document_jobs.use_cases.access import DocumentJobAccess
 from app.domains.files.models import DocumentFileRecord
@@ -313,6 +312,7 @@ class DocumentJobRequestSnapshots:
         except JobResourceSnapshotError as exc:
             if not has_explicit_selection:
                 return None
+            # 唯一保留的 ApiError：透传 jobs 域快照错误的状态与错误码（不在应用层映射内），待 jobs 域迁移时一并处理。
             raise ApiError(exc.status_code, exc.code, exc.message) from exc
         if snapshot is None:
             return None
@@ -353,8 +353,7 @@ class DocumentJobRequestSnapshots:
             if self.access.normalize_optional_text(value):
                 selected.append(name)
         if selected:
-            raise ApiError(
-                status.HTTP_403_FORBIDDEN,
+            raise ApplicationError(
                 "forbidden",
                 f"operator 不能选择任务资源版本: {', '.join(selected)}。",
             )
@@ -399,21 +398,20 @@ class DocumentJobRequestSnapshots:
             try:
                 translation_mode = normalize_translation_mode(translation_mode)
             except ValueError as exc:
-                raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc)) from exc
+                raise ApplicationError("invalid_request", str(exc)) from exc
         if mode is None and translation_mode is None:
             return "direct_pdf_to_word"
         if mode is None:
             try:
                 return document_job_mode_for_translation_mode(translation_mode)
             except ValueError as exc:
-                raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc)) from exc
+                raise ApplicationError("invalid_request", str(exc)) from exc
         try:
             resolved_translation_mode = translation_mode_for_document_job_mode(mode)
         except ValueError as exc:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc)) from exc
+            raise ApplicationError("invalid_request", str(exc)) from exc
         if translation_mode is not None and translation_mode != resolved_translation_mode:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"translation_mode 与 mode 不一致: translation_mode={translation_mode} mode={mode}。",
             )
@@ -445,8 +443,7 @@ class DocumentJobRequestSnapshots:
             )
         )
         if has_translation_selection or debug_full_text:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 "原文转换（direct）不能绑定翻译资源或开启翻译全文调试。",
             )
@@ -457,8 +454,7 @@ class DocumentJobRequestSnapshots:
             return
         allowed = {"auto", spec.default_document_language}
         if document_language not in allowed:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 (
                     f"{spec.translation_mode} 只支持 "
@@ -491,9 +487,9 @@ class DocumentJobRequestSnapshots:
                 allow_draft=allow_draft,
             ).template_version_id
         except FileNotFoundError as exc:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", str(exc)) from exc
+            raise ApplicationError("not_found", str(exc)) from exc
         except ValueError as exc:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc)) from exc
+            raise ApplicationError("invalid_request", str(exc)) from exc
 
     def resolve_term_version_id(self, mode: DocumentJobMode, term_version_id: str | None) -> str | None:
         """direct 在调用术语服务前返回，历史字段不能触发翻译资源加载。"""
@@ -506,19 +502,18 @@ class DocumentJobRequestSnapshots:
         try:
             snapshot = self.term_version_service.resolve_for_job(term_version_id, language_pair=language_pair)
         except FileNotFoundError as exc:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", str(exc)) from exc
+            raise ApplicationError("not_found", str(exc)) from exc
         except ValueError as exc:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc)) from exc
+            raise ApplicationError("invalid_request", str(exc)) from exc
         return snapshot.term_version_id if snapshot is not None else None
 
     def resolve_debug_full_text_enabled(self, mode: DocumentJobMode, debug_full_text: bool) -> bool:
         if not debug_full_text:
             return False
         if not is_translation_document_job_mode(mode):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "debug_full_text 仅支持翻译任务。")
+            raise ApplicationError("invalid_request", "debug_full_text 仅支持翻译任务。")
         if not self.settings.translation_debug_archive_enabled:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 "TRANSLATION_DEBUG_ARCHIVE_ENABLED 未开启，不能保存翻译全文调试归档。",
             )
@@ -526,4 +521,4 @@ class DocumentJobRequestSnapshots:
 
     def ensure_debug_full_text_allowed(self, user: AuthenticatedUser, debug_full_text: bool) -> None:
         if debug_full_text and user.role != "admin":
-            raise ApiError(status.HTTP_403_FORBIDDEN, "role_forbidden", "只有 admin 可以开启翻译全文调试归档。")
+            raise ApplicationError("role_forbidden", "只有 admin 可以开启翻译全文调试归档。")

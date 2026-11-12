@@ -6,10 +6,9 @@ from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
-from fastapi import status
 
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.base_quality import fresh_quality_summary
 from app.domains.document_jobs.execution import DocumentJobTaskQueueProtocol
 from app.domains.document_jobs.models import DocumentJobMode, DocumentJobRecord
@@ -198,7 +197,7 @@ class DocumentJobSubmission:
             translation_term_version=translation_term_version,
         )
         if job.archived_at is not None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "已归档文档任务不允许重试。")
+            raise ApplicationError("conflict", "已归档文档任务不允许重试。")
         self._ensure_retry_allowed(job)
         self.request_snapshot.ensure_direct_translation_selection_absent(
             job.mode,
@@ -222,7 +221,7 @@ class DocumentJobSubmission:
             max_retries=self.settings.p0_document_job_max_retries, **patch,
         )
         if retried is None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "任务状态或重试代数已变化，无法重试。")
+            raise ApplicationError("conflict", "任务状态或重试代数已变化，无法重试。")
         self.events.record_event(
             retried,
             event_type="retry_requested",
@@ -248,8 +247,7 @@ class DocumentJobSubmission:
             self.task_queue.enqueue(retried.id, trace_id=trace_id)
         except RuntimeError as exc:
             failed = self.dispatcher.mark_enqueue_failed(retried, str(exc), trace_id=trace_id)
-            raise ApiError(
-                status.HTTP_503_SERVICE_UNAVAILABLE,
+            raise ApplicationError(
                 "service_unavailable",
                 f"Worker 投递失败: {failed.error_message}",
             ) from exc
@@ -260,7 +258,7 @@ class DocumentJobSubmission:
         """内部应用入口；沿用 owner/Admin 范围，不增加 HTTP 重试路由。"""
         job = self.access.get_job(job_id, user=user)
         if self.word_preview_service is None:
-            raise ApiError(503, "service_unavailable", "Word 预览应用服务未配置。")
+            raise ApplicationError("service_unavailable", "Word 预览应用服务未配置。")
         return self.word_preview_service.retry(job, user=user, reason=reason, request_id=request_id, trace_id=trace_id)
 
     def clone_job(
@@ -300,11 +298,11 @@ class DocumentJobSubmission:
         if config_strategy != "select_published_versions" and any(
             self.access.normalize_optional_text(value) for value in explicit_values.values()
         ):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "只有 select_published_versions 支持显式资源版本。")
+            raise ApplicationError("invalid_request", "只有 select_published_versions 支持显式资源版本。")
         if config_strategy == "select_published_versions":
             self.request_snapshot.ensure_resource_selection_allowed(user=user, **explicit_values)
         elif config_strategy not in {"keep_source_snapshot", "use_current_defaults"}:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "config_strategy 非法。")
+            raise ApplicationError("invalid_request", "config_strategy 非法。")
         requested_debug_full_text = bool(debug_full_text)
         inherited_debug_full_text = (
             config_strategy == "keep_source_snapshot"
@@ -386,7 +384,7 @@ class DocumentJobSubmission:
     def _ensure_retry_allowed(self, job: DocumentJobRecord) -> None:
         reason = self.read_model.retry_disabled_reason(job)
         if reason is not None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", reason)
+            raise ApplicationError("conflict", reason)
 
     def _build_retry_patch(
         self,
@@ -451,15 +449,15 @@ class DocumentJobSubmission:
     def _get_source_file_for_create(self, file_id: str, user: AuthenticatedUser) -> DocumentFileRecord:
         source_file = self.file_repository.get_document_file(file_id)
         if source_file is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"源文件不存在: {file_id}")
+            raise ApplicationError("not_found", f"源文件不存在: {file_id}")
         if source_file.file_type != "source_pdf":
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "document_job 只能使用 source_pdf 文件创建。")
+            raise ApplicationError("invalid_request", "document_job 只能使用 source_pdf 文件创建。")
         if source_file.status != "uploaded":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "源文件尚未完成上传。")
+            raise ApplicationError("conflict", "源文件尚未完成上传。")
         if source_file.job_id is not None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "源文件已绑定其他任务。")
+            raise ApplicationError("conflict", "源文件已绑定其他任务。")
         if source_file.tenant_id != user.tenant_id or source_file.company_id != user.company_id:
-            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "无权限使用该源文件。")
+            raise ApplicationError("forbidden", "无权限使用该源文件。")
         if user.role != "admin" and source_file.created_by != user.id:
-            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "operator 只能使用自己上传的源文件。")
+            raise ApplicationError("forbidden", "operator 只能使用自己上传的源文件。")
         return source_file

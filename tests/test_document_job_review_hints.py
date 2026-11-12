@@ -8,7 +8,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError, http_status_for
 from app.domains.document_jobs import review_content
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.quality_review_projection import decode_cursor
@@ -195,27 +195,27 @@ class DocumentJobReviewHintsTests(unittest.TestCase):
 
     def test_cursor_rejects_changed_filters_and_changed_content_snapshot(self):
         first = review_content.list_blocks(self.service, self.job.id, user=self.user, problem="flagged", limit=1)
-        with self.assertRaises(ApiError) as filtered:
+        with self.assertRaises(ApplicationError) as filtered:
             review_content.list_blocks(self.service, self.job.id, user=self.user,
                                        problem="flagged", severity="warning", limit=1, cursor=first.next_cursor)
         self.assertEqual(filtered.exception.reason_code, "invalid_review_cursor")
         self.service.review_api_job.return_value = self.job.model_copy(update={"retry_count": 3})
-        with self.assertRaises(ApiError) as changed:
+        with self.assertRaises(ApplicationError) as changed:
             review_content.list_blocks(self.service, self.job.id, user=self.user,
                                        problem="flagged", limit=1, cursor=first.next_cursor)
         self.assertEqual(changed.exception.reason_code, "quality_source_changed")
 
     def test_access_denied_prevents_content_read(self):
-        self.service.review_api_job.side_effect = ApiError(403, "forbidden", "无权读取该任务。")
-        with self.assertRaises(ApiError) as denied:
+        self.service.review_api_job.side_effect = ApplicationError("forbidden", "无权读取该任务。")
+        with self.assertRaises(ApplicationError) as denied:
             review_content.list_blocks(self.service, self.job.id, user=self.user, problem="flagged")
-        self.assertEqual(denied.exception.status_code, 403)
+        self.assertEqual(http_status_for(denied.exception), 403)
         self.service.file_repository.get_document_file.assert_not_called()
         self.service.file_upload_service.read_file_content.assert_not_called()
 
     def test_foreign_ir_owner_is_rejected_before_reading_bytes(self):
         self.records["ir_current"] = self.records["ir_current"].model_copy(update={"company_id": "another_company"})
-        with self.assertRaises(ApiError) as denied:
+        with self.assertRaises(ApplicationError) as denied:
             review_content.list_blocks(self.service, self.job.id, user=self.user, problem="flagged")
         self.assertEqual(denied.exception.reason_code, "review_access_denied")
         self.service.file_upload_service.read_file_content.assert_not_called()
@@ -227,7 +227,7 @@ class DocumentJobReviewHintsTests(unittest.TestCase):
             "checksum_sha256": "sha256:" + hashlib.sha256(self.payloads["ir_current"]).hexdigest(),
         })
         self.records["ir_old"] = self.records["ir_current"].model_copy(update={"id": "ir_old"})
-        with self.assertRaises(ApiError) as invalid:
+        with self.assertRaises(ApplicationError) as invalid:
             review_content.list_blocks(self.service, self.job.id, user=self.user, problem="flagged")
         self.assertEqual(invalid.exception.reason_code, "quality_evidence_conflict")
         self.service.file_upload_service.read_file_content.assert_called_once_with(self.records["ir_current"])
@@ -236,7 +236,7 @@ class DocumentJobReviewHintsTests(unittest.TestCase):
     def test_read_completion_rejects_generation_changed_after_projection(self):
         changed = self.job.model_copy(update={"retry_count": 3})
         self.service.review_api_job.side_effect = [self.job, self.job, changed]
-        with self.assertRaises(ApiError) as conflict:
+        with self.assertRaises(ApplicationError) as conflict:
             review_content.list_blocks(self.service, self.job.id, user=self.user, problem="flagged")
         self.assertEqual(conflict.exception.reason_code, "quality_source_changed")
         self.service.finish_review_read.assert_not_called()

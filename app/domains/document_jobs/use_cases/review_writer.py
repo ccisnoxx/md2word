@@ -6,9 +6,8 @@ import hashlib
 from typing import Any
 from uuid import uuid4
 
-from fastapi import status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.delivery_state import translation_qa_projection
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.preview_evidence import is_preview_storage_error
@@ -60,7 +59,7 @@ class DocumentReviewWriter:
         expected_source: ReviewExpectedSource | None = None,
     ) -> ReviewCommit:
         def conflict(message, reason):
-            return ApiError(409, "conflict", message,
+            return ApplicationError("conflict", message,
                 reason_code=reason if expected_source is not None else None)
 
         if job.deleted_at is not None or job.delivery_status == "published":
@@ -79,14 +78,14 @@ class DocumentReviewWriter:
                 else:
                     result_file = self.access.get_completed_result_file(job, observed_result=result_file)
                     self.access.ensure_file_not_expired(result_file)
-            except ApiError as exc:
+            except ApplicationError as exc:
                 if expected_source is not None:
                     reason = ("review_result_integrity_conflict" if exc.reason_code == "result_file_mismatch"
                         else "review_result_unavailable")
                     raise conflict("当前主 DOCX 不可用，不能批准复核。", reason) from None
-                if exc.status_code != status.HTTP_404_NOT_FOUND or exc.code != "not_found":
+                if exc.code != "not_found":
                     raise
-                raise ApiError(status.HTTP_409_CONFLICT, "conflict", "当前主 DOCX 未登记，不能批准复核。") from exc
+                raise ApplicationError("conflict", "当前主 DOCX 未登记，不能批准复核。") from exc
             if "table_rendering" in result_file.metadata:
                 rendering = result_file.metadata["table_rendering"]
                 if (
@@ -99,7 +98,7 @@ class DocumentReviewWriter:
                         or not is_valid_table_rendering_evidence(rendering) else "review_quality_blocked")
                     raise conflict("表格质量受阻或渲染证据无效，不能批准。", reason)
             if expected_source is not None and self.file_upload_service is None:
-                raise ApiError(503, "service_unavailable", "复核文件存储暂不可用。", reason_code="quality_storage_unavailable")
+                raise ApplicationError("service_unavailable", "复核文件存储暂不可用。", reason_code="quality_storage_unavailable")
             self.access.ensure_file_reader_available()
             try:
                 content = self.file_upload_service.read_file_content(result_file)
@@ -108,7 +107,7 @@ class DocumentReviewWriter:
             except Exception as exc:
                 from app.domains.document_jobs.preview_evidence import is_preview_storage_error
                 if expected_source is not None and is_preview_storage_error(exc):
-                    raise ApiError(503, "service_unavailable", "复核文件存储暂不可用。", reason_code="quality_storage_unavailable") from None
+                    raise ApplicationError("service_unavailable", "复核文件存储暂不可用。", reason_code="quality_storage_unavailable") from None
                 raise
             actual_hash = f"sha256:{hashlib.sha256(content).hexdigest()}"
             if (len(content) != result_file.size_bytes or

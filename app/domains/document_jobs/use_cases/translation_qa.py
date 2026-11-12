@@ -7,9 +7,8 @@ from collections import Counter
 from typing import Any
 
 from bs4 import BeautifulSoup
-from fastapi import status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.delivery_state import translation_qa_projection
 from app.domains.document_jobs.models import (
     DocumentJobRecord,
@@ -136,7 +135,7 @@ class DocumentJobTranslationQa:
         """旧翻译入口保留模式及六值边界，正式写入交由统一复核端口。"""
         job = self.access.get_authorized_job(job_id, user=user)
         if not is_translation_document_job_mode(job.mode):
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "翻译 QA 仅支持翻译任务。")
+            raise ApplicationError("conflict", "翻译 QA 仅支持翻译任务。")
         return self.review_writer.submit_document_review(job, user=user, review_status=qa_status,
                                             issue_type=issue_type, note=note, trace_id=trace_id).job
 

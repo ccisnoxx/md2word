@@ -2,10 +2,9 @@ from __future__ import annotations
 
 # app/domains/document_jobs/use_cases/dispatcher.py: 新建/重试任务的 Worker 投递与投递失败收口。
 
-from fastapi import status
 
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.execution import DocumentJobTaskQueueProtocol
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
@@ -35,8 +34,7 @@ class DocumentJobDispatcher:
             self.task_queue.enqueue(queued.id, trace_id=trace_id)
         except RuntimeError as exc:
             failed = self.mark_enqueue_failed(queued, str(exc), trace_id=trace_id)
-            raise ApiError(
-                status.HTTP_503_SERVICE_UNAVAILABLE,
+            raise ApplicationError(
                 "service_unavailable",
                 f"Worker 投递失败: {failed.error_message}",
             ) from exc

@@ -5,9 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.preview_evidence import PREVIEW_FILE_TYPES, verified_current_preview_files
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
@@ -42,7 +41,7 @@ class DocumentJobAccess:
 
         job = self.job_repository.get_document_job(job_id)
         if job is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文档任务不存在: {job_id}")
+            raise ApplicationError("not_found", f"文档任务不存在: {job_id}")
         self.ensure_visible(job, user)
         return job
 
@@ -63,14 +62,13 @@ class DocumentJobAccess:
         file = self.file_repository.get_document_file(job.result_file_id) if job.result_file_id else None
         if file is not None and ((file.tenant_id, file.company_id, file.job_id, file.file_type)
                 != (job.tenant_id, job.company_id, job.id, "generated_word")):
-            raise ApiError(409, "conflict", "当前主件归属与任务不一致。", reason_code=conflict_reason)
+            raise ApplicationError("conflict", "当前主件归属与任务不一致。", reason_code=conflict_reason)
         return file
 
     def ensure_file_reader_available(self) -> None:
         if self.file_upload_service is not None:
             return
-        raise ApiError(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
+        raise ApplicationError(
             "service_unavailable",
             "翻译 QA 需要文件读取服务。",
         )
@@ -78,15 +76,15 @@ class DocumentJobAccess:
     def get_source_file_for_clone(self, job: DocumentJobRecord) -> DocumentFileRecord:
         source_file = self.file_repository.get_document_file(job.source_file_id)
         if source_file is None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "源任务的 source_pdf 文件不存在，不能重新发起。")
+            raise ApplicationError("conflict", "源任务的 source_pdf 文件不存在，不能重新发起。")
         if source_file.file_type != "source_pdf":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "源任务文件不是 source_pdf，不能重新发起。")
+            raise ApplicationError("conflict", "源任务文件不是 source_pdf，不能重新发起。")
         if source_file.status != "uploaded":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "源 PDF 尚不可用，不能重新发起。")
+            raise ApplicationError("conflict", "源 PDF 尚不可用，不能重新发起。")
         if source_file.tenant_id != job.tenant_id or source_file.company_id != job.company_id:
-            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "源 PDF 与任务租户不匹配。")
+            raise ApplicationError("forbidden", "源 PDF 与任务租户不匹配。")
         if source_file.expires_at is not None and source_file.expires_at <= utc_now():
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "源 PDF 已过期，不能重新发起。")
+            raise ApplicationError("conflict", "源 PDF 已过期，不能重新发起。")
         return source_file
 
     def get_completed_result_file(self, job: DocumentJobRecord, *,
@@ -94,18 +92,18 @@ class DocumentJobAccess:
             file_reader: DocumentFileReaderProtocol | None = None) -> DocumentFileRecord:
         self.ensure_job_not_deleted(job, reason_code="job_deleted")
         if job.status != "succeeded" or job.stage != "completed":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。", reason_code="job_not_completed")
+            raise ApplicationError("conflict", "文档任务尚未成功完成，生成 Word 不可下载。", reason_code="job_not_completed")
         if job.result_file_id is None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。", reason_code="result_file_missing")
+            raise ApplicationError("conflict", "文档任务尚未成功完成，生成 Word 不可下载。", reason_code="result_file_missing")
         reader = self.file_repository if file_reader is None else file_reader
         file = reader.get_document_file(job.result_file_id) if observed_result is UNREAD_RESULT else observed_result
         if file is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"结果文件不存在: {job.result_file_id}", reason_code="result_file_missing")
+            raise ApplicationError("not_found", f"结果文件不存在: {job.result_file_id}", reason_code="result_file_missing")
         if ((file.tenant_id, file.company_id, file.job_id) != (job.tenant_id, job.company_id, job.id)
                 or file.file_type != "generated_word"):
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "结果文件与文档任务不匹配。", reason_code="result_file_mismatch")
+            raise ApplicationError("conflict", "结果文件与文档任务不匹配。", reason_code="result_file_mismatch")
         if file.status != "uploaded":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "结果文件尚未完成上传。", reason_code="result_file_not_uploaded")
+            raise ApplicationError("conflict", "结果文件尚未完成上传。", reason_code="result_file_not_uploaded")
         return file
 
     def get_downloadable_completed_result_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
@@ -142,10 +140,10 @@ class DocumentJobAccess:
     def ensure_file_not_expired(self, file: DocumentFileRecord, *, as_of: datetime | None = None,
                                file_reader: DocumentFileReaderProtocol | None = None) -> None:
         if file.deletion_claim is not None:
-            raise ApiError(409, "conflict", "文件已预留删除。", reason_code="file_deletion_reserved")
+            raise ApplicationError("conflict", "文件已预留删除。", reason_code="file_deletion_reserved")
         reader = self.file_repository if file_reader is None else file_reader
         if file.expires_at is not None and file.expires_at <= (as_of if as_of is not None else utc_now()) and not reader.is_document_file_protected(file.id):
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件已过期，不能下载。", reason_code="file_expired")
+            raise ApplicationError("conflict", "文件已过期，不能下载。", reason_code="file_expired")
 
     def file_belongs_to_job(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
         return file.job_id == job.id or file.id == job.source_file_id
@@ -190,12 +188,12 @@ class DocumentJobAccess:
 
     def ensure_job_not_deleted(self, job: DocumentJobRecord, *, reason_code: str | None = None) -> None:
         if job.deleted_at is not None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务已删除。", reason_code=reason_code)
+            raise ApplicationError("conflict", "文档任务已删除。", reason_code=reason_code)
 
     def ensure_visible(self, job: DocumentJobRecord, user: AuthenticatedUser) -> None:
         if self.is_visible(job, user):
             return
-        raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "无权限访问该文档任务。")
+        raise ApplicationError("forbidden", "无权限访问该文档任务。")
 
     def is_visible(self, job: DocumentJobRecord, user: AuthenticatedUser) -> bool:
         if job.tenant_id != user.tenant_id or job.company_id != user.company_id:

@@ -11,7 +11,7 @@ import time
 from datetime import timedelta
 from uuid import UUID, uuid4
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJobRecord
 from app.domains.document_jobs.preview_evidence import (
     preview_storage_io,
@@ -73,16 +73,16 @@ class DocumentJobPreviewService:
               trace_id: str | None = None) -> PreviewRetryResult:
         reason = reason.strip()
         if not reason or len(reason) > 1000:
-            raise ApiError(400, "invalid_request", "预览重试必须提供 1..1000 字的原因。")
+            raise ApplicationError("invalid_request", "预览重试必须提供 1..1000 字的原因。")
         try:
             key = str(UUID(request_id))
         except (ValueError, TypeError, AttributeError):
-            raise ApiError(400, "invalid_request", "预览重试 request ID 必须是 UUID。") from None
+            raise ApplicationError("invalid_request", "预览重试 request ID 必须是 UUID。") from None
         if (job.status != "succeeded" or job.stage != "completed" or job.prepared_result is None
                 or job.result_file_id != job.prepared_result.file.id or job.deleted_at is not None
                 or job.archived_at is not None or job.delivery_status == "published"
                 or "word_preview" not in job.request_snapshot):
-            raise ApiError(409, "conflict", "当前任务或主件不支持预览单独重试。")
+            raise ApplicationError("conflict", "当前任务或主件不支持预览单独重试。")
         try:
             result, _, run = self._run(job, request_key=key, requested_by=user.id, reason=reason,
                                   independent=True, resume=False, trace_id=trace_id, actor=user)
@@ -93,7 +93,7 @@ class DocumentJobPreviewService:
                 available = observation.available
             return PreviewRetryResult(job=result, run=run, available=available)
         except ValueError as exc:
-            raise ApiError(409, "conflict", str(exc)) from None
+            raise ApplicationError("conflict", str(exc)) from None
 
     def _source(self, job: DocumentJobRecord):
         receipt = job.prepared_result

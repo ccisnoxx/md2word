@@ -12,7 +12,7 @@ from billiard.exceptions import SoftTimeLimitExceeded
 
 from app.clients.mineru_client import MinerUError
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs import _failure_policy as failure_policy
 from app.domains.document_jobs.execution_support import DocumentJobLifecycle, document_ir_layout_metadata
 from app.domains.document_jobs.models import DocumentJobRecord
@@ -327,7 +327,7 @@ class WordRenderExecution:
         rasterizer = getattr(self.document_ir_service, "page_rasterizer", None)
         if (not isinstance(context, dict) or context.get("source_page_index") is None or rasterizer is None
                 or is_translation_document_job_mode(job.mode)
-                or isinstance(error, (ApiError, OSError, MinerUError, TablePlaceholderError, DocumentIntegrityError,
+                or isinstance(error, (ApplicationError, OSError, MinerUError, TablePlaceholderError, DocumentIntegrityError,
                                       SoftTimeLimitExceeded))):
             return None
         page_index = context["source_page_index"]

@@ -40,7 +40,14 @@ The current error response contains:
 
 ## Application Errors
 
-Use `ApiError` from `app/core/errors.py` for service/business failures that should become stable API responses. It carries:
+`app/core/errors.py` 定义两层错误：
+
+- `ApplicationError(code, message, *, reason_code=None)`：应用层业务错误，只携带语义错误码（`ApplicationErrorCode` 子集）、对外消息和可选原因码，**不选择 HTTP 状态**。`APPLICATION_ERROR_HTTP_STATUS` 与 `http_status_for(error)` 是“错误码 → HTTP 状态”的唯一 owner（400 invalid_request、401 unauthorized、403 forbidden/role_forbidden、404 not_found、409 conflict、422 validation_error、503 service_unavailable）；未登记的错误码在构造时直接 `ValueError`。
+- `ApiError(status_code, code, message, *, reason_code=None)`：继承 `ApplicationError`，显式携带 HTTP 状态，供 HTTP 层（router、`http_responses`）与尚未迁移的领域使用；构造签名不变。
+
+`register_api_error_handlers` 把处理器注册在 `ApplicationError` 上（`ApiError` 经 MRO 命中同一处理器），状态码统一经 `http_status_for` 决定。捕获业务错误一律 `except ApplicationError`；需要状态码的地方（批量条目的 `status_code` 合同字段等）调用 `http_status_for`，不读取 `.status_code`。
+
+`document_jobs` 应用层（use_cases、review_content、incidents、preview、recovery 等）只抛 `ApplicationError`；唯一例外是 `use_cases/request_snapshot.py` 透传 jobs 域 `JobResourceSnapshotError` 的状态与错误码。其他领域仍可使用 `ApiError`，迁移时按领域进行。旧约定的 `ApiError` 字段说明保留如下，适用于 `ApiError`：
 
 - HTTP status code
 - stable `ApiErrorCode`
@@ -48,7 +55,7 @@ Use `ApiError` from `app/core/errors.py` for service/business failures that shou
 
 Examples:
 
-- `DocumentJobAccess.get_job()` / `get_authorized_job()` raise `ApiError(404, "not_found", ...)`.
+- `DocumentJobAccess.get_job()` / `get_authorized_job()` raise `ApplicationError("not_found", ...)`（经映射输出 404）。
 - `DocumentJobQueries.list_jobs()` raises `invalid_request` for illegal filters and sort values.
 - `FileUploadService.create_upload_authorization()` raises `service_unavailable` when S3 storage is selected without a bucket.
 - `app/api/dependencies.py` raises `unauthorized`, `invalid_token`, `role_forbidden`, and `auth_unconfigured` for auth failures.
@@ -239,7 +246,7 @@ for batch_items in self._split_provider_batches(all_document_items):
 
 Request schema validation is handled by FastAPI/Pydantic. `RequestValidationError` is mapped to HTTP 422 and `error_code="validation_error"`.
 
-Business validation belongs in services and should raise `ApiError`. Examples include:
+Business validation belongs in services and should raise `ApplicationError` (document_jobs) or, in domains not yet migrated, `ApiError`. Examples include:
 
 - File upload metadata/content validation in `app/domains/files/service.py` and `app/domains/files/validation.py`.
 - Document job visibility, state, retry, cancel, delete, and download validation in `app/domains/document_jobs/use_cases/`（可见性在 `access.py`，动作禁用原因在 `read_model.py`，命令校验在各用例模块）。
@@ -249,9 +256,9 @@ Pydantic model validators are used for record invariants. `DocumentJobRecord._va
 
 ## Bulk And Partial Failure Behavior
 
-Some bulk endpoints intentionally catch `ApiError` per item and return item-level failures instead of failing the whole request. `app/domains/document_jobs/router.py` does this for bulk retry/archive/cancel.
+Some bulk endpoints intentionally catch `ApplicationError` per item (deriving each item's `status_code` via `http_status_for`) and return item-level failures instead of failing the whole request. `app/domains/document_jobs/router.py` does this for bulk retry/archive/cancel.
 
-Only use this pattern when the API response schema explicitly represents per-item success/failure. Otherwise let `ApiError` propagate to the registered handler.
+Only use this pattern when the API response schema explicitly represents per-item success/failure. Otherwise let `ApplicationError`/`ApiError` propagate to the registered handler.
 
 ## Unexpected Exceptions
 

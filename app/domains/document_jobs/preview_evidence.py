@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import ValidationError
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.preview_state import (
     PreviewArtifactObservation,
     current_preview_ids,
@@ -415,10 +415,10 @@ def preview_download_ttl(job, record, file_repository, file_service, *, expires_
     """签发时以完整当前预览的最早期限截断，直连URL仍不承诺即时撤销。"""
     observation = observe_current_preview(job, file_repository, file_service)
     if (not observation.available or record.id not in current_preview_ids(job) or record not in observation.files):
-        raise ApiError(409, "conflict", "当前预览引用已失效。")
+        raise ApplicationError("conflict", "当前预览引用已失效。")
     with preview_storage_io():
         ttl = min(file_service.preview_download_ttl(record, expires_seconds=expires_seconds),
                   int((observation.earliest_expires_at - utc_now()).total_seconds()))
     if ttl <= 0:
-        raise ApiError(409, "conflict", "当前预览引用已过期。")
+        raise ApplicationError("conflict", "当前预览引用已过期。")
     return ttl

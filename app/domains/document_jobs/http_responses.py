@@ -7,7 +7,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 from fastapi import Request, status
 
-from app.core.errors import ApiError
+from app.core.errors import ApiError, ApplicationError, http_status_for
 from app.core.runtime import AppRuntime
 from app.domains.audit.models import ActorContext
 from app.domains.document_jobs.delivery_state import translation_qa_projection
@@ -245,13 +245,13 @@ def build_document_job_bulk_success(
     )
 
 
-def build_document_job_bulk_failure(job_id: str, exc: ApiError) -> DocumentJobBulkItemResponse:
+def build_document_job_bulk_failure(job_id: str, exc: ApplicationError) -> DocumentJobBulkItemResponse:
     """构造批量操作中单个失败任务的响应项。"""
 
     return DocumentJobBulkItemResponse(
         job_id=job_id,
         ok=False,
-        status_code=exc.status_code,
+        status_code=http_status_for(exc),
         error_code=exc.code,
         detail=exc.message,
     )

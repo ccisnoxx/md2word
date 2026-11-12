@@ -16,7 +16,7 @@ from threading import Event, current_thread
 from unittest import TestCase
 from unittest.mock import patch
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.document_jobs.use_cases.download_tokens import build_file_download_token
 from app.domains.document_jobs.models import DocumentJobPreparedResult, DocumentJobRecord
 from app.domains.files.models import DocumentFileRecord
@@ -605,7 +605,7 @@ class DocumentJobResultPersistenceTests(TestCase):
             self.assertNotIn(file_id, str(response.json()))
             response = client.get(f"/api/v1/document-jobs/{job.id}/download-url", params={"file_id": file_id}, headers=headers)
             self.assertEqual(response.status_code, 409, response.text)
-            with self.assertRaises(ApiError):
+            with self.assertRaises(ApplicationError):
                 runtime.document_job_use_cases.downloads.get_file_for_authorized_download(job.id, file_id=file_id)
             token = build_file_download_token(runtime.settings, job_id=job.id, file_id=file_id, expires_at=utc_now() + timedelta(minutes=5))
             self.assertEqual(client.get(f"/api/v1/document-jobs/{job.id}/download", params={"token": token}).status_code, 409)

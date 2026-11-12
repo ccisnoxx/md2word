@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 from botocore.exceptions import ClientError
 
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.audit.models import ActorContext, AuditEvent
 from app.domains.document_jobs.execution import DocumentJobTaskQueueProtocol
 from app.domains.document_jobs.models import DocumentJobRecord
@@ -125,23 +125,23 @@ class DocumentJobPublication:
                 try:
                     self._verify_publication_result(job, record.id)
                     download_actions[record.id] = self.read_model.available_action(None)
-                except ApiError as error:
+                except ApplicationError as error:
                     reason = DocumentJobActionDisabledReasonResponse(code=error.reason_code, message=error.message)
                     download_actions[record.id] = DocumentJobAvailableActionResponse(enabled=False,
                         disabled_reason=reason.message, disabled_reason_code=reason.code, disabled_reasons=[reason])
             current = self.job_repository.get_document_job(job.id)
             current_file = self.file_repository.get_document_file(job.result_file_id) if job.result_file_id else None
             if current != job or current_file != file:
-                raise ApiError(409, "conflict", "发布来源已变化，请刷新后核对。", reason_code="publication_source_changed")
+                raise ApplicationError("conflict", "发布来源已变化，请刷新后核对。", reason_code="publication_source_changed")
             return {"job_id": job.id, "expected_source": observed_publication_source(job, file),
                     "items": [public_publication_record(record) for record in records], "available_actions": actions,
                     "preflight_checks": checks, "download_actions": download_actions}
-        except ApiError:
+        except ApplicationError:
             raise
         except Exception as error:
             if not is_preview_storage_error(error):
                 raise
-            raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
+            raise ApplicationError("service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
 
     def request_new_generation(self, job_id: str, *, user: AuthenticatedUser, request_id: str,
         note: str, expected_source: ReviewExpectedSource, trace_id: str,
@@ -151,10 +151,10 @@ class DocumentJobPublication:
         try:
             key = str(UUID(request_id))
         except (TypeError, ValueError, AttributeError):
-            raise ApiError(422, "validation_error", "request_id 必须是 UUID。") from None
+            raise ApplicationError("validation_error", "request_id 必须是 UUID。") from None
         note = note.strip()
         if not 1 <= len(note) <= 1000:
-            raise ApiError(422, "validation_error", "新代原因去除首尾空白后必须为 1..1000 字。")
+            raise ApplicationError("validation_error", "新代原因去除首尾空白后必须为 1..1000 字。")
         fingerprint = new_generation_request_sha256(job_id=job.id, actor_id=user.id,
             expected_source=expected_source, note=note)
         try:
@@ -178,10 +178,10 @@ class DocumentJobPublication:
                     source_file=source, audit_id="audit_" + uuid4().hex, trace_id=trace_id),
                 max_retries=self.settings.p0_document_job_max_retries)
         except NewGenerationConflict as error:
-            raise ApiError(409, "conflict", "新代请求条件已变化，请重新读取。", reason_code=error.reason_code) from None
+            raise ApplicationError("conflict", "新代请求条件已变化，请重新读取。", reason_code=error.reason_code) from None
         except NewGenerationCommitUnknownError:
             raise NewGenerationRequestUnavailable(key, reason_code="new_generation_acceptance_unknown") from None
-        except ApiError:
+        except ApplicationError:
             raise
         except Exception as error:
             if not is_preview_storage_error(error):
@@ -216,23 +216,23 @@ class DocumentJobPublication:
         try:
             key = str(UUID(request_id))
         except (TypeError, ValueError, AttributeError):
-            raise ApiError(422, "validation_error", "request_id 必须是 UUID。") from None
+            raise ApplicationError("validation_error", "request_id 必须是 UUID。") from None
         try:
             result = self.job_repository.get_document_job_generation_request(job_id, request_id=key, actor_id=user.id)
         except NewGenerationConflict as error:
-            raise ApiError(409, "conflict", "该请求不能由当前身份读取。", reason_code=error.reason_code) from None
+            raise ApplicationError("conflict", "该请求不能由当前身份读取。", reason_code=error.reason_code) from None
         except Exception as error:
             if not isinstance(error, NewGenerationCommitUnknownError) and not is_preview_storage_error(error):
                 raise
             raise NewGenerationRequestUnavailable(key, reason_code="new_generation_acceptance_unknown") from None
         if result is None:
-            raise ApiError(404, "not_found", "没有找到该新代接受记录。", reason_code="new_generation_request_not_found")
+            raise ApplicationError("not_found", "没有找到该新代接受记录。", reason_code="new_generation_request_not_found")
         acceptance, current = result
         return self._new_generation_response(acceptance, current, replayed=True)
 
     def _new_generation_job(self, job_id: str, user: AuthenticatedUser, *, request_id: str) -> DocumentJobRecord:
         if user.role != "admin" or {"admin_token", "jobs_token"}.intersection(user.token_scopes):
-            raise ApiError(403, "role_forbidden", "新代命令和对账需要内部 Admin 用户 JWT。", reason_code="admin_required")
+            raise ApplicationError("role_forbidden", "新代命令和对账需要内部 Admin 用户 JWT。", reason_code="admin_required")
         try:
             return self.access.get_authorized_job(job_id, user=user)
         except Exception as error:
@@ -258,18 +258,18 @@ class DocumentJobPublication:
         """锁外完整读取原 PDF；仓储随后在接受锁内复核冻结 descriptor。"""
         source = self.read_model.new_generation_source_file(job)
         if self.file_upload_service is None:
-            raise ApiError(503, "service_unavailable", "源文件存储暂不可用。", reason_code="new_generation_storage_unavailable")
+            raise ApplicationError("service_unavailable", "源文件存储暂不可用。", reason_code="new_generation_storage_unavailable")
         try:
             content = self.file_upload_service.read_file_content(source)
         except FileNotFoundError:
-            raise ApiError(404, "not_found", "源 PDF 实物不存在。", reason_code="new_generation_source_unavailable") from None
+            raise ApplicationError("not_found", "源 PDF 实物不存在。", reason_code="new_generation_source_unavailable") from None
         except ClientError as error:
             if error.response.get("Error", {}).get("Code") in {"NoSuchKey", "NotFound", "404"}:
-                raise ApiError(404, "not_found", "源 PDF 实物不存在。", reason_code="new_generation_source_unavailable") from None
-            raise ApiError(503, "service_unavailable", "源文件存储暂不可用。", reason_code="new_generation_storage_unavailable") from None
-        except ApiError as error:
-            if error.status_code == 503:
-                raise ApiError(503, "service_unavailable", "源文件存储暂不可用。", reason_code="new_generation_storage_unavailable") from None
+                raise ApplicationError("not_found", "源 PDF 实物不存在。", reason_code="new_generation_source_unavailable") from None
+            raise ApplicationError("service_unavailable", "源文件存储暂不可用。", reason_code="new_generation_storage_unavailable") from None
+        except ApplicationError as error:
+            if error.code == "service_unavailable":
+                raise ApplicationError("service_unavailable", "源文件存储暂不可用。", reason_code="new_generation_storage_unavailable") from None
             raise NewGenerationConflict("new_generation_source_unavailable") from None
         except ValueError:
             raise NewGenerationConflict("new_generation_source_unavailable") from None
@@ -281,7 +281,7 @@ class DocumentJobPublication:
         """只物化原绑定版本；缺快照、实物或翻译绑定时拒绝，不读取当前默认值。"""
         service = self.job_resource_snapshot_service
         if service is None:
-            raise ApiError(503, "service_unavailable", "绑定资源服务暂不可用。", reason_code="new_generation_resources_unavailable")
+            raise ApplicationError("service_unavailable", "绑定资源服务暂不可用。", reason_code="new_generation_resources_unavailable")
         try:
             snapshot = self.read_model.new_generation_resource_snapshot(job)
             resources_job = JobRecord(id=job.id, source_filename=job.request_snapshot["source_file"]["original_filename"],
@@ -296,28 +296,29 @@ class DocumentJobPublication:
                     if record.payload.get(name) is not None and record.payload[name] != actual:
                         raise ValueError("原模板实物完整性核验失败。")
         except (JobResourceSnapshotError, FileNotFoundError, ValueError, KeyError):
-            raise ApiError(503, "service_unavailable", "原绑定资源快照或实物不可用。", reason_code="new_generation_resources_unavailable") from None
+            raise ApplicationError("service_unavailable", "原绑定资源快照或实物不可用。", reason_code="new_generation_resources_unavailable") from None
 
     def _publication_job(self, job_id, user):
         try:
             return self.access.get_authorized_job(job_id, user=user)
-        except ApiError as error:
-            reason = {403: "publication_access_denied", 404: "document_job_not_found"}.get(error.status_code)
+        except ApplicationError as error:
+            reason = {"forbidden": "publication_access_denied", "role_forbidden": "publication_access_denied",
+                      "not_found": "document_job_not_found"}.get(error.code)
             if reason is None:
                 raise
-            raise ApiError(error.status_code, error.code, error.message, reason_code=reason) from None
+            raise ApplicationError(error.code, error.message, reason_code=reason) from None
 
     def get_publication_file_for_download(self, job_id: str, publication_id: str, *,
         user: AuthenticatedUser, trace_id: str,
     ) -> tuple[DocumentJobRecord, PublicationRecord, DocumentFileRecord]:
         """仅 JWT 可见任务先授权；无权请求不读取发布私有记录或写目标审计。"""
         if {"admin_token", "jobs_token"}.intersection(user.token_scopes):
-            raise ApiError(403, "forbidden", "最终件下载需要有效用户 JWT。", reason_code="publication_access_denied")
+            raise ApplicationError("forbidden", "最终件下载需要有效用户 JWT。", reason_code="publication_access_denied")
         job = self._publication_job(job_id, user)
         try:
             record, file = self._verify_publication_result(job, publication_id)
             return job, record, file
-        except ApiError as error:
+        except ApplicationError as error:
             self.record_publication_download_audit(job, user=user, trace_id=trace_id,
                 reason_code=error.reason_code)
             raise
@@ -328,7 +329,7 @@ class DocumentJobPublication:
         """能力令牌验签后重验发布与实物；不构造 JWT actor 或伪造下载审计。"""
         job = self.job_repository.get_document_job(job_id)
         if job is None:
-            raise ApiError(404, "not_found", "文档任务不存在。", reason_code="document_job_not_found")
+            raise ApplicationError("not_found", "文档任务不存在。", reason_code="document_job_not_found")
         return self._verify_publication_result(job, publication_id,
             expected_result=(result_file_id, result_sha256))
 
@@ -341,46 +342,46 @@ class DocumentJobPublication:
             try:
                 validate_publication_history(job, records)
             except ValueError:
-                raise ApiError(409, "conflict", "发布记录与任务来源不一致。", reason_code="publication_download_source_changed") from None
+                raise ApplicationError("conflict", "发布记录与任务来源不一致。", reason_code="publication_download_source_changed") from None
             record = next((item for item in records if item.id == publication_id), None)
             if record is None:
-                raise ApiError(404, "not_found", "发布记录不存在。", reason_code="publication_result_unavailable")
+                raise ApplicationError("not_found", "发布记录不存在。", reason_code="publication_result_unavailable")
             if (job.deleted_at is not None or job.delivery_status != "published" or job.current_publication_id != record.id
                     or job.result_file_id != record.result_file_id or job.retry_count != record.generation):
-                raise ApiError(409, "conflict", "发布记录与任务来源不一致。", reason_code="publication_download_source_changed")
+                raise ApplicationError("conflict", "发布记录与任务来源不一致。", reason_code="publication_download_source_changed")
             if expected_result is not None and expected_result != (record.result_file_id, record.result_sha256):
-                raise ApiError(403, "forbidden", "最终件下载链接无效。", reason_code="publication_download_token_invalid")
+                raise ApplicationError("forbidden", "最终件下载链接无效。", reason_code="publication_download_token_invalid")
             file = self.file_repository.get_document_file(record.result_file_id)
             archived = next((item for item in record.files if item.id == record.result_file_id), None)
             if file is None:
-                raise ApiError(404, "not_found", "发布结果实物不存在。", reason_code="publication_result_unavailable")
+                raise ApplicationError("not_found", "发布结果实物不存在。", reason_code="publication_result_unavailable")
             if (file.file_type != "generated_word" or (file.tenant_id, file.company_id, file.job_id) !=
                     (record.tenant_id, record.company_id, record.job_id) or archived is None
                     or file.checksum_sha256 != record.result_sha256
                     or review_source_descriptor(file) != review_source_descriptor(archived)
                     or file.review_source_revision != archived.review_source_revision):
-                raise ApiError(409, "conflict", "发布结果描述与存档不一致。", reason_code="publication_download_source_changed")
+                raise ApplicationError("conflict", "发布结果描述与存档不一致。", reason_code="publication_download_source_changed")
             if file_lifecycle_unavailable(file, self.file_repository, now=utc_now()) or not self.file_repository.is_document_file_protected(file.id):
-                raise ApiError(409, "conflict", "发布结果当前不可读取。", reason_code="publication_result_unavailable")
+                raise ApplicationError("conflict", "发布结果当前不可读取。", reason_code="publication_result_unavailable")
             try:
                 self.file_upload_service.ensure_publication_physical_exclusive((file,))
                 content = self.file_upload_service.read_file_content(file)
             except (PublicationConflict, ValueError):
-                raise ApiError(409, "conflict", "发布结果物理身份不安全。", reason_code="publication_download_source_changed") from None
+                raise ApplicationError("conflict", "发布结果物理身份不安全。", reason_code="publication_download_source_changed") from None
             if len(content) != file.size_bytes or "sha256:" + hashlib.sha256(content).hexdigest() != record.result_sha256:
-                raise ApiError(409, "conflict", "发布结果完整性核验失败。", reason_code="publication_result_integrity_failed")
+                raise ApplicationError("conflict", "发布结果完整性核验失败。", reason_code="publication_result_integrity_failed")
             self.check_publication_download_current(job, record, file)
             return record, file
         except FileNotFoundError:
-            raise ApiError(404, "not_found", "发布结果实物不存在。", reason_code="publication_result_unavailable") from None
+            raise ApplicationError("not_found", "发布结果实物不存在。", reason_code="publication_result_unavailable") from None
         except ClientError as error:
             if error.response.get("Error", {}).get("Code") in {"NoSuchKey", "NotFound", "404"}:
-                raise ApiError(404, "not_found", "发布结果实物不存在。", reason_code="publication_result_unavailable") from None
-            raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
+                raise ApplicationError("not_found", "发布结果实物不存在。", reason_code="publication_result_unavailable") from None
+            raise ApplicationError("service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
         except Exception as error:
             if not is_preview_storage_error(error):
                 raise
-            raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
+            raise ApplicationError("service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
 
     def check_publication_download_current(self, job: DocumentJobRecord, record: PublicationRecord,
         file: DocumentFileRecord,
@@ -393,14 +394,14 @@ class DocumentJobPublication:
                 or self.file_repository.get_document_file(file.id) != file
                 or self.job_repository.list_document_job_publications(job.id) != [record]
                 or not self.file_repository.is_document_file_protected(file.id)):
-            raise ApiError(409, "conflict", "发布结果在读取期间发生变化。", reason_code="publication_download_source_changed")
+            raise ApplicationError("conflict", "发布结果在读取期间发生变化。", reason_code="publication_download_source_changed")
 
     def record_publication_download_audit(self, job: DocumentJobRecord, *, user: AuthenticatedUser, trace_id: str,
         record: PublicationRecord | None = None, reason_code: str | None = None,
     ) -> None:
         """授权审计成功才允许路由交付 URL；取件端没有 JWT，不调用此方法。"""
         if self.audit_service is None:
-            raise ApiError(503, "service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable")
+            raise ApplicationError("service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable")
         details = ({"publication_id": record.id, "generation": record.generation,
             "result_file_id": record.result_file_id, "result_sha256": record.result_sha256,
             "classification": "final_delivery"} if record is not None else {"reason_code": reason_code})
@@ -411,7 +412,7 @@ class DocumentJobPublication:
         except Exception as error:
             if not is_preview_storage_error(error):
                 raise
-            raise ApiError(503, "service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable") from None
+            raise ApplicationError("service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable") from None
 
     def authorize_publication_download(self, job_id: str, publication_id: str, *,
         user: AuthenticatedUser, trace_id: str,
@@ -426,7 +427,7 @@ class DocumentJobPublication:
         try:
             expires_seconds = self.settings.oss_download_presign_expires_seconds
             if expires_seconds <= 0:
-                raise ApiError(503, "service_unavailable", "最终件下载有效期配置不可用。", reason_code="publication_storage_unavailable")
+                raise ApplicationError("service_unavailable", "最终件下载有效期配置不可用。", reason_code="publication_storage_unavailable")
             expires_at = (utc_now() + timedelta(seconds=expires_seconds)).replace(microsecond=0)
             if file.storage_provider == "s3":
                 presigned_url = self.file_upload_service.create_presigned_download_url(file, expires_seconds=expires_seconds)
@@ -435,7 +436,7 @@ class DocumentJobPublication:
                     publication_id=record.id, result_file_id=file.id, result_sha256=record.result_sha256,
                     expires_ts=int(expires_at.timestamp())))
             self.check_publication_download_current(job, record, file)
-        except ApiError as error:
+        except ApplicationError as error:
             self.record_publication_download_audit(job, user=user, trace_id=trace_id, reason_code=error.reason_code)
             raise
         except Exception as error:
@@ -443,10 +444,10 @@ class DocumentJobPublication:
                 raise
             self.record_publication_download_audit(job, user=user, trace_id=trace_id,
                 reason_code="publication_storage_unavailable")
-            raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
+            raise ApplicationError("service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
         self.record_publication_download_audit(job, user=user, trace_id=trace_id, record=record)
         if expires_at <= utc_now():
-            raise ApiError(403, "forbidden", "最终件下载链接已过期，请重新申请。", reason_code="publication_download_token_expired")
+            raise ApplicationError("forbidden", "最终件下载链接已过期，请重新申请。", reason_code="publication_download_token_expired")
         return PublicationDownloadGrant(job=job, record=record, file=file, expires_at=expires_at,
                                         presigned_url=presigned_url, token=token)
 
@@ -458,22 +459,22 @@ class DocumentJobPublication:
         _record, file = self.get_publication_file_for_authorized_download(job_id, publication_id,
             result_file_id=claims.result_file_id, result_sha256=claims.result_sha256)
         if file.storage_provider == "s3":
-            raise ApiError(409, "conflict", "发布结果存储身份已变化。", reason_code="publication_download_source_changed")
+            raise ApplicationError("conflict", "发布结果存储身份已变化。", reason_code="publication_download_source_changed")
         return file, self.file_upload_service.resolve_file_object_path(file)
 
     def publish_document(self, job_id: str, *, user: AuthenticatedUser, request_id: str, note: str,
                          expected_source: PublicationExpectedSource, trace_id: str):
         """先授权和幂等查询，再做锁外认证；提交由单一仓储事务拥有。"""
         if user.role != "admin" or "admin_token" in user.token_scopes or "jobs_token" in user.token_scopes:
-            raise ApiError(403, "role_forbidden", "只有内部 Admin 用户 JWT 可以发布。", reason_code="admin_required")
+            raise ApplicationError("role_forbidden", "只有内部 Admin 用户 JWT 可以发布。", reason_code="admin_required")
         job = self._publication_job(job_id, user)
         try:
             key = str(UUID(request_id))
         except (TypeError, ValueError, AttributeError):
-            raise ApiError(422, "validation_error", "request_id 必须是 UUID。") from None
+            raise ApplicationError("validation_error", "request_id 必须是 UUID。") from None
         note = note.strip()
         if not note or len(note) > 1000:
-            raise ApiError(422, "validation_error", "发布备注必须为 1..1000 字。")
+            raise ApplicationError("validation_error", "发布备注必须为 1..1000 字。")
         fingerprint = publication_request_sha256(job_id=job.id, actor_id=user.id, expected_source=expected_source, note=note)
         try:
             prior = self.job_repository.list_document_job_publications(job.id)
@@ -485,7 +486,7 @@ class DocumentJobPublication:
             if prior or job.current_publication_id is not None or job.delivery_status == "published":
                 raise PublicationConflict("publication_already_exists")
             if not self.settings.document_publication_enabled:
-                raise ApiError(503, "service_unavailable", "文档发布写入当前已停用。", reason_code="publication_disabled")
+                raise ApplicationError("service_unavailable", "文档发布写入当前已停用。", reason_code="publication_disabled")
             if job.deleted_at is not None or job.archived_at is not None or job.status != "succeeded" or job.stage != "completed":
                 raise PublicationConflict("publication_state_conflict")
             quality = effective_quality_status(job)
@@ -517,15 +518,15 @@ class DocumentJobPublication:
                 record=record, expected_job_sha256=digest(job.model_dump(mode="json")), files=evidence.files))
         except PublicationConflict as error:
             self._publication_rejected(job, user, error.reason_code, trace_id)
-            raise ApiError(409, "conflict", str(error), reason_code=error.reason_code) from None
-        except ApiError as error:
+            raise ApplicationError("conflict", str(error), reason_code=error.reason_code) from None
+        except ApplicationError as error:
             self._publication_rejected(job, user, error.reason_code or "publication_state_conflict", trace_id)
             raise
         except Exception as error:
             if not is_preview_storage_error(error):
                 raise
             self._publication_rejected(job, user, "publication_storage_unavailable", trace_id)
-            raise ApiError(503, "service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
+            raise ApplicationError("service_unavailable", "发布存储暂不可用。", reason_code="publication_storage_unavailable") from None
         current = self.job_repository.get_document_job(job.id)
         if created:
             self.events.record_event(current, event_type="published", stage="completed", level="info", message="文档已发布。",
@@ -537,7 +538,7 @@ class DocumentJobPublication:
 
     def _publication_rejected(self, job, user, reason_code, trace_id):
         if self.audit_service is None:
-            raise ApiError(503, "service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable")
+            raise ApplicationError("service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable")
         try:
             self.audit_service.record(actor=ActorContext(actor_id=user.id, actor_role="admin", source="jwt"),
                 action="document_job.publish_rejected", target_type="document_job", target_id=job.id,
@@ -545,4 +546,4 @@ class DocumentJobPublication:
         except Exception as error:
             if not is_preview_storage_error(error):
                 raise
-            raise ApiError(503, "service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable") from None
+            raise ApplicationError("service_unavailable", "发布审计暂不可用。", reason_code="publication_audit_unavailable") from None
