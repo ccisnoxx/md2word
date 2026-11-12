@@ -35,7 +35,7 @@ Domain code should depend on narrow repository protocols in `app/domains/**/repo
 
 - `app/domains/jobs/repository.py` 仅保留共享 `JobEventRepositoryProtocol`；正式任务端口位于 `app/domains/document_jobs/repository.py`。
 - `app/infrastructure/persistence/factory.py` returns a concrete `PersistenceAdapters` object containing implementations for the selected backend.
-- `app/main.py` passes those adapters into services and stores them on `AppRuntime`.
+- `app/main.py` builds the adapters, passes them to the `app/composition/*` assembly functions, and stores them on `AppRuntime`.
 
 When adding persistence for a domain, keep the domain protocol in `app/domains/<domain>/repository.py`, and put backend implementations under `app/infrastructure/persistence/file`, `sqlite`, and/or `mysql`.
 

@@ -19,6 +19,7 @@ from app.main import create_app
 from app.services.auth.models import AuthenticatedUser
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
 from tests import test_fastapi_jobs_backend as fixtures
+from tests.document_job_use_case_support import replace_dependency
 
 
 STATE_DEFAULTS = {
@@ -290,7 +291,7 @@ class DocumentJobDeliveryStateApiTests(TestCase):
                     repository = runtime.document_job_repository
                     job = repository.get_document_job(job_id)
                     file = runtime.document_file_repository.get_document_file(job.result_file_id)
-                    runtime.document_job_service.task_queue = None
+                    replace_dependency(runtime.document_job_use_cases, "task_queue", None)
                     if race == "none_result":
                         repository.update_document_job(job_id, status="pending", stage="uploaded",
                                                        result_file_id=None, prepared_result=None)
@@ -339,7 +340,7 @@ class DocumentJobDeliveryStateApiTests(TestCase):
                 runtime.document_job_repository.update_document_job(job_id, quality_status="warning", quality_summary={"count": 1})
                 self.assertEqual(self._qa(client, headers, job_id).status_code, 200)
                 source = runtime.document_job_repository.get_document_job(job_id)
-                runtime.document_job_service.task_queue = None
+                replace_dependency(runtime.document_job_use_cases, "task_queue", None)
                 clone = client.post(f"/api/v1/document-jobs/{job_id}/clone", headers=headers,
                                     json={"config_strategy": "keep_source_snapshot", "review_status": "approved",
                                           "delivery_status": "published"})
@@ -467,7 +468,7 @@ class DocumentJobDeliveryStateApiTests(TestCase):
                     if not interleaved:
                         interleaved = True
                         # A 已读未复核；B 先经真实 service/CAS 提交，随后 A 才进入自己的 CAS。
-                        runtime.document_job_service.update_translation_qa(
+                        runtime.document_job_use_cases.translation_qa.update_translation_qa(
                             current_id, user=user, qa_status="needs_fix", issue_type="terminology",
                             note="B 的复核备注", trace_id="trace-review-b",
                         )
@@ -500,7 +501,7 @@ class DocumentJobDeliveryStateApiTests(TestCase):
             with patch.object(runtime.document_job_event_repository, "append_document_job_event",
                               side_effect=RuntimeError("事件存储不可用")):
                 with self.assertRaisesRegex(RuntimeError, "事件存储不可用"):
-                    runtime.document_job_service.update_translation_qa(
+                    runtime.document_job_use_cases.translation_qa.update_translation_qa(
                         job_id, user=user, qa_status="approved", issue_type=None, note=None, trace_id="trace-event-failure",
                     )
             self.assertEqual(runtime.document_job_repository.get_document_job(job_id).review_status, "approved")

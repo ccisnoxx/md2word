@@ -7,7 +7,7 @@ doc_status: historical
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  保留 e51e6ccd 基线与 2026-11-06 局部判断；2026-11-10 只静态复核扩展阶段、table context 及含未提交 translation_execution.py 的调用位置，其他旧判断未全面复核，未做运行或整项 AC 验收。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+  保留 e51e6ccd 基线与 2026-11-06 局部判断；2026-11-10 只静态复核扩展阶段、table context 及含未提交 translation_execution.py 的调用位置，其他旧判断未全面复核，未做运行或整项 AC 验收。 依据与内容身份：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # 当前实现与目标差距
@@ -20,7 +20,7 @@ verification_scope: >-
 
 > **局部复核（2026-11-06，源码基线 `79f20cef`）**：当次仅更新第 5 节的 ProtectedTokenCodec、数字/单位/公式后验校验，以及第 10 节对应优先级描述。
 
-> **局部静态复核（2026-11-10，含未提交工作区）**：本次仅补第 5 节 table context、第 8 节扩展阶段，以及翻译调用位置。核验源文件与 SHA-256 见 [B1 记录](../../.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md)；没有验证环境启用、真实翻译、整项 AC、人工接受或部署，不推进 Manifest 状态。
+> **局部静态复核（2026-11-10，含未提交工作区）**：本次仅补第 5 节 table context、第 8 节扩展阶段，以及翻译调用位置。核验源文件与 SHA-256 见 [B1 记录](../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md)；没有验证环境启用、真实翻译、整项 AC、人工接受或部署，不推进 Manifest 状态。
 
 状态：
 

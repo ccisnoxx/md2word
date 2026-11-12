@@ -18,7 +18,7 @@ Evidence:
 - `app/api/errors.py`
 - `app/api/dependencies.py`
 - `app/main.py`
-- `app/domains/document_jobs/service.py`
+- `app/domains/document_jobs/use_cases/`
 - `app/domains/document_jobs/router.py`
 - `app/domains/files/service.py`
 - `tests/test_internal_user_management.py`
@@ -36,7 +36,7 @@ The current error response contains:
 - `trace_id`
 - nested `error.code`, `error.message`, `error.status_code`, `error.request_id`, `error.trace_id`
 
-`trace_id` is set by the HTTP middleware in `app/main.py` from `X-Trace-Id` or a generated UUID hex value.
+`trace_id` is set by the HTTP middleware in `app/api/middleware.py` from `X-Trace-Id` or a generated UUID hex value.
 
 ## Application Errors
 
@@ -48,8 +48,8 @@ Use `ApiError` from `app/core/errors.py` for service/business failures that shou
 
 Examples:
 
-- `DocumentJobService.get_job()` raises `ApiError(404, "not_found", ...)`.
-- `DocumentJobService.list_jobs()` raises `invalid_request` for illegal filters and sort values.
+- `DocumentJobAccess.get_job()` / `get_authorized_job()` raise `ApiError(404, "not_found", ...)`.
+- `DocumentJobQueries.list_jobs()` raises `invalid_request` for illegal filters and sort values.
 - `FileUploadService.create_upload_authorization()` raises `service_unavailable` when S3 storage is selected without a bucket.
 - `app/api/dependencies.py` raises `unauthorized`, `invalid_token`, `role_forbidden`, and `auth_unconfigured` for auth failures.
 
@@ -126,7 +126,7 @@ Current dominant convention for new application code is `ApiError`, but `HTTPExc
 - 仅 `GET /document-jobs/{id}` 与异常中心诊断接口填充；列表等共用 `DocumentJobResponse` 的接口恒为 `null`，不做逐行事件查询。前端只消费该投影，不解析事件 payload。
 - `error_code`/`failed_stage` 合同不变。异常中心分类中失败任务的明确错误码优先于关键词：`mineru_failed`/`document_ir_failed`/`render_failed` → `conversion_failed`，`translation_failed`/`translation_fan_in_mismatch` → `translation_failed`（历史 `ir_converting + translation_failed` 仍为翻译失败）。
 - 测试：`tests/test_document_job_failure_diagnostic.py`（含真实 eager Worker 页级与文档级失败）。
-- 渲染来源（P0-6）：`word_renderer.render_to_result` 在执行 RenderPlan 操作或表格预处理时捕获异常，只用 `app/services/failure_context.py::attach_failure_context` 把操作定位（序号、类型、分节、块 ID、源页索引、逻辑表格单元）挂到异常属性 `md2word_failure_context` 后原样抛出，不改变异常类型与失败分类。计划阶段同样带定位，`operation_kind` 为 `layout_plan`、`table_plan`、`render_plan`：`TableRenderError` 按 `block_index` 定位块和页，因此可进入整页降级；其余为文档级；`render_plan` 的合同错误转 `DocumentIntegrityError` 后上下文挂在新异常上，仍不降级。`app/domains/document_jobs/_failure_policy.py::worker_failure_evidence` 以“固定错误码 → 完整性首个阻断码 → 异常类型名”取原因码写入 `failure_context`，`evidence._safe_failure_context` 逐字段白名单过滤（不收异常正文）；含 `failure_context` 的 payload 同样附 `retry_count`。投影来源为 `render_operation`，新增 `block_ids`、`operation_kind`、`source_page_count`、`page_count_basis`（MinerU 验证来源取 `inventory.raw_page_count`，依据固定 `content_blocks`，0 视为未知）；无源页的操作为 `scope=document`。测试：`tests/test_render_failure_context.py`。
+- 渲染来源（P0-6）：`word_renderer.DocumentIRWordRenderer._dispatch_operation`（执行 RenderPlan 操作）与 `render_preparation.prepare_render`（布局/表格/RenderPlan 计划与表格预处理）捕获异常，只用 `app/services/failure_context.py::attach_failure_context` 把操作定位（序号、类型、分节、块 ID、源页索引、逻辑表格单元）挂到异常属性 `md2word_failure_context` 后原样抛出，不改变异常类型与失败分类。计划阶段同样带定位，`operation_kind` 为 `layout_plan`、`table_plan`、`render_plan`：`TableRenderError` 按 `block_index` 定位块和页，因此可进入整页降级；其余为文档级；`render_plan` 的合同错误转 `DocumentIntegrityError` 后上下文挂在新异常上，仍不降级。`app/domains/document_jobs/_failure_policy.py::worker_failure_evidence` 以“固定错误码 → 完整性首个阻断码 → 异常类型名”取原因码写入 `failure_context`，`render_event_summary._safe_failure_context` 逐字段白名单过滤（不收异常正文）；含 `failure_context` 的 payload 同样附 `retry_count`。投影来源为 `render_operation`，新增 `block_ids`、`operation_kind`、`source_page_count`、`page_count_basis`（MinerU 验证来源取 `inventory.raw_page_count`，依据固定 `content_blocks`，0 视为未知）；无源页的操作为 `scope=document`。测试：`tests/test_render_failure_context.py`。
 - Worker 失败消息：`app/domains/document_jobs/_failure_policy.py` 是失败分类、消息和证据的唯一 owner；`worker_failure_message` 构造安全消息，`stage_attempt_failure` 与 `render_failure` 分别拥有普通阶段与渲染路径的最终错误覆盖规则。只有消息由固定码构造的类型（`SAFE_MESSAGE_ERRORS`：MinerU 验证、表格占位/渲染/构建/证据/验证、翻译完整性）保留原消息；`DocumentIRTranslationError` 只输出 `翻译处理失败：{code}。`；完整性、MinerU 外部调用、OSError 维持固定文案；其余异常输出 `Worker 执行失败（{异常类型名}），详见事件 trace_id。`，不记录异常原文。翻译流程中直接写 `error_message` 的位置同样经该函数。测试：`tests/test_worker_failure_message.py`。
 
 
@@ -242,7 +242,7 @@ Request schema validation is handled by FastAPI/Pydantic. `RequestValidationErro
 Business validation belongs in services and should raise `ApiError`. Examples include:
 
 - File upload metadata/content validation in `app/domains/files/service.py` and `app/domains/files/validation.py`.
-- Document job visibility, state, retry, cancel, delete, and download validation in `app/domains/document_jobs/service.py`.
+- Document job visibility, state, retry, cancel, delete, and download validation in `app/domains/document_jobs/use_cases/`（可见性在 `access.py`，动作禁用原因在 `read_model.py`，命令校验在各用例模块）。
 - Auth and role checks in `app/api/dependencies.py`.
 
 Pydantic model validators are used for record invariants. `DocumentJobRecord._validate_state()` rejects invalid status/stage combinations.
@@ -255,7 +255,7 @@ Only use this pattern when the API response schema explicitly represents per-ite
 
 ## Unexpected Exceptions
 
-The HTTP middleware in `app/main.py` logs unexpected exceptions on the `system` logger with trace, method, path, and duration, then re-raises. 正式阶段失败由 `document_jobs` execution 与 `_failure_policy.py` 更新任务、追加事件并记录脱敏业务错误。
+The HTTP middleware in `app/api/middleware.py` logs unexpected exceptions on the `system` logger with trace, method, path, and duration, then re-raises. 正式阶段失败由 `document_jobs` execution 与 `_failure_policy.py` 更新任务、追加事件并记录脱敏业务错误。
 
 Do not add broad silent `except Exception` blocks that hide errors. If an exception is caught, either convert it to a stable `ApiError`/workflow transition or preserve it in stage/job diagnostic state.
 

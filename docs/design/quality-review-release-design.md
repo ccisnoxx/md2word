@@ -7,12 +7,12 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  本批仅阅读全文、核对用途和原字段：质量、统一复核、三栏和发布的目标设计；后端局部存在不等于全部前端/端到端完成。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
+  本批仅阅读全文、核对用途和原字段：质量、统一复核、三栏和发布的目标设计；后端局部存在不等于全部前端/端到端完成。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
 ---
 
 # 质量、审核与发布设计
 
-质量、统一复核、三栏和发布的目标设计；后端局部存在不等于全部前端/端到端完成。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](../engineering/documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
+质量、统一复核、三栏和发布的目标设计；后端局部存在不等于全部前端/端到端完成。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](../engineering/documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
 
 ## 1. 目标
 

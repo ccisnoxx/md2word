@@ -76,5 +76,5 @@ client = MinerUClient(api_token=config.api_token, user_token=config.uid or "", .
 
 - 生产判断只有 `Settings.production_like` 一处：`APP_ENV` 不属于 `dev`、`local`、`test`，或 `PUBLIC_DEPLOYMENT_MODE=single_tenant_public`。
 - `pdf_crop.poppler_tools_available()` 是工具判断的唯一实现。生产环境缺失时 `/health/ready` 报阻断项 `pdf_crop_tools_missing`，`run_document_worker.main()` 在启动 Celery 前抛错；开发环境只告警。不得放进 `worker_ready` 信号：Celery 的 `Signal.send` 会捕获接收方异常，Worker 仍继续运行。
-- `PAGE_DEGRADATION_MAX_RATIO`（默认 0.5，范围 `(0, 1]`）、`PAGE_DEGRADATION_ALLOW_SINGLE_PAGE`（默认 false）由 `build_runtime` 构造为 `PageDegradationPolicy` 并注入 converter，Worker 读取同一实例。单页文档只看开关，不看比例。
+- `PAGE_DEGRADATION_MAX_RATIO`（默认 0.5，范围 `(0, 1]`）、`PAGE_DEGRADATION_ALLOW_SINGLE_PAGE`（默认 false）由 `build_runtime` 经 `app/composition/document_pipeline.py` 构造为 `PageDegradationPolicy` 并注入 converter，Worker 读取同一实例。单页文档只看开关，不看比例。
 - `RENDER_DEGRADATION_MAX_ATTEMPTS`（默认 5，范围 `0..20`）限制渲染阶段降级轮数；非法值在 `Settings` 构造时被拒绝。

@@ -24,7 +24,7 @@ from app.domains.files.retention import DocumentFileRetentionPlanner
 from app.domains.resources.models import utc_now
 from app.infrastructure.persistence import build_file_persistence_adapters, build_sqlite_persistence_adapters
 from app.services.document_ir.models import DocumentIR
-from app.services.renderer.evidence import build_renderer_evidence
+from app.services.renderer.render_evidence import build_renderer_evidence
 from tests import test_database_job_repository as persistence
 from tests import test_fastapi_jobs_backend as fixtures
 from tests import test_document_job_execution_stages as stages
@@ -536,7 +536,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                 self.assertIsNone(repo.update_document_job_if_current(job.id, allowed_statuses={"running"},
                     allowed_stages={"uploading"}, expected_retry_count=0,
                     expected_document_ir_file_id=job.document_ir_file_id, require_no_prepared_result=True, stage="rendering"))
-                failed = execution._mark_failed(selected.model_copy(update={"prepared_result": None}), failed_stage="uploading",
+                failed = execution.lifecycle.mark_failed(selected.model_copy(update={"prepared_result": None}), failed_stage="uploading",
                     error_code="oss_failed", error_message="落选候选的迟到失败", trace_id=None)
                 self.assertEqual(failed.prepared_result, selected.prepared_result)
                 self.assertEqual(failed.status, "running")
@@ -606,7 +606,7 @@ class DocumentJobResultPersistenceTests(TestCase):
             response = client.get(f"/api/v1/document-jobs/{job.id}/download-url", params={"file_id": file_id}, headers=headers)
             self.assertEqual(response.status_code, 409, response.text)
             with self.assertRaises(ApiError):
-                runtime.document_job_service.get_file_for_authorized_download(job.id, file_id=file_id)
+                runtime.document_job_use_cases.downloads.get_file_for_authorized_download(job.id, file_id=file_id)
             token = _build_download_token(runtime, job_id=job.id, file_id=file_id, expires_at=utc_now() + timedelta(minutes=5))
             self.assertEqual(client.get(f"/api/v1/document-jobs/{job.id}/download", params={"token": token}).status_code, 409)
             result = execution.execute_job(job.id)

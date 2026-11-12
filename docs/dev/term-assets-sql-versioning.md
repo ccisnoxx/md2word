@@ -10,7 +10,7 @@ doc_status: superseded
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  全文占位/移除用途及明确替代入口的静态核对；原 status 和说明保留，不认证旧功能或命令。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
+  全文占位/移除用途及明确替代入口的静态核对；原 status 和说明保留，不认证旧功能或命令。依据见 ../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # Deferred: 术语资产 SQL 版本化

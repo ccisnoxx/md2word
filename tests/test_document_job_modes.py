@@ -13,6 +13,7 @@ from tests import test_fastapi_jobs_backend as fixtures
 from app.domains.translation import profiles_service
 from app.domains.jobs import resource_snapshots
 from app.domains.translation.modes import normalize_translation_mode
+from tests.document_job_use_case_support import replace_dependency
 
 
 TRANSLATION_SELECTIONS = {
@@ -146,7 +147,7 @@ class DocumentJobModesTests(TestCase):
                         self.assertEqual(created.payload["translation_mode"], "direct")
             for alias in ("zh2zh", "zh_to_zh"):
                 self.assertEqual(
-                    runtime.document_job_service._resolve_document_job_mode(
+                    runtime.document_job_use_cases.request_snapshot.resolve_document_job_mode(
                         mode="direct_pdf_to_word", translation_mode=alias
                     ),
                     "direct_pdf_to_word",
@@ -155,7 +156,7 @@ class DocumentJobModesTests(TestCase):
     def test_http_conflicting_alias_and_invalid_modes_keep_errors_without_mutation(self):
         with self._client_runtime() as (runtime, client, operator, _admin):
             source = self._upload_source_pdf(client, operator)
-            queue = runtime.document_job_service.task_queue = Mock()
+            queue = replace_dependency(runtime.document_job_use_cases, "task_queue", Mock())
             before = self._mutation_state(runtime, source["id"])
             for alias in ("zh2zh", "zh_to_zh"):
                 response = client.post(
@@ -180,7 +181,7 @@ class DocumentJobModesTests(TestCase):
             with self.subTest(versioned=versioned), self._client_runtime(versioned=versioned) as (
                 runtime, client, operator, admin
             ):
-                queue = runtime.document_job_service.task_queue = Mock()
+                queue = replace_dependency(runtime.document_job_use_cases, "task_queue", Mock())
                 with self._translation_spies(runtime) as spies:
                     for headers in (operator, admin):
                         for field, value in TRANSLATION_SELECTIONS.items():
@@ -198,7 +199,7 @@ class DocumentJobModesTests(TestCase):
 
     def test_direct_create_debug_keeps_role_priority_and_has_no_side_effects(self):
         with self._client_runtime() as (runtime, client, operator, admin):
-            queue = runtime.document_job_service.task_queue = Mock()
+            queue = replace_dependency(runtime.document_job_use_cases, "task_queue", Mock())
             with self._translation_spies(runtime) as spies:
                 for headers, status_code, code in ((operator, 403, "role_forbidden"), (admin, 400, "invalid_request")):
                     source = self._upload_source_pdf(client, headers)
@@ -224,7 +225,7 @@ class DocumentJobModesTests(TestCase):
                     _source, job_id = self._create_direct(client, operator)
                     job = runtime.document_job_repository.get_document_job(job_id)
                     self.assertEqual((job.status, job.stage), ("succeeded", "completed"))
-                    files = runtime.document_job_service.list_files(
+                    files = runtime.document_job_use_cases.queries.list_files(
                         job_id, user=runtime.auth_service.authenticate("operator", "operator-pass")
                     )
                     words = [file for file in files if file.file_type == "generated_word"]
@@ -246,7 +247,7 @@ class DocumentJobModesTests(TestCase):
                 runtime.document_job_repository.update_document_job(
                     job_id, status="failed", stage="failed", failed_stage="parsing", error_code="mineru_failed"
                 )
-                queue = runtime.document_job_service.task_queue = Mock()
+                queue = replace_dependency(runtime.document_job_use_cases, "task_queue", Mock())
                 before = self._mutation_state(runtime, source["id"])
                 with self._translation_spies(runtime) as spies:
                     for headers, status_code, code in ((operator, 403, "forbidden"), (admin, 400, "invalid_request")):
@@ -304,10 +305,10 @@ class DocumentJobModesTests(TestCase):
 
     def test_direct_create_boundary_does_not_depend_on_translation_services(self):
         with self._client_runtime() as (runtime, client, operator, _admin):
-            runtime.document_job_service.term_version_service = None
-            runtime.document_job_service.job_resource_snapshot_service = None
+            replace_dependency(runtime.document_job_use_cases, "term_version_service", None)
+            replace_dependency(runtime.document_job_use_cases, "job_resource_snapshot_service", None)
             source = self._upload_source_pdf(client, operator)
-            queue = runtime.document_job_service.task_queue = Mock()
+            queue = replace_dependency(runtime.document_job_use_cases, "task_queue", Mock())
             before = self._mutation_state(runtime, source["id"])
             for field, value in TRANSLATION_SELECTIONS.items():
                 with self.subTest(field=field):
@@ -326,7 +327,7 @@ class DocumentJobModesTests(TestCase):
             source_record = historical.model_dump(mode="json")
             source_events = deepcopy(runtime.document_job_event_repository.list_document_job_events(job_id))
             audits = deepcopy(runtime.audit_event_repository.list_audit_events())
-            queue = runtime.document_job_service.task_queue = Mock()
+            queue = replace_dependency(runtime.document_job_use_cases, "task_queue", Mock())
             with self._translation_spies(runtime) as spies:
                 detail = client.get(f"/api/v1/document-jobs/{job_id}", headers=operator)
                 self.assertEqual(detail.status_code, 200)

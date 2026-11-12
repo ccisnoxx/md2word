@@ -21,6 +21,7 @@ from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.document_ir.models import DocumentIR
 from app.services.renderer.layout_plan import IMAGE_GROUP_VERSION, IMAGE_GROUP_THRESHOLDS, build_image_plan, build_layout_plan, image_annotations
 from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
+from app.services.renderer.formula_renderer import WordFormulaRendererMixin
 from app.services.renderer.text_renderer import WordTextRendererMixin
 
 IMAGE_REPORT_VERSION = "image-layout/v1"
@@ -39,6 +40,10 @@ _NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
        "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture"}
 
 
+class _AnnotationTextRenderer(WordTextRendererMixin, WordFormulaRendererMixin):
+    """题注预期重放所需的最小写入组合：文本段落、题注编号域与行内公式与正式 renderer 共用同一实现。"""
+
+
 def image_anchor(block_id: str, field: str = "image") -> str:
     return "md2w_img_" + hashlib.sha256(f"{block_id}/{field}".encode()).hexdigest()[:28]
 
@@ -53,7 +58,7 @@ def source_image_position(block: Any) -> dict:
 def caption_bookmark_inventory(document_ir: DocumentIR, *, table_contracts=None, primary_table_block_ids=None) -> dict:
     """图片投影与正式正文使用相同的唯一题注编号规则。"""
     from collections import Counter
-    text_renderer = WordTextRendererMixin()
+    text_renderer = _AnnotationTextRenderer()
     keys = []
     members = {identity for unit in table_contracts or [] for identity in unit.member_block_ids}
     selected = {(item.block_id, item.item_index) for unit in table_contracts or [] for item in unit.annotations
@@ -142,7 +147,7 @@ def annotation_projection(paragraph: Any) -> str:
 
 def expected_annotation(text: str, inputs: dict, bookmarks: dict) -> str:
     """仅由源字符串和冻结语义生成预期，不读取最终 DOCX。"""
-    renderer = WordTextRendererMixin()
+    renderer = _AnnotationTextRenderer()
     paragraph = Document().add_paragraph()
     style = TemplateParagraphStyleConfig.model_validate(inputs["caption_style"])
     rules = TerminologyReplacer.from_frozen_rules(inputs["format_rules"]["rules"])

@@ -10,7 +10,7 @@ doc_status: draft
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  全文草稿定位、原日期/checklist 和现行入口的静态核对；未重新冻结方案或把原勾选认作当前验收。依据见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
+  全文草稿定位、原日期/checklist 和现行入口的静态核对；未重新冻结方案或把原勾选认作当前验收。依据见 ../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # 后端设计实现计划

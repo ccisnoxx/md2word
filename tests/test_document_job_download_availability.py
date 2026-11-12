@@ -19,7 +19,7 @@ class DocumentJobDownloadAvailabilityTests(TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.runtime = fixtures.build_test_runtime(Path(self.directory.name))
-        self.service = self.runtime.document_job_service
+        self.service = self.runtime.document_job_use_cases
         self.operator = AuthenticatedUser(
             id="owner", username="operator", role="operator", tenant_id="tenant", company_id="company",
         )
@@ -64,17 +64,17 @@ class DocumentJobDownloadAvailabilityTests(TestCase):
         for quality, review, warning_code in cases:
             with self.subTest(quality=quality, review=review):
                 job, file = self._result(quality_status=quality, review_status=review)
-                action = self.service.build_available_actions(job, user=self.admin)["download"]
+                action = self.service.read_model.build_available_actions(job, user=self.admin)["download"]
                 self.assertTrue(action.enabled)
                 self.assertEqual(action.classification, "internal_only")
                 self.assertEqual(action.warning_code, warning_code)
                 self.assertEqual(action.warning_message is not None, warning_code is not None)
                 self.assertIsNone(action.disabled_reason_code)
                 self.assertFalse(action.retryable)
-                default_job, default_file = self.service.get_file_for_download(job.id, user=self.operator, file_id=None)
-                explicit_job, explicit_file = self.service.get_file_for_download(job.id, user=self.operator, file_id=file.id)
-                default = self.service.build_download_policy(default_job, default_file)
-                self.assertEqual(default, self.service.build_download_policy(explicit_job, explicit_file))
+                default_job, default_file = self.service.downloads.get_file_for_download(job.id, user=self.operator, file_id=None)
+                explicit_job, explicit_file = self.service.downloads.get_file_for_download(job.id, user=self.operator, file_id=file.id)
+                default = self.service.read_model.build_download_policy(default_job, default_file)
+                self.assertEqual(default, self.service.read_model.build_download_policy(explicit_job, explicit_file))
                 self.assertEqual(default.warning_code, action.warning_code)
                 self.assertEqual(self.runtime.document_job_repository.get_document_job(job.id), job)
 
@@ -92,7 +92,7 @@ class DocumentJobDownloadAvailabilityTests(TestCase):
             with self.subTest(quality=quality, review=review, role=role):
                 job, _ = self._result(quality_status=quality, review_status=review, translation_qa_status="approved")
                 user = self.admin if role == "admin" else self.operator
-                action = self.service.build_available_actions(job, user=user)["publish"]
+                action = self.service.read_model.build_available_actions(job, user=user)["publish"]
                 self.assertEqual(action.eligible, eligible)
                 self.assertFalse(action.enabled)
                 self.assertFalse(action.retryable)
@@ -103,7 +103,7 @@ class DocumentJobDownloadAvailabilityTests(TestCase):
 
     def test_published_is_not_republished_or_classified_as_final(self):
         job, _ = self._result(quality_status="passed", review_status="approved", delivery_status="published")
-        actions = self.service.build_available_actions(job, user=self.admin)
+        actions = self.service.read_model.build_available_actions(job, user=self.admin)
         self.assertFalse(actions["publish"].eligible)
         self.assertEqual(actions["publish"].disabled_reason_code, "already_published")
         self.assertEqual(actions["download"].classification, "internal_only")
@@ -126,7 +126,7 @@ class DocumentJobDownloadAvailabilityTests(TestCase):
         for job_patch, file_patch, code, http_status in cases:
             with self.subTest(job_patch=job_patch, file_patch=file_patch):
                 job, _ = self._result(file_patch=file_patch, **job_patch)
-                actions = self.service.build_available_actions(job, user=self.admin)
+                actions = self.service.read_model.build_available_actions(job, user=self.admin)
                 download = actions["download"]
                 self.assertFalse(download.enabled)
                 self.assertEqual(download.disabled_reason_code, code)
@@ -135,30 +135,30 @@ class DocumentJobDownloadAvailabilityTests(TestCase):
                 self.assertFalse(actions["publish"].eligible)
                 self.assertEqual(actions["publish"].disabled_reason_code, code)
                 with self.assertRaises(ApiError) as caught:
-                    self.service.get_file_for_download(job.id, user=self.operator, file_id=None)
+                    self.service.downloads.get_file_for_download(job.id, user=self.operator, file_id=None)
                 self.assertEqual((caught.exception.status_code, caught.exception.reason_code), (http_status, code))
 
     def test_ordinary_artifacts_remain_downloadable_without_main_document_classification(self):
         job, file = self._result(status="running", stage="uploading")
         source = file.model_copy(update={"id": job.source_file_id, "file_type": "source_pdf"})
         self.runtime.document_file_repository.create_document_file(source)
-        _, downloaded = self.service.get_file_for_download(job.id, user=self.operator, file_id=source.id)
-        policy = self.service.build_download_policy(job, downloaded)
+        _, downloaded = self.service.downloads.get_file_for_download(job.id, user=self.operator, file_id=source.id)
+        policy = self.service.read_model.build_download_policy(job, downloaded)
         self.assertIsNone(policy.classification)
         self.assertIsNone(policy.warning_code)
         self.assertIsNone(policy.warning_message)
         # 历史普通附件按原有同代规则保留，不因 generated_word 类型伪装成权威主件。
         legacy = file.model_copy(update={"id": "legacy_word"})
         self.runtime.document_file_repository.create_document_file(legacy)
-        _, downloaded = self.service.get_file_for_download(job.id, user=self.operator, file_id=legacy.id)
-        self.assertIsNone(self.service.build_download_policy(job, downloaded).classification)
+        _, downloaded = self.service.downloads.get_file_for_download(job.id, user=self.operator, file_id=legacy.id)
+        self.assertIsNone(self.service.read_model.build_download_policy(job, downloaded).classification)
 
     def test_availability_reads_only_metadata_without_object_io(self):
         job, _ = self._result(quality_status="passed", review_status="approved")
         before = self.runtime.document_job_repository.get_document_job(job.id)
         with patch.object(self.runtime.file_upload_service, "read_file_content", side_effect=AssertionError("不得读取正文")), \
                 patch.object(self.runtime.file_upload_service, "_s3_client", side_effect=AssertionError("不得探测 S3 对象")):
-            actions = self.service.build_available_actions(job, user=self.admin)
+            actions = self.service.read_model.build_available_actions(job, user=self.admin)
         self.assertTrue(actions["download"].enabled)
         self.assertTrue(actions["publish"].eligible)
         self.assertEqual(self.runtime.document_job_repository.get_document_job(job.id), before)

@@ -6,15 +6,22 @@ import hashlib
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 from uuid import uuid4
 
 from billiard.exceptions import SoftTimeLimitExceeded
 
 from app.clients.mineru_client import MinerUError
+from app.core.config import Settings
 from app.core.errors import ApiError
 from app.domains.document_jobs import _failure_policy as failure_policy
+from app.domains.document_jobs.execution_support import (
+    DocumentJobLifecycle,
+    document_ir_layout_metadata,
+    require_uploaded_file,
+)
 from app.domains.document_jobs.models import DocumentJobRecord
+from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.document_jobs.preview import DocumentJobPreviewService
 from app.domains.document_jobs.publication_provenance import capture_render_publication_provenance
 from app.domains.document_jobs.table_evidence import (
@@ -24,9 +31,13 @@ from app.domains.document_jobs.table_evidence import (
     validate_candidate_binding,
     recheck_verified_report,
 )
+from app.domains.files import FileUploadService
 from app.domains.files.models import DocumentFileRecord
+from app.domains.files.repository import DocumentFileRepositoryProtocol
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import is_translation_document_job_mode
+from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, TableReferenceProvenance
 from app.services.document_ir.page_degradation import (
@@ -44,39 +55,46 @@ from app.services.document_ir.table_placeholder import (
 from app.services.document_ir.table_reference_assets import TABLE_REFERENCE_ROLE, decode_table_references
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer, image_evidence
 from app.services.renderer.block_anchors import validate_block_anchor_evidence
-from app.services.renderer.evidence import (
+from app.services.renderer.render_evidence import (
     build_renderer_evidence,
-    build_renderer_event_summary,
-    ensure_renderer_integrity,
-    validate_persisted_render_evidence,
     validate_persisted_renderer_content,
 )
+from app.services.renderer.render_evidence_validation import (
+    ensure_renderer_integrity,
+    validate_persisted_render_evidence,
+)
+from app.services.renderer.render_event_summary import build_renderer_event_summary
 from app.services.renderer.layout_plan import build_layout_plan
 from app.services.tables.evidence import TableEvidenceError
-
-if TYPE_CHECKING:
-    # execution.py 在运行时导入本模块；这里只为类型标注引用，避免循环导入。
-    from app.domains.document_jobs.execution import DocumentJobExecutionService
-
 
 class WordRenderExecution:
     """Word 渲染执行：由 DocumentJobExecutionService 构造并持有，负责渲染、页面降级、质量检查、上传收尾与表格占位符读取。
 
-    任务级状态与事件仍由宿主收口。对宿主只允许调用 _record_event、_mark_failed、_mark_succeeded、
-    _mark_timed_out_if_needed、_get_uploaded_file、_document_ir_layout_metadata，且必须在调用时经
-    self._host 查找，不得在构造时捕获绑定方法，否则对宿主方法的替换（例如测试中的 patch.object）不会生效。
-    settings、job_repository 等共用依赖只由宿主持有，同样在使用时经 self._host 读取，本类只保存专属依赖。
+    任务级状态推进与事件记录统一经注入的 DocumentJobLifecycle 完成；settings、job_repository 等共用依赖
+    与宿主引用同一对象，在构造时显式注入。
     """
 
     def __init__(
         self,
-        host: DocumentJobExecutionService,
         *,
+        settings: Settings,
+        job_repository: DocumentJobRepositoryProtocol,
+        file_repository: DocumentFileRepositoryProtocol,
+        file_service: FileUploadService,
+        document_ir_service: MinerUToDocumentIRService,
+        job_resource_snapshot_service: JobResourceSnapshotService | None,
+        lifecycle: DocumentJobLifecycle,
         template_read_service: Any,
         word_renderer: DocumentIRWordRenderer,
         word_preview_service: DocumentJobPreviewService,
     ) -> None:
-        self._host = host
+        self.settings = settings
+        self.job_repository = job_repository
+        self.file_repository = file_repository
+        self.file_service = file_service
+        self.document_ir_service = document_ir_service
+        self.job_resource_snapshot_service = job_resource_snapshot_service
+        self.lifecycle = lifecycle
         self.template_read_service = template_read_service
         self.word_renderer = word_renderer
         self.word_preview_service = word_preview_service
@@ -86,7 +104,7 @@ class WordRenderExecution:
         attempt = job
         validating_legacy = False
         try:
-            current = self._host.job_repository.get_document_job(job.id) or job
+            current = self.job_repository.get_document_job(job.id) or job
             if current.retry_count != job.retry_count or current.status != "running":
                 return current
             if current.prepared_result is not None:
@@ -97,7 +115,7 @@ class WordRenderExecution:
                 existing_result = self._get_existing_result_file(job)
                 validating_legacy = False
                 if existing_result is not None:
-                    uploading = self._host.job_repository.update_document_job_if_current(
+                    uploading = self.job_repository.update_document_job_if_current(
                         job.id, allowed_statuses={"running"}, allowed_stages={"rendering", "uploading"},
                         expected_retry_count=job.retry_count, expected_document_ir_file_id=job.document_ir_file_id,
                         require_no_prepared_result=True, stage="uploading", updated_at=utc_now(),
@@ -105,8 +123,8 @@ class WordRenderExecution:
                     if uploading is None:
                         return self._finish_selected_or_current(job, trace_id=trace_id)
                     if job.result_file_id is not None:
-                        return self._host._mark_succeeded(uploading, trace_id=trace_id)
-                    prepared = self._host.job_repository.prepare_document_job_result(
+                        return self.lifecycle.mark_succeeded(uploading, trace_id=trace_id)
+                    prepared = self.job_repository.prepare_document_job_result(
                         job.id, expected_retry_count=job.retry_count,
                         expected_document_ir_file_id=job.document_ir_file_id, candidate=existing_result,
                     )
@@ -117,7 +135,7 @@ class WordRenderExecution:
             recovery_from = job.stage if job.stage in {"quality_checking", "uploading"} else None
             rendering = job
             if recovery_from is not None:
-                rendering = self._host.job_repository.update_document_job_if_current(
+                rendering = self.job_repository.update_document_job_if_current(
                     job.id, allowed_statuses={"running"}, allowed_stages={recovery_from},
                     expected_retry_count=job.retry_count, expected_document_ir_file_id=job.document_ir_file_id,
                     require_no_prepared_result=True, stage="rendering", updated_at=utc_now(),
@@ -125,7 +143,7 @@ class WordRenderExecution:
                 if rendering is None:
                     return self._finish_selected_or_current(job, trace_id=trace_id)
             attempt = rendering
-            self._host._record_event(
+            self.lifecycle.record_event(
                 rendering,
                 event_type="stage_started",
                 stage="rendering",
@@ -141,7 +159,7 @@ class WordRenderExecution:
 
             ir_file = self._get_document_ir_file(rendering)
             try:
-                ir_bytes = self._host.file_service.read_file_content(ir_file)
+                ir_bytes = self.file_service.read_file_content(ir_file)
                 document_ir = DocumentIR.model_validate_json(ir_bytes)
             except ValueError:
                 raise TablePlaceholderError("table_placeholder_integrity_failed") from None
@@ -165,7 +183,7 @@ class WordRenderExecution:
                     config_path=template_selection.layout_config_path,
                     image_loader=self._build_image_loader(job, document),
                     options=DocumentIRRenderOptions(
-                        subscript_config_path=self._host.settings.subscript_config_path,
+                        subscript_config_path=self.settings.subscript_config_path,
                         document_language=document.metadata.document_language,
                         template_version_id=template_selection.template_version_id,
                     ),
@@ -177,7 +195,7 @@ class WordRenderExecution:
                     render_result = render(rendering, document_ir)
                     break
                 except Exception as exc:
-                    if degradation_attempts >= self._host.settings.render_degradation_max_attempts:
+                    if degradation_attempts >= self.settings.render_degradation_max_attempts:
                         raise
                     degraded = self._degrade_render_failure_page(rendering, ir_file, document_ir, exc, trace_id=trace_id)
                     if degraded is None:
@@ -190,7 +208,7 @@ class WordRenderExecution:
                     degradation_attempts += 1
             layout_plan = build_layout_plan(document_ir)
             word_content = render_result.content
-            checking = self._host.job_repository.update_document_job_if_current(
+            checking = self.job_repository.update_document_job_if_current(
                 rendering.id,
                 allowed_statuses={"running"},
                 allowed_stages={"rendering"},
@@ -205,7 +223,7 @@ class WordRenderExecution:
             if checking is None:
                 return self._finish_selected_or_current(rendering, trace_id=trace_id)
             attempt = checking
-            self._host._record_event(
+            self.lifecycle.record_event(
                 checking,
                 event_type="stage_succeeded",
                 stage="rendering",
@@ -218,7 +236,7 @@ class WordRenderExecution:
                 trace_id=trace_id,
                 duration_ms=int((time.perf_counter() - render_started_at) * 1000),
             )
-            self._host._record_event(
+            self.lifecycle.record_event(
                 checking, event_type="stage_started", stage="quality_checking",
                 message="Word 文档质量检查已开始。", payload={"document_ir_file_id": ir_file.id}, trace_id=trace_id,
             )
@@ -234,7 +252,7 @@ class WordRenderExecution:
                 )
                 ensure_renderer_integrity(renderer_metadata)
             except Exception as exc:
-                failed = self._host._mark_failed(
+                failed = self.lifecycle.mark_failed(
                     checking, failed_stage="quality_checking", error_code="render_failed",
                     error_message=failure_policy.worker_failure_message(exc), trace_id=trace_id,
                     failure_evidence=failure_policy.worker_failure_evidence(exc),
@@ -243,7 +261,7 @@ class WordRenderExecution:
                 if failed.status == "running" and failed.retry_count == checking.retry_count and failed.prepared_result is not None:
                     return self._finish_prepared_result(failed, trace_id=trace_id)
                 return failed
-            uploading = self._host.job_repository.update_document_job_if_current(
+            uploading = self.job_repository.update_document_job_if_current(
                 checking.id, allowed_statuses={"running"}, allowed_stages={"quality_checking"},
                 expected_retry_count=checking.retry_count, expected_document_ir_file_id=checking.document_ir_file_id,
                 require_no_prepared_result=True, stage="uploading",
@@ -252,13 +270,13 @@ class WordRenderExecution:
             if uploading is None:
                 return self._finish_selected_or_current(checking, trace_id=trace_id)
             attempt = uploading
-            self._host._record_event(
+            self.lifecycle.record_event(
                 uploading, event_type="stage_succeeded", stage="quality_checking",
                 message="Word 文档质量检查已通过。",
                 payload={"document_ir_file_id": ir_file.id, **build_renderer_event_summary(renderer_metadata)},
                 trace_id=trace_id, duration_ms=int((time.perf_counter() - quality_started_at) * 1000),
             )
-            self._host._record_event(
+            self.lifecycle.record_event(
                 uploading,
                 event_type="stage_started",
                 stage="uploading",
@@ -266,11 +284,11 @@ class WordRenderExecution:
                 payload={"template_version_id": template_selection.template_version_id},
                 trace_id=trace_id,
             )
-            renderer_metadata, preparation = save_report(uploading, ir_file, ir_bytes, renderer_metadata, self._host.file_service)
+            renderer_metadata, preparation = save_report(uploading, ir_file, ir_bytes, renderer_metadata, self.file_service)
             publication_provenance = capture_render_publication_provenance(uploading, ir_file, document_ir, render_result,
-                renderer=self.word_renderer, snapshot_service=self._host.job_resource_snapshot_service, file_service=self._host.file_service)
+                renderer=self.word_renderer, snapshot_service=self.job_resource_snapshot_service, file_service=self.file_service)
             renderer_metadata["publication_provenance_file_id"] = publication_provenance.id
-            word_file = self._host.file_service.register_result_candidate(
+            word_file = self.file_service.register_result_candidate(
                 tenant_id=uploading.tenant_id,
                 company_id=uploading.company_id,
                 job_id=uploading.id,
@@ -290,9 +308,9 @@ class WordRenderExecution:
                     **renderer_metadata,
                 },
             )
-            verify_report(uploading, word_file, file_repository=self._host.file_repository,
-                          file_service=self._host.file_service, job_repository=self._host.job_repository)
-            prepared = self._host.job_repository.prepare_document_job_result(
+            verify_report(uploading, word_file, file_repository=self.file_repository,
+                          file_service=self.file_service, job_repository=self.job_repository)
+            prepared = self.job_repository.prepare_document_job_result(
                 uploading.id, expected_retry_count=uploading.retry_count,
                 expected_document_ir_file_id=ir_file.id, candidate=word_file,
             )
@@ -305,7 +323,7 @@ class WordRenderExecution:
             )
             if unexpected_log_stage is not None:
                 self.logger.exception("[trace_id=%s job_id=%s stage=%s status=unexpected_error]", trace_id, job.id, unexpected_log_stage)
-            failed = self._host._mark_failed(attempt, failed_stage=failed_stage, error_code=error_code,
+            failed = self.lifecycle.mark_failed(attempt, failed_stage=failed_stage, error_code=error_code,
                                        error_message=failure_policy.worker_failure_message(exc), trace_id=trace_id,
                                        failure_evidence=failure_policy.worker_failure_evidence(exc))
             if failed.status == "running" and failed.retry_count == attempt.retry_count and failed.prepared_result is not None:
@@ -321,7 +339,7 @@ class WordRenderExecution:
         返回 None 表示不满足降级前提，调用方按原错误失败；返回任务记录表示指针切换落败（已被并发推进）。
         """
         context = failure_policy.worker_failure_evidence(error).get("failure_context")
-        rasterizer = getattr(self._host.document_ir_service, "page_rasterizer", None)
+        rasterizer = getattr(self.document_ir_service, "page_rasterizer", None)
         if (not isinstance(context, dict) or context.get("source_page_index") is None or rasterizer is None
                 or is_translation_document_job_mode(job.mode)
                 or isinstance(error, (ApiError, OSError, MinerUError, TablePlaceholderError, DocumentIntegrityError,
@@ -331,7 +349,7 @@ class WordRenderExecution:
         already = {record.get("page_index") for record in document_ir.metadata.degraded_pages}
         degraded = degradation_closure(document_ir.metadata.logical_table_groups, {page_index})
         if (degraded is None or degraded & already
-                or not self._host.document_ir_service.degradation_policy.allows(len(degraded | already), len(document_ir.pages))):
+                or not self.document_ir_service.degradation_policy.allows(len(degraded | already), len(document_ir.pages))):
             return None
         try:
             source = self._load_placeholder_source(job)
@@ -351,7 +369,7 @@ class WordRenderExecution:
             return None
         raster_file_ids: list[str] = []
         for item in pending:
-            image_file = self._host.file_service.register_generated_content(
+            image_file = self.file_service.register_generated_content(
                 tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
                 file_type="image_asset", filename=f"{item.asset_id}_page.png", mime_type="image/png",
                 content=item.content, object_version=f"g{job.retry_count}_{uuid4().hex}",
@@ -365,14 +383,14 @@ class WordRenderExecution:
             asset.file_id, asset.object_key = image_file.id, image_file.object_key
             asset.mime_type, asset.checksum_sha256 = image_file.mime_type, image_file.checksum_sha256
         ir_content = candidate.model_dump_json(indent=2).encode("utf-8")
-        new_ir_file = self._host.file_service.register_generated_content(
+        new_ir_file = self.file_service.register_generated_content(
             tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
             file_type="document_ir", filename=ir_file.original_filename,
             object_version=f"g{job.retry_count}_{uuid4().hex}", mime_type="application/json", content=ir_content,
-            metadata={**ir_file.metadata, **self._host._document_ir_layout_metadata(candidate),
+            metadata={**ir_file.metadata, **document_ir_layout_metadata(candidate),
                       "degraded_from_document_ir_file_id": ir_file.id},
         )
-        switched = self._host.job_repository.update_document_job_if_current(
+        switched = self.job_repository.update_document_job_if_current(
             job.id, allowed_statuses={"running"}, allowed_stages={"rendering"},
             expected_retry_count=job.retry_count, expected_document_ir_file_id=ir_file.id,
             require_no_prepared_result=True, document_ir_file_id=new_ir_file.id,
@@ -380,7 +398,7 @@ class WordRenderExecution:
         )
         if switched is None:
             return job
-        self._host._record_event(
+        self.lifecycle.record_event(
             switched, event_type="file_registered", stage="rendering",
             message=f"第 {', '.join(str(page + 1) for page in sorted(degraded))} 页渲染失败，已按原 PDF 页面图像降级并重新渲染。",
             payload={"file_id": new_ir_file.id, "file_type": "document_ir", "document_ir_file_id": new_ir_file.id,
@@ -391,8 +409,8 @@ class WordRenderExecution:
         return switched, new_ir_file, ir_content, candidate
 
     def _finish_selected_or_current(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
-        current = self._host.job_repository.get_document_job(job.id) or job
-        timed_out = self._host._mark_timed_out_if_needed(current, trace_id=trace_id)
+        current = self.job_repository.get_document_job(job.id) or job
+        timed_out = self.lifecycle.mark_timed_out_if_needed(current, trace_id=trace_id)
         if timed_out is not None:
             return timed_out
         if current.status == "running" and current.retry_count == job.retry_count and current.prepared_result is not None:
@@ -402,21 +420,21 @@ class WordRenderExecution:
     def _finish_prepared_result(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         """receipt 后只物化同一身份；两步之间中断可由任意重投继续。"""
 
-        current = self._host.job_repository.get_document_job(job.id) or job
+        current = self.job_repository.get_document_job(job.id) or job
         if current.status != "running" or current.retry_count != job.retry_count:
             return current
         receipt = job.prepared_result
         if receipt is None:
             raise ValueError("任务没有选定结果凭据。")
-        timed_out = self._host._mark_timed_out_if_needed(job, trace_id=trace_id)
+        timed_out = self.lifecycle.mark_timed_out_if_needed(job, trace_id=trace_id)
         if timed_out is not None:
             return timed_out
         try:
             validate_candidate_binding(job, receipt.file)
-            word_file = self._host.file_repository.materialize_prepared_result(receipt.file)
+            word_file = self.file_repository.materialize_prepared_result(receipt.file)
             ir_file, final_ir, _ = self._validate_render_result_file(word_file)
-            verified_report = verify_report(job, word_file, file_repository=self._host.file_repository,
-                          file_service=self._host.file_service, job_repository=self._host.job_repository)
+            verified_report = verify_report(job, word_file, file_repository=self.file_repository,
+                          file_service=self.file_service, job_repository=self.job_repository)
             # 恢复只核对原 receipt 的实物，不重裁图、不重渲染或更换同代身份。
             proof = word_file.metadata.get("table_placeholder_rendering")
             placeholders = decode_placeholders(final_ir, require_bound=True)
@@ -428,30 +446,30 @@ class WordRenderExecution:
                     self._ensure_placeholder_file_current(job, file, "table_placeholder_integrity_failed")
             preview_job, preview_finished = self.word_preview_service.ensure_initial(current, trace_id=trace_id)
             if not preview_finished:
-                return self._host._mark_timed_out_if_needed(preview_job, trace_id=trace_id) or preview_job
+                return self.lifecycle.mark_timed_out_if_needed(preview_job, trace_id=trace_id) or preview_job
             if verified_report is not None:
-                recheck_verified_report(verified_report, file_repository=self._host.file_repository,
-                                        job_repository=self._host.job_repository)
-            completed = self._host.job_repository.update_document_job_if_current(
+                recheck_verified_report(verified_report, file_repository=self.file_repository,
+                                        job_repository=self.job_repository)
+            completed = self.job_repository.update_document_job_if_current(
                 job.id, allowed_statuses={"running"}, allowed_stages={"uploading"},
                 expected_retry_count=receipt.generation, expected_document_ir_file_id=receipt.document_ir_file_id,
                 expected_prepared_result_file_id=word_file.id, status="succeeded", stage="completed",
                 progress=100, result_file_id=word_file.id, completed_at=utc_now(), updated_at=utc_now(),
             )
         except Exception as exc:
-            return self._host._mark_failed(job,
+            return self.lifecycle.mark_failed(job,
                 failed_stage="quality_checking" if isinstance(exc, (TablePlaceholderError, DocumentIntegrityError, TableEvidenceError)) else "uploading",
                 error_code="render_failed" if isinstance(exc, (TablePlaceholderError, DocumentIntegrityError, TableEvidenceError)) else "oss_failed",
                 error_message=(failure_policy.worker_failure_message(exc) if isinstance(exc, (TablePlaceholderError, TableEvidenceError, DocumentIntegrityError)) or
                     "table_placeholder_rendering" not in receipt.file.metadata else "表格占位结果文件读取或完整性校验失败。"),
                 trace_id=trace_id, expected_prepared_result_file_id=receipt.file.id)
         if completed is None:
-            current = self._host.job_repository.get_document_job(job.id) or job
-            return self._host._mark_timed_out_if_needed(current, trace_id=trace_id) or current
-        self._host._record_event(completed, event_type="file_registered", stage="uploading", message="生成 Word 已保存。",
+            current = self.job_repository.get_document_job(job.id) or job
+            return self.lifecycle.mark_timed_out_if_needed(current, trace_id=trace_id) or current
+        self.lifecycle.record_event(completed, event_type="file_registered", stage="uploading", message="生成 Word 已保存。",
                            payload={"file_id": word_file.id, "file_type": word_file.file_type,
                                     **build_renderer_event_summary(word_file.metadata)}, trace_id=trace_id)
-        self._host._record_event(completed, event_type="stage_succeeded", stage="completed", message="文档任务已完成。",
+        self.lifecycle.record_event(completed, event_type="stage_succeeded", stage="completed", message="文档任务已完成。",
                            payload={"result_file_id": word_file.id, "template_version_id": completed.template_version_id},
                            trace_id=trace_id)
         return completed
@@ -464,18 +482,18 @@ class WordRenderExecution:
                 or record.expires_at is None and any(key in record.metadata for key in (
                     "renderer_content_contract_version", "formula_source_coverage"))):
             raise ValueError("主 DOCX 的类型、状态或保留期无效。")
-        content = self._host.file_service.read_file_content(record)
+        content = self.file_service.read_file_content(record)
         if record.size_bytes != len(content) or record.checksum_sha256 != f"sha256:{hashlib.sha256(content).hexdigest()}":
             raise ValueError("主 DOCX 字节与 SHA-256 描述不一致。")
         ir_id = record.metadata.get("document_ir_file_id")
         if not isinstance(ir_id, str) or not ir_id:
             raise ValueError("主 DOCX 缺少原始 IR 绑定。")
-        ir_file = self._host._get_uploaded_file(ir_id)
+        ir_file = require_uploaded_file(self.file_repository, ir_id)
         if ((ir_file.tenant_id, ir_file.company_id, ir_file.job_id)
                 != (record.tenant_id, record.company_id, record.job_id) or ir_file.file_type != "document_ir"
                 or ir_file.expires_at is not None and ir_file.expires_at <= utc_now()):
             raise ValueError("主 DOCX 的原始 IR 与文件归属不一致。")
-        ir_bytes = self._host.file_service.read_file_content(ir_file)
+        ir_bytes = self.file_service.read_file_content(ir_file)
         if ir_file.size_bytes != len(ir_bytes) or ir_file.checksum_sha256 != placeholder_checksum(ir_bytes):
             raise ValueError("主 DOCX 的原始 IR 字节与描述不一致。")
         ir = DocumentIR.model_validate_json(ir_bytes)
@@ -501,7 +519,7 @@ class WordRenderExecution:
     def _get_document_ir_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
         if job.document_ir_file_id is None:
             raise FileNotFoundError(f"任务缺少权威最终 DocumentIR 指针: {job.id}")
-        record = self._host._get_uploaded_file(job.document_ir_file_id)
+        record = require_uploaded_file(self.file_repository, job.document_ir_file_id)
         if ((record.tenant_id, record.company_id, record.job_id) != (job.tenant_id, job.company_id, job.id)
                 or record.file_type != "document_ir"):
             raise ValueError("最终 DocumentIR 文件与任务归属不一致。")
@@ -509,7 +527,7 @@ class WordRenderExecution:
 
     def _get_existing_result_file(self, job: DocumentJobRecord) -> DocumentFileRecord | None:
         if job.result_file_id:
-            record = self._host._get_uploaded_file(job.result_file_id)
+            record = require_uploaded_file(self.file_repository, job.result_file_id)
             if ((record.tenant_id, record.company_id, record.job_id) != (job.tenant_id, job.company_id, job.id)
                     or record.file_type != "generated_word"
                     or (record.expires_at is not None and record.expires_at <= utc_now())):
@@ -519,15 +537,15 @@ class WordRenderExecution:
                     or image_evidence.IMAGE_EVIDENCE_KEYS.intersection(record.metadata)
                     or has_evidence(record.metadata)):
                 self._validate_render_result_file(record)
-            elif image_evidence.has_image_markers(self._host.file_service.read_file_content(record)):
+            elif image_evidence.has_image_markers(self.file_service.read_file_content(record)):
                 raise ValueError("主 DOCX 含图片布局标记但缺少报告。")
             # 显式历史指针原本允许无报告、无 IR 绑定；仅该已验收路径保留原门。
             if has_evidence(record.metadata):
-                verify_report(job, record, file_repository=self._host.file_repository,
-                              file_service=self._host.file_service, job_repository=self._host.job_repository)
+                verify_report(job, record, file_repository=self.file_repository,
+                              file_service=self.file_service, job_repository=self.job_repository)
             return record
         candidates = [
-            file for file in self._host.file_repository.list_document_files()
+            file for file in self.file_repository.list_document_files()
             if (file.tenant_id, file.company_id, file.job_id) == (job.tenant_id, job.company_id, job.id)
             and file.file_type == "generated_word" and file.status == "uploaded"
             and "document_job_result_protocol" not in file.metadata
@@ -544,13 +562,13 @@ class WordRenderExecution:
             raise ValueError("历史主件已过期或缺少保留期。")
         self._validate_render_result_file(record)
         if has_evidence(record.metadata):
-            verify_report(job, record, file_repository=self._host.file_repository,
-                          file_service=self._host.file_service, job_repository=self._host.job_repository)
+            verify_report(job, record, file_repository=self.file_repository,
+                          file_service=self.file_service, job_repository=self.job_repository)
         return record
 
     def _ensure_placeholder_attempt_current(self, job: DocumentJobRecord, error_code: str) -> None:
         """慢读两侧核对仍在执行的同代/最终 IR；质量摘要等无关并发更新不影响快照。"""
-        current = self._host.job_repository.get_document_job(job.id)
+        current = self.job_repository.get_document_job(job.id)
         if (current is None or current.status != "running" or current.deleted_at is not None
                 or current.archived_at is not None or current.retry_count != job.retry_count
                 or current.document_ir_file_id != job.document_ir_file_id
@@ -560,7 +578,7 @@ class WordRenderExecution:
 
     def _ensure_placeholder_file_current(self, job: DocumentJobRecord, file: DocumentFileRecord, error_code: str) -> None:
         """与 IR-206 相同：按 ID 重取并比较完整描述，不把有 file_id 当作当前可读。"""
-        if (self._host.file_repository.get_document_file(file.id) != file or file.status != "uploaded"
+        if (self.file_repository.get_document_file(file.id) != file or file.status != "uploaded"
                 or file.expires_at is not None and file.expires_at <= utc_now()):
             raise TablePlaceholderError(error_code)
         self._ensure_placeholder_attempt_current(job, error_code)
@@ -571,7 +589,7 @@ class WordRenderExecution:
         snapshot = file.model_copy(deep=True)
         self._ensure_placeholder_file_current(job, snapshot, error_code)
         try:
-            content = self._host.file_service.read_file_content(snapshot)
+            content = self.file_service.read_file_content(snapshot)
         except Exception:
             raise TablePlaceholderError(error_code) from None
         self._ensure_placeholder_file_current(job, snapshot, error_code)
@@ -582,7 +600,7 @@ class WordRenderExecution:
     def _get_placeholder_source_file(self, job: DocumentJobRecord,
                                       error_code: str = "table_placeholder_source_unavailable") -> DocumentFileRecord:
         """裁图或未完成 receipt 只认绑定源；clone 沿既有同源父链核验归属。"""
-        file = self._host.file_repository.get_document_file(job.source_file_id)
+        file = self.file_repository.get_document_file(job.source_file_id)
         if (file is None or file.file_type != "source_pdf" or file.status != "uploaded"
                 or (file.tenant_id, file.company_id) != (job.tenant_id, job.company_id)
                 or file.expires_at is not None and file.expires_at <= utc_now()
@@ -594,7 +612,7 @@ class WordRenderExecution:
             if owner.id in seen or owner.source_job_id is None:
                 raise TablePlaceholderError(error_code)
             seen.add(owner.id)
-            owner = self._host.job_repository.get_document_job(owner.source_job_id)
+            owner = self.job_repository.get_document_job(owner.source_job_id)
             if (owner is None or owner.source_file_id != file.id
                     or (owner.tenant_id, owner.company_id) != (job.tenant_id, job.company_id)):
                 raise TablePlaceholderError(error_code)
@@ -607,7 +625,7 @@ class WordRenderExecution:
 
     def _read_placeholder_asset(self, job: DocumentJobRecord, document: DocumentIR, asset: DocumentIRAsset, binding):
         """仅显式消费的占位图按当前 ID 读取；来源 attempt 可早于翻译 retry，不能硬套最新代。"""
-        file = self._host.file_repository.get_document_file(asset.file_id)
+        file = self.file_repository.get_document_file(asset.file_id)
         try:
             provenance = TableReferenceProvenance.model_validate(document.metadata.mineru_validation_input)
         except ValueError:
@@ -655,7 +673,7 @@ class WordRenderExecution:
         bindings = {item.asset_ref: item for item in decode_placeholders(document_ir, require_bound=True)}
         image_files = {
             file.id: file
-            for file in self._host.file_repository.list_document_files()
+            for file in self.file_repository.list_document_files()
             if file.job_id == job.id and file.file_type == "image_asset" and file.status == "uploaded"
         }
 
@@ -668,12 +686,12 @@ class WordRenderExecution:
             if asset.file_id is None:
                 return None
             record = image_files.get(asset.file_id)
-            return self._host.file_service.read_file_content(record) if record is not None else None
+            return self.file_service.read_file_content(record) if record is not None else None
 
         return load_image
 
     def _result_filename(self, job: DocumentJobRecord) -> str:
-        source_file = self._host.file_repository.get_document_file(job.source_file_id)
+        source_file = self.file_repository.get_document_file(job.source_file_id)
         if source_file is None:
             return f"{job.id}.docx"
         source_stem = Path(source_file.original_filename).stem.strip() or job.id

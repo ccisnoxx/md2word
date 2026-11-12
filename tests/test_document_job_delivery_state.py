@@ -32,7 +32,7 @@ from app.infrastructure.persistence import (
 from app.infrastructure.persistence.sqlite.backend import SqlitePersistenceBackend
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock, DocumentIRMetadata
 from app.services.renderer.word_renderer import DocumentIRWordRenderer
-from app.services.renderer.evidence import build_renderer_evidence
+from app.services.renderer.render_evidence import build_renderer_evidence
 from tests.test_database_job_repository import _FakeMysqlConnection, _FakeMysqlCursor, _FakeMysqlDatabase, _mysql_config
 from tests.test_document_job_result_persistence import _candidate
 

@@ -3,7 +3,7 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  既有正文与工具入口/参数声明的局部静态对照；仅追加元数据，原扫描和制品结论未重新执行验证。原文及输入身份见 ../../.trellis/tasks/11-10-documentation-evidence-governance/research/b3-preparation.md。
+  既有正文与工具入口/参数声明的局部静态对照；仅追加元数据，原扫描和制品结论未重新执行验证。原文及输入身份见 ../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b3-preparation.md。
 ---
 
 # 仓库卫生检查

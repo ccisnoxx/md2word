@@ -26,9 +26,9 @@ from app.services.document_ir.mineru_package import (
 )
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.renderer import DocumentIRWordRenderer
-from app.services.renderer.evidence import (
-    build_renderer_event_summary, build_renderer_evidence, build_renderer_metadata, ensure_renderer_integrity,
-)
+from app.services.renderer.render_evidence import build_renderer_evidence, build_renderer_metadata
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
+from app.services.renderer.render_event_summary import build_renderer_event_summary
 from docx import Document
 from docx.image.image import Image as WordImage
 

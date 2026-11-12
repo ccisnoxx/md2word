@@ -18,7 +18,7 @@ from app.domains.document_jobs.list_query import DocumentJobListProjectionUnavai
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.review import ReviewBinding, ReviewSubmission, receipt_identity
 from app.domains.document_jobs.router import router
-from app.domains.document_jobs.service import DocumentJobService
+from app.domains.document_jobs.use_cases import build_document_job_use_cases
 from app.domains.document_jobs.table_evidence import _ensure_current_snapshot, table_evidence_snapshot_values
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.result_registration import review_source_descriptor
@@ -30,6 +30,7 @@ from app.infrastructure.persistence.sqlite.document_jobs import SqliteDocumentJo
 from app.infrastructure.persistence.sqlite.files import SqliteDocumentFileRepository
 from app.services.auth.models import AuthenticatedUser
 from app.services.tables.evidence import TableEvidenceError
+from tests.document_job_use_case_support import patch_use_case_clock
 
 NOW = datetime(2026, 10, 30, 12, tzinfo=timezone.utc)
 USER = AuthenticatedUser(id="owner", username="operator", role="operator", tenant_id="T", company_id="C")
@@ -62,13 +63,13 @@ class DocumentJobListV2ServiceTests(TestCase):
             else:
                 store = SqlitePersistenceBackend(Path(directory) / "metadata.sqlite")
                 jobs, files = SqliteDocumentJobRepository(store), SqliteDocumentFileRepository(store)
-            service = DocumentJobService(Settings.model_construct(document_publication_enabled=False),
+            service = build_document_job_use_cases(Settings.model_construct(document_publication_enabled=False),
                 jobs, SimpleNamespace(), files)
             yield jobs, files, service
 
     def listing(self, service, **values):
-        with patch("app.domains.document_jobs.service.utc_now", return_value=NOW):
-            return service.list_jobs(user=USER, page=1, page_size=20, status_filter=None, **values)
+        with patch_use_case_clock(return_value=NOW):
+            return service.queries.list_jobs(user=USER, page=1, page_size=20, status_filter=None, **values)
 
     def verified(self, jobs, files, *, job_id="job", review="approved", mode="en2zh_pdf_to_word", **values):
         file = files.create_document_file(make_file(job_id, job_id + "-result"))
@@ -89,7 +90,7 @@ class DocumentJobListV2ServiceTests(TestCase):
                 files.create_document_file(make_file())
                 raw = jobs.create_document_job(make_job(mode="en2zh_pdf_to_word", status="succeeded", stage="completed",
                     result_file_id="result", quality_status="passed", review_status="approved"))
-                baseline, _ = service.build_job_read_view(raw, user=USER, as_of=NOW)
+                baseline, _ = service.read_model.build_job_read_view(raw, user=USER, as_of=NOW)
                 self.assertEqual(baseline.review_status, "unreviewed")
                 result = self.listing(service, translation_qa_status="approved")
                 self.assertEqual((result.total, result.items), (0, []))
@@ -149,9 +150,8 @@ class DocumentJobListV2ServiceTests(TestCase):
                     result = query(value)
                     files.reserve_document_file_deletion(file.id, claim_id="later", now=NOW)
                     return result
-                with patch.object(jobs, "query_document_jobs", side_effect=after_observation), patch(
-                    "app.domains.document_jobs.service.utc_now", side_effect=[NOW, NOW + timedelta(seconds=2)]) as clock:
-                    result = service.list_jobs(user=USER, page=1, page_size=20, status_filter=None,
+                with patch.object(jobs, "query_document_jobs", side_effect=after_observation), patch_use_case_clock(side_effect=[NOW, NOW + timedelta(seconds=2)]) as clock:
+                    result = service.queries.list_jobs(user=USER, page=1, page_size=20, status_filter=None,
                         translation_qa_status="approved")
                 self.assertEqual(clock.call_count, 1)
                 self.assertEqual(result.total, 1)
@@ -179,8 +179,8 @@ class DocumentJobListV2ServiceTests(TestCase):
             with self.subTest(backend=backend), self.environment(backend) as (jobs, files, service):
                 raw, file = self.verified(jobs, files)
                 self.assertEqual(self.listing(service, translation_qa_status="approved").total, 1)
-                with patch("app.domains.document_jobs.service.utc_now", return_value=file.expires_at):
-                    result = service.list_jobs(user=USER, page=1, page_size=20, status_filter=None)
+                with patch_use_case_clock(return_value=file.expires_at):
+                    result = service.queries.list_jobs(user=USER, page=1, page_size=20, status_filter=None)
                 self.assertEqual(result.translation_qa_summary,
                     {"unreviewed": 1, "approved": 0, "needs_fix": 0, "blocked": 0})
                 self.assertEqual(result.items[0][0].review_status, "unreviewed")
@@ -198,7 +198,7 @@ class DocumentJobListV2ServiceTests(TestCase):
                     file = make_file().model_copy(update=changes)
                     files.create_document_file(file)
                     raw = jobs.create_document_job(make_job(status="succeeded", stage="completed", result_file_id="result"))
-                    original = service.build_job_read_view(raw, user=USER, as_of=NOW)
+                    original = service.read_model.build_job_read_view(raw, user=USER, as_of=NOW)
                     result = self.listing(service)
                     self.assertEqual(original[1]["download"].disabled_reason_code, reason)
                     self.assertEqual(result.items[0], original)
@@ -250,11 +250,10 @@ class DocumentJobListV2ServiceTests(TestCase):
             app = FastAPI()
             app.include_router(router, prefix="/api/v1")
             register_api_error_handlers(app)
-            app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(document_job_service=service)
+            app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(document_job_use_cases=service)
             app.dependency_overrides[require_current_user] = lambda: USER
             with TestClient(app) as client, patch.object(jobs, "list_document_jobs", side_effect=AssertionError("不得全量读取")), patch.object(
-                DocumentJobRecord, "model_validate_json", wraps=DocumentJobRecord.model_validate_json) as decode, patch(
-                "app.domains.document_jobs.service.utc_now", return_value=NOW):
+                DocumentJobRecord, "model_validate_json", wraps=DocumentJobRecord.model_validate_json) as decode, patch_use_case_clock(return_value=NOW):
                 response = client.get("/api/v1/document-jobs", params={"translation_qa_status": "approved", "page_size": 1})
                 self.assertEqual(response.status_code, 200, response.text)
                 payload = response.json()
@@ -311,7 +310,7 @@ class DocumentJobListV2PublicationTests(V2PublicationFixture, TestCase):
             self.assertEqual(job.quality_summary["checks_v1"]["document_base"]["reason_code"], "base_risk_unclassified")
             self.assertGreater(job.quality_summary["table_evidence"]["table_count"], 0)
             runtime.settings.document_publication_enabled = True
-            _, actions = runtime.document_job_service.build_job_read_view(job,
+            _, actions = runtime.document_job_use_cases.read_model.build_job_read_view(job,
                 user=user.model_copy(update={"role": "admin"}))
             self.assertFalse(actions["publish"].enabled)
             self.assertIn("quality_status_pending", {reason.code for reason in actions["publish"].disabled_reasons})

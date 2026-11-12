@@ -3,7 +3,7 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  本文按文档治理任务 design revision 1 定义字段、生命周期、证据分类与维护边界；只核对规则一致性和导航，不声明代码或运行验收。实施记录：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+  本文按文档治理任务 design revision 1 定义字段、生命周期、证据分类与维护边界；只核对规则一致性和导航，不声明代码或运行验收。实施记录：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # 文档状态与核验规则
@@ -12,7 +12,7 @@ verification_scope: >-
 
 ## 适用资料
 
-维护范围包括根 README、文档权威清单、`docs/` 下的 Markdown/YAML、Docker README、`trellis-bootstrap/` 的 Markdown，以及 `tests/fixtures/` 中的说明和验收模板。逐份判断用途，不能按日期或目录自动归档。迁移路径和实际覆盖批次见[文档清单](../../.trellis/tasks/11-10-documentation-evidence-governance/research/document-inventory.json)；本规则文档也遵循同一字段合同。
+维护范围包括根 README、文档权威清单、`docs/` 下的 Markdown/YAML、Docker README、`trellis-bootstrap/` 的 Markdown，以及 `tests/fixtures/` 中的说明和验收模板。逐份判断用途，不能按日期或目录自动归档。迁移路径和实际覆盖批次见[文档清单](../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/document-inventory.json)；本规则文档也遵循同一字段合同。
 
 运行时 Prompt、模板与样本 Manifest、Compose 和 OpenAPI 生成快照是运行输入或生成产物，不注入治理字段。AGENTS、Skills、平台配置、Trellis Specs、任务历史和会话记录沿用各自生命周期，本规则只引用它们。
 
@@ -67,7 +67,7 @@ verification_scope: null
 
 只检查导航、字段或历史报告文字时，说明这类局部检查，保留核验 SHA 为 `null`；不能把报告中的 release SHA 当成亲自核验代码的提交。没有已确认责任人时保留 owner 为 `null`，后续确认后再更新。
 
-本轮 B1 的逐份范围、源码身份和检查结果见[实施记录](../../.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md)。后续维护使用各自任务的实际证据，避免继续引用不覆盖新改动的旧记录。
+本轮 B1 的逐份范围、源码身份和检查结果见[实施记录](../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md)。后续维护使用各自任务的实际证据，避免继续引用不覆盖新改动的旧记录。
 
 ## 维护与验收
 

@@ -24,6 +24,7 @@ from tests import test_fastapi_jobs_backend as fixtures
 from tests import test_resource_versioning as resource_fixtures
 from tests import test_document_job_execution_stages as stage_fixtures
 from tests import test_document_job_result_persistence as result_fixtures
+from tests.document_job_use_case_support import replace_dependency
 
 
 def pdf_bytes():
@@ -90,13 +91,13 @@ class V2PublicationFixture:
         with tempfile.TemporaryDirectory(prefix="rnd504-app-") as directory:
             runtime = self._build_runtime(Path(directory), kind)
             execution = runtime.document_job_execution_service
-            runtime.document_job_service.audit_service = runtime.audit_service
+            replace_dependency(runtime.document_job_use_cases, "audit_service", runtime.audit_service)
             # 在 HTTP 创建前给外部 fake 固定真实源；基础贡献由原转换/渲染/receipt 完成。
             execution.fake_mineru_client.result_zip_bytes = natural_package(table=True) if source_package is None else source_package
             provider = RecordingPreviewProvider(outcomes)
             execution.rendering.word_preview_service.provider = provider
             execution.rendering.word_preview_service.audit_service = runtime.audit_service
-            runtime.document_job_service.word_preview_service = execution.rendering.word_preview_service
+            replace_dependency(runtime.document_job_use_cases, "word_preview_service", execution.rendering.word_preview_service)
             with fixtures.TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
                 job = self._pause_after_ir(runtime, execution, client, headers)
@@ -124,7 +125,7 @@ class V2PublicationFixture:
             self.assertEqual(result.status, "succeeded", result.error_message)
             self.assertIn(result.quality_status, {"passed", "warning"})
             if approved:
-                result = runtime.document_job_service.submit_document_review(result.id, user=user,
+                result = runtime.document_job_use_cases.quality_review.submit_document_review(result.id, user=user,
                     review_status="approved", note="内部复核已通过")
             runtime.settings.document_publication_enabled = True
             admin = user.model_copy(update={"id": "user_admin", "username": "admin", "role": "admin"})
@@ -149,12 +150,15 @@ class V2PublicationFixture:
             term_rule_set=resources.resolve_version("term_rule_set", "publication-rules", "1"))
         snapshots = JobResourceSnapshotService(runtime.settings, resources)
         execution.job_resource_snapshot_service = snapshots if complete else None
-        runtime.document_job_service.job_resource_snapshot_service = snapshots
+        # 协作者在构造时显式持有该依赖，构造后替换必须同步到实际消费方。
+        execution.rendering.job_resource_snapshot_service = execution.job_resource_snapshot_service
+        execution.translation_batches.job_resource_snapshot_service = execution.job_resource_snapshot_service
+        replace_dependency(runtime.document_job_use_cases, "job_resource_snapshot_service", snapshots)
         job = runtime.document_job_repository.update_document_job(job.id,
             request_snapshot={**job.request_snapshot, "resources": snapshot.model_dump(mode="json")})
         return job
 
     def publish(self, runtime, job, admin, *, key=None, note="批准交付", source=None):
         file = runtime.document_file_repository.get_document_file(job.result_file_id)
-        return runtime.document_job_service.publish_document(job.id, user=admin, request_id=key or str(uuid4()),
+        return runtime.document_job_use_cases.publication.publish_document(job.id, user=admin, request_id=key or str(uuid4()),
             note=note, expected_source=source or observed_publication_source(job, file), trace_id="publication-test")

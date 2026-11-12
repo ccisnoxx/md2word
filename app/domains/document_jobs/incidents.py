@@ -30,7 +30,12 @@ from app.domains.document_jobs.schemas import (
     DocumentJobIncidentSummaryResponse,
     DocumentJobResponse,
 )
+from app.domains.document_jobs.use_cases.access import DocumentJobAccess
+from app.domains.document_jobs.use_cases.queries import DocumentJobQueries
+from app.domains.document_jobs.use_cases.read_model import DocumentJobReadModel
+from app.domains.document_jobs.use_cases.submission import DocumentJobSubmission
 from app.domains.files.models import DocumentFileRecord
+from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import is_translation_document_job_mode
 from app.services.auth.models import AuthenticatedUser
@@ -54,8 +59,20 @@ TRANSLATION_ERROR_CODES = frozenset({"translation_failed", "translation_fan_in_m
 class DocumentJobIncidentService:
     """基于 document_jobs 元数据构建轻量异常队列投影。"""
 
-    def __init__(self, document_job_service: Any) -> None:
-        self.document_job_service = document_job_service
+    def __init__(
+        self,
+        *,
+        file_repository: DocumentFileRepositoryProtocol,
+        access: DocumentJobAccess,
+        read_model: DocumentJobReadModel,
+        queries: DocumentJobQueries,
+        submission: DocumentJobSubmission,
+    ) -> None:
+        self.file_repository = file_repository
+        self.access = access
+        self.read_model = read_model
+        self.queries = queries
+        self.submission = submission
 
     def list_incidents(
         self,
@@ -86,11 +103,11 @@ class DocumentJobIncidentService:
         # 保留原始记录；公开响应不含完整内部字段，不能反向恢复动作输入。
         result_views: dict[str, tuple[DocumentJobRecord, DocumentJobAvailableActionResponse]] = {}
         candidates = []
-        with self.document_job_service.file_repository.read_session() as file_reader:
-            jobs = {job.id: job for job in self.document_job_service.list_visible_jobs(
+        with self.file_repository.read_session() as file_reader:
+            jobs = {job.id: job for job in self.queries.list_visible_jobs(
                 user=user, file_reader=file_reader)}
             for job in jobs.values():
-                view, retry_action, download = self.document_job_service.build_incident_classification_view(
+                view, retry_action, download = self.read_model.build_incident_classification_view(
                     job, file_reader=file_reader)
                 result_views[job.id] = (view, download)
                 item = self._project_item(view, {"retry": retry_action}, now=now)
@@ -110,7 +127,7 @@ class DocumentJobIncidentService:
         filtered.sort(key=lambda item: self._sort_key(item, sort), reverse=self._sort_reverse(sort))
         start = (page - 1) * page_size
         items = [
-            self._project_item(*self.document_job_service.build_job_read_view(
+            self._project_item(*self.read_model.build_job_read_view(
                 jobs[item.job.id], user=user, check_publication_evidence=False,
                 observed_result_view=result_views[item.job.id],
             ), now=now)
@@ -132,15 +149,15 @@ class DocumentJobIncidentService:
     ) -> DocumentJobIncidentDiagnosticResponse:
         """Return a compact diagnostic packet for the incident drawer."""
 
-        job = self.document_job_service.get_job(job_id, user=user)
+        job = self.access.get_job(job_id, user=user)
         now = utc_now()
         item = self._build_item(job, user=user, now=now)
         events = sorted(
-            self.document_job_service.list_events(job_id, user=user),
+            self.queries.list_events(job_id, user=user),
             key=lambda event: event.created_at,
             reverse=True,
         )
-        files = self.document_job_service.list_files(job_id, user=user)
+        files = self.queries.list_files(job_id, user=user)
         return DocumentJobIncidentDiagnosticResponse(
             item=item,
             failure_diagnostic=project_failure_diagnostic(job, events),
@@ -163,7 +180,7 @@ class DocumentJobIncidentService:
         items: list[DocumentJobIncidentBulkItemResponse] = []
         for job_id in normalized:
             try:
-                job = self.document_job_service.get_job(job_id, user=user)
+                job = self.access.get_job(job_id, user=user)
                 current_item = self._build_item(job, user=user, now=utc_now())
                 if not current_item.retryable:
                     items.append(
@@ -178,7 +195,7 @@ class DocumentJobIncidentService:
                         )
                     )
                     continue
-                retried = self.document_job_service.retry_job(
+                retried = self.submission.retry_job(
                     job_id,
                     user=user,
                     reason=reason,
@@ -208,7 +225,7 @@ class DocumentJobIncidentService:
         items: list[DocumentJobIncidentBulkItemResponse] = []
         for job_id in normalized:
             try:
-                job = self.document_job_service.get_job(job_id, user=user)
+                job = self.access.get_job(job_id, user=user)
                 items.append(
                     DocumentJobIncidentBulkItemResponse(
                         job_id=job_id,
@@ -228,7 +245,7 @@ class DocumentJobIncidentService:
         user: AuthenticatedUser,
         now: datetime,
     ) -> DocumentJobIncidentQueueItemResponse:
-        job, actions = self.document_job_service.build_job_read_view(job, user=user)
+        job, actions = self.read_model.build_job_read_view(job, user=user)
         return self._project_item(job, actions, now=now)
 
     def _project_item(
@@ -470,7 +487,7 @@ class DocumentJobIncidentService:
         if q is None:
             return True
         values = [
-            *self.document_job_service.document_job_search_values(item.job),
+            *self.queries.document_job_search_values(item.job),
             item.failure_type,
             item.suggested_action,
             *item.evidence_summary,

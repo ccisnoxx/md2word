@@ -13,7 +13,7 @@ from app.domains.files.models import DocumentFileRecord
 from app.domains.files.result_registration import ensure_result_descriptor_matches, retained_file_expiry
 from app.domains.resources.models import utc_now
 from app.services.document_ir.models import DocumentIR
-from app.services.renderer.evidence import validate_persisted_renderer_content
+from app.services.renderer.render_evidence import validate_persisted_renderer_content
 from app.services.tables.evidence import (
     Checksum, EvidenceModel, SafeId, TableEvidenceError, TableEvidenceReport,
     read_table_evidence, table_evidence_summary, VERSION,

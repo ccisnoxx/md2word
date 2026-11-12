@@ -18,6 +18,7 @@ from app.domains.translation.document_ir_translator import DocumentIRTranslation
 from app.domains.document_jobs.repository import TranslationBatchTreeInvalidError
 from app.domains.resources.models import utc_now
 from tests import test_fastapi_jobs_backend as fixtures
+from tests.document_job_use_case_support import replace_dependency
 
 
 def _make_public_opa228_mineru_zip_bytes() -> bytes:
@@ -285,7 +286,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 )
                 self.assertTrue(old_batches)
 
-                runtime.document_job_service.task_queue = Mock()
+                replace_dependency(runtime.document_job_use_cases, "task_queue", Mock())
                 retried = client.post(
                     f"/api/v1/document-jobs/{job_id}/retry",
                     headers=headers,
@@ -317,7 +318,7 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 )
 
                 # 模拟鉴权读取发生在 retry 前，随后 snapshot 在锁内读到新代。
-                with patch.object(runtime.document_job_service, "get_job", return_value=old_job):
+                with patch.object(runtime.document_job_use_cases.access, "get_job", return_value=old_job):
                     response = client.get(
                         f"/api/v1/document-jobs/{job_id}/translation-batches",
                         headers=headers,

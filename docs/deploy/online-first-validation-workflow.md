@@ -10,7 +10,7 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  仅对照仓库配置、既有部署记录和脚本参数标明当前入口及 B02 前构建/回滚示例范围；未执行部署或运行门禁，历史环境不是当前观察。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+  仅对照仓库配置、既有部署记录和脚本参数标明当前入口及 B02 前构建/回滚示例范围；未执行部署或运行门禁，历史环境不是当前观察。 依据与内容身份：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # 线上优先验证流程

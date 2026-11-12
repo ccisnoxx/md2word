@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "脚本与测试归属，避免引入业务 runtime 依赖。"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "按直接受影响行为执行最小验证，遵守现有回归边界。"}
+{"file": ".trellis/tasks/archive/2026-11/11-10-repository-hygiene/verification.md", "reason": "清理范围、保留配置、扫描结果与历史凭证处置边界。"}

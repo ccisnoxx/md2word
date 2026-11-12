@@ -3,7 +3,7 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  核对文档职责、权威关系和治理说明入口；不核验各目标能力或推进任务状态。 依据与内容身份：.trellis/tasks/11-10-documentation-evidence-governance/research/b1-implementation.md。
+  核对文档职责、权威关系和治理说明入口；不核验各目标能力或推进任务状态。 依据与内容身份：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b1-implementation.md。
 ---
 
 # 文档清单与权威性

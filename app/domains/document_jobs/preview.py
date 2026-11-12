@@ -28,7 +28,8 @@ from app.services.preview.page_mapping import (
     MappingBinding, build_page_mapping, read_page_mapping, unavailable_mapping,
 )
 from app.services.document_ir.models import DocumentIR
-from app.services.renderer.evidence import validate_persisted_renderer_content, validate_persisted_render_evidence
+from app.services.renderer.render_evidence import validate_persisted_renderer_content
+from app.services.renderer.render_evidence_validation import validate_persisted_render_evidence
 from app.services.renderer.block_anchors import validate_block_anchor_evidence
 from app.services.preview.page_quality import (
     PageQualityBinding, parse_page_quality_policy, policy_sha256, build_page_quality_run,

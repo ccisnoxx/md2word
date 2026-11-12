@@ -6,12 +6,12 @@ doc_status: active
 last_verified_commit: null
 owner: null
 verification_scope: >-
-  本批仅阅读全文、核对用途和原字段：ADR-001 至 ADR-016 为已接受决策；accepted 不表示其所有目标能力已交付。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
+  本批仅阅读全文、核对用途和原字段：ADR-001 至 ADR-016 为已接受决策；accepted 不表示其所有目标能力已交付。 未重新认证全篇当前实现或运行验收。依据：.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b2-preparation.md；逐项证据见同目录 manifest-reconciliation.md。
 ---
 
 # 架构决策记录
 
-ADR-001 至 ADR-016 为已接受决策；accepted 不表示其所有目标能力已交付。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](../engineering/documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
+ADR-001 至 ADR-016 为已接受决策；accepted 不表示其所有目标能力已交付。 本次文档用途核对不替代代码或运行验收；字段含义见[核验规则](../engineering/documentation-governance.md)，原 AC、源码与历史证据见[45 项对账](../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/manifest-reconciliation.md)。
 
 ## ADR-001 保持模块化单体
 

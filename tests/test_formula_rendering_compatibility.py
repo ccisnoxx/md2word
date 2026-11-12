@@ -25,9 +25,10 @@ from app.conversion.docx_rules.formula import (
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock, DocumentIRMetadata
 from app.services.renderer.docx_quality import analyze_docx_quality_bytes, build_docx_quality_flags
-from app.services.renderer.evidence import (
-    build_renderer_evidence, ensure_renderer_integrity, formula_source_inventory, validate_persisted_renderer_content,
+from app.services.renderer.render_evidence import (
+    build_renderer_evidence, formula_source_inventory, validate_persisted_renderer_content,
 )
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.services.renderer.content_contract import build_formula_source_coverage
 from app.services.renderer.layout_plan import build_layout_plan
 from app.services.renderer.logical_table_plan import build_content_table_plan
