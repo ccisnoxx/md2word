@@ -246,6 +246,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 预期输出：heading/table caption 使用 `keep_with_next`；表头可重复，表格行使用 `cantSplit`；空 table placeholder 只并入前一真实表格，不另渲染重复空表。
 - 数字复合表号的续表归组：`logical_table_group.is_compound_table_continuation(primary, following)` 供源归组和 `logical_table_plan` 共用。两段须各有唯一明确的 `数字-数字` 表号，完整编号相同，后段末尾有括号内的 `continued`、`续` 或 `续表`，后段题注正文须为空或与首段一致。源归组继续核验相邻页、正文边界、几何、列数和表头签名；布局兼容时渲染为一张原生表。编号不同、正文冲突、缺续表标记或多重编号时保守分表。该判定不参与 FIELD-002 的 `SEQ` 或 `REF` 生成。
 - 跨页表头去重仍须原生表头签名和续段提示通过核对。缺少可信 `<th>` 时保留源行。空片段归组收据只证明位置关系，未证明上游主片包含次页数据时继续执行 TABLE-004 的占位和阻断。
+- 上游预合并须核对同包 v2 与唯一同文档版面的前后处理节点、次片表体的 `lines_deleted=true`、明确续表题注及唯一的有序行覆盖。上游省略共享前缀时须核实其表头身份，采用显式连续 `<th>` 或已绑定源 PDF 的 `TableHeaderReview`。源片段的 `upstream_coverage` 记录主片内半开区间 `[row_start, row_end)`，绑定包、内容列表、版面及片段身份。Grid 保留原始空片和该绑定，Word 的 `upstream_covered_rows` 指向主表实物中的对应行，空片新增输出行数为零。归属证据不足仍触发 `table_fragment_missing`。历史序列的可选字段缺省时沿用原证据。
 - 冲突/例外：`DocumentIRBlockLayout.continuation_heights` 当前只写入、没有 renderer 消费者，不能声称续页高度已参与 Word 排版；Word 最终分页仍由客户端决定。
 - 禁止：把整张长表放进不可跨页容器；因 placeholder 创建第二张空表；把“有 continuation 元数据”写成“已验证不挤压”。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_merges_table_placeholder_continuation_and_landscape_orientation`、`.test_convert_zip_merges_real_mineru_empty_table_continuations`、`.test_compound_table_continuation_reconciles_source_grid_plan_and_word`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`。
@@ -396,7 +397,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 正式 owner：`app/services/renderer/table_renderer.py::_configure_data_table_rows`、`::_table_column_widths`、`::_template_config_for_table_columns`、`::_set_table_borders`。
 - 预期输出：表头行标记 `tblHeader`，所有行标记 `cantSplit`；5 列数据手册表优先给描述列宽度，6 列及以上使用紧凑字号/等宽策略；应用配置边框与表头样式。
 - 表头校核：`MinerUToDocumentIRService.convert_zip(..., table_header_reviews=...)` 通过可信 PDF loader 核对 PDF SHA-256，并通过原始表账本核对 content list SHA-256、源 Pointer、零基页号和原 HTML SHA-256。完整且跨度闭合的上游 `<th>` 首部优先。采用人工校核时，`header_row_count` 指定零基首部连续范围，跨度不得越过该范围，单元格占位须完整。位置、指纹或行范围无效时拒绝校核。
-- 来源与写入：已采用的 `header_review` 进入来源片段和表格验证证据。Grid、Word 及翻译表上下文复用这份记录。实际 `tblHeader` 范围以已校核首部为准。下方的 `<th>` 仍具原单元格语义。人工校核不授予续表去重权限，原 HTML 与无校核历史序列保持原值。验证见 [表头来源与本地校核](../../tasks/11-11-datasheet-quality-baseline-contracts/table-header-review.md)。
+- 来源与写入：已采用的 `header_review` 进入来源片段和表格验证证据。Grid、Word 及翻译表上下文复用这份记录。实际 `tblHeader` 范围以已校核首部为准。下方的 `<th>` 仍具原单元格语义。校核可确认上游预合并已经省略的共享表头范围，仍须通过 FLOW-003 的行覆盖核对。两段完整片段的去重继续采用原生表头签名，原 HTML 与无校核历史序列保持原值。验证见 [表头来源与本地校核](../../tasks/11-11-datasheet-quality-baseline-contracts/table-header-review.md)。
 - 冲突/例外：XML 结构不能证明 Word/WPS 实际无挤压；整文档视觉门禁见 QUALITY-003。
 - 禁止：把 `cantSplit` 写成“表格不会挤压”的证明；按源页缩放整表；为一个器件硬编码列宽。
 - 自动验证：`tests.test_table_header_review`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_styles_later_th_cells_as_table_headers`、`.test_datasheet_five_column_table_widths_prioritize_description_column`、`.test_render_to_bytes_uses_configured_long_table_caption_and_border_color`。
@@ -406,7 +407,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 ### TABLE-004 无效表格输入与有来源的非编辑占位
 
 - 状态：`enforced-tested`（输入拒绝、占位来源与质量阻塞；不代表非编辑表格可交付）。
-- 输入信号：不可支持的 HTML，或可信表格来源账本中的 missing/empty HTML 片段。
+- 输入信号：不可支持的 HTML，或可信表格来源账本中仍需占位的 missing/empty HTML 片段（见 FLOW-003）。
 - 正式 owner：`logical_table_plan.build_content_table_plan` 的原生输入规划；`document_ir.table_placeholder.prepare_placeholders` 的来源绑定；`infrastructure.pdf_crop.PopplerPdfTableCropProvider` 的受控裁图；`table_placeholder_evidence` 与 `base_quality` 的占位认证及质量分级。
 - 预期输出：不可支持的 HTML 在输入/规划边界明确拒绝；missing/empty 片段须有可验证参考图，或原 PDF loader 与裁图 provider。后者核对文件身份/checksum、页码、有限 bbox、明确 frame 和实际 PDF 页面边界。没有图片/PDF 来源时保持 `table_placeholder_source_unavailable`，不得用题注或空表冒充表体。
 - 裁图几何：`PopplerPdfTableCropProvider.crop(PdfCropRequest)` 校验 PDF 字节身份、零原点、未旋转以及相同的完整 MediaBox 与 CropBox。声明 frame 须等于 Poppler 报告的点框。已确认的归一化坐标经 `from_normalized_bbox=True` 标识时，声明 frame 也可逐轴恰等于该点框向下取整后的整数尺寸。整数截断情形按报告宽高重映射 bbox，重检边界和预算，结果仍携带原声明 frame。其它偏差返回 `table_placeholder_geometry_invalid`。本地正式适配器通过显式 `placeholder_source: PdfCropSource` 复用同一裁图器，未传入时沿用参考图路径。真实裁图等价与非法几何回归见 `tests.test_pdf_crop`。

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # app/services/document_ir/models.py: 定义 DocumentIR v1/v2 的持久化数据结构。
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -37,6 +37,38 @@ class RepeatedHeaderHint(BaseModel):
     signature: str
 
 
+_Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+_TableFragmentId = Annotated[str, Field(pattern=r"^table-fragment:[0-9a-f]{64}$")]
+_LayoutTablePointer = Annotated[str, Field(pattern=r"^/pdf_info/\d+/(?:preproc_blocks|para_blocks)/\d+$")]
+
+
+class UpstreamTableCoverage(BaseModel):
+    """同一 MinerU 包中次页片段已进入主表的可复核来源证据。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True,
+                              revalidate_instances="always")
+    schema_version: Literal["mineru-premerged-table-coverage/v1"] = "mineru-premerged-table-coverage/v1"
+    package_sha256: _Sha256
+    content_list_sha256: _Sha256
+    layout_sha256: _Sha256
+    primary_fragment_id: _TableFragmentId
+    covered_fragment_id: _TableFragmentId
+    primary_source_sha256: _Sha256
+    covered_source_sha256: _Sha256
+    primary_before_pointer: _LayoutTablePointer
+    covered_before_pointer: _LayoutTablePointer
+    primary_after_pointer: _LayoutTablePointer
+    covered_after_pointer: _LayoutTablePointer
+    primary_before_html_sha256: _Sha256
+    covered_before_html_sha256: _Sha256
+    primary_after_html_sha256: _Sha256
+    primary_before_rows_sha256: _Sha256
+    covered_before_rows_sha256: _Sha256
+    repeated_prefix_rows: int = Field(ge=0)
+    row_start: int = Field(gt=0)
+    row_end: int = Field(gt=0)
+
+
 class TableFragment(BaseModel):
     """原始全文只保存于 raw_fragment；HTML 是定位到该全文的只读投影。"""
 
@@ -52,8 +84,13 @@ class TableFragment(BaseModel):
     header_signature: str | None = None
     repeated_header_hint: RepeatedHeaderHint | None = None
     header_review: TableHeaderReview | None = Field(default=None, exclude_if=lambda value: value is None)
+    upstream_coverage: UpstreamTableCoverage | None = Field(default=None, exclude_if=lambda value: value is None)
     normalization_rule_id: str | None = None
     normalization_reason: Literal["explicit_table_placeholder", "strict_empty_table_placeholder"] | None = None
+
+    @property
+    def needs_placeholder(self) -> bool:
+        return self.html_state in {"missing", "empty"} and self.upstream_coverage is None
 
     @property
     def raw_html(self) -> str | None:

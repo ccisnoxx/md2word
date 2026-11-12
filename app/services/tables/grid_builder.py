@@ -7,6 +7,9 @@ from typing import Literal
 
 from app.services.document_ir.models import DocumentIRBlock, LogicalTableGroup, SourceSpan
 from app.services.document_ir.table_header_review import TableHeaderReview, TableHeaderReviewError
+from app.services.document_ir.table_upstream_coverage import (
+    count_upstream_coverage_candidates, validate_upstream_coverage_rows,
+)
 from app.services.tables.html_normalizer import (
     MAX_CELLS, MAX_GRID_SLOTS, MAX_OCCUPANCY_CHECKS, MAX_RAW_HTML_BYTES, NORMALIZER_VERSION,
     NormalizedTableFragment, TableBuildError, TableDiagnostic, normalize_table_fragment,
@@ -80,14 +83,22 @@ def build_render_table_grid(
 
 def build_table_grid(group: LogicalTableGroup, *, source_content_sha256: str) -> TableBuildResult:
     """只接受已校验逻辑组；不重分组、不修复技术文字、不回写上游。"""
+    preceding = {}
+    candidates = count_upstream_coverage_candidates(group.fragments)
     for fragment in group.fragments:
         if fragment.header_review is not None:
             fragment.header_review.verify_fragment(fragment, source_content_sha256)
+        if fragment.upstream_coverage is not None:
+            primary = preceding.get(fragment.upstream_coverage.primary_fragment_id)
+            if primary is None or candidates[fragment.render_owner_block_id, fragment.source_span.page_index] != 1:
+                raise ValueError("逻辑表格来源合同无效：upstream_coverage_order。")
+            validate_upstream_coverage_rows(primary, fragment, source_content_sha256)
+        preceding[fragment.fragment_id] = fragment
     fragments = [TableSourceFragment(
         fragment_id=fragment.fragment_id, source_span=fragment.source_span,
         html_state=fragment.html_state, raw_html=fragment.raw_html,
         raw_html_sha256=fragment.raw_html_sha256, repeated_header_hint=fragment.repeated_header_hint,
-        header_review=fragment.header_review,
+        header_review=fragment.header_review, upstream_coverage=fragment.upstream_coverage,
     ) for fragment in group.fragments]
     return _build_table_grid(fragments, table_id=group.logical_group_id,
                              source_content_sha256=source_content_sha256)

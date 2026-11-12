@@ -71,6 +71,7 @@ class FragmentOutput(EvidenceModel):
     shared_header_rows: list[NonNegativeInt] | None
     bookmark: SafeId | None
     status: Literal["rendered", "header_only", "empty", "missing"]
+    upstream_covered_rows: list[NonNegativeInt] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _ranges(self) -> Self:
@@ -78,6 +79,9 @@ class FragmentOutput(EvidenceModel):
                          self.removed_header_rows, self.shared_header_rows):
             if interval is not None and (len(interval) != 2 or interval[1] < interval[0]):
                 _invalid("table_evidence_input")
+        covered = self.upstream_covered_rows
+        if covered is not None and (self.status != "empty" or len(covered) != 2 or covered[0] >= covered[1]):
+            _invalid("table_evidence_input")
         if self.status in {"empty", "missing"}:
             if (self.source_rows != [0, 0] or self.output_rows != [0, 0] or self.block_id is not None
                     or self.render_input_sha256 is not None or self.render_fragment_id is not None or self.bookmark is not None):
@@ -232,12 +236,29 @@ class TableEvidence(EvidenceModel):
             _invalid("table_evidence_input")
         if self.render_state != "excluded_margin_artifact" and set(native_ids + placeholder_ids) != fragments.keys():
             _invalid("table_evidence_input")
-        for item in native:
-            source = fragments[item.fragment_id]
-            if source.html_state != "present" and (item.status != source.html_state or item.fragment_id not in placeholder_ids):
-                _invalid("table_evidence_input")
+        for output in self.outputs:
+            owners = {item.fragment_id: item for item in output.fragments if item.block_id is not None}
+            for item in output.fragments:
+                source = fragments[item.fragment_id]
+                if source.html_state == "present":
+                    continue
+                if item.status != source.html_state:
+                    _invalid("table_evidence_input")
+                coverage = source.upstream_coverage
+                if coverage is None:
+                    if item.upstream_covered_rows is not None or item.fragment_id not in placeholder_ids:
+                        _invalid("table_evidence_input")
+                    continue
+                primary = owners.get(coverage.primary_fragment_id)
+                if (primary is None or item.render_owner_block_id != primary.block_id or item.fragment_id in placeholder_ids
+                        or coverage.row_start < primary.retained_source_rows[0]
+                        or coverage.row_end != primary.retained_source_rows[1]):
+                    _invalid("table_evidence_input")
+                offset = primary.output_rows[0] - primary.retained_source_rows[0]
+                if item.upstream_covered_rows != [offset + coverage.row_start, offset + coverage.row_end]:
+                    _invalid("table_evidence_input")
         for identity in placeholder_ids:
-            if fragments[identity].html_state == "present":
+            if fragments[identity].html_state == "present" or fragments[identity].upstream_coverage is not None:
                 _invalid("table_evidence_input")
         source_flags = [EvidenceFlag(producer="table_validator", code=f.flag.code, severity=f.flag.severity,
                                     identity=f.finding_id, fragment_id=f.flag.fragment_id) for f in report.findings]

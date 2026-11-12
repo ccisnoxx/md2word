@@ -32,6 +32,7 @@ from app.services.document_ir.layout_signals import (
     NORMALIZED_BBOX_SPACE,
     parse_page_index,
     pdf_point_bbox,
+    read_same_document_layout,
     role_for_source_type,
 )
 from app.services.document_ir.integrity import DocumentIntegrityError, build_source_integrity, ensure_integrity
@@ -63,6 +64,7 @@ from app.services.document_ir.table_placeholder import (
     PdfCropRequest, PdfCropSource, PdfPageRasterizer, PdfTableCropProvider, PlaceholderAsset, TablePlaceholderError, checksum,
     prepare_placeholders, validate_geometry, validate_image,
 )
+from app.services.document_ir.table_upstream_coverage import attach_upstream_table_coverage
 
 PDF_FALLBACK_SOURCE_PATH = "derived/pdf-region-crop.png"
 
@@ -135,8 +137,10 @@ class MinerUToDocumentIRService:
                 report.content_list_sha256 = package_sha256(content_list_path)
                 validator.check_report_limits()
                 payload, _checksum = read_json_payload(content_list_path, policy=self.policy)
+                same_document_layout = read_same_document_layout(content_list_path, policy=self.policy)
                 validated = validator.validate(payload, package_root=package_root, content_list_path=content_list_path,
-                                               merged_paragraphs=find_merged_paragraphs(content_list_path, policy=self.policy))
+                                               merged_paragraphs=find_merged_paragraphs(
+                                                   same_document_layout[0] if same_document_layout is not None else None))
                 table_sources = capture_table_sources(payload, validated.blocks, checksum=report.content_list_sha256)
                 return self._convert_blocks(
                     validated.blocks,
@@ -150,6 +154,7 @@ class MinerUToDocumentIRService:
                     table_references=validated.table_references,
                     placeholder_source_loader=placeholder_source_loader,
                     table_header_reviews=table_header_reviews,
+                    same_document_layout=same_document_layout,
                 )
             except MinerUPackageError as error:
                 validator.add_package_error(error)
@@ -169,6 +174,7 @@ class MinerUToDocumentIRService:
         table_references: dict[str, ValidatedTableReference],
         placeholder_source_loader: Callable[[], PdfCropSource] | None,
         table_header_reviews: tuple[TableHeaderReview, ...],
+        same_document_layout: tuple[Any, str] | None,
     ) -> MinerUToDocumentIRResult:
         """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
         validation_report = validator.report
@@ -360,6 +366,8 @@ class MinerUToDocumentIRService:
         attach_logical_table_groups(document, table_sources)
         if table_header_reviews:
             attach_table_header_reviews(document, table_header_reviews, table_sources.checksum, source_loader)
+        if same_document_layout is not None and content_list_path.name.endswith("content_list_v2.json"):
+            attach_upstream_table_coverage(document, *same_document_layout)
         reference_assets = attach_table_references(document, table_references)
         try:
             placeholder_assets = prepare_placeholders(document, table_references,

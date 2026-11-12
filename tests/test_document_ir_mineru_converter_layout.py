@@ -1163,6 +1163,176 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertEqual([table.cell(0, 0).text for table in word.tables], ["Part", "保留正文"])
         self.assertEqual(len(word.inline_shapes), 2)
 
+    def test_convert_zip_requires_bound_upstream_row_coverage_for_empty_continuation(self) -> None:
+        header = "<tr><th colspan=\"2\">引脚</th></tr>"
+        first_data = "<tr><td>GPIO1</td><td>1</td></tr>"
+        next_data = "<tr><td>$V_{CC}$</td><td>2</td></tr>"
+        primary_caption = "Table 4-1. Pin Functions"
+        source_boxes = [[100, 640, 900, 940], [100, 80, 900, 320]]
+        layout_boxes = [[50, 512, 450, 752], [50, 64, 450, 256]]
+
+        def html(*rows: str) -> str:
+            return "<table>" + "".join(rows) + "</table>"
+
+        def source_table(page: int, value: str, caption: str = "") -> dict:
+            return {"type": "table", "bbox": source_boxes[page], "content": {
+                "image_source": {"path": "images/"},
+                "html": value,
+                "table_caption": [{"type": "text", "content": caption}] if caption else [],
+                "table_footnote": [], "table_type": "simple_table", "table_nest_level": 1,
+            }}
+
+        def layout_table(page: int, value: str, caption: str = "") -> dict:
+            body = {"type": "table_body", "index": page + 2, "bbox": layout_boxes[page],
+                    "lines": [{"spans": [{"type": "table", "html": value}]}] if value else []}
+            if not value:
+                body["lines_deleted"] = True
+            children = [body]
+            if caption:
+                children.insert(0, {"type": "table_caption", "lines": [{"spans": [{"type": "text", "content": caption}]}]})
+            return {"type": "table", "index": page + 2, "bbox": layout_boxes[page], "blocks": children}
+
+        source = [
+            [source_table(0, html(header, first_data, next_data.replace("$", "")), primary_caption)],
+            [source_table(1, "")],
+        ]
+        original_layout = {
+            "_version_name": "3.4.4",
+            "pdf_info": [
+                {"page_idx": 0, "page_size": [500, 800],
+                 "preproc_blocks": [layout_table(0, html(header, first_data), primary_caption)],
+                 "para_blocks": [layout_table(0, html(header, first_data, next_data), primary_caption)]},
+                {"page_idx": 1, "page_size": [500, 800],
+                 "preproc_blocks": [layout_table(1, html(header, next_data), primary_caption + " (continued)")],
+                 "para_blocks": [layout_table(1, "")]},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for scenario in ("covered", "without_caption", "other_table_number", "missing_data", "changed_token",
+                             "repeated_data", "missing_footnote", "shifted_position", "ambiguous_position",
+                             "wrong_layout_identity", "wrong_body_position", "nonempty_layout_after", "no_deletion_mark",
+                             "ambiguous_layout", "multiple_empty_fragments"):
+                with self.subTest(scenario=scenario):
+                    layout = copy.deepcopy(original_layout)
+                    source_v2 = copy.deepcopy(source)
+                    right = layout["pdf_info"][1]
+                    if scenario == "without_caption":
+                        right["preproc_blocks"][0]["blocks"].pop(0)
+                    if scenario == "other_table_number":
+                        right["preproc_blocks"][0] = layout_table(1, html(header, next_data), "Table 4-2. Pin Functions (continued)")
+                    if scenario == "missing_data":
+                        right["preproc_blocks"][0]["blocks"][-1]["lines"][0]["spans"][0]["html"] = html(
+                            header, next_data, "<tr><td>GPIO3</td><td>3</td></tr>")
+                    if scenario == "changed_token":
+                        right["preproc_blocks"][0]["blocks"][-1]["lines"][0]["spans"][0]["html"] = html(
+                            header, next_data.replace("CC", "DD"))
+                    if scenario == "repeated_data":
+                        # 相等的前缀也可能是两页各自的一条数据。
+                        data_row = "<tr><td>GPIO0</td><td>0</td></tr>"
+                        source_v2[0][0]["content"]["html"] = source_v2[0][0]["content"]["html"].replace(header, data_row)
+                        for page in layout["pdf_info"]:
+                            for stage in ("preproc_blocks", "para_blocks"):
+                                body = page[stage][0]["blocks"][-1]
+                                if body["lines"]:
+                                    span = body["lines"][0]["spans"][0]
+                                    span["html"] = span["html"].replace(header, data_row)
+                    if scenario == "missing_footnote":
+                        right["preproc_blocks"][0]["blocks"].append({
+                            "type": "table_footnote", "lines": [{"spans": [{"type": "text", "content": "（1）有效条件"}]}],
+                        })
+                    if scenario == "shifted_position":
+                        right["preproc_blocks"][0]["bbox"] = [51, 64, 450, 256]
+                    if scenario == "ambiguous_position":
+                        right["preproc_blocks"].append(copy.deepcopy(right["preproc_blocks"][0]))
+                    if scenario == "wrong_layout_identity":
+                        right["para_blocks"][0]["index"] += 1
+                        right["para_blocks"][0]["blocks"][-1]["index"] += 1
+                    if scenario == "wrong_body_position":
+                        right["preproc_blocks"][0]["blocks"][-1]["bbox"] = [52, 64, 450, 256]
+                    if scenario == "nonempty_layout_after":
+                        right["para_blocks"][0] = layout_table(1, html(header, next_data))
+                    if scenario == "no_deletion_mark":
+                        right["para_blocks"][0]["blocks"][-1].pop("lines_deleted")
+                    if scenario == "multiple_empty_fragments":
+                        other = source_table(1, "")
+                        other["bbox"] = [100, 340, 900, 480]
+                        source_v2[1].append(other)
+                        for stage in ("preproc_blocks", "para_blocks"):
+                            extra = copy.deepcopy(right[stage][0])
+                            for node in (extra, extra["blocks"][-1]):
+                                node["bbox"] = [50, 272, 450, 384]
+                                node["index"] = 4
+                            right[stage].append(extra)
+                    zip_path = Path(directory) / f"{scenario}.zip"
+                    layout_bytes = json.dumps(layout).encode()
+                    with zipfile.ZipFile(zip_path, "w") as archive:
+                        archive.writestr("sample_content_list_v2.json", json.dumps(source_v2))
+                        archive.writestr("layout.json", layout_bytes)
+                        if scenario == "ambiguous_layout":
+                            archive.writestr("sample_layout.json", layout_bytes)
+                    crop = _RecordingTableCropProvider("file_upstream_coverage", [(500, 800)] * 2)
+                    document = MinerUToDocumentIRService(pdf_crop_provider=crop).convert_zip(
+                        zip_path, job_id="job_upstream_coverage", source_file_id=crop.source.file_id, document_language="en",
+                        placeholder_source_loader=lambda: crop.source,
+                    ).document
+                    group, = document.metadata.logical_table_groups
+                    primary, empty, *extra = group.fragments
+                    pointers = ["/0/0", "/1/0", "/1/1"] if scenario == "multiple_empty_fragments" else ["/0/0", "/1/0"]
+                    self.assertEqual([item.source_span.json_pointer for item in group.fragments], pointers)
+                    self.assertEqual((empty.html_state, empty.raw_html), ("empty", ""))
+                    if scenario != "covered":
+                        self.assertIsNone(empty.upstream_coverage)
+                        self.assertNotIn("upstream_coverage", empty.model_dump(mode="json"))
+                        self.assertTrue(all(fragment.upstream_coverage is None for fragment in extra))
+                        self.assertEqual(len(crop.requests), 1 + len(extra))
+                        self.assertEqual([p.fragment_id for p in decode_placeholders(document)],
+                                         [fragment.fragment_id for fragment in (empty, *extra)])
+                        continue
+
+                    proof = empty.upstream_coverage
+                    self.assertEqual((proof.row_start, proof.row_end, proof.repeated_prefix_rows), (2, 3, 1))
+                    self.assertEqual(proof.primary_fragment_id, primary.fragment_id)
+                    self.assertEqual(proof.covered_fragment_id, empty.fragment_id)
+                    self.assertEqual(proof.package_sha256, hashlib.sha256(zip_path.read_bytes()).hexdigest())
+                    self.assertEqual(proof.layout_sha256, hashlib.sha256(layout_bytes).hexdigest())
+                    self.assertEqual(proof.covered_before_pointer, "/pdf_info/1/preproc_blocks/0")
+                    self.assertEqual(proof.covered_after_pointer, "/pdf_info/1/para_blocks/0")
+                    self.assertEqual(crop.requests, [])
+                    self.assertEqual(decode_placeholders(document), [])
+                    built = build_table_grid(group, source_content_sha256=proof.content_list_sha256)
+                    self.assertEqual((built.grid.rows, built.grid.columns), (3, 2))
+                    self.assertEqual(built.grid.source_fragments[1].html_state, "empty")
+                    self.assertNotIn("table_html_empty", [issue.code for issue in built.diagnostics])
+                    plan = build_content_table_plan(document, build_layout_plan(document))
+                    unit, = plan.units
+                    self.assertEqual((unit.rows, unit.fragments[1].upstream_covered_rows), (3, (2, 3)))
+                    rendered = DocumentIRWordRenderer().render_to_result(
+                        document, template_path=None, config_path=None, image_loader=lambda _asset: None,
+                    )
+                    word = Document(io.BytesIO(rendered.content))
+                    table, = word.tables
+                    self.assertEqual((len(table.rows), len(table.columns), len(word.inline_shapes)), (3, 2, 0))
+                    evidence = build_renderer_evidence(document, rendered.content, render_result=rendered)
+                    ensure_renderer_integrity(evidence)
+                    validate_persisted_renderer_content(document, rendered.content, evidence)
+                    serialized = document.model_dump(mode="json")
+                    self.assertEqual(DocumentIR.model_validate(serialized), document)
+                    for key, value, expected in (
+                        ("package_sha256", "0" * 64, "upstream_coverage_package"),
+                        ("covered_before_pointer", "/pdf_info/0/preproc_blocks/0", "upstream_coverage_binding"),
+                        ("row_end", 4, "upstream_coverage_rows"),
+                        ("covered_before_rows_sha256", "0" * 64, "upstream_coverage_rows"),
+                    ):
+                        corrupted = copy.deepcopy(serialized)
+                        corrupted["metadata"]["logical_table_groups"][0]["fragments"][1]["upstream_coverage"][key] = value
+                        with self.assertRaisesRegex(ValueError, expected):
+                            DocumentIR.model_validate(corrupted)
+                    corrupted = copy.deepcopy(serialized)
+                    raw = corrupted["metadata"]["logical_table_groups"][0]["fragments"][0]["raw_fragment"]
+                    raw["content"]["table_caption"][0]["content"] = "Table 999. Pin Functions"
+                    with self.assertRaisesRegex(ValueError, "upstream_coverage_binding"):
+                        DocumentIR.model_validate(corrupted)
+
     def test_convert_zip_keeps_contentful_or_orphan_empty_tables_fail_closed(self) -> None:
         real_table = {
             "type": "table",

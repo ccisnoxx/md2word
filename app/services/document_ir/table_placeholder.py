@@ -138,13 +138,13 @@ def binding_identity(binding: TablePlaceholderBinding) -> str:
 
 def prepare_placeholders(document, references, *, source_loader: Callable[[], PdfCropSource] | None,
                          crop_provider: PdfTableCropProvider | None) -> list[PlaceholderAsset]:
-    """仅对可信账本的 missing/empty 片段准备绑定；安全输入错误已由 IR-201 先验拒绝。"""
+    """仅为仍缺少数据的片段准备占位绑定。"""
     from app.services.document_ir.integrity import build_page_counts
     from app.services.document_ir.models import DocumentIRAsset
     from app.services.document_ir.table_reference_assets import decode_table_references
 
     decoded = {item.fragment.fragment_id: item for item in decode_table_references(document)}
-    needed = [item for item in decoded.values() if item.fragment.html_state in {"missing", "empty"}]
+    needed = [item for item in decoded.values() if item.fragment.needs_placeholder]
     if not needed:
         return []
     counts = build_page_counts(document) or {}
@@ -256,7 +256,7 @@ def decode_placeholders(document, *, require_bound: bool = False) -> list[TableP
     if metadata.table_placeholders_version != VERSION:
         fail()
     refs = {item.fragment.fragment_id: item for item in decode_table_references(document)}
-    needed = {key for key, value in refs.items() if value.fragment.html_state in {"missing", "empty"}}
+    needed = {key for key, value in refs.items() if value.fragment.needs_placeholder}
     if not needed or len(bindings) > MAX_PLACEHOLDERS or [b.fragment_id for b in bindings] != [key for key in refs if key in needed]:
         fail()
     assets = {asset.id: asset for asset in document.assets}

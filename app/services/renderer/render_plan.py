@@ -183,6 +183,7 @@ class TableFragmentPlan(RenderContract):
     shared_header_rows: list[int] | None
     content_scope_id: str | None
     repeated_header_ref: str | None
+    upstream_covered_rows: list[int] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _ranges(self):
@@ -194,6 +195,9 @@ class TableFragmentPlan(RenderContract):
                 or self.output_rows[1] - self.output_rows[0] != self.retained_source_rows[1] - self.retained_source_rows[0]
                 or self.shared_header_rows != self.removed_header_rows
                 or self.removed_header_rows != ([0, self.retained_source_rows[0]] if self.retained_source_rows[0] else None)):
+            raise ValueError("ir_render_evidence:target_mismatch")
+        covered = self.upstream_covered_rows
+        if covered is not None and (self.status != "empty" or len(covered) != 2 or not 0 <= covered[0] < covered[1]):
             raise ValueError("ir_render_evidence:target_mismatch")
         return self
 

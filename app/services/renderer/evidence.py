@@ -1193,6 +1193,8 @@ def is_valid_table_rendering_evidence(value: Any) -> bool:
             return False
         cursor = 0
         has_missing_fragment = False
+        owners = {}
+        covered_ranges = []
         for fragment in table["fragments"]:
             if not isinstance(fragment, dict) or not isinstance(fragment.get("fragment_id"), str):
                 return False
@@ -1207,15 +1209,30 @@ def is_valid_table_rendering_evidence(value: Any) -> bool:
             if status in {"empty", "missing"}:
                 if interval != [0, 0] or fragment.get("block_id") is not None or fragment.get("bookmark") is not None:
                     return False
-                if fragment.get("html_state") != status or fragment.get("reason") != "table_fragment_missing":
+                covered = fragment.get("upstream_covered_rows")
+                if fragment.get("html_state") != status:
                     return False
-                has_missing_fragment = True
+                if covered is None:
+                    if fragment.get("reason") != "table_fragment_missing":
+                        return False
+                    has_missing_fragment = True
+                else:
+                    owner = fragment.get("render_owner_block_id")
+                    if (status != "empty" or fragment.get("reason") is not None or not isinstance(owner, str)
+                            or not isinstance(covered, list) or len(covered) != 2
+                            or any(type(row) is not int for row in covered) or not 0 <= covered[0] < covered[1]):
+                        return False
+                    covered_ranges.append((owner, covered))
             else:
-                if interval[0] != cursor or interval[1] < interval[0] or (status == "rendered" and interval[1] == cursor):
+                if ("upstream_covered_rows" in fragment or interval[0] != cursor or interval[1] < interval[0]
+                        or (status == "rendered" and interval[1] == cursor)):
                     return False
+                if isinstance(fragment.get("block_id"), str):
+                    owners[fragment["block_id"]] = interval
                 cursor = interval[1]
             fragments.append(fragment)
-        if cursor != table["expected_rows"]:
+        if (cursor != table["expected_rows"] or any(owner not in owners
+                or not owners[owner][0] <= rows[0] < rows[1] == owners[owner][1] for owner, rows in covered_ranges)):
             return False
         if has_missing_fragment != ("table_fragment_missing" in table_blockers):
             return False

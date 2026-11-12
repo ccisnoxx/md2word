@@ -427,6 +427,9 @@ def normalize_table_fragment(
         if byte_count > MAX_RAW_HTML_BYTES:
             raise TableBuildError("table_build_limit", fragment_id=source.fragment_id)
     source = TableSourceFragment.model_validate(source)
+    if source.upstream_coverage is not None:
+        # 已核验的覆盖片段只保留来源定位，行已计入主片。
+        return NormalizedTableFragment(source.fragment_id, raw, (), ())
     if source.html_state in {"missing", "empty"}:
         code = "table_html_missing" if raw is None else "table_html_empty"
         return NormalizedTableFragment(source.fragment_id, raw, (), (TableDiagnostic(code, source.fragment_id),))

@@ -13,7 +13,7 @@ from pydantic import (
 )
 from pydantic_core import PydanticCustomError
 
-from app.services.document_ir.models import RepeatedHeaderHint, SourceSpan
+from app.services.document_ir.models import RepeatedHeaderHint, SourceSpan, UpstreamTableCoverage
 from app.services.document_ir.table_header_review import TableHeaderReview
 
 
@@ -154,6 +154,7 @@ class TableSourceFragment(_TableModel):
     raw_html_sha256: Sha256 | None
     repeated_header_hint: RepeatedHeaderHint | None = None
     header_review: TableHeaderReview | None = Field(default=None, exclude_if=lambda value: value is None)
+    upstream_coverage: UpstreamTableCoverage | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("source_span", "repeated_header_hint", mode="before")
     @classmethod
@@ -183,6 +184,9 @@ class TableSourceFragment(_TableModel):
         checksum = hashlib.sha256(self.raw_html.encode("utf-8")).hexdigest() if self.raw_html is not None else None
         if self.html_state != state or self.raw_html_sha256 != checksum:
             _fail("table_model_raw_hash")
+        if self.upstream_coverage is not None and (state != "empty"
+                or self.upstream_coverage.covered_fragment_id != self.fragment_id):
+            _fail("table_model_reference")
         return self
 
 
@@ -270,6 +274,12 @@ class TableGrid(_TableModel):
             _fail("table_model_source_order")
         if self.raw_html_sha256 != raw_html_set_sha256(self.source_fragments):
             _fail("table_model_raw_hash")
+        preceding = set()
+        for fragment in self.source_fragments:
+            coverage = fragment.upstream_coverage
+            if coverage is not None and coverage.primary_fragment_id not in preceding:
+                _fail("table_model_reference")
+            preceding.add(fragment.fragment_id)
         if self.header_rows != sorted(set(self.header_rows)) or any(row >= self.rows for row in self.header_rows):
             _fail("table_model_header_rows")
         if (self.rows == 0 or self.columns == 0) and self.cells:

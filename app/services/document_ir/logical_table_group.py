@@ -406,8 +406,24 @@ def _counts(groups: list[LogicalTableGroup]) -> dict[str, int]:
             "uncertain_count": sum(len(group.diagnostics) for group in groups)}
 
 
+def source_table_body_order(document: DocumentIR) -> tuple[tuple[str, int | None], ...]:
+    """按未翻译的有效源定位还原正文顺序，包含归位的空表片段。"""
+    body_sources = [block.metadata["mineru_source"] for block in document.blocks
+                    if not block.metadata.get("source_block_id") and not block.metadata.get("synthetic") and
+                    (block.layout is None or block.layout.role == "body")]
+    body_sources.extend(fragment.source_span.model_dump(exclude={"bbox"})
+                        for group in document.metadata.logical_table_groups for fragment in group.fragments
+                        if fragment.block_id is None)
+    body_sources.sort(key=lambda source: source["source_index"])
+    return tuple((source["json_pointer"], source["page_index"]) for source in body_sources)
+
+
 def validate_logical_table_groups(document: DocumentIR) -> None:
     """构建与 JSON 重读共用结构对账；不从译文重新推导来源事实。"""
+    from app.services.document_ir.table_upstream_coverage import (
+        count_upstream_coverage_candidates, validate_upstream_table_coverage,
+    )
+
     metadata = document.metadata
     groups = metadata.logical_table_groups
     if metadata.logical_table_groups_version is None:
@@ -443,15 +459,7 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
         _fail("normalization_inventory")
     if Counter(fragment.block_id for fragment in fragments if fragment.block_id) != Counter(blocks.keys()):
         _fail("block_inventory")
-    # 用不参与翻译的源定位还原正文顺序，重读时不相信关系中自报的正证据。
-    # 派生块与整页降级的合成块都不是源块，不参与正文源顺序。
-    body_sources = [block.metadata["mineru_source"] for block in document.blocks
-                    if not block.metadata.get("source_block_id") and not block.metadata.get("synthetic") and
-                    (block.layout is None or block.layout.role == "body")]
-    body_sources.extend(fragment.source_span.model_dump(exclude={"bbox"})
-                        for fragment in fragments if fragment.block_id is None)
-    body_sources.sort(key=lambda source: source["source_index"])
-    body_order = tuple((source["json_pointer"], source["page_index"]) for source in body_sources)
+    body_order = source_table_body_order(document)
     predecessor = {body_order[index][0]: body_order[index - 1][0] for index in range(1, len(body_order))}
     all_ids = set(identities)
     for group in groups:
@@ -464,6 +472,7 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
         if ordered != sorted(ordered):
             _fail("fragment_order")
         order = {fragment.fragment_id: index for index, fragment in enumerate(group.fragments)}
+        candidates = count_upstream_coverage_candidates(group.fragments)
         incoming: Counter[str] = Counter()
         for relation in group.continuation_relations:
             if (relation.from_fragment_id not in order or relation.to_fragment_id not in order or
@@ -476,6 +485,11 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
                 if (target.block_id is not None or source.block_id != target.render_owner_block_id or
                         relation.rule_id != EMPTY_RULE or relation.evidence_codes != ["normalization_receipt"]):
                     _fail("normalization_relation")
+                if target.upstream_coverage is not None:
+                    if (predecessor.get(target.source_span.json_pointer) != source.source_span.json_pointer
+                            or candidates[target.render_owner_block_id, target.source_span.page_index] != 1):
+                        _fail("upstream_coverage_order")
+                    validate_upstream_table_coverage(source, target, report)
             else:
                 verified, _reason, evidence = _continuation(source, target, document, body_order)
                 if (target.block_id is None or source.block_id is None or relation.rule_id != VERIFIED_RULE or
@@ -520,7 +534,8 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
                 if (owner.metadata.get("logical_group_id") != group.logical_group_id or
                         owner.metadata.get("table_fragment_id") != fragment.fragment_id or owner.metadata.get("source_spans") != expected):
                     _fail("block_spans")
-                if fragment.normalization_rule_id is not None or fragment.normalization_reason is not None:
+                if (fragment.normalization_rule_id is not None or fragment.normalization_reason is not None
+                        or fragment.upstream_coverage is not None):
                     _fail("unexpected_normalization")
             else:
                 receipt = merged[span.json_pointer]

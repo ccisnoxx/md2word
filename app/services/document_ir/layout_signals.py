@@ -290,10 +290,10 @@ def _load_pdf_info(package_root: Path, *, policy: MinerUValidationPolicy = DEFAU
     return [], None
 
 
-def find_merged_paragraphs(
+def read_same_document_layout(
     content_list_path: Path, *, policy: MinerUValidationPolicy = DEFAULT_POLICY,
-) -> dict[MinerUBlockKey, MergedParagraphEvidence]:
-    """把合并前后同一节点的原文对账绑定到 content list 的归一化坐标。"""
+) -> tuple[Any, str] | None:
+    """只有同目录、同文档且唯一的布局可以提供原节点的归一化证据。"""
 
     # 只有同目录、同文档且唯一的布局可出具合并证据，不能借用包内另一文档的布局。
     content_names = {
@@ -302,15 +302,20 @@ def find_merged_paragraphs(
     }
     selected = re.fullmatch(r"(?:(.+)_)?content_list(?:_v2)?\.json", content_list_path.name)
     if selected is None:
-        return {}
+        return None
     name = selected.group(1) or ""
     layout_names = {f"{name}_middle.json", f"{name}_layout.json"} if name else set()
     if content_names == {name}:
         layout_names.update({"middle.json", "layout.json"})
     candidates = [path for path in content_list_path.parent.glob("*.json") if path.name in layout_names]
     if len(candidates) != 1:
-        return {}
-    payload, _ = read_json_payload(candidates[0], policy=policy)
+        return None
+    return read_json_payload(candidates[0], policy=policy)
+
+
+def find_merged_paragraphs(payload: Any) -> dict[MinerUBlockKey, MergedParagraphEvidence]:
+    """把合并前后同一节点的原文对账绑定到 content list 的归一化坐标。"""
+
     pdf_info = payload.get("pdf_info") if isinstance(payload, dict) else None
     if not isinstance(pdf_info, list):
         return {}
