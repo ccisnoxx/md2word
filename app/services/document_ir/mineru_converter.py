@@ -32,6 +32,7 @@ from app.services.document_ir.layout_signals import (
     NORMALIZED_BBOX_SPACE,
     parse_page_index,
     pdf_point_bbox,
+    read_same_document_layout,
     role_for_source_type,
 )
 from app.services.document_ir.integrity import DocumentIntegrityError, build_source_integrity, ensure_integrity
@@ -57,11 +58,16 @@ from app.services.document_ir.page_degradation import (
     PAGE_RASTER_SOURCE_PATH, PageDegradationPolicy, degradation_closure, replace_degraded_pages,
 )
 from app.services.document_ir.table_annotations import split_table_annotation_texts
+from app.services.document_ir.table_figure import (
+    FIGURE_SECTION_ROLE, TABLE_FIGURE_FIELD, TableFigureBinding, caption_source_sha256, split_table_figure_caption,
+)
+from app.services.document_ir.table_header_review import TableHeaderReview, attach_table_header_reviews
 from app.services.document_ir.table_reference_assets import RASTER_EXTENSIONS, TableReferenceAsset, attach_table_references
 from app.services.document_ir.table_placeholder import (
     PdfCropRequest, PdfCropSource, PdfPageRasterizer, PdfTableCropProvider, PlaceholderAsset, TablePlaceholderError, checksum,
     prepare_placeholders, validate_geometry, validate_image,
 )
+from app.services.document_ir.table_upstream_coverage import attach_upstream_table_coverage
 
 PDF_FALLBACK_SOURCE_PATH = "derived/pdf-region-crop.png"
 
@@ -119,6 +125,7 @@ class MinerUToDocumentIRService:
         source_file_id: str,
         document_language: str,
         placeholder_source_loader: Callable[[], PdfCropSource] | None = None,
+        table_header_reviews: tuple[TableHeaderReview, ...] = (),
     ) -> MinerUToDocumentIRResult:
         """读取 MinerU 结果 zip，生成 DocumentIR v2 和待登记图片资产。"""
 
@@ -133,8 +140,10 @@ class MinerUToDocumentIRService:
                 report.content_list_sha256 = package_sha256(content_list_path)
                 validator.check_report_limits()
                 payload, _checksum = read_json_payload(content_list_path, policy=self.policy)
+                same_document_layout = read_same_document_layout(content_list_path, policy=self.policy)
                 validated = validator.validate(payload, package_root=package_root, content_list_path=content_list_path,
-                                               merged_paragraphs=find_merged_paragraphs(content_list_path, policy=self.policy))
+                                               merged_paragraphs=find_merged_paragraphs(
+                                                   same_document_layout[0] if same_document_layout is not None else None))
                 table_sources = capture_table_sources(payload, validated.blocks, checksum=report.content_list_sha256)
                 return self._convert_blocks(
                     validated.blocks,
@@ -147,6 +156,8 @@ class MinerUToDocumentIRService:
                     table_sources=table_sources,
                     table_references=validated.table_references,
                     placeholder_source_loader=placeholder_source_loader,
+                    table_header_reviews=table_header_reviews,
+                    same_document_layout=same_document_layout,
                 )
             except MinerUPackageError as error:
                 validator.add_package_error(error)
@@ -165,6 +176,8 @@ class MinerUToDocumentIRService:
         table_sources: TableSourceLedger,
         table_references: dict[str, ValidatedTableReference],
         placeholder_source_loader: Callable[[], PdfCropSource] | None,
+        table_header_reviews: tuple[TableHeaderReview, ...],
+        same_document_layout: tuple[Any, str] | None,
     ) -> MinerUToDocumentIRResult:
         """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
         validation_report = validator.report
@@ -220,12 +233,14 @@ class MinerUToDocumentIRService:
             # 降级前提不满足时在构建 IR 之前中止，不产生半合法 IR。
             self._abort_deferred(raw_blocks, validator)
 
+        inserted_sections = 0
         for index, raw_block in enumerate(raw_blocks):
             block_id = f"block_{index + 1:04d}"
+            order = index + inserted_sections
             source_type = str(raw_block.get("type") or raw_block.get("block_type") or "text").strip().lower()
             block_type = classify_mineru_block(raw_block, source_type)
             block_role = role_for_source_type(source_type)
-            if block_type == "paragraph" and block_role == "body" and source_type not in {"", "text", "paragraph", "para"}:
+            if block_type == "paragraph" and block_role == "body" and source_type not in {"", "text", "paragraph", "para", "page_footnote"}:
                 unsupported_types.add(raw_block["_mineru_source"]["source_type"])
             page_index = parse_page_index(raw_block)
             page_width = page_width_by_index.get(page_index)
@@ -252,7 +267,8 @@ class MinerUToDocumentIRService:
             table_contexts: list[str] = []
             if block_type == "table" and captions:
                 captions, table_contexts = split_table_annotation_texts(captions)
-            footnotes = self._footnotes(raw_block, source_type)
+            figure_from_table = raw_block.get("_mineru_table_figure") is True
+            footnotes = self._footnotes(raw_block, "table" if figure_from_table else source_type)
             if table_contexts:
                 quality_flags.append(f"layout_table_context_binding:{block_id}")
             if captions:
@@ -278,11 +294,35 @@ class MinerUToDocumentIRService:
                     image = raw_block.get("_mineru_validated_asset")
                     if not isinstance(image, ValidatedImage):
                         raise ValueError("MinerU 图片缺少已验证资产。")
+                    asset_checksum = None
+                    if figure_from_table:
+                        asset_checksum = checksum(image.content)
+                        raw_caption = raw_block["content"]["table_caption"]
+                        sections, _caption = split_table_figure_caption(raw_caption)
+                        metadata[TABLE_FIGURE_FIELD] = TableFigureBinding(
+                            source_pointer=raw_block["_mineru_source"]["json_pointer"],
+                            content_list_sha256=validation_report.content_list_sha256,
+                            caption_index=len(sections),
+                            caption_source_sha256=caption_source_sha256(raw_caption),
+                            asset_sha256=asset_checksum.removeprefix("sha256:"),
+                        ).model_dump(mode="json")
+                        for section_index, section in enumerate(sections):
+                            blocks.append(DocumentIRBlock(
+                                id=f"{block_id}_section_{section_index + 1:04d}", type="heading",
+                                order=order, page_index=page_index, text=section,
+                                level=infer_source_heading_level(section, source_level=1),
+                                layout=layout.model_copy(update={"bbox": None, "column_hint": "wide"}),
+                                metadata={"source_block_id": block_id, "annotation_role": FIGURE_SECTION_ROLE},
+                            ))
+                            order += 1
+                        inserted_sections += len(sections)
                     image_assets.append(MinerUImageAsset(
                         asset_id=asset_id, block_id=block_id, source_path=image.source_path,
                         mime_type=image.mime_type, content=image.content, normalized_from=image.normalized_from,
                     ))
-                    ir_assets.append(DocumentIRAsset(id=asset_id, kind="image", source_path=image.source_path))
+                    ir_assets.append(DocumentIRAsset(
+                        id=asset_id, kind="image", source_path=image.source_path, checksum_sha256=asset_checksum,
+                    ))
             for context_index, context_text in enumerate(table_contexts):
                 context_metadata = dict(metadata)
                 context_metadata.pop("caption_reconciliation", None)
@@ -297,7 +337,7 @@ class MinerUToDocumentIRService:
                     DocumentIRBlock(
                         id=f"{block_id}_context_{context_index + 1:04d}",
                         type="paragraph",
-                        order=index,
+                        order=order,
                         page_index=page_index,
                         text=context_text,
                         layout=layout,
@@ -312,7 +352,7 @@ class MinerUToDocumentIRService:
                 DocumentIRBlock(
                     id=block_id,
                     type=block_type,
-                    order=index,
+                    order=order,
                     page_index=page_index,
                     text=text,
                     level=(
@@ -354,6 +394,10 @@ class MinerUToDocumentIRService:
                                             image_assets, source_file_id=source_file_id)
         # 在来源账本/ref owner 上准备事实，再一次验证最终模型与源清单；不输出半合法 IR。
         attach_logical_table_groups(document, table_sources)
+        if table_header_reviews:
+            attach_table_header_reviews(document, table_header_reviews, table_sources.checksum, source_loader)
+        if same_document_layout is not None and content_list_path.name.endswith("content_list_v2.json"):
+            attach_upstream_table_coverage(document, *same_document_layout)
         reference_assets = attach_table_references(document, table_references)
         try:
             placeholder_assets = prepare_placeholders(document, table_references,
@@ -475,7 +519,9 @@ class MinerUToDocumentIRService:
                  and len(raw_size) == 2 else None)
         crop_box = pdf_point_bbox(raw_block.get("bbox"), page)
         validate_geometry(page.index, crop_box, frame)
-        result = self.pdf_crop_provider.crop(PdfCropRequest(source, page.index, crop_box, frame))
+        result = self.pdf_crop_provider.crop(PdfCropRequest(
+            source, page.index, crop_box, frame, from_normalized_bbox=True,
+        ))
         if result.frame != frame:
             raise TablePlaceholderError("table_placeholder_geometry_invalid")
         validate_image(result.content)

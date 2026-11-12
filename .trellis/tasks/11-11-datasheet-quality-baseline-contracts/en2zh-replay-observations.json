@@ -1,0 +1,299 @@
+{
+  "schema_version": "datasheet-quality-observations/v1",
+  "metadata": {
+    "git_commit": "26dbfb20b275c3efe43133dc8d084230d3286e58",
+    "manifest_sha256": "15b58c3f01ff6cff4e95532c40b80918af87f844ad42b71635d689bdd0bee74a",
+    "annotation_version": "source-pdf-layout/v1",
+    "resources_sha256": {
+      "template_path": "7b3efd9ce7f19f19ed3a667d10d34995cc6a5b574b24abd85c52a23901577a88",
+      "layout_config_path": "132d0bb76e71c807912031199e894dfc0e3d50bd7534180f8ceaba7a5fa20b4d",
+      "subscript_config": "080166e1efc1907964183d6e877f30d1702714347b2992ec129b72192dfe8ae3"
+    },
+    "platform": "macOS-27.2.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "pricing": {
+      "provider": "DeepSeek",
+      "requested_model": "deepseek-v4-flash",
+      "currency": "USD",
+      "period": "off_peak",
+      "unit": "million_tokens",
+      "verified_date": "2026-11-11",
+      "reference": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "rates": {
+        "prompt_cache_hit_tokens": 0.003,
+        "prompt_cache_miss_tokens": 0.15,
+        "completion_tokens": 0.6
+      },
+      "coverage": "application_observed_responses_not_provider_invoice"
+    },
+    "batch_limits": {
+      "first_sn74ac244_attempt": {
+        "pages": 20,
+        "chars": 60000
+      },
+      "subsequent_attempts": {
+        "pages": 1,
+        "chars": 5000
+      }
+    }
+  },
+  "plan": [
+    {
+      "sample_id": "gsx-sn74ac244-specs",
+      "cohort": "extended",
+      "mode": "en2zh",
+      "evidence_level": "local_mineru_replay_live_translation",
+      "expected_outcome": "normal",
+      "expected_tables": 1,
+      "expected_tokens": {
+        "model": 2,
+        "unit": 1
+      },
+      "expected_visual_pages": 1,
+      "expected_visual_regions": 1
+    },
+    {
+      "sample_id": "gsx-rs2g04-esd-page",
+      "cohort": "extended",
+      "mode": "en2zh",
+      "evidence_level": "local_mineru_replay_live_translation",
+      "expected_outcome": "normal",
+      "expected_tables": 1,
+      "expected_tokens": {
+        "number": 3
+      },
+      "expected_visual_pages": 1,
+      "expected_visual_regions": 1
+    }
+  ],
+  "observations": [
+    {
+      "sample_id": "gsx-sn74ac244-specs",
+      "mode": "en2zh",
+      "conversion": {
+        "status": "failed",
+        "docx_available": false,
+        "docx_openable": false,
+        "reason": "translation_integrity_technical_mismatch"
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 36.34
+      },
+      "missing": {
+        "visual": "no_approved_en2zh_visual_reference",
+        "edits": "no_docx_for_human_review",
+        "review_time": "no_docx_for_human_review"
+      },
+      "cost": {
+        "currency": "USD",
+        "basis": "estimated",
+        "complete": false,
+        "components": {
+          "translation": 0.01586022
+        },
+        "reference": "https://api-docs.deepseek.com/quick_start/pricing/",
+        "reason": "mineru_parse_cost_not_attributable_to_cached_package"
+      },
+      "execution": {
+        "source_pdf_sha256": "04c5b23af2877ebd686b032caa25c9f0d2ace7b123fb0d013c83cc562285fc74",
+        "content_list_sha256": "ce67f934da47b4abbccd127fe20c9bd16193ea86dcd3b0ddcf02cb50667c6595",
+        "source_pages": [
+          3,
+          6
+        ],
+        "derived_from": "gsx-sn74ac244",
+        "attempts": [
+          {
+            "calls": [
+              {
+                "started_at_utc": "2026-11-11T12:27:33.223524+00:00",
+                "status": "succeeded",
+                "usage": {
+                  "completion_tokens": 8855,
+                  "prompt_tokens": 11900,
+                  "total_tokens": 20755,
+                  "prompt_cache_hit_tokens": 0,
+                  "prompt_cache_miss_tokens": 11900
+                },
+                "finish_reason": "stop",
+                "seconds": 26.175,
+                "finished_at_utc": "2026-11-11T12:27:59.398615+00:00",
+                "estimated_usd": 0.007098,
+                "response_id_sha256": "b83db41b93aca781d57370ca8003b5f8836add7c92370692e341fe0fecfe8fb0"
+              }
+            ],
+            "started_at_utc": "2026-11-11T12:27:31.357347+00:00",
+            "status": "failed",
+            "error_type": "DocumentIRTranslationError",
+            "finished_at_utc": "2026-11-11T12:27:59.408642+00:00",
+            "local_replay_seconds": 28.051
+          },
+          {
+            "calls": [
+              {
+                "started_at_utc": "2026-11-11T12:28:37.972368+00:00",
+                "status": "succeeded",
+                "usage": {
+                  "completion_tokens": 2732,
+                  "prompt_tokens": 4735,
+                  "total_tokens": 7467,
+                  "prompt_cache_hit_tokens": 4480,
+                  "prompt_cache_miss_tokens": 255
+                },
+                "finish_reason": "stop",
+                "seconds": 8.565,
+                "finished_at_utc": "2026-11-11T12:28:46.537101+00:00",
+                "estimated_usd": 0.00169089,
+                "response_id_sha256": "5ca0a404894d912eca78d46f8862d72366b4ecd86d251b8e44f9f792a32abd1d"
+              },
+              {
+                "started_at_utc": "2026-11-11T12:28:46.546147+00:00",
+                "status": "succeeded",
+                "usage": {
+                  "completion_tokens": 4473,
+                  "prompt_tokens": 6710,
+                  "total_tokens": 11183,
+                  "prompt_cache_hit_tokens": 1280,
+                  "prompt_cache_miss_tokens": 5430
+                },
+                "finish_reason": "stop",
+                "seconds": 12.93,
+                "finished_at_utc": "2026-11-11T12:28:59.471998+00:00",
+                "estimated_usd": 0.00350214,
+                "response_id_sha256": "a6f3a2d1567254a046ccd62096cea1ef04eaf1b7bcb14f92a078e8025f50ed4a"
+              },
+              {
+                "started_at_utc": "2026-11-11T12:28:59.490730+00:00",
+                "status": "succeeded",
+                "usage": {
+                  "completion_tokens": 4560,
+                  "prompt_tokens": 6809,
+                  "total_tokens": 11369,
+                  "prompt_cache_hit_tokens": 1280,
+                  "prompt_cache_miss_tokens": 5529
+                },
+                "finish_reason": "stop",
+                "seconds": 13.678,
+                "finished_at_utc": "2026-11-11T12:29:13.164594+00:00",
+                "estimated_usd": 0.00356919,
+                "response_id_sha256": "8db9638fb0486d71d72963f297295add2ef56055dc28381274c1f568986bcfcd"
+              }
+            ],
+            "started_at_utc": "2026-11-11T12:28:36.841363+00:00",
+            "status": "failed",
+            "error_type": "DocumentIRTranslationError",
+            "error_code": "translation_integrity_technical_mismatch",
+            "integrity": {
+              "status": "failed",
+              "error_code": "translation_integrity_technical_mismatch",
+              "expected_item_count": 147,
+              "actual_item_count": 147,
+              "checked_item_count": 147,
+              "failed_item_count": 1,
+              "source_char_count": 1248,
+              "encoded_char_count": 2918,
+              "response_char_count": 2698,
+              "restored_char_count": 1028
+            },
+            "finished_at_utc": "2026-11-11T12:29:13.173080+00:00",
+            "local_replay_seconds": 36.34
+          }
+        ],
+        "last_attempt_used_for_latency": true
+      }
+    },
+    {
+      "sample_id": "gsx-rs2g04-esd-page",
+      "mode": "en2zh",
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "latency": {
+        "kind": "local_replay",
+        "seconds": 9.443
+      },
+      "missing": {
+        "visual": "no_approved_en2zh_visual_reference",
+        "edits": "human_signoff_pending",
+        "review_time": "human_signoff_pending"
+      },
+      "cost": {
+        "currency": "USD",
+        "basis": "estimated",
+        "complete": false,
+        "components": {
+          "translation": 0.002063724
+        },
+        "reference": "https://api-docs.deepseek.com/quick_start/pricing/",
+        "reason": "mineru_parse_cost_not_attributable_to_cached_package"
+      },
+      "execution": {
+        "source_pdf_sha256": "3c3b8125f3ca2e420c9dd26ad997d54b9457649cf15221fde115698be32e1c9c",
+        "content_list_sha256": "295871879d966e028bfdff675d10884ece86342d62c9ec5f8ed6cecafd4f028c",
+        "source_pages": [
+          6
+        ],
+        "derived_from": "gsx-rs2g04",
+        "attempts": [
+          {
+            "calls": [
+              {
+                "started_at_utc": "2026-11-11T12:30:23.158499+00:00",
+                "status": "succeeded",
+                "usage": {
+                  "completion_tokens": 2643,
+                  "prompt_tokens": 4566,
+                  "total_tokens": 7209,
+                  "prompt_cache_hit_tokens": 1408,
+                  "prompt_cache_miss_tokens": 3158
+                },
+                "finish_reason": "stop",
+                "seconds": 9.086,
+                "finished_at_utc": "2026-11-11T12:30:32.244352+00:00",
+                "estimated_usd": 0.002063724,
+                "response_id_sha256": "84cbed2dca324f1f4c97b7218f613a2b66eb975febaa122a9c5a8f9def15497f"
+              }
+            ],
+            "started_at_utc": "2026-11-11T12:30:23.017111+00:00",
+            "status": "succeeded",
+            "docx_sha256": "90e7859c02e8d09b0e90996e3ed06234ef7dad6fdd85373c3ec1ce5312b08052",
+            "native_tables": 2,
+            "quality_flags": [
+              "formula_text_fallback"
+            ],
+            "finished_at_utc": "2026-11-11T12:30:32.460018+00:00",
+            "local_replay_seconds": 9.443
+          }
+        ],
+        "last_attempt_used_for_latency": true
+      },
+      "artifacts": {
+        "docx_sha256": "90e7859c02e8d09b0e90996e3ed06234ef7dad6fdd85373c3ec1ce5312b08052",
+        "native_tables": 2,
+        "quality_flags": [
+          "formula_text_fallback"
+        ]
+      },
+      "table": {
+        "matched": 1,
+        "duplicate": 0,
+        "reasons": []
+      },
+      "tokens": {
+        "matched": {
+          "number": 3
+        },
+        "assessed": {
+          "number": 3
+        },
+        "extras": {
+          "number": 0
+        },
+        "reasons": []
+      }
+    }
+  ]
+}

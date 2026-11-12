@@ -368,6 +368,12 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
                     continue
                 render_context.formula_location = (block.id, f"list_items/{index}" if block.type == "list"
                     else "latex" if block.type == "formula" and block.latex else "text")
+                if policy.mode == "toc_formula_first":
+                    field_paragraph = document.add_paragraph()
+                    self._fill_toc_entry_paragraph(field_paragraph, policy, template_config)
+                    if decision.keep_with_next:
+                        field_paragraph.paragraph_format.keep_with_next = True
+                    collector.add(block.id, [paragraph_target(field_paragraph, "toc_field", index)])
                 paragraph = document.add_paragraph()
                 self._fill_planned_text(paragraph, text, policy, template_config,
                     reference_bookmarks=render_context.caption_bookmarks)

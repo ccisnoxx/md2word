@@ -30,6 +30,8 @@ COMPOSITE_SUFFIX = re.compile(
     re.IGNORECASE,
 )
 CONTINUED = re.compile(r"\bcontinued\b|(?<![\u3400-\u9fff])续(?:表)?(?![\u3400-\u9fff])", re.IGNORECASE)
+COMPOUND_TABLE_NUMBER = re.compile(r"^\s*(?:table|表)\s*([0-9]+-[0-9]+)(?=$|[\s.．:：(（])(.*)$", re.IGNORECASE)
+COMPOUND_CONTINUED = re.compile(r"[（(]\s*(?:continued|续表?)\s*[）)]\s*$", re.IGNORECASE)
 
 
 def _fail(reason: str) -> None:
@@ -214,6 +216,33 @@ def _caption(raw: dict[str, Any]) -> tuple[set[str], bool, bool, bool]:
     return numbers, continuation, ordinary, ambiguous or len(numbers) > 1
 
 
+def _parse_compound_table_caption(text: str) -> tuple[str, str, bool] | None:
+    """提取续表用的完整复合表号、题注正文和末尾续表标记。"""
+    match = COMPOUND_TABLE_NUMBER.match(text)
+    if match is None or len(TABLE_LABEL.findall(text)) != 1:
+        return None
+    number, tail = match.groups()
+    if COMPOSITE_SUFFIX.match(tail.lstrip()):
+        return None
+    marker = COMPOUND_CONTINUED.search(tail)
+    description = tail[:marker.start()] if marker else tail
+    return number, description.strip(" .．:："), marker is not None
+
+
+def is_compound_table_continuation(primary: str, following: str) -> bool:
+    """复合表号只接受续段显式声明，且题注正文不能冲突。"""
+    first = _parse_compound_table_caption(primary)
+    second = _parse_compound_table_caption(following)
+    return (first is not None and second is not None and first[0] == second[0] and second[2]
+            and (not second[1] or second[1] == first[1]))
+
+
+def _same_compound_table_continued(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    fields = ("table_caption", "caption", "captions")
+    before, after = (collect_text_from_fields(source, fields) for source in (left, right))
+    return len(before) == len(after) == 1 and is_compound_table_continuation(before[0], after[0])
+
+
 def _continuation(left: TableFragment, right: TableFragment, document: DocumentIR,
                   body_order: tuple[tuple[str, int | None], ...]) -> tuple[bool, str | None, str | None]:
     """明确独立证据优先；其余候选只在全部保守条件成立时归组。"""
@@ -221,7 +250,9 @@ def _continuation(left: TableFragment, right: TableFragment, document: DocumentI
     right_view = _source_view(right.raw_fragment, right.source_span)
     left_numbers, _left_continued, _left_ordinary, left_ambiguous = _caption(left_view)
     right_numbers, continued, ordinary, right_ambiguous = _caption(right_view)
-    if left_ambiguous or right_ambiguous:
+    # 仅在两段都提供同一明确复合号及后段续表标记时，消解旧判定的复合号歧义。
+    same_compound = left_ambiguous and right_ambiguous and _same_compound_table_continued(left_view, right_view)
+    if (left_ambiguous or right_ambiguous) and not same_compound:
         return False, "insufficient_evidence", None
     if ordinary or (left_numbers and right_numbers and left_numbers != right_numbers):
         return False, None, None
@@ -253,7 +284,7 @@ def _continuation(left: TableFragment, right: TableFragment, document: DocumentI
         return False, "unreliable_columns", None
     if previous.columns != following.columns:
         return False, "column_mismatch", None
-    if len(left_numbers) == len(right_numbers) == 1 and left_numbers == right_numbers and continued:
+    if same_compound or (len(left_numbers) == len(right_numbers) == 1 and left_numbers == right_numbers and continued):
         return True, None, "same_table_number_continued"
     if previous.signature and previous.signature == following.signature and _consecutive(previous, following):
         return True, None, "matching_header_consecutive_ordinal"
@@ -375,8 +406,24 @@ def _counts(groups: list[LogicalTableGroup]) -> dict[str, int]:
             "uncertain_count": sum(len(group.diagnostics) for group in groups)}
 
 
+def source_table_body_order(document: DocumentIR) -> tuple[tuple[str, int | None], ...]:
+    """按未翻译的有效源定位还原正文顺序，包含归位的空表片段。"""
+    body_sources = [block.metadata["mineru_source"] for block in document.blocks
+                    if not block.metadata.get("source_block_id") and not block.metadata.get("synthetic") and
+                    (block.layout is None or block.layout.role == "body")]
+    body_sources.extend(fragment.source_span.model_dump(exclude={"bbox"})
+                        for group in document.metadata.logical_table_groups for fragment in group.fragments
+                        if fragment.block_id is None)
+    body_sources.sort(key=lambda source: source["source_index"])
+    return tuple((source["json_pointer"], source["page_index"]) for source in body_sources)
+
+
 def validate_logical_table_groups(document: DocumentIR) -> None:
     """构建与 JSON 重读共用结构对账；不从译文重新推导来源事实。"""
+    from app.services.document_ir.table_upstream_coverage import (
+        count_upstream_coverage_candidates, validate_upstream_table_coverage,
+    )
+
     metadata = document.metadata
     groups = metadata.logical_table_groups
     if metadata.logical_table_groups_version is None:
@@ -396,6 +443,11 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
     identities = [fragment.fragment_id for fragment in fragments]
     if len(set(pointers)) != len(pointers) or len(set(identities)) != len(identities):
         _fail("duplicate_source")
+    reviewed_pdf_digests = {
+        fragment.header_review.source_pdf_sha256 for fragment in fragments if fragment.header_review is not None
+    }
+    if len(reviewed_pdf_digests) > 1:
+        _fail("header_review_pdf_fingerprint")
     indices = [fragment.source_span.source_index for fragment in fragments]
     if len(set(indices)) != len(indices):
         _fail("duplicate_source_index")
@@ -407,15 +459,7 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
         _fail("normalization_inventory")
     if Counter(fragment.block_id for fragment in fragments if fragment.block_id) != Counter(blocks.keys()):
         _fail("block_inventory")
-    # 用不参与翻译的源定位还原正文顺序，重读时不相信关系中自报的正证据。
-    # 派生块与整页降级的合成块都不是源块，不参与正文源顺序。
-    body_sources = [block.metadata["mineru_source"] for block in document.blocks
-                    if not block.metadata.get("source_block_id") and not block.metadata.get("synthetic") and
-                    (block.layout is None or block.layout.role == "body")]
-    body_sources.extend(fragment.source_span.model_dump(exclude={"bbox"})
-                        for fragment in fragments if fragment.block_id is None)
-    body_sources.sort(key=lambda source: source["source_index"])
-    body_order = tuple((source["json_pointer"], source["page_index"]) for source in body_sources)
+    body_order = source_table_body_order(document)
     predecessor = {body_order[index][0]: body_order[index - 1][0] for index in range(1, len(body_order))}
     all_ids = set(identities)
     for group in groups:
@@ -428,6 +472,7 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
         if ordered != sorted(ordered):
             _fail("fragment_order")
         order = {fragment.fragment_id: index for index, fragment in enumerate(group.fragments)}
+        candidates = count_upstream_coverage_candidates(group.fragments)
         incoming: Counter[str] = Counter()
         for relation in group.continuation_relations:
             if (relation.from_fragment_id not in order or relation.to_fragment_id not in order or
@@ -440,6 +485,11 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
                 if (target.block_id is not None or source.block_id != target.render_owner_block_id or
                         relation.rule_id != EMPTY_RULE or relation.evidence_codes != ["normalization_receipt"]):
                     _fail("normalization_relation")
+                if target.upstream_coverage is not None:
+                    if (predecessor.get(target.source_span.json_pointer) != source.source_span.json_pointer
+                            or candidates[target.render_owner_block_id, target.source_span.page_index] != 1):
+                        _fail("upstream_coverage_order")
+                    validate_upstream_table_coverage(source, target, report)
             else:
                 verified, _reason, evidence = _continuation(source, target, document, body_order)
                 if (target.block_id is None or source.block_id is None or relation.rule_id != VERIFIED_RULE or
@@ -465,6 +515,8 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
             if (fragment.html_state != state or fragment.raw_html_sha256 != checksum or
                     fragment.header_signature != shape.signature or span.bbox != parse_bbox(fragment.raw_fragment.get("bbox"))):
                 _fail("raw_projection")
+            if fragment.header_review is not None:
+                fragment.header_review.verify_fragment(fragment, report.content_list_sha256)
             if fragment.repeated_header_hint is not None:
                 hint = fragment.repeated_header_hint
                 previous = next((item for item in group.continuation_relations
@@ -482,7 +534,8 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
                 if (owner.metadata.get("logical_group_id") != group.logical_group_id or
                         owner.metadata.get("table_fragment_id") != fragment.fragment_id or owner.metadata.get("source_spans") != expected):
                     _fail("block_spans")
-                if fragment.normalization_rule_id is not None or fragment.normalization_reason is not None:
+                if (fragment.normalization_rule_id is not None or fragment.normalization_reason is not None
+                        or fragment.upstream_coverage is not None):
                     _fail("unexpected_normalization")
             else:
                 receipt = merged[span.json_pointer]

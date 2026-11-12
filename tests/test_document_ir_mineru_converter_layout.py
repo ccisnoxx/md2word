@@ -26,10 +26,13 @@ from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.table_placeholder import (
     PdfCropResult, PdfCropSource, TablePlaceholderError, checksum, decode_placeholders,
 )
-from app.services.renderer.render_evidence import build_renderer_evidence
+from app.services.renderer.render_evidence import build_renderer_evidence, validate_persisted_renderer_content
 from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.services.renderer import DocumentIRWordRenderer
+from app.services.renderer.layout_plan import build_image_plan, build_layout_plan
+from app.services.renderer.logical_table_plan import build_content_table_plan
 from app.services.tables.evidence import read_table_evidence
+from app.services.tables.grid_builder import build_table_grid
 
 
 # 使用可被真实图片解码器完整读取的中性PNG，保护输入资产校验。
@@ -916,6 +919,220 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertIn("layout_footnote_binding:block_0004", document.quality_flags)
         self.assertEqual(len(result.image_assets), 1)
 
+    def test_compound_table_continuation_reconciles_source_grid_plan_and_word(self) -> None:
+        cases = (
+            ("Table 4-1. Pin Functions", "Table 4-1. Pin Functions (continued)", True),
+            ("Table 4-1. Pin Functions", "Table 4-2. Pin Functions (continued)", False),
+            ("Table 4-1. Pin Functions", "Table 4-1. Terminal Ratings (continued)", False),
+            ("Table 4-1. Pin Functions", "Table 4-1. Pin Functions", False),
+            ("Table 4-1. Pin Functions", None, False),
+            ("Table 4-1.2. Pin Functions", "Table 4-1.2. Pin Functions (continued)", False),
+        )
+        for first, second, continued in cases:
+            with self.subTest(first=first, second=second), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "continuation.zip"
+                blocks = [[{
+                    "type": "table", "bbox": bbox, "content": {
+                        "table_caption": [{"type": "text", "content": caption}] if caption else [],
+                        "html": f"<table><tr><th>Pin</th><th>Value</th></tr>"
+                                f"<tr><td>{index + 1}</td><td>A</td></tr></table>",
+                    },
+                }] for index, (caption, bbox) in enumerate(((first, [20, 650, 980, 980]),
+                                                            (second, [20, 20, 980, 350])))]
+                self._write_zip(path, blocks=blocks, layout={"pdf_info": [
+                    {"page_idx": index, "page_size": [1000, 1000]} for index in range(2)
+                ]})
+                result = MinerUToDocumentIRService().convert_zip(
+                    path, job_id="compound-continuation", source_file_id="source", document_language="en",
+                )
+                document = DocumentIR.model_validate_json(result.document.model_dump_json())
+                groups = document.metadata.logical_table_groups
+                source_hash = document.metadata.mineru_validation.content_list_sha256
+                grids = [build_table_grid(group, source_content_sha256=source_hash).grid for group in groups]
+                self.assertEqual([(grid.rows, grid.columns, grid.header_rows) for grid in grids],
+                                 [(4, 2, [0, 2])] if continued else [(2, 2, [0])] * 2)
+                self.assertEqual([fragment.source_span.json_pointer for group in groups for fragment in group.fragments],
+                                 ["/0/0", "/1/0"])
+
+                layout = build_layout_plan(document)
+                plan = build_content_table_plan(document, layout)
+                self.assertEqual([unit.rows for unit in plan.units], [3] if continued else [2, 2])
+                self.assertEqual([fragment.removed_header_rows for unit in plan.units for fragment in unit.fragments],
+                                 [0, 1] if continued else [0, 0])
+                if continued:
+                    relation, = groups[0].continuation_relations
+                    self.assertEqual(relation.evidence_codes,
+                                     ["adjacent_page_geometry", "same_table_number_continued"])
+                else:
+                    self.assertTrue(all(not group.continuation_relations for group in groups))
+
+                rendered = DocumentIRWordRenderer().render_to_result(
+                    document, template_path=None, config_path=None, image_loader=lambda _asset: None,
+                )
+                word = Document(io.BytesIO(rendered.content))
+                self.assertEqual([[row.cells[0].text for row in table.rows] for table in word.tables],
+                                 [["Pin", "1", "2"]] if continued else [["Pin", "1"], ["Pin", "2"]])
+                for table in word.tables:
+                    self.assertEqual(len(table.columns), 2)
+                    self.assertEqual([i for i, row in enumerate(table.rows) if row._tr.xpath("./w:trPr/w:tblHeader")],
+                                     [0])
+                self.assertFalse(word.element.xpath(".//w:instrText[contains(., 'SEQ')]"))
+                evidence = build_renderer_evidence(document, rendered.content, render_result=rendered)
+                ensure_renderer_integrity(evidence)
+                validate_persisted_renderer_content(document, rendered.content, evidence)
+
+    def test_v2_table_reclassifies_only_verified_same_block_figure(self) -> None:
+        section = "3 Device Connections"
+        title = "Figure 3-2. Package schematic"
+        figure = {
+            "type": "table", "bbox": [80, 90, 380, 320],
+            "content": {
+                "image_source": {"path": "images/diagram.png"},
+                "html": "<table><tr><td>Diagram pin</td></tr></table>",
+                "table_caption": [{"type": "text", "content": text} for text in (section, title)],
+            },
+        }
+        table = {
+            "type": "table", "bbox": [90, 400, 920, 640],
+            "content": {
+                "html": "<table><tr><th>PIN</th><th>Role</th></tr><tr><td>2</td><td>Input</td></tr></table>",
+                "table_caption": [{"type": "text", "content": "Table 3-2. Pin functions"}],
+            },
+        }
+        cases = ("figure", "grouped_figure", "body_reference", "other_figure", "table_conflict", "outside_table_caption",
+                 "html_table_caption", "html_table_header", "other_body_text", "extra_asset_reference", "missing_image",
+                 "bad_image", "forged_marker", "legacy")
+        with tempfile.TemporaryDirectory() as directory:
+            for case in cases:
+                with self.subTest(case=case):
+                    candidate = copy.deepcopy(figure)
+                    caption = candidate["content"]["table_caption"]
+                    if case == "body_reference":
+                        caption[-1]["content"] = "See Figure 3-2. Package schematic"
+                    elif case == "other_figure":
+                        caption.insert(1, {"type": "text", "content": "Figure 3-1. Pinout"})
+                    elif case == "table_conflict":
+                        caption.insert(1, {"type": "text", "content": "Table 3-1. Ratings"})
+                    elif case == "outside_table_caption":
+                        candidate["table_caption"] = [{"type": "text", "content": "Table 3-1. Ratings"}]
+                    elif case == "html_table_caption":
+                        candidate["content"]["html"] = candidate["content"]["html"].replace(
+                            "<table>", "<table><caption>Table 3-1. Ratings</caption>",
+                        )
+                    elif case == "html_table_header":
+                        candidate["content"]["html"] = "<table><tr><th>Part</th></tr><tr><td>Connector</td></tr></table>"
+                    elif case == "other_body_text":
+                        candidate["content"]["description"] = "Data for each package variant."
+                    elif case == "extra_asset_reference":
+                        candidate["image_path"] = "images/diagram.png"
+                    elif case == "forged_marker":
+                        candidate["_mineru_table_figure"] = True
+                        caption[-1]["content"] = "Table 3-1. Pinout"
+                    page = [candidate, table]
+                    if case == "grouped_figure":
+                        page.insert(1, {"type": "image", "bbox": [410, 90, 710, 320], "content": {
+                            "image_source": {"path": "images/diagram.png"},
+                            "image_caption": [{"type": "text", "content": "Figure 4 Other connector"}],
+                        }})
+                    archive_path = Path(directory) / f"{case}.zip"
+                    with zipfile.ZipFile(archive_path, "w") as archive:
+                        name = "result_content_list.json" if case == "legacy" else "result_content_list_v2.json"
+                        archive.writestr(name, json.dumps([page]))
+                        if case != "missing_image":
+                            archive.writestr("images/diagram.png", b"invalid image" if case == "bad_image" else MINIMAL_PNG_BYTES)
+                    result = MinerUToDocumentIRService().convert_zip(
+                        archive_path, job_id="job_figure", source_file_id="file_figure", document_language="en",
+                    )
+                    document = result.document
+                    pointers = [f.source_span.json_pointer for g in document.metadata.logical_table_groups for f in g.fragments]
+                    if case not in {"figure", "grouped_figure"}:
+                        self.assertEqual([block.type for block in document.blocks], ["table", "table"])
+                        self.assertEqual(pointers, ["/0/0", "/0/1"])
+                        self.assertFalse(result.image_assets)
+                        continue
+
+                    heading, image, *siblings, editable = document.blocks
+                    if siblings:
+                        span, = build_image_plan(document)
+                        self.assertEqual((span.mode, span.block_ids), ("group", (image.id, siblings[0].id)))
+                    self.assertEqual((heading.type, heading.text, heading.metadata["source_block_id"]),
+                                     ("heading", section, image.id))
+                    self.assertEqual((image.type, image.captions, image.html), ("image", [title], None))
+                    self.assertEqual((image.metadata["source_type"], image.metadata["mineru_source"]["json_pointer"]),
+                                     ("table", "/0/0"))
+                    binding = image.metadata["mineru_table_figure"]
+                    self.assertEqual(binding["asset_sha256"], hashlib.sha256(MINIMAL_PNG_BYTES).hexdigest())
+                    self.assertEqual(binding["content_list_sha256"], result.validation_report.content_list_sha256)
+                    self.assertEqual(pointers, [f"/0/{len(page) - 1}"])
+                    self.assertEqual(editable.type, "table")
+                    image_contents = {asset.asset_id: asset.content for asset in result.image_assets}
+                    self.assertEqual(len(image_contents), 1 + len(siblings))
+                    rendered = DocumentIRWordRenderer().render_to_result(
+                        document, template_path=None, config_path=None,
+                        image_loader=lambda asset: image_contents.get(asset.id),
+                    )
+                    word = Document(io.BytesIO(rendered.content))
+                    self.assertEqual(len(word.inline_shapes), 1 + len(siblings))
+                    native, = (item for item in word.tables if item.cell(0, 0).text == "PIN")
+                    self.assertEqual([[cell.text for cell in row.cells] for row in native.rows], [["PIN", "Role"], ["2", "Input"]])
+                    paragraphs = ["".join(p.xpath(".//w:t/text()")) for p in word.element.body.xpath(".//w:p")]
+                    for expected in (section, title):
+                        self.assertEqual(paragraphs.count(expected), 1)
+                    body = list(word.element.body)
+                    heading_paragraph = next(paragraph for paragraph in word.paragraphs if paragraph.text == section)
+                    drawing_index = next(index for index, child in enumerate(body) if child.xpath(".//w:drawing"))
+                    self.assertLess(body.index(heading_paragraph._p), drawing_index)
+                    self.assertLess(drawing_index, body.index(native._tbl))
+                    evidence = build_renderer_evidence(document, rendered.content, render_result=rendered)
+                    ensure_renderer_integrity(evidence)
+                    validate_persisted_renderer_content(document, rendered.content, evidence)
+
+                    if siblings:
+                        continue
+                    corrupt = document.model_dump(mode="json")
+                    corrupt["blocks"][1]["metadata"]["caption_reconciliation"]["originals"][0]["value"][-1]["content"] = (
+                        "Figure 3-2. Other schematic"
+                    )
+                    with self.assertRaisesRegex(ValueError, "MinerU 图表题注绑定无效"):
+                        DocumentIR.model_validate(corrupt)
+                    corrupt = document.model_dump(mode="json")
+                    corrupt["blocks"][1]["captions"] = ["Figure 3-2. Other schematic"]
+                    with self.assertRaisesRegex(ValueError, "MinerU 图表题注绑定无效"):
+                        DocumentIR.model_validate(corrupt)
+                    corrupt = document.model_dump(mode="json")
+                    corrupt["assets"][0]["checksum_sha256"] = "sha256:" + "0" * 64
+                    with self.assertRaisesRegex(ValueError, "MinerU 图表来源绑定无效"):
+                        DocumentIR.model_validate(corrupt)
+                    corrupt = document.model_dump(mode="json")
+                    metadata = corrupt["blocks"][1]["metadata"]
+                    metadata["mineru_table_figure"]["source_pointer"] = "/0/99"
+                    metadata["mineru_source"]["json_pointer"] = "/0/99"
+                    metadata["caption_reconciliation"]["originals"][0]["json_pointer"] = "/0/99/content/table_caption"
+                    with self.assertRaisesRegex(ValueError, "MinerU 图表来源绑定无效"):
+                        DocumentIR.model_validate(corrupt)
+
+    def test_reclassified_figure_keeps_substantive_last_page(self) -> None:
+        blocks = [[{"type": "paragraph", "bbox": [10, 10, 190, 50], "content": "Board specifications"}], [
+            {"type": "table", "bbox": [10, 80, 190, 150], "content": {
+                "image_source": {"path": "images/diagram.png"},
+                "html": "<table><tr><td>PIN</td></tr></table>",
+                "table_caption": [{"type": "text", "content": "Fig. 2: Board connector"}],
+            }},
+            {"type": "paragraph", "bbox": [10, 180, 190, 230], "content": "使用微信扫码打开设备设置。"},
+        ]]
+        with tempfile.TemporaryDirectory() as directory:
+            archive_path = Path(directory) / "last-page.zip"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("result_content_list_v2.json", json.dumps(blocks, ensure_ascii=False))
+                archive.writestr("images/diagram.png", MINIMAL_PNG_BYTES)
+            result = MinerUToDocumentIRService().convert_zip(
+                archive_path, job_id="job_figure", source_file_id="file_figure", document_language="en",
+            )
+        self.assertEqual([page.index for page in result.document.pages], [0, 1])
+        self.assertEqual([(block.type, block.page_index) for block in result.document.blocks],
+                         [("paragraph", 0), ("image", 1), ("paragraph", 1)])
+        self.assertEqual(result.validation_report.normalization["filtered_block_count"], 0)
+
     def test_convert_zip_merges_table_placeholder_continuation_and_landscape_orientation(self) -> None:
         crop = _RecordingTableCropProvider("file_continuation", [(792, 612)] * 2)
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1096,6 +1313,176 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         word = Document(io.BytesIO(rendered.content))
         self.assertEqual([table.cell(0, 0).text for table in word.tables], ["Part", "保留正文"])
         self.assertEqual(len(word.inline_shapes), 2)
+
+    def test_convert_zip_requires_bound_upstream_row_coverage_for_empty_continuation(self) -> None:
+        header = "<tr><th colspan=\"2\">引脚</th></tr>"
+        first_data = "<tr><td>GPIO1</td><td>1</td></tr>"
+        next_data = "<tr><td>$V_{CC}$</td><td>2</td></tr>"
+        primary_caption = "Table 4-1. Pin Functions"
+        source_boxes = [[100, 640, 900, 940], [100, 80, 900, 320]]
+        layout_boxes = [[50, 512, 450, 752], [50, 64, 450, 256]]
+
+        def html(*rows: str) -> str:
+            return "<table>" + "".join(rows) + "</table>"
+
+        def source_table(page: int, value: str, caption: str = "") -> dict:
+            return {"type": "table", "bbox": source_boxes[page], "content": {
+                "image_source": {"path": "images/"},
+                "html": value,
+                "table_caption": [{"type": "text", "content": caption}] if caption else [],
+                "table_footnote": [], "table_type": "simple_table", "table_nest_level": 1,
+            }}
+
+        def layout_table(page: int, value: str, caption: str = "") -> dict:
+            body = {"type": "table_body", "index": page + 2, "bbox": layout_boxes[page],
+                    "lines": [{"spans": [{"type": "table", "html": value}]}] if value else []}
+            if not value:
+                body["lines_deleted"] = True
+            children = [body]
+            if caption:
+                children.insert(0, {"type": "table_caption", "lines": [{"spans": [{"type": "text", "content": caption}]}]})
+            return {"type": "table", "index": page + 2, "bbox": layout_boxes[page], "blocks": children}
+
+        source = [
+            [source_table(0, html(header, first_data, next_data.replace("$", "")), primary_caption)],
+            [source_table(1, "")],
+        ]
+        original_layout = {
+            "_version_name": "3.4.4",
+            "pdf_info": [
+                {"page_idx": 0, "page_size": [500, 800],
+                 "preproc_blocks": [layout_table(0, html(header, first_data), primary_caption)],
+                 "para_blocks": [layout_table(0, html(header, first_data, next_data), primary_caption)]},
+                {"page_idx": 1, "page_size": [500, 800],
+                 "preproc_blocks": [layout_table(1, html(header, next_data), primary_caption + " (continued)")],
+                 "para_blocks": [layout_table(1, "")]},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for scenario in ("covered", "without_caption", "other_table_number", "missing_data", "changed_token",
+                             "repeated_data", "missing_footnote", "shifted_position", "ambiguous_position",
+                             "wrong_layout_identity", "wrong_body_position", "nonempty_layout_after", "no_deletion_mark",
+                             "ambiguous_layout", "multiple_empty_fragments"):
+                with self.subTest(scenario=scenario):
+                    layout = copy.deepcopy(original_layout)
+                    source_v2 = copy.deepcopy(source)
+                    right = layout["pdf_info"][1]
+                    if scenario == "without_caption":
+                        right["preproc_blocks"][0]["blocks"].pop(0)
+                    if scenario == "other_table_number":
+                        right["preproc_blocks"][0] = layout_table(1, html(header, next_data), "Table 4-2. Pin Functions (continued)")
+                    if scenario == "missing_data":
+                        right["preproc_blocks"][0]["blocks"][-1]["lines"][0]["spans"][0]["html"] = html(
+                            header, next_data, "<tr><td>GPIO3</td><td>3</td></tr>")
+                    if scenario == "changed_token":
+                        right["preproc_blocks"][0]["blocks"][-1]["lines"][0]["spans"][0]["html"] = html(
+                            header, next_data.replace("CC", "DD"))
+                    if scenario == "repeated_data":
+                        # 相等的前缀也可能是两页各自的一条数据。
+                        data_row = "<tr><td>GPIO0</td><td>0</td></tr>"
+                        source_v2[0][0]["content"]["html"] = source_v2[0][0]["content"]["html"].replace(header, data_row)
+                        for page in layout["pdf_info"]:
+                            for stage in ("preproc_blocks", "para_blocks"):
+                                body = page[stage][0]["blocks"][-1]
+                                if body["lines"]:
+                                    span = body["lines"][0]["spans"][0]
+                                    span["html"] = span["html"].replace(header, data_row)
+                    if scenario == "missing_footnote":
+                        right["preproc_blocks"][0]["blocks"].append({
+                            "type": "table_footnote", "lines": [{"spans": [{"type": "text", "content": "（1）有效条件"}]}],
+                        })
+                    if scenario == "shifted_position":
+                        right["preproc_blocks"][0]["bbox"] = [51, 64, 450, 256]
+                    if scenario == "ambiguous_position":
+                        right["preproc_blocks"].append(copy.deepcopy(right["preproc_blocks"][0]))
+                    if scenario == "wrong_layout_identity":
+                        right["para_blocks"][0]["index"] += 1
+                        right["para_blocks"][0]["blocks"][-1]["index"] += 1
+                    if scenario == "wrong_body_position":
+                        right["preproc_blocks"][0]["blocks"][-1]["bbox"] = [52, 64, 450, 256]
+                    if scenario == "nonempty_layout_after":
+                        right["para_blocks"][0] = layout_table(1, html(header, next_data))
+                    if scenario == "no_deletion_mark":
+                        right["para_blocks"][0]["blocks"][-1].pop("lines_deleted")
+                    if scenario == "multiple_empty_fragments":
+                        other = source_table(1, "")
+                        other["bbox"] = [100, 340, 900, 480]
+                        source_v2[1].append(other)
+                        for stage in ("preproc_blocks", "para_blocks"):
+                            extra = copy.deepcopy(right[stage][0])
+                            for node in (extra, extra["blocks"][-1]):
+                                node["bbox"] = [50, 272, 450, 384]
+                                node["index"] = 4
+                            right[stage].append(extra)
+                    zip_path = Path(directory) / f"{scenario}.zip"
+                    layout_bytes = json.dumps(layout).encode()
+                    with zipfile.ZipFile(zip_path, "w") as archive:
+                        archive.writestr("sample_content_list_v2.json", json.dumps(source_v2))
+                        archive.writestr("layout.json", layout_bytes)
+                        if scenario == "ambiguous_layout":
+                            archive.writestr("sample_layout.json", layout_bytes)
+                    crop = _RecordingTableCropProvider("file_upstream_coverage", [(500, 800)] * 2)
+                    document = MinerUToDocumentIRService(pdf_crop_provider=crop).convert_zip(
+                        zip_path, job_id="job_upstream_coverage", source_file_id=crop.source.file_id, document_language="en",
+                        placeholder_source_loader=lambda: crop.source,
+                    ).document
+                    group, = document.metadata.logical_table_groups
+                    primary, empty, *extra = group.fragments
+                    pointers = ["/0/0", "/1/0", "/1/1"] if scenario == "multiple_empty_fragments" else ["/0/0", "/1/0"]
+                    self.assertEqual([item.source_span.json_pointer for item in group.fragments], pointers)
+                    self.assertEqual((empty.html_state, empty.raw_html), ("empty", ""))
+                    if scenario != "covered":
+                        self.assertIsNone(empty.upstream_coverage)
+                        self.assertNotIn("upstream_coverage", empty.model_dump(mode="json"))
+                        self.assertTrue(all(fragment.upstream_coverage is None for fragment in extra))
+                        self.assertEqual(len(crop.requests), 1 + len(extra))
+                        self.assertEqual([p.fragment_id for p in decode_placeholders(document)],
+                                         [fragment.fragment_id for fragment in (empty, *extra)])
+                        continue
+
+                    proof = empty.upstream_coverage
+                    self.assertEqual((proof.row_start, proof.row_end, proof.repeated_prefix_rows), (2, 3, 1))
+                    self.assertEqual(proof.primary_fragment_id, primary.fragment_id)
+                    self.assertEqual(proof.covered_fragment_id, empty.fragment_id)
+                    self.assertEqual(proof.package_sha256, hashlib.sha256(zip_path.read_bytes()).hexdigest())
+                    self.assertEqual(proof.layout_sha256, hashlib.sha256(layout_bytes).hexdigest())
+                    self.assertEqual(proof.covered_before_pointer, "/pdf_info/1/preproc_blocks/0")
+                    self.assertEqual(proof.covered_after_pointer, "/pdf_info/1/para_blocks/0")
+                    self.assertEqual(crop.requests, [])
+                    self.assertEqual(decode_placeholders(document), [])
+                    built = build_table_grid(group, source_content_sha256=proof.content_list_sha256)
+                    self.assertEqual((built.grid.rows, built.grid.columns), (3, 2))
+                    self.assertEqual(built.grid.source_fragments[1].html_state, "empty")
+                    self.assertNotIn("table_html_empty", [issue.code for issue in built.diagnostics])
+                    plan = build_content_table_plan(document, build_layout_plan(document))
+                    unit, = plan.units
+                    self.assertEqual((unit.rows, unit.fragments[1].upstream_covered_rows), (3, (2, 3)))
+                    rendered = DocumentIRWordRenderer().render_to_result(
+                        document, template_path=None, config_path=None, image_loader=lambda _asset: None,
+                    )
+                    word = Document(io.BytesIO(rendered.content))
+                    table, = word.tables
+                    self.assertEqual((len(table.rows), len(table.columns), len(word.inline_shapes)), (3, 2, 0))
+                    evidence = build_renderer_evidence(document, rendered.content, render_result=rendered)
+                    ensure_renderer_integrity(evidence)
+                    validate_persisted_renderer_content(document, rendered.content, evidence)
+                    serialized = document.model_dump(mode="json")
+                    self.assertEqual(DocumentIR.model_validate(serialized), document)
+                    for key, value, expected in (
+                        ("package_sha256", "0" * 64, "upstream_coverage_package"),
+                        ("covered_before_pointer", "/pdf_info/0/preproc_blocks/0", "upstream_coverage_binding"),
+                        ("row_end", 4, "upstream_coverage_rows"),
+                        ("covered_before_rows_sha256", "0" * 64, "upstream_coverage_rows"),
+                    ):
+                        corrupted = copy.deepcopy(serialized)
+                        corrupted["metadata"]["logical_table_groups"][0]["fragments"][1]["upstream_coverage"][key] = value
+                        with self.assertRaisesRegex(ValueError, expected):
+                            DocumentIR.model_validate(corrupted)
+                    corrupted = copy.deepcopy(serialized)
+                    raw = corrupted["metadata"]["logical_table_groups"][0]["fragments"][0]["raw_fragment"]
+                    raw["content"]["table_caption"][0]["content"] = "Table 999. Pin Functions"
+                    with self.assertRaisesRegex(ValueError, "upstream_coverage_binding"):
+                        DocumentIR.model_validate(corrupted)
 
     def test_convert_zip_keeps_contentful_or_orphan_empty_tables_fail_closed(self) -> None:
         real_table = {

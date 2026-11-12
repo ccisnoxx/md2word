@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 Disposition = Literal["rendered", "coalesced", "suppressed", "superseded", "not_emitted"]
 Reason = Literal["native_object", "empty_content", "empty_list", "toc_coalesced", "decoration_joined", "decoration_disabled", "custom_footer", "decoration_replaced", "unassigned_layout"]
+WORD_TARGET_ROLE = Literal["body", "list_item", "formula", "caption", "context", "table", "note", "image", "image_fallback", "header", "footer", "toc_representative"]
 
 
 class SourceProjection(RenderContract):
@@ -35,7 +36,7 @@ class WordTarget(RenderContract):
     part: str
     child_path: list[int]
     element_kind: Literal["paragraph", "table", "drawing", "run", "bookmark", "math"]
-    role: Literal["body", "list_item", "formula", "caption", "context", "table", "note", "image", "image_fallback", "header", "footer", "toc_representative"]
+    role: WORD_TARGET_ROLE
     item_index: int | None = None
     actual: dict[str, JsonValue]
     bookmark_names: list[str] = Field(default_factory=list)
@@ -97,6 +98,7 @@ class TableRowsScope(RenderContract):
 
 class WordTargetV2(WordTarget):
     element_kind: Literal["paragraph", "table", "drawing", "run", "bookmark", "math", "table_rows"]
+    role: WORD_TARGET_ROLE | Literal["toc_field"]
     content_scope_id: str | None = None
 
 
@@ -204,6 +206,16 @@ class LocalTarget:
 
 def paragraph_target(paragraph, role="body", item_index=None):
     return LocalTarget(paragraph._p, paragraph.part, role, item_index)
+
+
+def toc_representative_target(targets: list[WordTarget], item_index: int | None) -> WordTarget:
+    """归并项只共享原生字段，含公式的独立段仍由来源 item 单独拥有。"""
+    own = [target for target in targets if target.item_index == item_index and target.role != "toc_representative"]
+    field = [target for target in own if target.role == "toc_field"]
+    representative = field or own
+    if len(representative) != 1:
+        raise ValueError("ir_render_evidence:target_mismatch")
+    return representative[0]
 
 
 KINDS = {qn("w:p"): "paragraph", qn("w:tbl"): "table", qn("w:drawing"): "drawing", qn("w:r"): "run", qn("w:bookmarkStart"): "bookmark", qn("m:oMath"): "math"}
@@ -447,10 +459,8 @@ class RenderCollector:
         # TOC 合并引用真实代表，不按文字或 block ID 猜 OOXML 位置。
         for block_id, representative, item_index, representative_item_index in self.representatives.values():
             record = self.records[block_id]
-            targets = [t for t in self.records[representative].targets if t.item_index == representative_item_index and t.role != "toc_representative"]
-            if not targets:
-                raise ValueError("ir_render_evidence:target_mismatch")
-            record.targets.extend(t.model_copy(update={"role": "toc_representative", "item_index": item_index}) for t in targets)
+            target = toc_representative_target(self.records[representative].targets, representative_item_index)
+            record.targets.append(target.model_copy(update={"role": "toc_representative", "item_index": item_index}))
             record.representative_block_id = representative
             if not self.targets[block_id]:
                 record.disposition, record.reason_code = "coalesced", "toc_coalesced"

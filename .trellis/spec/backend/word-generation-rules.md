@@ -105,6 +105,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：v2 `content` 节点、inline equation、显式 `list_items`、以列表标记起始的多行文本、目录点线和碎片化脚注。
 - 正式 owner：`app/conversion/docx_rules/mineru_content.py::join_text_fragments`、`::split_multiline_list_items`、`::split_toc_like_lines`、`::merge_footnote_fragments`；`app/services/document_ir/mineru_converter.py::_list_items`、`::_rich_text_nodes`。
 - 预期输出：保留 inline equation 数学边界；多行列表拆成独立 item，未标记续行仍保留在同一 item；目录样式文本仅在足够高比例点线项时拆分；脚注按明确连续信号合并。`paragraph` 且 `role=body` 的正文按权威 text/runs 保留显式换行和连续空行，仍保持 paragraph 类型；数学源串内部的空白与 CRLF 原样保留，普通文本行尾 CRLF 归一为 LF。
+- 页级脚注：MinerU v2 `page_footnote.content.page_footnote_content` 使用正文 runs 的校验与解析，按原页位置作为 body paragraph 一次写入。源类型、源指针、页号及 bbox 保留。空 runs、错误容器、非法 typed run 及无法消费的语义旁支仍失败关闭。页级脚注与页脚或表注分别消费。回归见 `tests.test_mineru_artifact_validator` 的页级脚注用例。
 - 正文行结构 owner：`mineru_converter._text_for_block` 只对上述正文调用 `_raw_text(..., preserve_line_breaks=True)`；共享 `mineru_content.clean_text`、`clean_markdown_document`、`mineru_raw_text_preserving_lines` 的保留参数默认关闭，标题、页眉页脚、题注与表注不因此改变清洗语义。Word writer 的 `_apply_document_settings` 在正文存在显式换行时，为新件设置 `w:compat/w:doNotExpandShiftReturn=true`，使两端对齐段落的手动换行行不被拉满词距；保留其他兼容节点和原模板字节，不修改 normal alignment。该行为依据 [OOXML 官方定义](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.donotexpandshiftreturn?view=openxml-3.0.1)，仍需以真客户端验证显示。
 - 冲突/例外：普通多行正文不拆列表；单行负温度或减号文本不得当作列表。
 - 禁止：对所有换行统一空格化；只保留列表第一行；在普通正文全局执行无差别或破坏性的 TeX 清理。
@@ -183,6 +184,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：完成末页过滤、题注重关联和续表归一化后的 MinerU v2 blocks，及 converter 生成的主 DocumentIR blocks/assets。
 - 正式 owner：`app/services/document_ir/mineru_converter.py::MinerUToDocumentIRService._convert_blocks`；完整性证据与阻断由 `app/services/document_ir/integrity.py` 唯一负责。
 - 预期输出：DocumentIR metadata 记录归一化后的 source block 总数和按 source type 计数；每个主 block 通过既有 `metadata.source_type` 对账。`chart/image/figure` 必须生成带有效 `asset_ref` 的 `image`，table/formula/heading/list 必须生成对应显式类型和必要 payload；确定性缺失以稳定 flag 失败关闭。
+- 图表分类例外：`MinerUArtifactValidator` 仅在 v2 表格同块题注明确标识唯一编号图、原 HTML 可解析、页与 bbox 可核对、唯一显式 `image_source.path` 已通过资产及 Word 兼容校验时采用图片映射。表题、HTML 表头或其他题注冲突继续走原表格合同。原始 `source_type=table` 仍进入源清单，有效图片退出逻辑表归组。主块的 `mineru_table_figure` 绑定来源定位、v2 指纹、原图题与图片摘要，`validate_table_figure_bindings` 重读核对原始表检查、题注及资产。
 - 冲突/例外：旧 IR 没有 source inventory 时跳过无法证明的 source→IR 对账，但仍执行 IR→layout/DOCX 对账；table context 等合成辅助 block 不计为主 block；整页降级的合成块（`metadata.synthetic`）不计为主 block，`metadata.degraded_pages` 记录的移除源块数量与类型计数加回对账，输出 `degraded_source_block_count`；不新增第二套 MinerU JSON parser。
 - 禁止：把 `chart` 降级为 paragraph；只记录 `unsupported_block_type` 后继续成功；用媒体文件数替代一个 image block 对应一个 drawing 的合同。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_maps_nested_v2_chart_to_image_and_records_source_inventory`、`.test_convert_zip_fails_closed_when_declared_formula_payload_is_missing`；`tests.test_document_ir_layout_contract.DocumentIRLayoutContractTests.test_v1_payload_defaults_layout_fields_to_empty`。
@@ -243,9 +245,12 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：heading、表题/表格/表注、长表行和连续表格 placeholder。
 - 正式 owner：`app/services/renderer/word_renderer.py::_render_block`；`app/services/renderer/table_renderer.py::_render_table_captions`、`::_configure_data_table_rows`；`app/services/document_ir/layout_signals.py::merge_table_placeholder_continuations`。
 - 预期输出：heading/table caption 使用 `keep_with_next`；表头可重复，表格行使用 `cantSplit`；空 table placeholder 只并入前一真实表格，不另渲染重复空表。
+- 数字复合表号的续表归组：`logical_table_group.is_compound_table_continuation(primary, following)` 供源归组和 `logical_table_plan` 共用。两段须各有唯一明确的 `数字-数字` 表号，完整编号相同，后段末尾有括号内的 `continued`、`续` 或 `续表`，后段题注正文须为空或与首段一致。源归组继续核验相邻页、正文边界、几何、列数和表头签名；布局兼容时渲染为一张原生表。编号不同、正文冲突、缺续表标记或多重编号时保守分表。该判定不参与 FIELD-002 的 `SEQ` 或 `REF` 生成。
+- 跨页表头去重仍须原生表头签名和续段提示通过核对。缺少可信 `<th>` 时保留源行。空片段归组收据只证明位置关系，未证明上游主片包含次页数据时继续执行 TABLE-004 的占位和阻断。
+- 上游预合并须核对同包 v2 与唯一同文档版面的前后处理节点、次片表体的 `lines_deleted=true`、明确续表题注及唯一的有序行覆盖。上游省略共享前缀时须核实其表头身份，采用显式连续 `<th>` 或已绑定源 PDF 的 `TableHeaderReview`。源片段的 `upstream_coverage` 记录主片内半开区间 `[row_start, row_end)`，绑定包、内容列表、版面及片段身份。Grid 保留原始空片和该绑定，Word 的 `upstream_covered_rows` 指向主表实物中的对应行，空片新增输出行数为零。归属证据不足仍触发 `table_fragment_missing`。历史序列的可选字段缺省时沿用原证据。
 - 冲突/例外：`DocumentIRBlockLayout.continuation_heights` 当前只写入、没有 renderer 消费者，不能声称续页高度已参与 Word 排版；Word 最终分页仍由客户端决定。
 - 禁止：把整张长表放进不可跨页容器；因 placeholder 创建第二张空表；把“有 continuation 元数据”写成“已验证不挤压”。
-- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_merges_table_placeholder_continuation_and_landscape_orientation`、`.test_convert_zip_merges_real_mineru_empty_table_continuations`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`。
+- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_merges_table_placeholder_continuation_and_landscape_orientation`、`.test_convert_zip_merges_real_mineru_empty_table_continuations`、`.test_compound_table_continuation_reconciles_source_grid_plan_and_word`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`。
 - 样本证据：SC2167、CM4112 第 3/4 页表格均为 external evidence；没有自动排版后的表格挤压/分页断言。
 - 来源/取代：两个 08-18 归档任务；明确降级“续表已解决”的历史结论。
 
@@ -392,18 +397,21 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：Word table 首行/后续 `th`、列数、配置的 border/header fill/font 和表格规模。
 - 正式 owner：`app/services/renderer/table_renderer.py::_configure_data_table_rows`、`::_table_column_widths`、`::table_config_for_columns`、`::_set_table_borders`。
 - 预期输出：表头行标记 `tblHeader`，所有行标记 `cantSplit`；5 列数据手册表优先给描述列宽度，6 列及以上使用紧凑字号/等宽策略；应用配置边框与表头样式。
+- 表头校核：`MinerUToDocumentIRService.convert_zip(..., table_header_reviews=...)` 通过可信 PDF loader 核对 PDF SHA-256，并通过原始表账本核对 content list SHA-256、源 Pointer、零基页号和原 HTML SHA-256。完整且跨度闭合的上游 `<th>` 首部优先。采用人工校核时，`header_row_count` 指定零基首部连续范围，跨度不得越过该范围，单元格占位须完整。位置、指纹或行范围无效时拒绝校核。
+- 来源与写入：已采用的 `header_review` 进入来源片段和表格验证证据。Grid、Word 及翻译表上下文复用这份记录。实际 `tblHeader` 范围以已校核首部为准。下方的 `<th>` 仍具原单元格语义。校核可确认上游预合并已经省略的共享表头范围，仍须通过 FLOW-003 的行覆盖核对。两段完整片段的去重继续采用原生表头签名，原 HTML 与无校核历史序列保持原值。验证见 [表头来源与本地校核](../../tasks/11-11-datasheet-quality-baseline-contracts/table-header-review.md)。
 - 冲突/例外：XML 结构不能证明 Word/WPS 实际无挤压；整文档视觉门禁见 QUALITY-003。
 - 禁止：把 `cantSplit` 写成“表格不会挤压”的证明；按源页缩放整表；为一个器件硬编码列宽。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_styles_later_th_cells_as_table_headers`、`.test_datasheet_five_column_table_widths_prioritize_description_column`、`.test_render_to_bytes_uses_configured_long_table_caption_and_border_color`。
+- 自动验证：`tests.test_table_header_review`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_styles_later_th_cells_as_table_headers`、`.test_datasheet_five_column_table_widths_prioritize_description_column`、`.test_render_to_bytes_uses_configured_long_table_caption_and_border_color`。
 - 样本证据：OPA228 P6/P7 与 CM4112 均缺当前排版后的自动/人工闭环。
 - 来源/取代：commit `32edca58` 与两个 08-18 归档任务；明确不继承 legacy 页高估算器的已实现声明。
 
 ### TABLE-004 无效表格输入与有来源的非编辑占位
 
 - 状态：`enforced-tested`（输入拒绝、占位来源与质量阻塞；不代表非编辑表格可交付）。
-- 输入信号：不可支持的 HTML，或可信表格来源账本中的 missing/empty HTML 片段。
+- 输入信号：不可支持的 HTML，或可信表格来源账本中仍需占位的 missing/empty HTML 片段（见 FLOW-003）。
 - 正式 owner：`logical_table_plan.build_content_table_plan` 的原生输入规划；`document_ir.table_placeholder.prepare_placeholders` 的来源绑定；`infrastructure.pdf_crop.PopplerPdfTableCropProvider` 的受控裁图；`table_placeholder_evidence` 与 `base_quality` 的占位认证及质量分级。
 - 预期输出：不可支持的 HTML 在输入/规划边界明确拒绝；missing/empty 片段须有可验证参考图，或原 PDF loader 与裁图 provider。后者核对文件身份/checksum、页码、有限 bbox、明确 frame 和实际 PDF 页面边界。没有图片/PDF 来源时保持 `table_placeholder_source_unavailable`，不得用题注或空表冒充表体。
+- 裁图几何：`PopplerPdfTableCropProvider.crop(PdfCropRequest)` 校验 PDF 字节身份、零原点、未旋转以及相同的完整 MediaBox 与 CropBox。声明 frame 须等于 Poppler 报告的点框。已确认的归一化坐标经 `from_normalized_bbox=True` 标识时，声明 frame 也可逐轴恰等于该点框向下取整后的整数尺寸。整数截断情形按报告宽高重映射 bbox，重检边界和预算，结果仍携带原声明 frame。其它偏差返回 `table_placeholder_geometry_invalid`。本地正式适配器通过显式 `placeholder_source: PdfCropSource` 复用同一裁图器，未传入时沿用参考图路径。真实裁图等价与非法几何回归见 `tests.test_pdf_crop`。
 - 运行依赖：API/Worker 共用镜像及开发镜像均安装 `poppler-utils`，提供 `pdfinfo` 和 `pdftoppm`；只有 Python provider 接线而缺 CLI 不构成可用裁图。不得在请求中临时安装或改用未认证服务。
 - 冲突/例外：有来源的非编辑占位可以生成完整候选 Word；`table_evidence` 中必须保留 `table_noneditable_placeholder`、producer=`table_placeholder`、severity=`blocker`，由正式质量分级阻止交付。完好占位不是确定性内容丢失，不能混入 renderer 的 `blocking_quality_flags`；也不能因 renderer 完整就声明质量通过。
 - 禁止：放宽 HTML/图片/来源校验使旧夹具通过；为空路径/目录路径猜图；静默丢正文；将占位图片算作可编辑原生数据表；以整体 DOCX hash 失败代替缺图/缺表专用验证。
@@ -419,6 +427,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 预期输出：资产位于包根内；python-docx 可识别的资产保持原字节不转码/重采样，按有效区域等比缩放且inline，禁止自动压缩。例外（P0c，2026-11-01 用户批准）：仅当资产已通过安全解码而 python-docx 拒绝原字节（实测为 WebP、CMYK/Adobe JPEG、无 APP0/APP1 的 JPEG）时，`artifact_validator._word_compatible_png` 按解码像素无损转 PNG（保持尺寸与 DPI、多帧取首帧、输出确定），登记文件 MIME/扩展名随之为 PNG 并在 metadata 记源格式与源 sha256；正文必需图片同时记 `image_asset_normalized` warning，表格参考图不记。仍禁止重采样、缩放、有损压缩。源 PDF 回退（P0-4，2026-11-02 用户批准）：正文图片缺失、不可解码、非栅格白名单格式或规范化后 Word 仍不接受时，在页面已确认 `mineru_normalized_1000` 坐标空间、源 PDF 与裁切器可用的前提下，`mineru_converter._crop_image_fallbacks` 经 `pdf_point_bbox` 换算后用现有 Poppler 裁切器裁出对应区域作为 PNG 资产，原错误降为同码 warning 并追加 `image_asset_pdf_fallback`；登记 metadata 记 `origin=pdf_region_crop` 与页码、原始 bbox、PDF 点框、frame、源 PDF sha256。回退失败且块带页码时转入 INPUT-002 的整页降级，降级前提不满足或块无页码时所有失败块恢复为原中止错误后整体失败；路径安全与单文件超限永不回退。每图全部注释与原来源保持；新组用COL-003布局表；缺/坏图显示受控诊断及全部已有注释，确定性缺图仍拒绝登记成功件。
 - 冲突/例外：不承诺放大小图到某个历史最小宽度；清晰度取决于源像素和客户端。正式MinerU输入对必需坏图/非法bbox已失败关闭；历史IR仍有可见fallback。非有限历史bbox只禁并排，图片报告采用JSON安全确定投影；不扩大为修改IR模型/序列化合同。
 - 禁止：静默丢图；无条件拉伸到全栏；用截图替换可编辑正文；按某个样本设置固定厘米宽度。
+- 源题注前的独立章节以 `annotation_role=figure_section_heading` 派生并绑定原图 owner。渲染计划按所属图片 span 在首个图前安排章节标题，保留图源 bbox。封底筛选将已确认的错分图计为实质内容。图表冲突和来源重读的回归见 `tests.test_document_ir_mineru_converter_layout` 与[同页图表复验](../../tasks/11-11-datasheet-quality-baseline-contracts/table-figure-validation.md)。
 - 自动验证：`tests.test_image_group_rendering` 的横竖非方图/完整注释/资源失败/资产交换/比例/快照与恢复负例，既有bbox宽度测试和converter正常路径测试保留；源越界/歧义/坏图见INPUT-002。
 - 样本证据：中性非方PNG、正式可靠图5/6及24/25 ZIP、已接受去标识不确定caption-pair；SC2167仍是外部历史清晰度证据，不能代签当前Word。
 - 来源/取代：已批准RND-503 v2取代旧制表位writer，保留5d4a02d7的源字节/可见失败原则；源字节原则仅被上述 P0c Word 拒绝格式例外收窄（任务 `11-01-p0c-image-normalization`）。
@@ -439,15 +448,16 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### FIELD-001 目录只写一个原生 TOC 字段
 
-- 状态：`implemented-gap`
-- 输入信号：TOC 标题和足够可靠的目录点线 entry；renderer 当前文档尚未写 TOC 字段。
-- 正式 owner：`app/services/renderer/text_renderer.py::_fill_toc_entry_if_needed`、`::_configure_toc_styles`；`app/services/renderer/word_renderer.py::_RenderContext.toc_written`。
-- 预期输出：写入一个原生 `TOC` complex field 并应用配置的 TOC styles；后续目录 entry 不重复写静态点线目录；`toc_written` 只属于单次 render context。
-- 冲突/例外：字段结果依赖 Word/WPS 更新；`updateFields` 只请求更新，不保证所有客户端打开即刷新。现有测试只覆盖单次 render 的一个 TOC 字段，未直接覆盖复用同一 renderer 的跨调用状态隔离。
-- 禁止：整页目录逐行静态点线输出并同时插入 TOC；一个 entry 一个 TOC field。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_uses_one_native_toc_field_for_toc_like_entries`、`.test_render_to_bytes_uses_configured_toc_styles`。
-- 样本证据：OPA228 P2 manifest 有 TOC 焦点，但当前 Golden 未实际转换。
-- 来源/取代：commit `5d4a02d7`；取代静态目录为正式目标。
+- 状态：`enforced-tested`
+- 输入信号：目录标题和可识别的目录项。含公式策略要求来源条目通过既有 TOC 识别且含 `content_math_spans`。
+- 正式 owner：`app/services/renderer/render_plan.py::build_render_plan` 冻结代表和文本策略，`app/services/renderer/text_renderer.py::_fill_toc_entry_paragraph` 及 `word_renderer.py::_render_block` 按计划输出。
+- 预期输出：写入一个原生 `TOC` complex field 并应用配置的 TOC styles。普通目录项共享实际字段。含公式的目录标题另写独立可编辑段，移除点引导符与旧页码，保留原始数学字符串和源公式书签。首条含公式时字段和公式分别占段，普通项仍绑定字段段。
+- 版本与对账：新策略使用 `render-plan/v2` 和 `word-renderer-policy/v3`，普通目录沿用原计划身份。持久化证据核对字段指令、begin/separate/end、源公式字段和书签、目录别名目标。表格上下文保持正文。需要估算目录字段页面位置时使用已认证的物理字段路径。
+- 更新边界：`updateFields` 请求客户端刷新。LibreOffice 完整刷新会重建目录缓存，并可能重写数学排版属性。带公式的源标题位于独立段落，刷新后可继续从原书签定位。Word/WPS 客户端的刷新验收单独记录。
+- 禁止：整页逐行静态点线目录与原生 TOC 重复输出。一个 entry 一个 TOC 字段。用字段缓存或同一字段段落保留必须跨刷新追溯的来源公式。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests` 的普通目录、配置样式、含公式目录、表格上下文及归并预览映射用例。
+- 样本证据：[SN74AC244 原生目录公式验证](../../tasks/11-11-datasheet-quality-baseline-contracts/toc-formula-verification.md)。
+- 来源/取代：commit `5d4a02d7` 建立原生字段行为。本轮把含公式条目保留在字段更新范围之外。
 
 ### FIELD-002 题注、书签与交叉引用唯一性
 

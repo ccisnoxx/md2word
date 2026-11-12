@@ -6,6 +6,10 @@ import hashlib
 from typing import Literal
 
 from app.services.document_ir.models import DocumentIRBlock, LogicalTableGroup, SourceSpan
+from app.services.document_ir.table_header_review import TableHeaderReview, TableHeaderReviewError
+from app.services.document_ir.table_upstream_coverage import (
+    count_upstream_coverage_candidates, validate_upstream_coverage_rows,
+)
 from app.services.tables.html_normalizer import (
     MAX_CELLS, MAX_GRID_SLOTS, MAX_OCCUPANCY_CHECKS, MAX_RAW_HTML_BYTES, NORMALIZER_VERSION,
     NormalizedTableFragment, TableBuildError, TableDiagnostic, normalize_table_fragment,
@@ -41,8 +45,10 @@ class RenderTableBuildResult:
     diagnostics: tuple[TableDiagnostic, ...]
 
 
-def build_render_table_grid(block: DocumentIRBlock, *, block_index: int) -> RenderTableBuildResult:
-    """从当前 HTML 和真实数组位置投影，使用独立身份域且不读取或改写源账本。"""
+def build_render_table_grid(
+    block: DocumentIRBlock, *, block_index: int, header_review: TableHeaderReview | None = None,
+) -> RenderTableBuildResult:
+    """投影当前 HTML、块位置和已采用的校核，使用独立身份域。"""
     if block.type != "table" or type(block_index) is not int or block_index < 0:
         raise ValueError("表格渲染输入无效：table_render_input。")
     raw = block.html
@@ -52,7 +58,10 @@ def build_render_table_grid(block: DocumentIRBlock, *, block_index: int) -> Rend
         if raw_bytes is not None and len(raw_bytes) > MAX_RAW_HTML_BYTES:
             raise TableBuildError("table_build_limit", fragment_id="")
         pointer = f"/blocks/{block_index}"
-        fingerprint = canonical_sha256(["document-ir-table-render-input/v1", block.id, pointer, raw])
+        identity = ["document-ir-table-render-input/v1", block.id, pointer, raw]
+        if header_review is not None:
+            identity.append(header_review.model_dump(mode="json"))
+        fingerprint = canonical_sha256(identity)
     except UnicodeEncodeError:
         raise TableBuildError("table_html_encoding", fragment_id="") from None
     fragment_id = "table-fragment:" + canonical_sha256(["document-ir-table-render-fragment/v1", fingerprint])
@@ -61,6 +70,7 @@ def build_render_table_grid(block: DocumentIRBlock, *, block_index: int) -> Rend
         source_span=SourceSpan(json_pointer=pointer, source_index=block_index, source_type="table"),
         html_state="missing" if raw is None else "present" if raw.strip() else "empty",
         raw_html=raw, raw_html_sha256=hashlib.sha256(raw_bytes).hexdigest() if raw_bytes is not None else None,
+        header_review=header_review,
     )
     del raw_bytes
     built = _build_table_grid(
@@ -73,10 +83,22 @@ def build_render_table_grid(block: DocumentIRBlock, *, block_index: int) -> Rend
 
 def build_table_grid(group: LogicalTableGroup, *, source_content_sha256: str) -> TableBuildResult:
     """只接受已校验逻辑组；不重分组、不修复技术文字、不回写上游。"""
+    preceding = {}
+    candidates = count_upstream_coverage_candidates(group.fragments)
+    for fragment in group.fragments:
+        if fragment.header_review is not None:
+            fragment.header_review.verify_fragment(fragment, source_content_sha256)
+        if fragment.upstream_coverage is not None:
+            primary = preceding.get(fragment.upstream_coverage.primary_fragment_id)
+            if primary is None or candidates[fragment.render_owner_block_id, fragment.source_span.page_index] != 1:
+                raise ValueError("逻辑表格来源合同无效：upstream_coverage_order。")
+            validate_upstream_coverage_rows(primary, fragment, source_content_sha256)
+        preceding[fragment.fragment_id] = fragment
     fragments = [TableSourceFragment(
         fragment_id=fragment.fragment_id, source_span=fragment.source_span,
         html_state=fragment.html_state, raw_html=fragment.raw_html,
         raw_html_sha256=fragment.raw_html_sha256, repeated_header_hint=fragment.repeated_header_hint,
+        header_review=fragment.header_review, upstream_coverage=fragment.upstream_coverage,
     ) for fragment in group.fragments]
     return _build_table_grid(fragments, table_id=group.logical_group_id,
                              source_content_sha256=source_content_sha256)
@@ -109,13 +131,15 @@ def _build_table_grid(fragments: list[TableSourceFragment], *, table_id: str,
     offset = 0
     columns = 0
     checks = 0
-    for fragment in normalized:
+    for source, fragment in zip(fragments, normalized, strict=True):
         diagnostics.extend(replace(diagnostic, row=offset + diagnostic.source_row_index)
                            if diagnostic.source_row_index is not None else diagnostic
                            for diagnostic in fragment.diagnostics)
         local_rows = len(fragment.rows)
         occupancy: dict[int, dict[int, list[str]]] = {}
         headers: dict[str, bool] = {}
+        cell_start = len(cells)
+        header_start = len(header_rows)
         for source_row, row in enumerate(fragment.rows):
             cursor = 0
             for source_cell in row.cells:
@@ -173,6 +197,14 @@ def _build_table_grid(fragments: list[TableSourceFragment], *, table_id: str,
                     all(headers[owner] for owners in row_slots.values() for owner in owners)):
                 header_rows.append(offset + source_row)
             occupied_rows.append((fragment.fragment_id, source_row, row_slots))
+        review = source.header_review
+        if review is not None:
+            applied = _apply_header_review(review, cells[cell_start:], occupancy, local_rows, fragment.diagnostics,
+                                           render_view=render_view)
+            if applied:
+                header_rows[header_start:] = range(offset, offset + review.header_row_count)
+            else:
+                source.header_review = None
         offset += local_rows
 
     # 全局列数确定后只扫描已有列键，以半开区间记录缺口，不构造稠密空矩阵。
@@ -192,3 +224,50 @@ def _build_table_grid(fragments: list[TableSourceFragment], *, table_id: str,
     return TableBuildResult(NORMALIZER_VERSION, grid, tuple(
         NormalizedFragmentHTML(fragment.fragment_id, fragment.normalized_html) for fragment in normalized
     ), tuple(diagnostics))
+
+
+def _apply_header_review(
+    review: TableHeaderReview,
+    cells: list[TableCell],
+    occupancy: dict[int, dict[int, list[str]]],
+    local_rows: int,
+    diagnostics: tuple[TableDiagnostic, ...],
+    *,
+    render_view: bool,
+) -> bool:
+    """校验首部占位闭合，再更新表头标志。续表关系、原始与规范化 HTML 都由其他阶段拥有。"""
+    width = max((cell.column + cell.colspan for cell in cells), default=0)
+
+    def full_row(row: int) -> bool:
+        slots = occupancy.get(row, {})
+        return bool(width) and len(slots) == width and all(len(owners) == 1 for owners in slots.values())
+
+    def crosses_boundary(prefix: int) -> bool:
+        return any(cell.source_row_index < prefix < cell.source_row_index + cell.rowspan for cell in cells)
+
+    if not render_view:
+        # 只在源视图决定优先级。译文视图直接执行已验收的人工校核。
+        upstream = {cell.id for cell in cells if cell.is_header}
+        prefix = 0
+        for row in range(local_rows):
+            if not full_row(row) or any(owners[0] not in upstream for owners in occupancy[row].values()):
+                break
+            prefix = row + 1
+        if prefix and not crosses_boundary(prefix) and not _invalid_header_span(diagnostics, prefix):
+            return False
+
+    count = review.header_row_count
+    if count > local_rows or not cells:
+        raise TableHeaderReviewError("header_rows")
+    if (not all(full_row(row) for row in range(count)) or crosses_boundary(count)
+            or _invalid_header_span(diagnostics, count)):
+        raise TableHeaderReviewError("header_geometry")
+    for cell in cells:
+        if cell.source_row_index < count:
+            cell.is_header = True
+    return True
+
+
+def _invalid_header_span(diagnostics: tuple[TableDiagnostic, ...], row_count: int) -> bool:
+    return any(item.code == "table_span_invalid" and item.source_row_index is not None
+               and item.source_row_index < row_count for item in diagnostics)

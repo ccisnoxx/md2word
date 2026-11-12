@@ -16,6 +16,7 @@ from app.services.document_ir.layout_signals import parse_page_index
 from app.services.document_ir.table_annotations import (
     is_mixed_table_context_annotation, is_table_context_annotation,
 )
+from app.services.document_ir.table_figure import split_table_figure_caption
 
 
 RULE_VERSION = "caption-reconciliation/v1"
@@ -60,6 +61,9 @@ def _source_type(block: dict[str, Any]) -> str:
 
 
 def _family(block: dict[str, Any]) -> str | None:
+    if block.get("_mineru_table_figure") is True:
+        # 已绑定同块图题，禁止相邻对象再消费其中的原始注释。
+        return None
     effective_type = classify_mineru_block(block, _source_type(block))
     return "figure" if effective_type == "image" else "table" if effective_type == "table" else None
 
@@ -386,6 +390,18 @@ def reconcile_captions(raw_blocks: list[dict[str, Any]]) -> list[ReconciledCapti
         groups: list[_CaptionGroup] = []
         result = ReconciledCaption()
         source = block.get("_mineru_source", {})
+        if block.get("_mineru_table_figure") is True:
+            pointer = f"{source['json_pointer']}/content/table_caption"
+            value = block["content"]["table_caption"]
+            _sections, figure = split_table_figure_caption(value)
+            result.captions = [figure]
+            result.evidence = {
+                "rule_version": RULE_VERSION, "status": "unchanged", "bindings": [], "reasons": [],
+                "originals": [{"json_pointer": pointer, "value": deepcopy(value), "groups": [pointer]}],
+            }
+            results.append(result)
+            groups_by_block.append([])
+            continue
         keys = ([f"{_source_type(block)}_caption", "caption"]
                 if _source_type(block) in {"table", "image", "chart", "figure"} else ["caption"])
         originals: list[dict[str, Any]] = []

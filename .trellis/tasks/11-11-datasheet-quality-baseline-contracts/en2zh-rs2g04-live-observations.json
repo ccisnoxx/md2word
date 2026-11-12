@@ -1,0 +1,169 @@
+{
+  "schema_version": "datasheet-quality-observations/v1",
+  "metadata": {
+    "git_commit": "26dbfb20b275c3efe43133dc8d084230d3286e58",
+    "manifest_sha256": "15b58c3f01ff6cff4e95532c40b80918af87f844ad42b71635d689bdd0bee74a",
+    "annotation_version": "source-pdf-layout/v1",
+    "platform": "macOS-27.2.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "environment": {
+      "api": "loopback",
+      "worker": "celery_threads",
+      "broker": "isolated_redis",
+      "metadata_store": "sqlite",
+      "artifact_store": "local_object",
+      "mineru_callback": false,
+      "publication_enabled": false,
+      "translation_full_text_debug": false
+    },
+    "provider": {
+      "mineru_model": "vlm",
+      "mineru_poll_seconds": 10,
+      "translation": "DeepSeek",
+      "requested_model": "deepseek-v4-flash"
+    },
+    "mineru_auth_probe": {
+      "http_status": 200,
+      "provider_code": -60012,
+      "source": "settings"
+    },
+    "pricing": {
+      "currency": "USD",
+      "period": "off_peak",
+      "unit": "million_tokens",
+      "verified_date": "2026-11-11",
+      "reference": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "rates": {
+        "prompt_cache_hit_tokens": 0.003,
+        "prompt_cache_miss_tokens": 0.15,
+        "completion_tokens": 0.6
+      }
+    }
+  },
+  "plan": [
+    {
+      "sample_id": "gsx-rs2g04-esd-page",
+      "cohort": "extended",
+      "mode": "en2zh",
+      "evidence_level": "isolated_live_api_celery_sqlite",
+      "expected_outcome": "normal",
+      "expected_tables": 1,
+      "expected_tokens": {
+        "number": 3
+      },
+      "expected_visual_pages": 1,
+      "expected_visual_regions": 1
+    }
+  ],
+  "observations": [
+    {
+      "sample_id": "gsx-rs2g04-esd-page",
+      "mode": "en2zh",
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "latency": {
+        "kind": "end_to_end",
+        "seconds": 32.234,
+        "poll_interval_seconds": 2
+      },
+      "cost": {
+        "currency": "USD",
+        "basis": "estimated",
+        "complete": true,
+        "components": {
+          "parser": 0,
+          "translation": 0.001626756
+        },
+        "reference": "MinerU 本次解析按用户于 2026-11-11 确认的免费额度记账，DeepSeek 按实测用量及非高峰费率估算：https://api-docs.deepseek.com/quick_start/pricing/"
+      },
+      "missing": {
+        "edits": "human_signoff_pending",
+        "review_time": "human_signoff_pending",
+        "visual": "no_approved_en2zh_visual_reference"
+      },
+      "table": {
+        "matched": 0,
+        "duplicate": 0,
+        "reasons": [
+          {
+            "id": "esd-ratings",
+            "reason": "header_rows",
+            "actual_rows": 4,
+            "actual_columns": 4,
+            "actual_header_rows": []
+          }
+        ]
+      },
+      "tokens": {
+        "matched": {
+          "number": 3
+        },
+        "assessed": {
+          "number": 3
+        },
+        "extras": {
+          "number": 0
+        },
+        "reasons": []
+      },
+      "artifacts": {
+        "source_pdf_sha256": "3c3b8125f3ca2e420c9dd26ad997d54b9457649cf15221fde115698be32e1c9c",
+        "source_pages": [
+          6
+        ],
+        "derived_from": "gsx-rs2g04",
+        "mineru_result_sha256": "7fa3872d5138d7bb7156021fb60161490d71d9400e90cf6ca5cfa7b49209f7f0",
+        "mineru_content_list_v2_sha256": "69944959d08bcd21c4c938b5eaed5b77ec441af07d22ce0e69a23139e88edddf",
+        "docx_sha256": "04e4a0bfcec1880e8aa37daf98ce243a5e85a3664f209edcc0257cc1a31783e8",
+        "native_tables": 2,
+        "quality_status": "pending",
+        "delivery_status": "internal_draft",
+        "download_classification": "internal_only"
+      },
+      "execution": {
+        "job_id": "docjob_309d603ab44c",
+        "result_file_id": "file_aa94c3a9cae44cb0964d25bca5e5ad11",
+        "pdf_submission_at_utc": "2026-11-11T12:40:45.691767+00:00",
+        "submitted_at_utc": "2026-11-11T12:40:45.703271+00:00",
+        "download_ready_observed_at_utc": "2026-11-11T12:41:17.937121+00:00",
+        "download_verified_at_utc": "2026-11-11T12:41:17.949398+00:00",
+        "source_upload_seconds": 0.011,
+        "pdf_submission_to_download_seconds": 32.245,
+        "retry_count": 0,
+        "mineru": {
+          "batch_id_sha256": "cd1bb5affef73950d3d27ae4d7383a04918ec40701220ced2048967cc107b745",
+          "state": "done",
+          "pages": 1,
+          "post_run_quota": {
+            "http_status": 200,
+            "user_left_quota": 0,
+            "total_left_quota": 0
+          },
+          "charge_reported": false,
+          "cost_basis": "user_confirmed_free_quota",
+          "cost_confirmed_date": "2026-11-11",
+          "quota_reference": "https://mineru.net/doc/docs/index_pro/#额度查询"
+        },
+        "translation": {
+          "status": "succeeded",
+          "created_at_utc": "2026-11-11T12:41:15.984099+00:00",
+          "duration_ms": 8840,
+          "model": "deepseek-v4-flash",
+          "attempt": 1,
+          "usage": {
+            "completion_tokens": 2636,
+            "prompt_tokens": 4566,
+            "total_tokens": 7202,
+            "prompt_cache_hit_tokens": 4352,
+            "prompt_cache_miss_tokens": 214
+          },
+          "audit_sha256": "410b5dae6ec1be7686045a533b0a5820a49bed7b74a1b4d4595a2a4a2d1f0b82",
+          "response_id_sha256": "e06934cfc4ed0fea35bd99ab64bde775c09fa6add8387164c03605bc9e1fe585"
+        }
+      }
+    }
+  ]
+}

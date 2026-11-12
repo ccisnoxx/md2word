@@ -118,6 +118,48 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
             with self.subTest(block=block), self.assertRaises(MinerUArtifactValidationError):
                 self.convert([[block]])
 
+    def test_v2_page_footnote_keeps_source_and_renders_once_in_body_order(self):
+        note = "(1) Input limit is 12 V.\n(2) Measure at 25°C."
+        result = self.convert([
+            [{"type": "paragraph", "text": "Operating conditions", "bbox": [20, 60, 500, 100]},
+             {"type": "page_footnote", "bbox": [20, 700, 500, 760], "content": {
+                 "page_footnote_content": [{"type": "text", "content": note}],
+             }}],
+            [{"type": "paragraph", "text": "Switching characteristics", "bbox": [20, 60, 500, 100]}],
+        ])
+        block = result.document.blocks[1]
+        self.assertEqual((block.type, block.layout.role, block.page_index, block.text), ("paragraph", "body", 0, note))
+        self.assertEqual(block.layout.bbox, (20, 700, 500, 760))
+        self.assertEqual(block.metadata["source_type"], "page_footnote")
+        self.assertEqual(block.metadata["mineru_source"]["json_pointer"], "/0/1")
+        self.assertEqual(result.document.metadata.source_type_counts["page_footnote"], 1)
+        self.assertNotIn("unsupported_block_type:page_footnote", result.document.quality_flags)
+
+        word = DocumentIRWordRenderer().render_to_bytes(
+            result.document, template_path=None, config_path=None, image_loader=lambda _asset: None,
+        )
+        paragraphs = [paragraph.text for paragraph in Document(io.BytesIO(word)).paragraphs if paragraph.text]
+        self.assertEqual(paragraphs, ["Operating conditions", note, "Switching characteristics"])
+
+    def test_v2_page_footnote_rejects_empty_malformed_and_unconsumed_runs(self):
+        cases = (
+            ({"page_footnote_content": []}, "missing_readable_payload", "content"),
+            ({"page_footnote_content": "12 V"}, "expected_runs", "/0/0/content/page_footnote_content"),
+            ({"page_footnote_content": [{"type": "text", "content": False}]},
+             "invalid_text_node", "/0/0/content/page_footnote_content/0"),
+            ({"page_footnote_content": [], "description": "12 V"},
+             "outside_selected_rich_payload", "/0/0/content/description"),
+        )
+        for content, reason, field in cases:
+            with self.subTest(reason=reason):
+                with self.assertRaises(MinerUArtifactValidationError) as caught:
+                    self.convert([[{"type": "page_footnote", "content": content}]])
+                issue = caught.exception.report.first_fatal
+                self.assertEqual(issue.source_type, "page_footnote")
+                self.assertEqual(issue.code, "mineru_block_payload_invalid")
+                self.assertEqual(issue.field, field)
+                self.assertEqual(issue.facts["reason"], reason)
+
     def _merged_paragraph_input(self, *, cross_page):
         """保留实际包的合并前后视图、行内公式和两套坐标，不依赖用户原始文件。"""
 

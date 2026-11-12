@@ -29,6 +29,14 @@ NUMBERED_HEADING_RE = re.compile(
 NUMBERED_CAPTION_RE = re.compile(r"^\s*(?:图|表|figure|table)\s*\d+", re.IGNORECASE)
 PROMOTIONAL_BODY_TEXT_LIMIT = 160
 PAGE_DECORATION_TYPES = {"header", "footer", "page_header", "page_footer", "page_number"}
+MINERU_BLOCK_TEXT_RUN_FIELDS = (
+    "title_content",
+    "paragraph_content",
+    "page_header_content",
+    "page_footer_content",
+    "page_number_content",
+    "page_footnote_content",
+)
 FORMULA_TYPES = {
     "equation",
     "formula",
@@ -122,7 +130,7 @@ def select_mineru_text_source(
         if isinstance(value, list) and all(isinstance(item, dict) for item in value):
             return key, value, "runs"
         if isinstance(value, dict):
-            for field in ("title_content", "paragraph_content", "page_header_content", "page_footer_content", "page_number_content"):
+            for field in MINERU_BLOCK_TEXT_RUN_FIELDS:
                 nodes = value.get(field)
                 if isinstance(nodes, list) and all(isinstance(item, dict) for item in nodes):
                     return f"{key}/{field}", nodes, "runs"
@@ -193,7 +201,7 @@ def classify_mineru_block(
 ) -> Literal["heading", "paragraph", "table", "image", "list", "formula"]:
     """正式有效类型的唯一 owner；保留既有类型及 legacy 字段推断优先级。"""
 
-    if source_type in {"header", "footer", "page_header", "page_footer", "page_number"}:
+    if source_type in PAGE_DECORATION_TYPES or source_type == "page_footnote":
         return "paragraph"
     if source_type in {"title", "heading"} or block.get("text_level") is not None:
         return "heading"
@@ -310,7 +318,7 @@ def _has_substantive_structure(blocks: list[dict[str, Any]]) -> bool:
     for block in blocks:
         source_type = _source_type(block)
         nested_types = {str(value).strip().lower() for value in find_values_by_key(block, "type")}
-        if source_type == "table" and extract_first_html(block):
+        if (source_type == "table" or block.get("_mineru_table_figure") is True) and extract_first_html(block):
             return True
         if source_type in FORMULA_TYPES or nested_types & FORMULA_TYPES:
             return True
@@ -552,28 +560,6 @@ def is_empty_table_placeholder(
     return image_path is not None and bbox[0] <= 130 and bbox[1] <= 100 and bbox[2] >= 860 and bbox[3] >= 880
 
 
-def select_mineru_text_source(
-    block: dict[str, Any],
-) -> tuple[str, Any, Literal["string", "runs", "texts"]] | None:
-    """按正式消费优先级选择正文，空权威 runs 也必须保留其选择结果。"""
-
-    for key in ("text", "content"):
-        value = block.get(key)
-        if isinstance(value, str):
-            return key, value, "string"
-        if isinstance(value, list) and all(isinstance(item, dict) for item in value):
-            return key, value, "runs"
-        if isinstance(value, dict):
-            for field in ("title_content", "paragraph_content", "page_header_content", "page_footer_content", "page_number_content"):
-                nodes = value.get(field)
-                if isinstance(nodes, list) and all(isinstance(item, dict) for item in nodes):
-                    return f"{key}/{field}", nodes, "runs"
-        texts = coerce_text_list(value)
-        if texts:
-            return key, texts, "texts"
-    return None
-
-
 def select_mineru_list_source(
     block: dict[str, Any],
 ) -> tuple[str, Literal["legacy_items", "v2_items", "selected_text", "content"], Any]:
@@ -616,29 +602,6 @@ def mineru_list_items(block: dict[str, Any]) -> list[str]:
         return value
     return coerce_text_list(value)
 
-
-
-def classify_mineru_block(
-    block: dict[str, Any], source_type: str,
-) -> Literal["heading", "paragraph", "table", "image", "list", "formula"]:
-    """正式有效类型的唯一 owner；保留既有类型及 legacy 字段推断优先级。"""
-
-    if source_type in {"header", "footer", "page_header", "page_footer", "page_number"}:
-        return "paragraph"
-    if source_type in {"title", "heading"} or block.get("text_level") is not None:
-        return "heading"
-    if source_type == "table" or block.get("table_body") or block.get("table_html"):
-        return "table"
-    if source_type in {"chart", "image", "figure"} or block.get("img_path") or block.get("image_path"):
-        return "image"
-    if source_type in {"equation", "formula", "interline_equation", "inline_equation", "equation_interline"}:
-        return "formula"
-    if source_type in {"list", "index"} or isinstance(block.get("items"), list):
-        return "list"
-    text = mineru_raw_text_preserving_lines(block)
-    if split_multiline_list_items(text) or split_toc_like_lines(text):
-        return "list"
-    return "paragraph"
 
 
 

@@ -67,8 +67,10 @@ class LocalMinerUConversionCliTests(TestCase):
                     self.assertFalse(output.exists())
                     self.assertFalse(output.with_suffix(".document-ir.json").exists())
 
-    def test_formal_adapter_consumes_prepared_crop_placeholder_with_real_renderer(self) -> None:
-        from app.services.document_ir import MinerUToDocumentIRService
+    def test_formal_adapter_binds_explicit_pdf_crop_source_and_preserves_blocker(self) -> None:
+        from dataclasses import replace
+
+        from app.services.document_ir.table_placeholder import TablePlaceholderError
         from app.services.tables.evidence import read_table_evidence
         from tests.test_document_ir_mineru_converter_layout import _RecordingTableCropProvider
 
@@ -82,25 +84,36 @@ class LocalMinerUConversionCliTests(TestCase):
                 ]))
                 archive.writestr("layout.json", json.dumps({"pdf_info": [{"page_idx": 0, "page_size": [612, 792]}]}))
             crop = _RecordingTableCropProvider(formal_mineru_conversion.LOCAL_SOURCE_FILE_ID, [(612, 792)])
-            converted = MinerUToDocumentIRService(pdf_crop_provider=crop).convert_zip(package,
-                job_id=formal_mineru_conversion.LOCAL_JOB_ID, source_file_id=crop.source.file_id,
-                document_language="zh", placeholder_source_loader=lambda: crop.source)
-            self.assertEqual(len(crop.requests), 1)
-            self.assertEqual(len(converted.table_placeholder_assets), 1)
-            self.assertEqual(converted.image_assets, [])
-            # 已由真实 converter 准备派生图；此处仅替换再次取结果，仍走真实 renderer 和证据认证。
-            with mock.patch.object(formal_mineru_conversion.MinerUToDocumentIRService,
-                "convert_zip", return_value=converted):
-                result = formal_mineru_conversion.run_conversion(input_path=str(package),
-                    output_path=str(root / "crop.docx"), template_path=None, layout_config_path=None,
-                    subscript_config=None, no_template=True, use_mineru_header_footer=False,
-                    document_language="zh", translation_mode="direct")
+            kwargs = dict(input_path=str(package), template_path=None, layout_config_path=None,
+                subscript_config=None, no_template=True, use_mineru_header_footer=False, document_language="zh")
+            # 仅替换裁图执行，正式 converter、renderer 和证据认证都消费同一份显式来源。
+            with mock.patch.object(formal_mineru_conversion, "PopplerPdfTableCropProvider", return_value=crop):
+                result = formal_mineru_conversion.run_conversion(
+                    **kwargs, output_path=str(root / "crop.docx"), placeholder_source=crop.source,
+                )
+                for invalid_source in (
+                    replace(crop.source, file_id="other_source"),
+                    replace(crop.source, checksum_sha256="sha256:" + "0" * 64),
+                ):
+                    output = root / "invalid-source.docx"
+                    with self.assertRaises(TablePlaceholderError) as raised:
+                        formal_mineru_conversion.run_conversion(
+                            **kwargs, output_path=str(output), placeholder_source=invalid_source,
+                        )
+                    self.assertEqual(raised.exception.code, "table_placeholder_integrity_failed")
+                    self.assertFalse(output.exists())
+                    self.assertFalse(output.with_suffix(".document-ir.json").exists())
+            request, = crop.requests
+            self.assertEqual(request.source, crop.source)
+            self.assertEqual(result.image_assets, 0)
             self.assertEqual(result.renderer_metadata["render_trace_status"], "complete")
             self.assertEqual(result.renderer_metadata["table_placeholder_count"], 1)
             self.assertEqual(len(Document(result.output_docx_path).inline_shapes), 1)
             table = read_table_evidence(result.renderer_metadata["table_evidence"])
             self.assertEqual(table.status, "blocked")
-            self.assertEqual(table.tables[0].placeholders[0].source_kind, "source_pdf_crop")
+            binding, = table.tables[0].placeholders
+            self.assertEqual(binding.source_kind, "source_pdf_crop")
+            self.assertEqual(binding.source_pdf_sha256, crop.source.checksum_sha256)
             self.assertEqual([(flag.code, flag.severity) for flag in table.tables[0].flags
                 if flag.producer == "table_placeholder"], [("table_noneditable_placeholder", "blocker")])
 

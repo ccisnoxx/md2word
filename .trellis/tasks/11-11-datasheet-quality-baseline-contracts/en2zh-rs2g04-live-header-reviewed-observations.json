@@ -1,0 +1,115 @@
+{
+  "schema_version": "datasheet-quality-observations/v1",
+  "metadata": {
+    "baseline_git_commit": "1f65d435",
+    "original_observations_sha256": "c3d17089009f77826ac1af30a57514ab5d686538ebf17338da25f89bbb0a62b7",
+    "replay_method": "render_saved_translated_ir_with_bound_header_review",
+    "upstream": {
+      "json_pointer": "/0/4",
+      "td_count": 13,
+      "th_count": 0,
+      "thead_count": 0,
+      "layout_has_explicit_header": false
+    },
+    "header_review_sha256": "46f8a90a34069504a3ec4850d485c6339150d163b5a9f945bfeaa7d6de89a750",
+    "old_review_rejected": "source_binding",
+    "resource_identity": {
+      "template_sha256": "7b3efd9ce7f19f19ed3a667d10d34995cc6a5b574b24abd85c52a23901577a88",
+      "effective_config_sha256": "d3a5e4a27c27e44cc2312442156068f841dd8b39b922405095600022b5adf5f9",
+      "symbol_rules_sha256": "1a12b39f7c292128f1342cc1323807a55e1de952b8bc9bee8b5f9f34d025bf46",
+      "logo_sha256": null,
+      "document_language": "zh"
+    },
+    "comparison": {
+      "original_source_grid_header_rows": [],
+      "reviewed_source_grid_header_rows": [
+        0
+      ],
+      "original_render_grid_header_rows": [],
+      "reviewed_render_grid_header_rows": [
+        0
+      ],
+      "original_word_header_rows": [],
+      "reviewed_word_header_rows": [
+        0
+      ],
+      "original_table_matched": 0,
+      "reviewed_table_matched": 1,
+      "rows": 4,
+      "columns": 4,
+      "merges": [
+        [
+          0,
+          0,
+          1,
+          2
+        ],
+        [
+          1,
+          0,
+          3,
+          1
+        ]
+      ],
+      "same_translated_ir_blocks": true,
+      "same_word_table_cell_text": true
+    }
+  },
+  "plan": [
+    {
+      "sample_id": "gsx-rs2g04-esd-page",
+      "cohort": "extended",
+      "mode": "en2zh",
+      "evidence_level": "local_saved_live_artifacts_with_header_review",
+      "expected_outcome": "normal",
+      "expected_tables": 1,
+      "expected_tokens": {
+        "number": 3
+      }
+    }
+  ],
+  "observations": [
+    {
+      "sample_id": "gsx-rs2g04-esd-page",
+      "mode": "en2zh",
+      "conversion": {
+        "status": "succeeded",
+        "docx_available": true,
+        "docx_openable": true
+      },
+      "table": {
+        "matched": 1,
+        "duplicate": 0,
+        "reasons": []
+      },
+      "tokens": {
+        "matched": {
+          "number": 3
+        },
+        "assessed": {
+          "number": 3
+        },
+        "extras": {
+          "number": 0
+        },
+        "reasons": []
+      },
+      "missing": {
+        "cost": "render_replay_without_provider_calls",
+        "latency": "render_replay_without_pdf_submission",
+        "edits": "human_signoff_pending",
+        "review_time": "human_signoff_pending",
+        "visual": "no_approved_en2zh_visual_reference"
+      },
+      "artifacts": {
+        "source_pdf_sha256": "3c3b8125f3ca2e420c9dd26ad997d54b9457649cf15221fde115698be32e1c9c",
+        "mineru_content_list_v2_sha256": "69944959d08bcd21c4c938b5eaed5b77ec441af07d22ce0e69a23139e88edddf",
+        "mineru_result_sha256": "7fa3872d5138d7bb7156021fb60161490d71d9400e90cf6ca5cfa7b49209f7f0",
+        "raw_html_sha256": "ff42d39615d55077c4ff396ef3647977d20788a0aac1301084c3598280fe3631",
+        "original_docx_sha256": "04e4a0bfcec1880e8aa37daf98ce243a5e85a3664f209edcc0257cc1a31783e8",
+        "reviewed_docx_sha256": "da31256f850b4e5b6efc47205ba966905f1fa2de3a5ccd81f6251a39670b6706",
+        "original_translated_ir_sha256": "0497d8ada800d098c03aaf7d89a86bc0bc6d95511d4901a7b344354ec65cc497"
+      }
+    }
+  ]
+}

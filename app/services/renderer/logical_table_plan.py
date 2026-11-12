@@ -6,9 +6,11 @@ import re
 from typing import Any
 
 from app.services.document_ir.integrity import is_visible_body_block
-from app.services.document_ir.logical_table_group import VERSION as LOGICAL_TABLE_GROUPS_VERSION, validate_logical_table_groups
+from app.services.document_ir.logical_table_group import VERSION as LOGICAL_TABLE_GROUPS_VERSION
+from app.services.document_ir.logical_table_group import is_compound_table_continuation, validate_logical_table_groups
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock, LogicalTableGroup, TableFragment
 from app.services.document_ir.table_annotations import is_table_context_annotation
+from app.services.document_ir.table_header_review import TableHeaderReview
 from app.services.renderer.layout_plan import LayoutPage, LayoutPlan, LayoutRegion, split_two_col_blocks
 from app.services.renderer.table_renderer import TableRenderError, iter_grid_rows
 from app.services.renderer.text_renderer import CAPTION_RE
@@ -44,6 +46,7 @@ class FragmentRenderPlan:
     output_end: int
     bookmark: str | None
     bookmark_id: int | None
+    upstream_covered_rows: tuple[int, int] | None = None
 
     @property
     def status(self) -> str:
@@ -99,7 +102,10 @@ def _unique(values: list[str]) -> tuple[str, ...]:
 
 
 def _header_prefix(grid: TableGrid, *, block_index: int) -> int:
-    """只承认从首行开始、整行显式 th 且 span 闭合的连续前缀。"""
+    """读取单片 Grid 的人工前缀，或确定 span 闭合的显式上游前缀。"""
+    review = grid.source_fragments[0].header_review
+    if review is not None:
+        return review.header_row_count
     count = 0
     for row, owners in iter_grid_rows(grid, block_index=block_index):
         if (not owners or any(not cell.is_header for cell in owners)
@@ -125,6 +131,8 @@ def _continuation_caption(text: str, primary: tuple[str, ...]) -> bool:
         return True
     if is_table_context_annotation(text):
         return False
+    if any(is_compound_table_continuation(caption, text) for caption in primary):
+        return True
     match = CAPTION_RE.match(text)
     if match is None or match.group("label").lower() not in {"table", "表"}:
         return False
@@ -154,9 +162,11 @@ def _layout_positions(layout: LayoutPlan) -> dict[int, tuple[int, tuple[Any, ...
     return result
 
 
-def _build_current(block: DocumentIRBlock, index: int) -> RenderTableBuildResult:
+def _build_current(
+    block: DocumentIRBlock, index: int, header_review: TableHeaderReview | None = None,
+) -> RenderTableBuildResult:
     try:
-        result = build_render_table_grid(block, block_index=index)
+        result = build_render_table_grid(block, block_index=index, header_review=header_review)
     except TableBuildError as error:
         raise TableRenderError(error.code, block_index=index) from error
     if (result.grid.rows <= 0 or result.grid.columns <= 0 or any(
@@ -173,6 +183,8 @@ def _build_group_current(
 ) -> list[tuple[TableFragment, int, RenderTableBuildResult]]:
     """按删除前的完整组递增计费，超限即停止，不先持有超预算的整组 Grid。"""
     members = []
+    covered_owners = {fragment.render_owner_block_id for fragment in group.fragments
+                      if fragment.upstream_coverage is not None}
     html_bytes = cells = slots = checks = 0
     for fragment in group.fragments:
         if fragment.block_id is None or fragment.fragment_id in placeholder_ids:
@@ -184,7 +196,15 @@ def _build_group_current(
             raise TableRenderError("table_html_encoding", block_index=index) from None
         if html_bytes > MAX_RAW_HTML_BYTES:
             raise TableRenderError("table_build_limit", block_index=index)
-        current = _build_current(document.blocks[index], index)
+        current = _build_current(document.blocks[index], index, fragment.header_review)
+        if fragment.block_id in covered_owners and document.blocks[index].html != fragment.raw_html:
+            # 译文可改写单元格内容，覆盖区间仍须投影到相同的行列和合并坐标。
+            source_block = document.blocks[index].model_copy(update={"html": fragment.raw_html})
+            original = _build_current(source_block, index, fragment.header_review)
+            if ((original.grid.rows, original.grid.columns) != (current.grid.rows, current.grid.columns)
+                    or [(cell.row, cell.column, cell.rowspan, cell.colspan) for cell in original.grid.cells]
+                    != [(cell.row, cell.column, cell.rowspan, cell.colspan) for cell in current.grid.cells]):
+                raise TableRenderError("table_render_geometry", block_index=index)
         cells += len(current.grid.cells)
         slots += current.grid.rows * current.grid.columns
         checks += sum(cell.rowspan * cell.colspan for cell in current.grid.cells)
@@ -213,11 +233,10 @@ def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan) ->
         # 页边装饰不属于正文输出；其源表也不能被正文组消费。
         if not any(is_visible_body_block(document.blocks[index]) for _, index, _ in present):
             continue
-        missing = any(fragment.html_state != "present" for fragment in group.fragments)
+        unresolved = [fragment for fragment in group.fragments if fragment.needs_placeholder]
         diagnostics = tuple(dict.fromkeys(item.reason for item in group.diagnostics))
-        blockers = (["table_fragment_missing"] if missing else [])
-        compatible = not missing or all(fragment.html_state == "present" or fragment.fragment_id in placeholder_ids
-                                        for fragment in group.fragments)
+        blockers = ["table_fragment_missing"] if unresolved else []
+        compatible = all(fragment.fragment_id in placeholder_ids for fragment in unresolved)
         source_members = [fragment.fragment_id for fragment, _, _ in present]
         verified = {(relation.from_fragment_id, relation.to_fragment_id) for relation in group.continuation_relations
                     if relation.kind == "verified_continuation"}
@@ -263,7 +282,9 @@ def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan) ->
                 removed = 0
                 if member_index:
                     hint = fragment.repeated_header_hint
-                    if (hint is not None and hint.row_count == header_rows and
+                    # 人工校核只声明表头行，不为续表删行提供新证据。
+                    if (batch[0][0].header_review is None and fragment.header_review is None and
+                            hint is not None and hint.row_count == header_rows and
                             _header_signature(current.grid, hint.row_count) == _header_signature(first_grid, header_rows)
                             and header_rows > 0):
                         removed = header_rows
@@ -281,10 +302,20 @@ def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan) ->
                 fragment_plans.append(FragmentRenderPlan(fragment, index, current, removed, offset, end,
                                                          bookmark, bookmark_id))
                 offset = end
-            owner_ids = {fragment.block_id for fragment, _, _ in batch}
+            owners = {item.source.block_id: item for item in fragment_plans}
             for fragment in group.fragments:
-                if fragment.block_id is None and fragment.render_owner_block_id in owner_ids:
-                    fragment_plans.append(FragmentRenderPlan(fragment, None, None, 0, 0, 0, None, None))
+                if fragment.block_id is not None or fragment.render_owner_block_id not in owners:
+                    continue
+                coverage = fragment.upstream_coverage
+                covered_rows = None
+                if coverage is not None:
+                    owner = owners[fragment.render_owner_block_id]
+                    start = owner.output_start + coverage.row_start - owner.removed_header_rows
+                    end = owner.output_start + coverage.row_end - owner.removed_header_rows
+                    if not owner.output_start <= start < end <= owner.output_end:
+                        raise TableRenderError("table_render_geometry", block_index=owner.block_index)
+                    covered_rows = (start, end)
+                fragment_plans.append(FragmentRenderPlan(fragment, None, None, 0, 0, 0, None, None, covered_rows))
             fragment_plans.sort(key=lambda fragment: fragment.source.source_span.source_index)
             units.append(TableRenderUnit(
                 key, group.logical_group_id, anchor_index, tuple(fragment_plans), anchor_index == present[0][1],
@@ -386,7 +417,8 @@ def table_unit_contracts(document: DocumentIR, plan: LogicalTableRenderPlan):
                 output_rows=[fragment.output_start, fragment.output_end],
                 removed_header_rows=[0, fragment.removed_header_rows] if fragment.removed_header_rows else None,
                 shared_header_rows=[0, fragment.removed_header_rows] if fragment.removed_header_rows else None,
-                content_scope_id=scope, repeated_header_ref=primary_scope if fragment.removed_header_rows else None))
+                content_scope_id=scope, repeated_header_ref=primary_scope if fragment.removed_header_rows else None,
+                upstream_covered_rows=list(fragment.upstream_covered_rows) if fragment.upstream_covered_rows else None))
         result.append(TableUnitPlan(unit_id=unit.key, logical_group_id=unit.logical_group_id,
             anchor_block_id=anchor.id, member_block_ids=members, fragments=fragments, annotations=annotations))
     return result

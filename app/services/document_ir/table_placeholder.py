@@ -76,6 +76,7 @@ class PdfCropRequest:
     page_index: int
     bbox: tuple[float, float, float, float]
     frame: tuple[float, float]
+    from_normalized_bbox: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,13 +138,13 @@ def binding_identity(binding: TablePlaceholderBinding) -> str:
 
 def prepare_placeholders(document, references, *, source_loader: Callable[[], PdfCropSource] | None,
                          crop_provider: PdfTableCropProvider | None) -> list[PlaceholderAsset]:
-    """仅对可信账本的 missing/empty 片段准备绑定；安全输入错误已由 IR-201 先验拒绝。"""
+    """仅为仍缺少数据的片段准备占位绑定。"""
     from app.services.document_ir.integrity import build_page_counts
     from app.services.document_ir.models import DocumentIRAsset
     from app.services.document_ir.table_reference_assets import decode_table_references
 
     decoded = {item.fragment.fragment_id: item for item in decode_table_references(document)}
-    needed = [item for item in decoded.values() if item.fragment.html_state in {"missing", "empty"}]
+    needed = [item for item in decoded.values() if item.fragment.needs_placeholder]
     if not needed:
         return []
     counts = build_page_counts(document) or {}
@@ -192,10 +193,13 @@ def prepare_placeholders(document, references, *, source_loader: Callable[[], Pd
                     frame = tuple(raw_size)
                 # 来源 bbox 是 MinerU 原始坐标（通常为 0–1000 归一化），裁切只接受换算后的 PDF 点；无法确认坐标空间时失败关闭。
                 # 绑定仍记录原始 span.bbox，解码时与来源片段逐值核对。
-                from app.services.document_ir.layout_signals import pdf_point_bbox
+                from app.services.document_ir.layout_signals import NORMALIZED_BBOX_SPACE, pdf_point_bbox
                 crop_box = pdf_point_bbox(span.bbox, page)
                 validate_geometry(span.page_index, crop_box, frame)
-                result = crop_provider.crop(PdfCropRequest(source, span.page_index, crop_box, frame))
+                result = crop_provider.crop(PdfCropRequest(
+                    source, span.page_index, crop_box, frame,
+                    from_normalized_bbox=page.metadata.get("bbox_coordinate_space") == NORMALIZED_BBOX_SPACE,
+                ))
                 if result.frame != frame or result.provider != "poppler-pdftoppm/v1":
                     raise TablePlaceholderError("table_placeholder_geometry_invalid")
                 content = result.content
@@ -252,7 +256,7 @@ def decode_placeholders(document, *, require_bound: bool = False) -> list[TableP
     if metadata.table_placeholders_version != VERSION:
         fail()
     refs = {item.fragment.fragment_id: item for item in decode_table_references(document)}
-    needed = {key for key, value in refs.items() if value.fragment.html_state in {"missing", "empty"}}
+    needed = {key for key, value in refs.items() if value.fragment.needs_placeholder}
     if not needed or len(bindings) > MAX_PLACEHOLDERS or [b.fragment_id for b in bindings] != [key for key in refs if key in needed]:
         fail()
     assets = {asset.id: asset for asset in document.assets}

@@ -26,7 +26,7 @@ from app.services.document_ir.models import (
 )
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.renderer.render_evidence import build_renderer_evidence
-from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity, validate_persisted_render_evidence
 from app.services.renderer.docx_quality import analyze_docx_quality_bytes
 from app.services.renderer.layout_plan import build_layout_plan
 from app.services.renderer.template_config import TemplateConfigPackage
@@ -1678,6 +1678,111 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertNotIn("<w:tab/>", xml)
         self.assertEqual(xml.count("<w:numPr>"), 1)
         self.assertIn('<w:updateFields w:val="true"', self._settings_xml(content))
+
+    def test_toc_formula_keeps_source_title_outside_the_native_field(self) -> None:
+        from app.conversion.docx_rules.formula import sha256_text
+
+        fraction = "$\\frac{a}{b\r\n  c}$"
+        voltage = "$V_{CC}$"
+        cases = (
+            (["Overview .... 1", f"Timing {fraction} .... 37"], {1: fraction}, ["list_item", "list_item"]),
+            ([f"Timing {voltage} .... 37", "Overview .... 1"], {0: voltage},
+             ["toc_field", "list_item", "toc_representative"]),
+            ([f"Timing {voltage} .... 37", f"Timing {fraction} .... 38"], {0: voltage, 1: fraction},
+             ["toc_field", "list_item", "list_item"]),
+        )
+        renderer = DocumentIRWordRenderer()
+        for entries, formulas, roles in cases:
+            with self.subTest(roles=roles):
+                document = DocumentIR(
+                    schema_version="document-ir/v2",
+                    metadata=DocumentIRMetadata(job_id="docjob_toc_math", source_file_id="file_toc", document_language="en"),
+                    blocks=[DocumentIRBlock(id="toc_items", type="list", order=0, list_items=entries)],
+                )
+                result = renderer.render_to_result(document, template_path=None, config_path=None, image_loader=lambda _: None)
+                ensure_renderer_integrity(build_renderer_evidence(document, result.content, render_result=result))
+                self.assertEqual(result.plan.renderer_policy_version, "word-renderer-policy/v3")
+                self.assertEqual(self._document_xml(result.content).count(" TOC \\o"), 1)
+                rendered = Document(io.BytesIO(result.content))
+                self.assertEqual([paragraph.text.rstrip() for paragraph in rendered.paragraphs],
+                                 ["更新目录", *(["Timing"] * len(formulas))])
+                bindings = [item["source"] for item in result.formula_report["entries"]]
+                self.assertEqual(len(bindings), len(formulas))
+                for item, (index, source) in zip(bindings, formulas.items(), strict=True):
+                    start = entries[index].index(source)
+                    self.assertEqual((item["block_id"], item["field"], item["start"], item["end"], item["source_sha256"]),
+                        ("toc_items", f"list_items/{index}", start, start + len(source), sha256_text(source)))
+
+                plan = result.plan.model_dump(mode="json")
+                trace = result.block_evidence.model_dump(mode="json")
+                targets = trace["block_render_map"][0]["targets"]
+                self.assertEqual([target["role"] for target in targets], roles)
+                self.assertIsNotNone(validate_persisted_render_evidence(document, result.content,
+                    render_plan=plan, block_render_evidence=trace))
+                if "toc_representative" in roles:
+                    field, formula, alias = targets
+                    self.assertEqual(alias["child_path"], field["child_path"])
+                    self.assertLess(field["child_path"], formula["child_path"])
+                    targets[-1] = {**formula, "role": alias["role"], "item_index": alias["item_index"]}
+                    self.assertIsNone(validate_persisted_render_evidence(document, result.content,
+                        render_plan=plan, block_render_evidence=trace))
+
+    def test_toc_formula_does_not_share_table_context_as_native_field(self) -> None:
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_toc_context", source_file_id="file_toc", document_language="en"),
+            blocks=[
+                DocumentIRBlock(id="table_context", type="paragraph", order=0, text="Table Specifications ... 1",
+                    metadata={"annotation_role": "table_context"}),
+                DocumentIRBlock(id="toc_items", type="list", order=1,
+                    list_items=["Overview ... 1", "Timing $V_{CC}$ ... 37", "Applications ... 38"]),
+            ],
+        )
+        result = DocumentIRWordRenderer().render_to_result(document, template_path=None, config_path=None,
+            image_loader=lambda _: None)
+        ensure_renderer_integrity(build_renderer_evidence(document, result.content, render_result=result))
+        context, toc = result.plan.decisions
+        self.assertEqual([policy.mode for policy in context.text_policies], ["table_context"])
+        self.assertEqual([policy.mode for policy in toc.text_policies], ["toc", "toc_formula", "coalesced"])
+        self.assertEqual(self._document_xml(result.content).count(" TOC \\o"), 1)
+        _, toc_record = result.block_evidence.block_render_map
+        field, formula, alias = toc_record.targets
+        self.assertEqual(alias.child_path, field.child_path)
+        self.assertNotEqual(alias.child_path, formula.child_path)
+
+    def test_coalesced_toc_mapping_does_not_borrow_formula_bookmark(self) -> None:
+        from app.services.preview.page_mapping import MappingBinding, build_page_mapping, read_page_mapping
+
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_toc_mapping", source_file_id="file_source", document_language="en"),
+            blocks=[
+                DocumentIRBlock(id="opening", type="paragraph", order=0, text="The document begins here."),
+                DocumentIRBlock(id="formula_toc", type="paragraph", order=1, text="Timing $V_{CC}$ ... 37"),
+                DocumentIRBlock(id="ordinary_toc", type="paragraph", order=2, text="Overview ... 1"),
+                DocumentIRBlock(id="closing", type="paragraph", order=3, text="The document ends here."),
+            ],
+        )
+        result = DocumentIRWordRenderer().render_to_result(document, template_path=None, config_path=None,
+            image_loader=lambda _: None)
+        proof = result.block_anchor_evidence
+        self.assertIsNotNone(proof)
+        binding = MappingBinding(source_pdf_file_id="file_source", document_ir_file_id="file_ir",
+            input_ir_sha256=result.plan.input_ir_sha256, plan_sha256=result.plan.plan_sha256,
+            source_generation=0, result_file_id="file_docx", docx_sha256=f"sha256:{result.block_evidence.docx_sha256}",
+            run_id="preview_run", attempt=1, profile_sha256="sha256:" + "1" * 64,
+            preview_pdf_file_id="file_preview", preview_pdf_sha256="sha256:" + "2" * 64, page_count=7)
+        mapping = build_page_mapping(binding=binding, plan=result.plan, block_evidence=result.block_evidence,
+            block_anchor_evidence=proof)
+        self.assertEqual(read_page_mapping(mapping, binding=binding), mapping)
+        entries = {entry["block_id"]: entry for entry in mapping["entries"]}
+        formula, alias = entries["formula_toc"], entries["ordinary_toc"]
+        self.assertIsNotNone(formula["bookmark_name"])
+        self.assertEqual(formula["location"]["preview_page_index"], 3)
+        self.assertEqual(alias["representative_block_id"], "formula_toc")
+        self.assertIsNone(alias["bookmark_name"])
+        self.assertEqual(alias["anchor_reason_code"], "anchor_missing")
+        self.assertEqual((alias["location"]["preview_page_index"], alias["location"]["confidence"]), (2, "low"))
 
     def test_render_to_bytes_links_unique_caption_references_with_native_fields(self) -> None:
         document = DocumentIR(

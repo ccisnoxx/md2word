@@ -135,8 +135,11 @@ def _table_rendering_evidence(
                 "removed_header_rows": [0, fragment.removed_header_rows] if fragment.removed_header_rows else None,
                 "shared_header_rows": [0, fragment.removed_header_rows] if fragment.removed_header_rows else None,
                 "bookmark": fragment.bookmark, "status": fragment.status,
-                "reason": "table_fragment_missing" if fragment.render is None else None,
+                "reason": ("table_fragment_missing"
+                           if fragment.render is None and fragment.upstream_covered_rows is None else None),
             })
+            if fragment.upstream_covered_rows is not None:
+                fragments[-1]["upstream_covered_rows"] = list(fragment.upstream_covered_rows)
         tables.append({
             "output_table_key": unit.key, "output_table_index": table_index,
             "logical_group_id": unit.logical_group_id,
@@ -209,7 +212,7 @@ def _build_table_evidence(document: DocumentIR, content: bytes, evidence: dict):
                 raise TableEvidenceError("table_evidence_integrity")
             outputs.append(NativeOutput(output_table_key=output["output_table_key"], anchor_block_id=output["anchor_block_id"],
                 actual=WordTableObservation.model_validate(observations[index]),
-                fragments=[FragmentOutput.model_validate({key: item[key] for key in FragmentOutput.model_fields})
+                fragments=[FragmentOutput.model_validate({key: item[key] for key in FragmentOutput.model_fields if key in item})
                            for item in output["fragments"]]))
             for code in [*output["blocking_quality_flags"], *output["warning_flags"]]:
                 flag = EvidenceFlag(producer="table_rendering", code=code,

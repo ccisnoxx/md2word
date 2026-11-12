@@ -112,11 +112,13 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
         flags.append("source_ir_integrity:type_count_mismatch")
 
     from app.services.document_ir.table_placeholder import decode_placeholders
+    from app.services.document_ir.table_figure import validate_table_figure_bindings
     represented = {item.owner_block_id for item in decode_placeholders(document_ir)}
+    table_figures = validate_table_figure_bindings(document_ir)
     assets_by_id = {asset.id for asset in document_ir.assets}
     for block in main_blocks:
         source_type = str(block.metadata.get("source_type") or "text")
-        if source_type in VISUAL_SOURCE_TYPES:
+        if source_type in VISUAL_SOURCE_TYPES or block.id in table_figures:
             if block.type != "image":
                 flags.append(f"source_ir_integrity:type_mismatch:{source_type}")
             elif not block.asset_ref or block.asset_ref not in assets_by_id:

@@ -7,6 +7,8 @@ from typing import Annotated, ClassVar, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, ModelWrapValidatorHandler, ValidationError, ValidationInfo, model_validator
 from pydantic_core import PydanticCustomError
 
+from app.services.document_ir.models import UpstreamTableCoverage
+from app.services.document_ir.table_header_review import TableHeaderReview
 from app.services.tables.models import (
     CellId, FragmentId, NonNegativeInt, PositiveInt, RunId, RunType, Sha256,
     TableQualityFlag, canonical_sha256, make_cell_id, make_run_id,
@@ -144,11 +146,21 @@ class TableFragmentReference(_QualityModel):
     row_start: NonNegativeInt
     row_count: NonNegativeInt
     columns: NonNegativeInt
+    header_review: TableHeaderReview | None = Field(default=None, exclude_if=lambda value: value is None)
+    upstream_coverage: UpstreamTableCoverage | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _check_state(self) -> Self:
         if ((self.html_state == "missing") != (self.raw_html_sha256 is None) or
                 (self.html_state != "present" and (self.row_count or self.columns))):
+            _invalid()
+        review = self.header_review
+        if review is not None and (self.html_state != "present" or review.header_row_count > self.row_count or
+                (review.json_pointer, review.page_index, review.raw_html_sha256) !=
+                (self.json_pointer, self.page_index, self.raw_html_sha256)):
+            _invalid()
+        if self.upstream_coverage is not None and (self.html_state != "empty"
+                or self.upstream_coverage.covered_fragment_id != self.fragment_id):
             _invalid()
         return self
 
@@ -311,8 +323,11 @@ class TableValidationReport(_QualityModel):
         fragments = {item.fragment_id: item for item in self.fragments}
         related = {item.fragment_id: item for item in self.related_fragments}
         all_fragments = {**fragments, **related}
+        reviewed = [item.header_review for item in all_fragments.values() if item.header_review is not None]
         if (len(fragments) != len(self.fragments) or len(related) != len(self.related_fragments) or
                 fragments.keys() & related.keys() or
+                len({review.source_pdf_sha256 for review in reviewed}) > 1 or
+                any(review.content_list_sha256 != self.source_content_sha256 for review in reviewed) or
                 len({item.json_pointer for item in all_fragments.values()}) != len(all_fragments) or
                 len({item.source_index for item in all_fragments.values()}) != len(all_fragments) or
                 [item.source_index for item in self.fragments] != sorted(item.source_index for item in self.fragments) or
@@ -322,6 +337,14 @@ class TableValidationReport(_QualityModel):
         for fragment in self.fragments:
             if fragment.row_start != offset:
                 _invalid()
+            coverage = fragment.upstream_coverage
+            if coverage is not None:
+                primary = fragments.get(coverage.primary_fragment_id)
+                if (primary is None or primary.html_state != "present" or primary.source_index >= fragment.source_index
+                        or primary.page_index is None or fragment.page_index != primary.page_index + 1
+                        or coverage.content_list_sha256 != self.source_content_sha256
+                        or not 0 < coverage.row_start < coverage.row_end == primary.row_count):
+                    _invalid()
             offset += fragment.row_count
         raw_hash = canonical_sha256(["table-raw-html-set/v1", [
             [item.fragment_id, item.html_state, item.raw_html_sha256] for item in self.fragments]])
@@ -450,7 +473,8 @@ class TableValidationReport(_QualityModel):
             if evidence.rule_id == "table_span_invalid" and evidence.attribute is None:
                 _invalid()
             if ((evidence.rule_id == "table_html_missing" and fragment.html_state != "missing") or
-                    (evidence.rule_id == "table_html_empty" and fragment.html_state != "empty") or
+                    (evidence.rule_id == "table_html_empty" and
+                     (fragment.html_state != "empty" or fragment.upstream_coverage is not None)) or
                     (evidence.rule_id == "table_html_no_rows" and (fragment.html_state != "present" or fragment.row_count)) or
                     (evidence.rule_id == "table_zero_columns" and (not fragment.row_count or fragment.columns))):
                 _invalid()

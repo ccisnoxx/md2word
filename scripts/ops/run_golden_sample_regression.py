@@ -17,18 +17,29 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 import yaml
+from docx import Document
+from docx.opc.exceptions import PackageNotFoundError
+from lxml.etree import XMLSyntaxError
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from app.domains.translation.modes import translation_mode_for_document_job_mode
 from app.services.renderer.docx_quality import analyze_docx_quality_file, build_docx_quality_flags
+from scripts.ops.datasheet_quality_metrics import (
+    OBSERVATION_VERSION,
+    build_report as build_metrics_report,
+    measure_cost,
+    read_metrics_input,
+)
 
 DEFAULT_MANIFEST_PATH = REPO_ROOT / "tests" / "fixtures" / "golden_samples" / "manifest.yaml"
 DEFAULT_RUNS_DIR = REPO_ROOT / "tests" / "tmp" / "golden_sample_runs"
 TERMINAL_STATUSES = {"succeeded", "failed", "canceled"}
 DEFAULT_REQUIRED_ROLE = "admin"
+COST_EVIDENCE_VERSION = "golden-sample-cost-evidence/v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +60,8 @@ class RegressionConfig:
     download_outputs: bool = os.environ.get("GOLDEN_SAMPLE_DOWNLOAD_OUTPUTS", "1") != "0"
     fail_on_missing_samples: bool = os.environ.get("GOLDEN_SAMPLE_FAIL_ON_MISSING_SAMPLES", "1") != "0"
     manual_signoff_path: str = os.environ.get("GOLDEN_SAMPLE_MANUAL_SIGNOFF", "")
+    metrics_evidence_level: str = os.environ.get("GOLDEN_SAMPLE_METRICS_EVIDENCE_LEVEL", "golden_sample_api")
+    cost_evidence_path: str = os.environ.get("GOLDEN_SAMPLE_COST_EVIDENCE", "")
 
 
 @dataclass(slots=True)
@@ -116,16 +129,18 @@ def main() -> None:
 
 
 def run_regression(config: RegressionConfig) -> dict[str, Any]:
-    manifest = load_manifest(config.manifest_path)
+    manifest, manifest_sha256 = read_manifest(config.manifest_path)
     run_dir = create_run_dir(config.runs_dir)
     sample_root = resolve_sample_root(config.manifest_path, manifest)
     all_samples = manifest.get("samples", [])
     samples = [item for item in all_samples if item.get("enabled", True)]
+    plan = build_metrics_plan(config, manifest, samples)
     inventory = build_sample_inventory(sample_root, samples, all_samples)
     matched_filenames = set(inventory.manifest_matched_pdf_files)
     runnable_samples = [item for item in samples if item["filename"] in matched_filenames]
 
     results: list[SampleResult] = []
+    observations: list[dict[str, Any]] = []
     for sample in samples:
         sample_path = sample_root / sample["filename"]
         if sample_path.exists():
@@ -141,12 +156,27 @@ def run_regression(config: RegressionConfig) -> dict[str, Any]:
                 acceptance_focus=list(sample.get("acceptance_focus", [])),
             )
         )
+        observation = new_metrics_observation(sample["id"], sample_job_mode(manifest, sample))
+        observation["conversion"] = {"status": "missing_pdf"}
+        observations.append(observation)
 
     if runnable_samples:
-        session = build_authenticated_session(config)
-        for sample in runnable_samples:
-            results.append(run_one_sample(config, session, sample_root, run_dir, manifest, sample))
+        try:
+            session = build_authenticated_session(config)
+        except (requests.RequestException, RuntimeError, ValueError):
+            for sample in runnable_samples:
+                observation = new_metrics_observation(sample["id"], sample_job_mode(manifest, sample))
+                observation["conversion"] = {"status": "not_run", "reason": "authentication_failed"}
+                observations.append(observation)
+            write_metrics_files(config, run_dir, plan, observations, manifest_sha256)
+            raise
+        with session:
+            for sample in runnable_samples:
+                result, observation = run_one_sample(config, session, sample_root, run_dir, manifest, sample)
+                results.append(result)
+                observations.append(observation)
 
+    write_metrics_files(config, run_dir, plan, observations, manifest_sha256)
     manual_signoff = load_manual_signoff(Path(config.manual_signoff_path)) if config.manual_signoff_path.strip() else None
     report = build_report(config, manifest, run_dir, results, inventory, manual_signoff=manual_signoff)
     write_report_files(run_dir, report)
@@ -155,16 +185,121 @@ def run_regression(config: RegressionConfig) -> dict[str, Any]:
     return report
 
 
+def sample_job_mode(manifest: dict[str, Any], sample: dict[str, Any]) -> str:
+    return sample.get("mode") or manifest.get("default_mode") or "direct_pdf_to_word"
+
+
+def build_metrics_plan(config: RegressionConfig, manifest: dict, samples: list[dict]) -> list[dict]:
+    """在提交任务前固定分母及计划模式。"""
+    evidence_level = config.metrics_evidence_level.strip()
+    if not evidence_level:
+        raise ValueError("指标证据层级不能为空。")
+    plan = [{
+        "sample_id": sample["id"],
+        "mode": translation_mode_for_document_job_mode(sample_job_mode(manifest, sample)),
+        "cohort": sample.get("cohort") or manifest.get("cohort") or "golden_sample",
+        "evidence_level": evidence_level,
+        "expected_outcome": "normal",
+    } for sample in samples]
+    if len({(item["sample_id"], item["mode"]) for item in plan}) != len(plan):
+        raise ValueError("指标计划的样本 ID 和转换模式组合重复。")
+    return plan
+
+
+def new_metrics_observation(sample_id: str, mode: str) -> dict[str, Any]:
+    return {
+        "sample_id": sample_id,
+        "mode": translation_mode_for_document_job_mode(mode),
+        "missing": {
+            "table": "table_annotations_not_collected",
+            "tokens": "token_annotations_not_collected",
+            "visual": "visual_reference_not_collected",
+            "edits": "human_edit_log_not_collected",
+            "review_time": "human_review_time_not_collected",
+            "cost": "provider_cost_evidence_unavailable",
+            "latency": "job_not_submitted",
+        },
+    }
+
+
+def read_cost_evidence(path: Path) -> tuple[dict[tuple[str, int], dict], str]:
+    """读取按任务及最后纳入的代次绑定的货币费用凭证。"""
+    payload, digest = read_metrics_input(path)
+    if payload.get("schema_version") != COST_EVIDENCE_VERSION or not isinstance(payload.get("receipts"), list):
+        raise ValueError("Golden Sample 费用凭证版本或结构无效。")
+    receipts = {}
+    for receipt in payload["receipts"]:
+        if not isinstance(receipt, dict):
+            raise ValueError("Golden Sample 费用凭证条目无效。")
+        job_id, retry_count = receipt.get("job_id"), receipt.get("retry_count")
+        if (not isinstance(job_id, str) or not job_id.strip()
+                or type(retry_count) is not int or retry_count < 0
+                or not isinstance(receipt.get("cost"), dict)):
+            raise ValueError("费用凭证须绑定任务 ID、纳入的代次和费用分项。")
+        key = job_id, retry_count
+        if key in receipts:
+            raise ValueError("同一任务及代次的费用凭证重复。")
+        cost = receipt["cost"]
+        if cost.keys() - {"complete", "currency", "basis", "reference", "components", "reason"}:
+            raise ValueError("费用凭证包含未定义的费用字段。")
+        measure_cost(cost)
+        receipts[key] = cost
+    return receipts, digest
+
+
+def write_metrics_files(
+    config: RegressionConfig, run_dir: Path, plan: list[dict], observations: list[dict], manifest_sha256: str,
+) -> None:
+    metadata = {"run_id": run_dir.name, "manifest_sha256": manifest_sha256}
+    if config.cost_evidence_path.strip():
+        missing_cost_reason = None
+        try:
+            receipts, digest = read_cost_evidence(Path(config.cost_evidence_path))
+        except OSError:
+            missing_cost_reason = "cost_evidence_file_unavailable"
+        except (ValueError, OverflowError):
+            missing_cost_reason = "cost_evidence_invalid"
+        else:
+            metadata["cost_evidence_sha256"] = digest
+            receipt_job_ids = {job_id for job_id, _ in receipts}
+            for item in observations:
+                execution = item.get("execution", {})
+                job_id, retry_count = execution.get("job_id"), execution.get("retry_count")
+                if not isinstance(job_id, str) or retry_count is None:
+                    continue
+                if (job_id, retry_count) in receipts:
+                    item["cost"] = receipts[job_id, retry_count]
+                    item["missing"].pop("cost")
+                elif job_id in receipt_job_ids:
+                    item["missing"]["cost"] = "cost_evidence_generation_mismatch"
+        if missing_cost_reason is not None:
+            for item in observations:
+                item["missing"]["cost"] = missing_cost_reason
+    payload = {
+        "schema_version": OBSERVATION_VERSION, "metadata": metadata, "plan": plan, "observations": observations,
+    }
+    metrics = build_metrics_report(payload)
+    for name, content in (("observations.json", payload), ("metrics.json", metrics)):
+        (run_dir / name).write_text(json.dumps(content, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+                                    encoding="utf-8")
+
+
 def load_manifest(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        raise FileNotFoundError(f"Golden Sample manifest 不存在: {path}")
-    with path.open("r", encoding="utf-8") as file:
-        data = yaml.safe_load(file) or {}
+    return read_manifest(path)[0]
+
+
+def read_manifest(path: Path) -> tuple[dict[str, Any], str]:
+    """以同一份清单字节生成固定计划和指纹。"""
+    try:
+        content = path.read_bytes()
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Golden Sample manifest 不存在: {path}") from None
+    data = yaml.safe_load(content) or {}
     if data.get("schema_version") != 1:
         raise ValueError("Golden Sample manifest schema_version 必须为 1。")
     if not isinstance(data.get("samples"), list) or not data["samples"]:
         raise ValueError("Golden Sample manifest 必须包含非空 samples。")
-    return data
+    return data, hashlib.sha256(content).hexdigest()
 
 
 def resolve_sample_root(manifest_path: Path, manifest: dict[str, Any]) -> Path:
@@ -442,9 +577,17 @@ def run_one_sample(
     run_dir: Path,
     manifest: dict[str, Any],
     sample: dict[str, Any],
-) -> SampleResult:
+) -> tuple[SampleResult, dict[str, Any]]:
     started = time.monotonic()
     sample_path = sample_root / sample["filename"]
+    requested_mode = sample_job_mode(manifest, sample)
+    observation = new_metrics_observation(sample["id"], requested_mode)
+    execution: dict[str, Any] = {"download_authorized": None}
+    observation["execution"] = execution
+    submitted_at = authorized_at = None
+    terminal_status = None
+    step = "source_upload"
+    reason = None
     result = SampleResult(
         sample_id=sample["id"],
         filename=sample["filename"],
@@ -456,21 +599,50 @@ def run_one_sample(
     try:
         file_id = upload_source_pdf(config, session, sample_path)
         result.file_id = file_id
+        step = "job_submission"
+        submitted_at = time.monotonic()
         job = create_document_job(config, session, manifest, sample, file_id)
         result.job_id = job["id"]
+        execution["job_id"] = result.job_id
+        step = "job_wait"
         final_job = wait_for_terminal_job(config, session, job["id"])
-        result.status = final_job.get("status", "unknown")
+        step = "job_identity"
+        actual_mode = final_job.get("mode", job.get("mode"))
+        if final_job.get("id") != result.job_id or actual_mode != requested_mode:
+            raise ValueError("任务终态身份或转换模式与本次提交不一致。")
+        terminal_status = result.status = final_job.get("status", "unknown")
+        execution["terminal_status"] = terminal_status
+        execution["document_job_mode"] = actual_mode
+        retry_count = final_job.get("retry_count")
+        if type(retry_count) is int and retry_count >= 0:
+            execution["retry_count"] = retry_count
         result.failure_stage = final_job.get("failed_stage")
         result.error_code = final_job.get("error_code")
         result.error_message = final_job.get("error_message")
         result.result_file_id = final_job.get("result_file_id")
         if result.status == "succeeded":
-            docx_path = download_result_docx(config, session, run_dir, sample, final_job["id"])
-            result.docx_path = str(docx_path) if docx_path is not None else None
-            result.docx_sha256 = sha256_file(docx_path) if docx_path is not None else None
-            result.docx_openable = is_docx_openable(docx_path)
-            result.docx_quality = analyze_docx_quality(docx_path) if result.docx_openable else {}
-            result.docx_quality_flags = build_docx_quality_flags(result.docx_quality) if result.docx_openable else ["docx_not_openable"]
+            if config.download_outputs:
+                step = "download_authorization"
+                execution["download_authorized"] = False
+                download_url = authorize_result_docx(config, session, result.job_id, result.result_file_id)
+                authorized_at = time.monotonic()
+                execution["download_authorized"] = True
+                execution["submission_to_authorization_seconds"] = round(authorized_at - submitted_at, 3)
+                step = "download"
+                docx_path = download_result_docx(config, run_dir, sample, result.job_id, download_url)
+                result.docx_path = str(docx_path)
+                step = "docx_validation"
+                result.docx_sha256 = sha256_file(docx_path)
+                result.docx_openable = is_result_docx_openable(docx_path)
+                result.docx_quality = analyze_docx_quality(docx_path) if result.docx_openable else {}
+                result.docx_quality_flags = (
+                    build_docx_quality_flags(result.docx_quality) if result.docx_openable else ["docx_not_openable"]
+                )
+                if not result.docx_openable:
+                    reason = "docx_not_openable"
+            else:
+                reason = "docx_download_disabled"
+                result.docx_quality_flags = ["docx_not_openable"]
             if not result.docx_openable:
                 result.status = "failed"
                 result.error_code = "docx_not_openable"
@@ -478,10 +650,40 @@ def run_one_sample(
     except Exception as exc:  # noqa: BLE001 - 回归脚本需要把单样本异常归入报告。
         result.status = "failed"
         result.error_code = exc.__class__.__name__
-        result.error_message = str(exc)
+        if step in {"download_authorization", "download"} and isinstance(exc, requests.RequestException):
+            # HTTP 异常可能携带签名下载 URL，报告只保留阶段和响应状态。
+            message = "主 DOCX 下载授权请求失败" if step == "download_authorization" else "主 DOCX 下载请求失败"
+            http_status = f"（HTTP {exc.response.status_code}）" if exc.response is not None else ""
+            result.error_message = f"{message}{http_status}。"
+        else:
+            result.error_message = str(exc)
+        reason = "timeout" if step == "job_wait" and isinstance(exc, TimeoutError) else f"{step}_failed"
     finally:
-        result.elapsed_seconds = round(time.monotonic() - started, 3)
-    return result
+        finished_at = time.monotonic()
+        result.elapsed_seconds = round(finished_at - started, 3)
+    observation["conversion"] = {
+        "status": terminal_status or ("timeout" if reason == "timeout" else result.status),
+        "docx_available": result.docx_path is not None if config.download_outputs else None,
+        "docx_openable": result.docx_openable,
+    }
+    if reason is not None or result.error_code:
+        observation["conversion"]["reason"] = reason or result.error_code
+    if result.result_file_id is not None:
+        execution["result_file_id"] = result.result_file_id
+    if result.docx_sha256 is not None:
+        observation["artifacts"] = {"docx_sha256": result.docx_sha256.removeprefix("sha256:")}
+    if submitted_at is not None and reason != "docx_download_disabled":
+        # 成功按实际授权时点计时，下载失败或坏包按失败观测时点计时。
+        endpoint = authorized_at if result.docx_openable is True and authorized_at is not None else finished_at
+        observation["latency"] = {
+            "kind": "end_to_end",
+            "seconds": round(endpoint - submitted_at, 3),
+            "poll_interval_seconds": config.poll_interval_seconds,
+        }
+        observation["missing"].pop("latency")
+    elif reason == "docx_download_disabled":
+        observation["missing"]["latency"] = reason
+    return result, observation
 
 
 def upload_source_pdf(config: RegressionConfig, session: requests.Session, sample_path: Path) -> str:
@@ -525,7 +727,7 @@ def create_document_job(
         api_url(config, "/api/v1/document-jobs"),
         json={
             "source_file_id": file_id,
-            "mode": sample.get("mode") or manifest.get("default_mode") or "direct_pdf_to_word",
+            "mode": sample_job_mode(manifest, sample),
             "document_language": sample.get("document_language")
             or manifest.get("default_document_language")
             or "zh",
@@ -563,29 +765,41 @@ def wait_for_terminal_job(config: RegressionConfig, session: requests.Session, j
     raise TimeoutError(f"等待任务完成超时: {job_id}")
 
 
-def download_result_docx(
-    config: RegressionConfig,
-    session: requests.Session,
-    run_dir: Path,
-    sample: dict[str, Any],
-    job_id: str,
-) -> Path | None:
-    if not config.download_outputs:
-        return None
+def authorize_result_docx(
+    config: RegressionConfig, session: requests.Session, job_id: str, result_file_id: str | None,
+) -> str:
     response = session.get(
         api_url(config, f"/api/v1/document-jobs/{job_id}/download-url"),
         timeout=config.request_timeout_seconds,
     )
     response.raise_for_status()
     payload = response.json()
+    download_url = payload.get("download_url")
+    if (payload.get("job_id") != job_id or not result_file_id or payload.get("file_id") != result_file_id
+            or not isinstance(download_url, str) or not download_url.strip()):
+        raise ValueError("下载授权与本次任务的主 DOCX 不匹配。")
+    return absolute_url(config, download_url)
+
+
+def download_result_docx(
+    config: RegressionConfig, run_dir: Path, sample: dict[str, Any], job_id: str, download_url: str,
+) -> Path:
     download_response = requests.get(
-        absolute_url(config, payload["download_url"]),
+        download_url,
         timeout=config.request_timeout_seconds,
     )
     download_response.raise_for_status()
     output_path = run_dir / f"{sample['id']}-{job_id}.docx"
     output_path.write_bytes(download_response.content)
     return output_path
+
+
+def is_result_docx_openable(path: Path) -> bool:
+    """实际解析主文档的关系和 XML，排除仅含预期文件名的坏包。"""
+    try:
+        return Document(path).element.body is not None
+    except (PackageNotFoundError, zipfile.BadZipFile, XMLSyntaxError, KeyError, ValueError):
+        return False
 
 
 def is_docx_openable(path: Path | None) -> bool | None:
