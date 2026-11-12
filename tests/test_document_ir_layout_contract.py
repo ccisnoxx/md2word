@@ -11,7 +11,7 @@ from pathlib import Path
 from app.services.document_ir import MinerUToDocumentIRService
 
 from app.services.document_ir.integrity import build_source_integrity
-from app.services.renderer.evidence import build_renderer_metadata
+from app.services.renderer.render_evidence import build_renderer_metadata
 from app.services.document_ir.models import (
     DocumentIR,
     DocumentIRBlock,

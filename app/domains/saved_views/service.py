@@ -24,7 +24,7 @@ from app.domains.document_jobs.models import (
     DocumentJobStatus,
     DocumentJobTranslationQaStatus,
 )
-from app.domains.document_jobs.service import DOCUMENT_JOB_LIST_SORTS
+from app.domains.document_jobs.use_cases.common import DOCUMENT_JOB_LIST_SORTS
 from app.domains.document_jobs.workflow import DOCUMENT_JOB_STATUS_GROUPS
 from app.domains.saved_views.models import SAVED_VIEW_PAGE_KEYS, SavedViewPageKey, SavedViewRecord
 from app.domains.saved_views.repository import SavedViewRepositoryProtocol, SavedViewScope

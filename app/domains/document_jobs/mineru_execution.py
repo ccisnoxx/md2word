@@ -9,39 +9,47 @@ import secrets
 import tempfile
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 from uuid import uuid4
 
 from app.clients.mineru_client import MinerUClient, MinerUError
+from app.core.config import Settings
+from app.domains.document_jobs.execution_support import DocumentJobLifecycle, require_uploaded_file
 from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobRecord
-from app.domains.document_jobs.repository import DocumentJobCallbackMessageStoreProtocol
+from app.domains.document_jobs.repository import (
+    DocumentJobCallbackMessageStoreProtocol,
+    DocumentJobRepositoryProtocol,
+)
+from app.domains.files import FileUploadService
+from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.mineru.config import EffectiveMinerUConfig
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import spec_for_document_job_mode
 
-if TYPE_CHECKING:
-    # execution.py 在运行时导入本模块；这里只为类型标注引用，避免循环导入。
-    from app.domains.document_jobs.execution import DocumentJobExecutionService
-
-
 class MinerUExecution:
     """MinerU 执行：由 DocumentJobExecutionService 构造并持有，负责解析提交与轮询、回调排队与重放、结果下载登记。
 
-    任务级状态与事件仍由宿主收口。对宿主只允许调用 _record_event、_mark_failed、_fail_stage_attempt、
-    _mark_timed_out_if_needed、_get_uploaded_file，且必须在调用时经 self._host 查找，不得在构造时捕获
-    绑定方法，否则对宿主方法的替换（例如测试中的 patch.object）不会生效。
-    settings、job_repository 等共用依赖只由宿主持有，同样在使用时经 self._host 读取，本类只保存专属依赖。
+    任务级状态推进与事件记录统一经注入的 DocumentJobLifecycle 完成；settings、job_repository 等共用依赖
+    与宿主引用同一对象，在构造时显式注入。
     """
 
     def __init__(
         self,
-        host: DocumentJobExecutionService,
         *,
+        settings: Settings,
+        job_repository: DocumentJobRepositoryProtocol,
+        file_repository: DocumentFileRepositoryProtocol,
+        file_service: FileUploadService,
+        lifecycle: DocumentJobLifecycle,
         callback_message_store: DocumentJobCallbackMessageStoreProtocol,
         mineru_config_resolver: Callable[[], EffectiveMinerUConfig],
         mineru_client_factory: Callable[[], Any] | None,
     ) -> None:
-        self._host = host
+        self.settings = settings
+        self.job_repository = job_repository
+        self.file_repository = file_repository
+        self.file_service = file_service
+        self.lifecycle = lifecycle
         self.callback_message_store = callback_message_store
         self.mineru_config_resolver = mineru_config_resolver
         self.mineru_client_factory = mineru_client_factory or self._build_mineru_client
@@ -53,7 +61,7 @@ class MinerUExecution:
             return current
         job = current
         if job.mineru_raw_result_file_id:
-            parsed = self._host.job_repository.update_document_job_if_current(
+            parsed = self.job_repository.update_document_job_if_current(
                 job.id,
                 allowed_statuses={"running"},
                 allowed_stages={"parsing"},
@@ -63,28 +71,28 @@ class MinerUExecution:
                 progress=max(job.progress, 30),
                 updated_at=utc_now(),
             )
-            return parsed or self._host.job_repository.get_document_job(job.id) or job
+            return parsed or self.job_repository.get_document_job(job.id) or job
 
         with tempfile.TemporaryDirectory(prefix="document_job_mineru_") as temp_dir:
             client = self.mineru_client_factory()
             data_id = job.mineru_data_id or job.id
             batch_id = job.mineru_batch_id
             if not batch_id:
-                source_file = self._host._get_uploaded_file(job.source_file_id)
+                source_file = require_uploaded_file(self.file_repository, job.source_file_id)
                 source_path = Path(temp_dir) / source_file.original_filename
-                source_path.write_bytes(self._host.file_service.read_file_content(source_file))
-                callback = self._host.settings.mineru_callback_url.strip() or None
+                source_path.write_bytes(self.file_service.read_file_content(source_file))
+                callback = self.settings.mineru_callback_url.strip() or None
                 callback_seed = self._build_callback_seed() if callback else None
                 batch_id, _file_urls = client.upload_files_batch(
                     [source_path],
                     task_uuids=[data_id],
-                    enable_formula=self._host.settings.mineru_enable_formula,
-                    enable_table=self._host.settings.mineru_enable_table,
+                    enable_formula=self.settings.mineru_enable_formula,
+                    enable_table=self.settings.mineru_enable_table,
                     language=self._mineru_language_for_job(job),
                     callback=callback,
                     seed=callback_seed,
                 )
-                updated_job = self._host.job_repository.update_document_job_if_current(
+                updated_job = self.job_repository.update_document_job_if_current(
                     job.id,
                     allowed_statuses={"running"},
                     allowed_stages={"parsing"},
@@ -96,9 +104,9 @@ class MinerUExecution:
                     updated_at=utc_now(),
                 )
                 if updated_job is None:
-                    return self._host.job_repository.get_document_job(job.id) or job
+                    return self.job_repository.get_document_job(job.id) or job
                 job = updated_job
-                self._host._record_event(
+                self.lifecycle.record_event(
                     job,
                     event_type="stage_succeeded",
                     stage="parsing",
@@ -114,13 +122,13 @@ class MinerUExecution:
             result_item = self._select_mineru_result(payload, data_id, batch_id=batch_id)
             state = str(result_item.get("state") or "").lower()
             if state == "failed":
-                return self._host._mark_failed(
+                return self.lifecycle.mark_failed(
                     job, failed_stage="parsing", error_code="mineru_failed",
                     error_message="MinerU 查询返回解析失败。", trace_id=trace_id,
                 )
             full_zip_url = result_item.get("full_zip_url")
             if state not in {"done", "success", "succeeded"} or not full_zip_url:
-                waiting = self._host.job_repository.update_document_job_if_current(
+                waiting = self.job_repository.update_document_job_if_current(
                     job.id,
                     allowed_statuses={"running"},
                     allowed_stages={"parsing"},
@@ -131,8 +139,8 @@ class MinerUExecution:
                     updated_at=utc_now(),
                 )
                 if waiting is None:
-                    return self._host.job_repository.get_document_job(job.id) or job
-                self._host._record_event(
+                    return self.job_repository.get_document_job(job.id) or job
+                self.lifecycle.record_event(
                     waiting,
                     event_type="stage_started",
                     stage="parsing",
@@ -158,7 +166,7 @@ class MinerUExecution:
 
         data_id = str(payload.get("data_id") or "").strip()
         batch_id = str(payload.get("batch_id") or "").strip()
-        jobs = self._host.job_repository.list_document_jobs()
+        jobs = self.job_repository.list_document_jobs()
         if data_id:
             for job in jobs:
                 if job.mineru_data_id == data_id or job.id == data_id:
@@ -192,7 +200,7 @@ class MinerUExecution:
             trace_id=trace_id,
         )
         stored_message, created = self.callback_message_store.put_or_get_callback_message(message)
-        self._host._record_event(
+        self.lifecycle.record_event(
             job,
             event_type="mineru_callback_received",
             stage=job.stage,
@@ -217,7 +225,7 @@ class MinerUExecution:
             self._record_callback_ignored_event(job, stored_message, trace_id=trace_id)
             return job, stored_message, created, False
 
-        self._host._record_event(
+        self.lifecycle.record_event(
             job,
             event_type="mineru_callback_queued",
             stage="parsing",
@@ -239,7 +247,7 @@ class MinerUExecution:
     ) -> DocumentJobRecord:
         latest = job
         for message in self.callback_message_store.list_replayable_callback_messages(job.id):
-            refreshed = self._host.job_repository.get_document_job(job.id)
+            refreshed = self.job_repository.get_document_job(job.id)
             if refreshed is None:
                 return latest
             latest = self._process_callback_message(refreshed, message, trace_id=message.trace_id or trace_id)
@@ -258,7 +266,7 @@ class MinerUExecution:
             attempts=message.attempts + 1,
             lease_owner="document_jobs_worker",
             leased_at=now,
-            lease_expires_at=now + timedelta(seconds=self._host.settings.stage_message_lease_seconds),
+            lease_expires_at=now + timedelta(seconds=self.settings.stage_message_lease_seconds),
             updated_at=now,
         )
         if running_message is None:
@@ -306,7 +314,7 @@ class MinerUExecution:
             self._record_callback_ignored_event(job, ignored, trace_id=trace_id)
             return job
         if state == "failed":
-            updated = self._host._mark_failed(
+            updated = self.lifecycle.mark_failed(
                 job,
                 failed_stage="parsing",
                 error_code="mineru_failed",
@@ -318,7 +326,7 @@ class MinerUExecution:
 
         full_zip_url = payload.get("full_zip_url")
         if state not in {"done", "success", "succeeded"} or not full_zip_url:
-            self._host._record_event(
+            self.lifecycle.record_event(
                 job,
                 event_type="mineru_callback_processed",
                 stage="parsing",
@@ -354,7 +362,7 @@ class MinerUExecution:
             self._record_callback_ignored_event(parsed, ignored, trace_id=trace_id)
             return parsed
         self.callback_message_store.mark_callback_message_processed(running_message.id, updated_at=utc_now())
-        self._host._record_event(
+        self.lifecycle.record_event(
             parsed,
             event_type="mineru_callback_processed",
             stage="parsing",
@@ -409,7 +417,7 @@ class MinerUExecution:
             patch["mineru_data_id"] = data_id
         if not patch:
             return job
-        updated = self._host.job_repository.update_document_job_if_current(
+        updated = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"running"},
             allowed_stages={"parsing"},
@@ -418,9 +426,9 @@ class MinerUExecution:
             updated_at=utc_now(),
         )
         if updated is None:
-            latest = self._host.job_repository.get_document_job(job.id)
+            latest = self.job_repository.get_document_job(job.id)
             if latest is not None:
-                self._host._record_event(
+                self.lifecycle.record_event(
                     latest,
                     event_type="mineru_callback_ignored",
                     stage=latest.stage,
@@ -440,7 +448,7 @@ class MinerUExecution:
         *,
         trace_id: str | None,
     ) -> None:
-        self._host._record_event(
+        self.lifecycle.record_event(
             job,
             event_type="mineru_callback_ignored",
             stage=job.stage,
@@ -473,7 +481,7 @@ class MinerUExecution:
         if not can_continue:
             return latest
         if latest.mineru_raw_result_file_id:
-            updated = self._host.job_repository.update_document_job_if_current(
+            updated = self.job_repository.update_document_job_if_current(
                 latest.id,
                 allowed_statuses={"running"},
                 allowed_stages={"parsing"},
@@ -483,13 +491,13 @@ class MinerUExecution:
                 progress=max(latest.progress, 30),
                 updated_at=utc_now(),
             )
-            return updated or self._host.job_repository.get_document_job(job.id) or latest
+            return updated or self.job_repository.get_document_job(job.id) or latest
         raw_zip_path = temp_dir / "mineru_raw_result.zip"
         client.download_result_zip(full_zip_url, raw_zip_path)
         latest, can_continue = self._refresh_mineru_parse_attempt(job, trace_id=trace_id)
         if not can_continue:
             return latest
-        raw_file = self._host.file_service.register_generated_content(
+        raw_file = self.file_service.register_generated_content(
             tenant_id=latest.tenant_id,
             company_id=latest.company_id,
             job_id=latest.id,
@@ -506,7 +514,7 @@ class MinerUExecution:
                 "retry_count": latest.retry_count,
             },
         )
-        parsed = self._host.job_repository.update_document_job_if_current(
+        parsed = self.job_repository.update_document_job_if_current(
             latest.id,
             allowed_statuses={"running"},
             allowed_stages={"parsing"},
@@ -518,9 +526,9 @@ class MinerUExecution:
             updated_at=utc_now(),
         )
         if parsed is None:
-            return self._host.job_repository.get_document_job(latest.id) or latest
+            return self.job_repository.get_document_job(latest.id) or latest
         try:
-            self._host._record_event(
+            self.lifecycle.record_event(
                 parsed,
                 event_type="file_registered",
                 stage="parsing",
@@ -528,7 +536,7 @@ class MinerUExecution:
                 payload={"file_id": raw_file.id, "file_type": raw_file.file_type, "object_key": raw_file.object_key},
                 trace_id=trace_id,
             )
-            self._host._record_event(
+            self.lifecycle.record_event(
                 parsed,
                 event_type="stage_succeeded",
                 stage="parsing",
@@ -543,19 +551,19 @@ class MinerUExecution:
                 raw_file.id,
             )
         except Exception as exc:
-            return self._host._fail_stage_attempt(parsed, exc, trace_id=trace_id)
+            return self.lifecycle.fail_stage_attempt(parsed, exc, trace_id=trace_id)
         return parsed
 
     def _mineru_language_for_job(self, job: DocumentJobRecord) -> str:
         spec = spec_for_document_job_mode(job.mode)
-        return spec.mineru_language or self._host.settings.mineru_language
+        return spec.mineru_language or self.settings.mineru_language
 
     def _refresh_mineru_parse_attempt(
         self, job: DocumentJobRecord, *, trace_id: str | None,
     ) -> tuple[DocumentJobRecord, bool]:
         """解析外端调用前后核对本次身份和固定期限，避免旧结果归入新代。"""
 
-        latest = self._host.job_repository.get_document_job(job.id)
+        latest = self.job_repository.get_document_job(job.id)
         if latest is None:
             return job, False
         if (latest.retry_count != job.retry_count or latest.status != "running" or latest.stage != "parsing"
@@ -564,21 +572,21 @@ class MinerUExecution:
         if latest.timeout_at is None:
             # 旧新代可能已提交批次却未保存期限；只能沿本代稳定起点补齐，不能从每轮 now 续期。
             if latest.started_at is None:
-                return self._host._mark_failed(
+                return self.lifecycle.mark_failed(
                     latest, failed_stage="parsing", error_code="document_job_timeout",
                     error_message="解析记录缺少本代开始时间，无法确定绝对截止期限，已停止执行。",
                     trace_id=trace_id,
                 ), False
-            updated = self._host.job_repository.update_document_job_if_current(
+            updated = self.job_repository.update_document_job_if_current(
                 latest.id, allowed_statuses={"running"}, allowed_stages={"parsing"},
                 expected_retry_count=latest.retry_count,
-                timeout_at=latest.started_at + timedelta(seconds=self._host.settings.p0_document_job_timeout_seconds),
+                timeout_at=latest.started_at + timedelta(seconds=self.settings.p0_document_job_timeout_seconds),
                 updated_at=utc_now(),
             )
             if updated is None:
-                return self._host.job_repository.get_document_job(latest.id) or latest, False
+                return self.job_repository.get_document_job(latest.id) or latest, False
             latest = updated
-        timed_out = self._host._mark_timed_out_if_needed(latest, trace_id=trace_id)
+        timed_out = self.lifecycle.mark_timed_out_if_needed(latest, trace_id=trace_id)
         return (timed_out, False) if timed_out is not None else (latest, True)
 
     def _select_mineru_result(self, payload: dict, data_id: str, *, batch_id: str) -> dict:
@@ -610,7 +618,7 @@ class MinerUExecution:
             raise RuntimeError("MINERU_API_TOKEN 未配置，无法提交 MinerU。")
         return MinerUClient(
             api_token=config.api_token,
-            result_host_allowlist=self._host.settings.allowed_mineru_result_hosts,
-            model_version=self._host.settings.mineru_model_version,
+            result_host_allowlist=self.settings.allowed_mineru_result_hosts,
+            model_version=self.settings.mineru_model_version,
             user_token=config.uid or "",
         )

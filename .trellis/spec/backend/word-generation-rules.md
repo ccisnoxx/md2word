@@ -170,7 +170,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：v2 IR 已有 pages/部分 layout，但某个可见 block 的 `layout.page_index` 与 `block.page_index` 均为 `None`。
-- 正式 owner：布局归属由 `app/services/renderer/layout_plan.py::build_layout_plan` 负责；期望/实际对账和阻断由 `app/services/renderer/evidence.py::build_renderer_evidence`、`::ensure_renderer_integrity` 负责。
+- 正式 owner：布局归属由 `app/services/renderer/layout_plan.py::build_layout_plan` 负责；期望/实际对账和阻断由 `app/services/renderer/render_evidence.py::build_renderer_evidence`、`app/services/renderer/render_evidence_validation.py::ensure_renderer_integrity` 负责。
 - 预期输出：可见 block 无法进入 layout 时记录 expected/actual/差值和稳定 `ir_layout_integrity:missing_blocks`，正式本地与线上边界在发布 DOCX 前失败关闭，不能让可见内容无声消失。
 - 冲突/例外：整个文档无 layout 时按 PIPE-002 顺序回退；不能把单个 block 的缺页索引等同于全局无 layout。
 - 禁止：继续用 `sorted(index for index in page_indices if index is not None)` 后忽略未归页 block；猜测任意页面而不留证据。
@@ -195,7 +195,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`implemented-gap`
 - 输入信号：模板 page setup（纸张宽高、边距、装订线）和 DocumentIR page 宽高方向。
-- 正式 owner：`app/services/renderer/word_renderer.py::_apply_page_setup`、`::_apply_page_setup_to_section`、`::_configure_layout_page_section`、`::_layout_page_requires_landscape`。
+- 正式 owner：`app/services/renderer/page_layout_renderer.py::_apply_page_setup`、`::_apply_page_setup_to_section`、`::_configure_layout_page_section`；源页方向判定为 `app/services/renderer/layout_plan.py::_page_is_landscape`。
 - 预期输出：显式 layout config 决定 Word 的绝对纸张尺寸和边距；源页只决定 portrait/landscape。宽表本身不改变方向，源页宽大于高时才使用横向节。
 - 冲突/例外：v2 没有显式 page size 时当前使用 A4，可能覆盖 DOCX 模板自身的非 A4 尺寸；这是未裁决缺口。方向变化按 PAGE-002 分节。
 - 禁止：用 MinerU/PDF 物理数值直接重写 Word 纸张；见到宽表就横向；忽略显式源页方向。
@@ -207,7 +207,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：相邻 LayoutPage 的 portrait/landscape 状态不同。
-- 正式 owner：`app/services/renderer/word_renderer.py::DocumentIRWordRenderer.render_to_bytes`、`::_configure_layout_page_section`。
+- 正式 owner：`app/services/renderer/word_renderer.py::DocumentIRWordRenderer.render_to_bytes`；`app/services/renderer/page_layout_renderer.py::_configure_layout_page_section`。
 - 预期输出：方向变化时创建 `WD_SECTION_START.NEW_PAGE` 并应用目标方向；相同方向不因源物理页边界自动新建页面节。
 - 冲突/例外：双栏区域内部使用 continuous section，由 COL-002 约束；语义分页由 FLOW-002 单独触发。
 - 禁止：每个 MinerU page 都新增 `NEW_PAGE`；用 break-only 段落模拟方向节。
@@ -219,7 +219,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：相邻源页方向相同，且下一页首内容不满足 FLOW-002 的语义起页信号。
-- 正式 owner：`app/services/renderer/word_renderer.py::DocumentIRWordRenderer.render_to_bytes`、`::_render_layout_page`。
+- 正式 owner：`app/services/renderer/word_renderer.py::DocumentIRWordRenderer.render_to_bytes`、`::_dispatch_operation`。
 - 预期输出：不插入 `document.add_page_break()`、`w:br type="page"` 或只含分页符的空段落，让 Word 按内容自然分页。
 - 冲突/例外：FLOW-002 精确的页顶内容组可在真实内容段落设置 `pageBreakBefore`；方向变化按 PAGE-002。
 - 禁止：恢复“每个 PDF 页一个 Word 硬分页”；以空段落承载分页；为修某个标题破坏长表自然跨页。
@@ -296,7 +296,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：layout plan 的 `two_col` region 及其 left/right blocks。
-- 正式 owner：阅读顺序唯一实现 `app/services/renderer/layout_plan.py::split_two_col_blocks`（RenderPlan 与逻辑表格位置账共用，不得另建副本）；分栏写入 `word_renderer.py::_set_section_columns`。 完整文字流由 `render_plan.py::_complete_two_column_text_region` 冻结调度，`layout_plan.py::complete_two_column_tails` 补全已证明连续的局部正文栏尾。
+- 正式 owner：阅读顺序唯一实现 `app/services/renderer/layout_plan.py::split_two_col_blocks`（RenderPlan 与逻辑表格位置账共用，不得另建副本）；分栏写入 `page_layout_renderer.py::_set_section_columns`。 完整文字流由 `render_plan.py::_complete_two_column_text_region` 冻结调度，`layout_plan.py::complete_two_column_tails` 补全已证明连续的局部正文栏尾。
 - 预期输出：通过 continuous section 的 `w:cols` 进入两栏，按左栏自上而下、column break、右栏自上而下渲染，再用 continuous section 恢复单栏；不使用布局表格承载普通双栏正文。新建多栏节时，若继承的栏间距缺失或为零，使用 `720` twips（0.5 英寸）；已有正间距原样保留，不修改发布模板字节。
 - 完整文字流：页面已有双栏几何证据，正文仅含 heading/paragraph/formula、全部有明确左右栏提示，且原来源顺序恰为完整左栏后接完整右栏时，以一次原生双栏调度保留该来源读序；高度差和纵向空隙不得把右栏续句提前到左栏段首之前。空合并残留仍保留在库存与目标证据中。只合并本次调度，不更改原 LayoutPlan 区域或聚合统计，确保历史冻结 trace 与内容表物理顺序仍可恢复。
 - 混排栏尾：未使用完整文字流合并时，仅把紧接既有双栏区的 one_col 前缀 paragraph 补回该栏流。必须与前区内直接来源前驱均为 paragraph，order 和 source_index 各连续，左右栏提示相同，bbox 有效，纵向间距和左起始边缘偏差均不超过两块较小高度的 1/4。遇到首个不满足块立即停止，混合尾区的剩余标题、图片和表格保留原分区。原 LayoutPlan 及聚合统计不变，只调整新件调度；图片 overlay 使用同一补全调度，不回读旧区域覆盖补全结果。
@@ -335,7 +335,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：IR list block 或普通 paragraph 中可靠的 bullet marker；item level 和换行由 INPUT-004 产生。
-- 正式 owner：`app/services/renderer/text_renderer.py::_fill_list_paragraph`、`::_fill_auto_list_or_paragraph`、`::_apply_bullet_numbering`；`app/conversion/docx_rules/text_semantics.py::normalize_list_item`。
+- 正式 owner：`app/services/renderer/text_renderer.py::_fill_list_paragraph`、`::_fill_auto_list_or_paragraph`；`app/services/renderer/list_numbering.py::_apply_bullet_numbering`；`app/conversion/docx_rules/text_semantics.py::normalize_list_item`。
 - 预期输出：列表项使用 Word `numPr`/bullet numbering，不保留手写 marker；同一 item 的续行内容不丢失。
 - 冲突/例外：负数、负温度和普通破折号句不判为列表；v2 explicit list 优先于文本推断。
 - 禁止：用“• ”等字符模拟列表；全局拆分所有换行；为满足 analyzer 删除可见 marker 却不写 numbering。
@@ -347,7 +347,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：v2 rich text、inline HTML 的 sub/sup/bold/italic、普通文字和术语配置。
-- 正式 owner：`app/services/renderer/text_renderer.py::_fill_paragraph`、`::_render_mixed_math`、`::_render_inline_children`、`::_prepare_text_for_rendering`；`app/services/renderer/semantic_text.py`。
+- 正式 owner：`app/services/renderer/text_renderer.py::_fill_paragraph`、`::_render_inline_children`、`::_prepare_text_for_rendering`；`app/services/renderer/formula_renderer.py::_render_mixed_math`；`app/services/renderer/semantic_text.py`。
 - 预期输出：支持的 inline 标记转为 Word run 语义；数学先分段，普通文本单独进行术语替换；数学与降级原式不经过术语替换或有损归一化，普通正文和未知路径字符保持可见。
 - 冲突/例外：原生 OMML 只在共享扫描识别的数学片段或显式 formula block 生成；普通正文不因包含分式而整体进入 OMML，新增识别规则必须覆盖非数学负例。不支持的 inline markup 应保持可见文本。
 - 禁止：为公式清理全局删除反斜杠/括号/空格；静默丢弃未知 inline node；在表格、正文和题注维护不同清理实现。
@@ -371,7 +371,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：IR table block 的 HTML table、rowspan/colspan、表格规模和模板表格配置。
-- 正式 owner：`app/services/renderer/logical_table_plan.py::build_content_table_plan` 固定逻辑表与内容 owner；`app/services/renderer/table_renderer.py::_render_native_unit` 消费同一计划写入。HTML 解析复用现有共享 parser，不能以旧 writer 的策略代替冻结计划。
+- 正式 owner：`app/services/renderer/logical_table_plan.py::build_content_table_plan` 固定逻辑表与内容 owner；`app/services/renderer/native_table_renderer.py::_render_native_unit` 消费同一计划写入。HTML 解析复用现有共享 parser，不能以旧 writer 的策略代替冻结计划。
 - 预期输出：受支持 HTML 生成原生可编辑 Word table，以 gridSpan/vMerge 保留合并结构，合并单元格内容由 owner 写入一次；规模超过旧展开阈值不会自动改为复制内容的规则网格。
 - 冲突/例外：`_render_table`、`_render_standard_html_table`、`_render_expanded_table` 保留旧写法的兼容与历史验证，不是当前正式计划的 owner；旧展开产物继续按原 occurrence 投影认证。无效 HTML 和缺少占位来源继续按各自输入合同失败关闭，不能为测试继续执行而放宽。
 - 禁止：把表格截图作为默认输出；为某一列数复制新 renderer；以旧 runtime writer 的测试声称正式输出已覆盖。
@@ -395,7 +395,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：Word table 首行/后续 `th`、列数、配置的 border/header fill/font 和表格规模。
-- 正式 owner：`app/services/renderer/table_renderer.py::_configure_data_table_rows`、`::_table_column_widths`、`::_template_config_for_table_columns`、`::_set_table_borders`。
+- 正式 owner：`app/services/renderer/table_renderer.py::_configure_data_table_rows`、`::_table_column_widths`、`::table_config_for_columns`、`::_set_table_borders`。
 - 预期输出：表头行标记 `tblHeader`，所有行标记 `cantSplit`；5 列数据手册表优先给描述列宽度，6 列及以上使用紧凑字号/等宽策略；应用配置边框与表头样式。
 - 表头校核：`MinerUToDocumentIRService.convert_zip(..., table_header_reviews=...)` 通过可信 PDF loader 核对 PDF SHA-256，并通过原始表账本核对 content list SHA-256、源 Pointer、零基页号和原 HTML SHA-256。完整且跨度闭合的上游 `<th>` 首部优先。采用人工校核时，`header_row_count` 指定零基首部连续范围，跨度不得越过该范围，单元格占位须完整。位置、指纹或行范围无效时拒绝校核。
 - 来源与写入：已采用的 `header_review` 进入来源片段和表格验证证据。Grid、Word 及翻译表上下文复用这份记录。实际 `tblHeader` 范围以已校核首部为准。下方的 `<th>` 仍具原单元格语义。校核可确认上游预合并已经省略的共享表头范围，仍须通过 FLOW-003 的行覆盖核对。两段完整片段的去重继续采用原生表头签名，原 HTML 与无校核历史序列保持原值。验证见 [表头来源与本地校核](../../tasks/11-11-datasheet-quality-baseline-contracts/table-header-review.md)。
@@ -463,7 +463,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`implemented-gap`
 - 输入信号：可解析的 Figure/Table 单一整数题注，以及正文中对唯一题注目标的引用。
-- 正式 owner：`app/services/renderer/text_renderer.py::_parse_caption_text`、`::_fill_caption_paragraph`、`::_render_mixed_math`；`app/services/renderer/word_renderer.py::_build_render_context`。
+- 正式 owner：`app/services/renderer/text_renderer.py::_parse_caption_text`、`::_fill_caption_paragraph`；`app/services/renderer/formula_renderer.py::_render_mixed_math`；`app/services/renderer/word_renderer.py::_build_render_context`。
 - 预期输出：题注编号使用 `SEQ`，目标使用唯一 bookmark，正文唯一匹配时使用 `REF`；复合编号保留普通文本，避免错误链接；bookmark 映射只属于单次 render context，不存入可复用 renderer 实例。
 - 冲突/例外：同编号多目标、复合编号或不可解析题注不自动建立交叉引用。当前 `SEQ` instruction 未用 `\\r` 固定源编号；Word/WPS 更新字段后，非 1 起始或跳号题注可能被重新编号，现有 OOXML 测试不证明更新后的编号保真。
 - 禁止：生成重复 bookmark；把所有数字都当引用；为复合编号创建错误 `SEQ`。
@@ -475,7 +475,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`planned`
 - 输入信号：模板配置 `footer.enabled=true` 且 `show_page_number=true`。
-- 正式 owner：部分实现位于 `app/services/renderer/word_renderer.py::_apply_header_footer`、`::_add_complex_field`；纯页码无左右文字分支尚不满足合同。
+- 正式 owner：部分实现位于 `app/services/renderer/page_layout_renderer.py::_apply_header_footer`、`app/services/renderer/formula_renderer.py::_add_complex_field`；纯页码无左右文字分支尚不满足合同。
 - 预期输出：无论是否配置左右文字，页码都应使用原生 `PAGE` field；左右文字路径用 positional tab 布局，不把数字写死。
 - 冲突/例外：明确禁用 footer 时保留模板继承；字段视觉位置需要 Word/WPS 验收，LibreOffice 对 `w:ptab` 展开不同。
 - 禁止：输出只有“第  页”的静态占位；写死页码；以 LibreOffice positional tab 视觉替代 Word/WPS 结论。
@@ -513,7 +513,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：非空数学中的未知命令、畸形语法、不支持结构或不能证明安全的归一化。
-- 正式 owner：共享 `FormulaRenderResult` 与 renderer 单次 context；`docx_quality.py` / `evidence.py` 校验最终字节。
+- 正式 owner：共享 `FormulaRenderResult` 与 renderer 单次 context；`docx_quality.py` / `render_evidence.py` 校验最终字节。
 - 预期输出：原位置 literal run 写 `【公式降级，需复核】` 加逐字原式，mode=`text_fallback`、warning=`formula_text_fallback`；reason 仅 `unsupported_command/invalid_syntax/unsupported_structure/unsafe_normalization`。原式不再按 HTML 解析或术语替换。合法 semantic sub/sup 内 b/i 和换行保留原生样式；未闭合/错配 HTML 为 invalid_syntax，嵌套脚本或 semantic 脚本包裹显式/裸 TeX 数学的未支持组合为 unsupported_structure，整式降级，不能丢掉外层脚本。
 - 字面下划线例外：先验证公式报告并通过 `_formula_ranges` 核对锚点、覆盖、mode 和输出 hash，再只按 mode=omml 的 m:t 在原残留字符串中的位置豁免纯字面下划线匹配。原正则、实际文字和诊断文字保持；普通 w:t 同值文字不获豁免。匹配本身含反斜杠或紧邻前置反斜杠时仍检查，例如 `$Noise\_$\unknown` 输出后的原始 `_\unknown` 残留不得隐藏。其他命令、dollar/caret、无报告旧路径、未登记对象及损坏绑定保持原检查，不能全局跳过 m:t。
 - 源字面标识符：正式聚合证据核对完整公式来源清单与物理报告后，按共享数学边界从源 IR 收集 `4V_VDD`、`file_name` 等整词标识符，只豁免该词范围内的下划线匹配；独立 `_RMS`、花括号脚本、上标、命令与美元数学残留继续检查。无报告旧路径不使用词汇白名单。
@@ -530,7 +530,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：绑定模板 DOCX、layout config、document language 和 subscript/terminology config。
-- 正式 owner：`app/services/renderer/word_renderer.py::_create_document`、`::_load_template_config`；`app/services/renderer/template_config.py`；版本/API owner 见 [模板布局配置合同](./template-layout-configuration.md)。
+- 正式 owner：`app/services/renderer/word_renderer.py::_open_document`、`::_load_template_config`；`app/services/renderer/template_config.py`；版本/API owner 见 [模板布局配置合同](./template-layout-configuration.md)。
 - 预期输出：renderer 清空模板 body 但保留 sectPr 和模板 header/footer，应用绑定版本的页面、段落、表格、字体及术语配置；发布版本不可变性不在本文重复定义。
 - 冲突/例外：模板决定 Word 样式和绝对页面设置，源 layout 决定内容顺序、分栏和方向；显式空字体值保留继承语义。
 - 禁止：为适配 PDF 修改已发布 seed；在 renderer 猜另一套 schema；让源 bbox 覆盖模板字体/边距。
@@ -542,7 +542,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`implemented-gap`
 - 输入信号：模板已带 decoration、配置 `header/footer.enabled`、自定义 footer 文本，以及 IR 的 page_header/page_footer/page_number blocks。
-- 正式 owner：`app/services/renderer/word_renderer.py::_apply_header_footer`、`::_render_page_decorations`、`::_resolve_decoration_font`。
+- 正式 owner：`app/services/renderer/page_layout_renderer.py::_apply_header_footer`、`::_render_page_decoration`、`::_resolve_decoration_font`。
 - 预期输出：配置禁用时保留模板 decoration；显式自定义 footer 高于源 footer；未自定义时才允许源 decoration 写入 section，并继承配置/legacy/template font 次序；后续 section 沿用 Word 标准 relationship 继承，不复制 header/footer relationship。
 - 冲突/例外：Word decoration 属于 section；相同方向源页共享 section 时，当前逐页写源 header/footer 会互相覆盖，只剩该 section 最后一次内容，源 header 也可能覆盖 `_apply_header_footer` 先写入的配置 header 文本。正式本地请求的 `use_mineru_header_footer` 当前也未传入 renderer，不能视为有效开关。
 - 禁止：声称支持每个同向源页不同页眉；在自定义 footer 后再写源 footer；把未消费的 request 字段写成已实现行为。
@@ -554,7 +554,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：eastAsia/legacy font、ascii、hAnsi 和 complex script 字体配置，包含显式空值。
-- 正式 owner：`app/conversion/docx_rules/run_fonts.py::apply_run_fonts`；`app/services/renderer/text_renderer.py::_apply_run_style`；`app/services/renderer/word_renderer.py::_resolve_decoration_font`。
+- 正式 owner：`app/conversion/docx_rules/run_fonts.py::apply_run_fonts`；`app/services/renderer/text_renderer.py::_apply_run_style`；`app/services/renderer/page_layout_renderer.py::_resolve_decoration_font`。
 - 预期输出：分别写入 eastAsia、ascii、hAnsi、cs 槽；缺少新槽时回退 legacy font，显式空值保持继承，不被默认值覆盖。
 - 数学字号：OMML run 按正文、表题或紧凑表格的有效 `font_size` 写入 `w:sz` / `w:szCs`，位于 `m:rPr` 之后、`m:t` 之前；显式空值继续继承。数学字体和数学语义样式保持原规则，不以写入字号为由修改源表达式或缩小到配置下限之外。规范依据见 [OOXML 数学 run](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.math.run?view=openxml-3.0.1)。
 - 冲突/例外：字段 schema/version 属于模板配置合同；本文只约束最终 run 输出。
@@ -579,7 +579,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：生成的 DOCX bytes/file 以及 DocumentIR/layout plan。
-- 正式 owner：`app/services/renderer/docx_quality.py::analyze_docx_quality_bytes`、`::build_docx_quality_flags`；`app/services/renderer/evidence.py::build_renderer_evidence`。
+- 正式 owner：`app/services/renderer/docx_quality.py::analyze_docx_quality_bytes`、`::build_docx_quality_flags`；`app/services/renderer/render_evidence.py::build_renderer_evidence`。
 - 预期输出：记录可编辑段落/表格、heading、numbering、TOC clue、keepNext、表头/cantSplit、宽表、横向节、图片和 LaTeX residue 等 OOXML 指标，并对无可编辑内容、图片化、手写列表、静态目录、未样式化标题、公式残留等风险生成 flag。
 - 来源感知诊断：只有图片报告完整认证后，其 annotation 物理锚点才可从正文标题候选中排除；图片说明不按 `Figure` 或括号文本猜测，不改变显式 IR heading 与实际 heading 的计数核对。未认证说明和真实无样式正文标题仍走既有诊断；严格图片分组的不确定提示保留。
 - 质量版本与恢复：非空正式质量结果记录 `analysis_version=docx-quality/v2`；无版本历史字典按原算法完整重算并逐值比较，未知或空版本拒绝。空分析结果保持 `{}` 与 `docx_quality_unavailable`，版本标记不得把不可用结果包装成成功。新质量版本落盘后，回退必须保留兼容 reader；文件、prepared receipt、当前及历史复核绑定、发布快照均在版本检查范围内。
@@ -617,7 +617,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：有 source inventory 的 v2 source→IR 对账，及任意 DocumentIR→layout→DOCX 渲染结果。
-- 正式 owner：source→IR 由 `app/services/document_ir/integrity.py`；IR→layout/DOCX evidence 由 `app/services/renderer/evidence.py`；发布边界由正式本地 adapter 和 `DocumentJobExecutionService` 负责。
+- 正式 owner：source→IR 由 `app/services/document_ir/integrity.py`；IR→layout/DOCX evidence 由 `app/services/renderer/render_evidence.py`（构建）与 `app/services/renderer/render_evidence_validation.py`（发布前完整性门）负责；发布边界由正式本地 adapter 和 `DocumentJobExecutionService` 负责。
 - 预期输出：evidence 同时记录 expected、actual、差值和稳定 `blocking_quality_flags`。可见 body block 必须且只能进入 layout 一次；每个可渲染 image/table 和 v2 显式 heading 必须分别对应一个 DOCX drawing/table/heading。确定性丢失失败关闭：source→IR 在线任务归类 `document_ir_failed`，IR→DOCX 归类 `render_failed`，本地不发布最终 DOCX。
 - 冲突/例外：LaTeX residue、实际分页、栏平衡、清晰度和其他现有 `quality_flags` 仍是非阻断人工复核风险；旧 IR 无 inventory 时只跳过 source 对账，不能跳过 IR→layout/DOCX 对账。
 - 禁止：把全部 quality flags 升级为 fatal；先写入/上传最终 DOCX 再检查；吞掉完整性异常或返回伪成功。

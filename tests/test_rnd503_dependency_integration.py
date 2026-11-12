@@ -5,7 +5,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from app.services.document_ir.models import DocumentIR
-from app.services.renderer.evidence import build_renderer_evidence
+from app.services.renderer.render_evidence import build_renderer_evidence
 from tests import test_document_job_result_persistence as base
 
 

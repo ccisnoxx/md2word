@@ -13,7 +13,7 @@ from app.domains.translation.integrity import TranslationIntegrityError
 from app.services.document_ir.artifact_validator import MinerUArtifactValidationError
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.table_placeholder import TablePlaceholderError
-from app.services.renderer.evidence import build_renderer_event_summary
+from app.services.renderer.render_event_summary import build_renderer_event_summary
 from app.services.renderer.table_renderer import TableRenderError
 from app.services.failure_context import FAILURE_CONTEXT_ATTRIBUTE
 from app.services.tables.evidence import TableEvidenceError

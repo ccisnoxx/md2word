@@ -196,7 +196,7 @@ class DocumentJobDownloadAvailabilityApiTests(TestCase):
     def test_download_signing_keeps_event_and_audit_failures_explicit(self):
         with self._application("file", eager=True) as (runtime, client, headers):
             job_id = self._create(client, headers)["job_id"]
-            for owner, method in ((runtime.document_job_service, "record_download_authorized"), (runtime.audit_service, "record")):
+            for owner, method in ((runtime.document_job_use_cases.downloads, "record_download_authorized"), (runtime.audit_service, "record")):
                 with self.subTest(method=method), patch.object(owner, method, side_effect=OSError("模拟审计存储失败")):
                     with self.assertRaisesRegex(OSError, "模拟审计存储失败"):
                         client.get(f"/api/v1/document-jobs/{job_id}/download-url", headers=headers)

@@ -17,6 +17,16 @@
 | [界面质量规范](./ui-quality-guidelines.md) | 滚动条、移动端信息层级、抽屉滚动、Element Plus 弹层层级和卡片状态反馈 | 当前 |
 | [Schema 驱动的模板样式编辑器合同](./schema-driven-template-style-editor.md) | 后端 schema 驱动、dirty patch、并发冲突、近似预览和 admin 权限 | 当前 |
 
+## 大型页面拆分约定
+
+参照 `frontend/src/features/job-detail/`、`jobs/`、`incidents/`、`file-retention/`、`ops-dashboard/`：
+
+- 页面壳只组装 composable 并连线区块组件；区块组件用 `defineProps` 接收状态与处理函数，ref 级双向绑定用 `defineModel`，类型取 `UnwrapRef<ReturnType<typeof useXxx>["key"]>`。reactive 表单对象可作为 prop 传入并由子组件修改字段。
+- 每个数据源只有一个 owner composable；跨 owner 只通过注入的回调或 `Pick<>` 只读依赖，不直接写对方状态。URL query 同步与请求竞态防护必须留在同一个 owner 中。
+- 拆分不新增包装元素：区块组件的根就是原 `section`/`div`；嵌套子区块用具名插槽由页面放入，避免多层 props 透传。
+- 样式跟随 DOM owner 迁移：一条规则中的类（忽略 `:deep()` 内部与组件生成的 `el-*` 类）出现在哪个组件模板里就放进哪个组件，多处使用则各自复制，保持原书写顺序。`.parent .el-button` 这类规则要归属到包含 `.parent` 的组件，否则会丢失对组件根元素的覆盖。
+- 验证以浏览器 computed style 与布局框逐元素对比为准，截图作为辅助；`vue-tsc` 不报告模板闭合错误和"对 prop 使用 v-model"，需由 build 或 SFC 编译检查兜底。
+
 ## 质量检查
 
 优先运行覆盖改动行为的最小测试，再执行完整前端门禁：

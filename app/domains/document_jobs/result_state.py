@@ -9,7 +9,7 @@ from app.domains.document_jobs.models import DocumentJobPreparedResult, Document
 from app.domains.files.models import DocumentFileRecord
 from app.domains.resources.models import utc_now
 from app.services.renderer.docx_quality import validate_formula_report
-from app.services.renderer.evidence import ensure_renderer_integrity
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 
 
 def matches_current(

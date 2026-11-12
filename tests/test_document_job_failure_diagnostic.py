@@ -208,7 +208,8 @@ class FailureDiagnosticApiTests(TestCase):
 class IncidentClassificationTests(TestCase):
     def test_error_code_wins_over_keyword_heuristics(self):
         from app.domains.document_jobs.incidents import DocumentJobIncidentService
-        service = DocumentJobIncidentService(None)
+        service = DocumentJobIncidentService(file_repository=None, access=None, read_model=None, queries=None,
+                                             submission=None)
         base = {"status": "failed", "mode": "en2zh_pdf_to_word", "review_status": "unreviewed",
                 "translation_qa_status": "unreviewed", "translation_qa_issue_type": None, "translation_qa_note": None,
                 "result_file_id": None, "document_ir_file_id": None}

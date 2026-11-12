@@ -26,7 +26,7 @@ from app.domains.document_jobs.schemas import (
 )
 from app.services.preview.models import PreviewErrorCode
 from app.services.preview.page_quality import QualityFlag, Reason, RULES
-from app.services.renderer.evidence import controlled_quality_flags
+from app.services.renderer.render_event_summary import controlled_quality_flags
 from app.services.tables.evidence import ISSUE_CODES
 
 

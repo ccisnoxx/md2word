@@ -48,7 +48,7 @@ JSON format is a single JSON object per line with at least:
 
 Messages use stable key/value fragments inside the message string so they can be grepped in text logs and parsed from JSON `message`.
 
-Access logs are emitted by `trace_logging_middleware` in `app/main.py`:
+Access logs are emitted by `trace_logging_middleware` in `app/api/middleware.py`:
 
 ```text
 [trace_id=... method=GET path=/api/v1/health/ready status_code=200 duration_ms=1.5]

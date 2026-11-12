@@ -17,9 +17,8 @@ from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.table_header_review import TableHeaderReview, TableHeaderReviewError
 from app.services.document_ir.table_placeholder import PdfCropSource, checksum
 from app.services.renderer import DocumentIRWordRenderer
-from app.services.renderer.evidence import (
-    build_renderer_evidence, ensure_renderer_integrity, validate_persisted_renderer_content,
-)
+from app.services.renderer.render_evidence import build_renderer_evidence, validate_persisted_renderer_content
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.services.tables.evidence import TableEvidence, read_table_evidence
 from app.services.tables.grid_builder import build_render_table_grid, build_table_grid
 from app.services.tables.models import canonical_sha256

@@ -8,19 +8,19 @@ from app.domains.document_jobs.base_quality import BaseQualityContribution, Degr
 from app.domains.document_jobs.incidents import (
     DOCUMENT_JOB_INCIDENT_FAILURE_TYPES,
     DOCUMENT_JOB_INCIDENT_SORTS,
-    DocumentJobIncidentService,
 )
 from app.domains.document_jobs.schemas import DocumentJobIncidentListResponse
 from app.domains.document_jobs.publication_evidence import prepare_publication_evidence
 from tests import test_document_job_list_query_v2_service as fixtures
 from tests import test_fastapi_jobs_backend as support
 from tests.document_job_list_query_v2_publication_fixtures import V2PublicationFixture
+from tests.document_job_use_case_support import build_incident_service, patch_use_case_clock, patch_publication_evidence
 
 
 def full_scan(incidents, **query):
     """冻结改前的全量动作流程；不随提交后的 HEAD 切换成候选实现。"""
     items = [incidents._build_item(job, user=query["user"], now=fixtures.NOW)
-        for job in incidents.document_job_service.list_visible_jobs(user=query["user"])]
+        for job in incidents.queries.list_visible_jobs(user=query["user"])]
     items = [item for item in items if item.is_incident
         and incidents._matches_status(item, query["status_filter"])
         and incidents._matches_stage(item, query["stage_filter"])
@@ -93,17 +93,16 @@ class DocumentJobIncidentMetadataTests(TestCase):
         cases += [{"q": value} for value in ("  ", "translation", "第 2 页", "次数已达上限", "not-found")]
         cases += [{"sort": value, "page": page} for value in sorted(DOCUMENT_JOB_INCIDENT_SORTS) for page in (1, 2)]
         for backend in ("file", "sqlite"):
-            with self.subTest(backend=backend), self.environment(backend) as (jobs, files, service), patch(
-                "app.domains.document_jobs.service.utc_now", return_value=fixtures.NOW,
+            with self.subTest(backend=backend), self.environment(backend) as (jobs, files, service), patch_use_case_clock(return_value=fixtures.NOW,
             ), patch("app.domains.document_jobs.incidents.utc_now", return_value=fixtures.NOW):
                 self.populate(jobs, files, service)
-                incidents = DocumentJobIncidentService(service)
+                incidents = build_incident_service(service, files)
                 for user in (fixtures.ADMIN, fixtures.USER):
                     for changes in cases:
                         with self.subTest(role=user.role, changes=changes):
                             query = query_values(user, **changes)
                             expected = full_scan(incidents, **query)
-                            with patch.object(service, "build_job_read_view", wraps=service.build_job_read_view) as build:
+                            with patch.object(service.read_model, "build_job_read_view", wraps=service.read_model.build_job_read_view) as build:
                                 actual = incidents.list_incidents(**query)
                             self.assertEqual(actual.model_dump(), expected.model_dump())
                             self.assertEqual(build.call_count, len(actual.items))
@@ -119,12 +118,11 @@ class DocumentJobIncidentMetadataTests(TestCase):
                     self.assertEqual(by_id["degraded"].failure_type, "page_degraded")
 
     def test_expiry_before_classification_matches_full_scan(self):
-        with self.environment("sqlite") as (jobs, files, service), patch(
-            "app.domains.document_jobs.service.utc_now", return_value=fixtures.NOW,
+        with self.environment("sqlite") as (jobs, files, service), patch_use_case_clock(return_value=fixtures.NOW,
         ) as clock, patch("app.domains.document_jobs.incidents.utc_now", return_value=fixtures.NOW):
             job, file = self.verified(jobs, files, review="blocked")
-            incidents = DocumentJobIncidentService(service)
-            visible_jobs = service.list_visible_jobs
+            incidents = build_incident_service(service, files)
+            visible_jobs = service.queries.list_visible_jobs
 
             def visible_then_expired(**kwargs):
                 clock.return_value = fixtures.NOW
@@ -134,7 +132,7 @@ class DocumentJobIncidentMetadataTests(TestCase):
                 clock.return_value = file.expires_at + timedelta(seconds=1)
                 return visible
 
-            with patch.object(service, "list_visible_jobs", side_effect=visible_then_expired):
+            with patch.object(service.queries, "list_visible_jobs", side_effect=visible_then_expired):
                 expected = full_scan(incidents, **query_values())
                 actual = incidents.list_incidents(**query_values())
             self.assertEqual(expected.total, 0)
@@ -144,8 +142,7 @@ class DocumentJobIncidentMetadataTests(TestCase):
         for case, reason in (("expires", None), ("missing", "result_file_missing"),
             ("mismatch", "result_file_mismatch"), ("pending", "result_file_not_uploaded"),
             ("unfinished", "job_not_completed")):
-            with self.subTest(case=case), self.environment("sqlite") as (jobs, files, service), patch(
-                "app.domains.document_jobs.service.utc_now", return_value=fixtures.NOW,
+            with self.subTest(case=case), self.environment("sqlite") as (jobs, files, service), patch_use_case_clock(return_value=fixtures.NOW,
             ) as clock, patch("app.domains.document_jobs.incidents.utc_now", return_value=fixtures.NOW):
                 if case == "expires":
                     job, file = self.verified(jobs, files, review="blocked")
@@ -163,12 +160,12 @@ class DocumentJobIncidentMetadataTests(TestCase):
                         file = fixtures.make_file().model_copy(update=(
                             {"job_id": "other"} if case == "mismatch" else {"status": "pending_upload"}))
                         files.create_document_file(file)
-                incidents = DocumentJobIncidentService(service)
+                incidents = build_incident_service(service, files)
                 query = query_values()
                 expected = full_scan(incidents, **query)
                 self.assertEqual(expected.total, 1)
                 self.assertEqual(expected.items[0].job.available_actions["download"].disabled_reason_code, reason)
-                build = service.build_job_read_view
+                build = service.read_model.build_job_read_view
                 read_file = files.get_document_file
 
                 def no_result_read(file_id):
@@ -182,8 +179,7 @@ class DocumentJobIncidentMetadataTests(TestCase):
                     with patch.object(files, "get_document_file", side_effect=no_result_read):
                         return build(*args, **kwargs)
 
-                with patch.object(service, "build_job_read_view", side_effect=page_view), patch.object(
-                    service, "_build_result_read_view", wraps=service._build_result_read_view,
+                with patch.object(service.read_model, "build_job_read_view", side_effect=page_view), patch.object(service.read_model, "build_result_read_view", wraps=service.read_model.build_result_read_view,
                 ) as result_view:
                     if case == "unfinished":
                         with patch.object(files, "get_document_file", side_effect=no_result_read):
@@ -200,7 +196,7 @@ class DocumentJobIncidentPublicationTests(V2PublicationFixture, TestCase):
             with self.subTest(backend=backend), self.publication_runtime(kind=backend) as (
                 runtime, job, admin, user, client, headers, provider,
             ):
-                service = runtime.document_job_service
+                service = runtime.document_job_use_cases
                 incidents = runtime.document_job_incident_service
                 # 已批准任务通过降级页进入异常列表，确保发布证据原本确实会被读取。
                 base = BaseQualityContribution(generation=job.retry_count, evaluation_state="complete",
@@ -220,26 +216,23 @@ class DocumentJobIncidentPublicationTests(V2PublicationFixture, TestCase):
                 admin_headers = support.build_auth_header(client, "admin", "admin-pass")
                 for current_user, current_headers in ((admin, admin_headers), (user, headers)):
                     query = query_values(current_user, page_size=1, failure_type="page_degraded")
-                    with patch("app.domains.document_jobs.service.prepare_publication_evidence", wraps=prepare_publication_evidence) as prepare, patch.object(
-                        runtime.file_upload_service, "read_file_content", wraps=runtime.file_upload_service.read_file_content) as read, patch.object(
-                        service, "build_job_read_view", wraps=service.build_job_read_view) as build:
+                    with patch_publication_evidence(wraps=prepare_publication_evidence) as prepare, patch.object(
+                        runtime.file_upload_service, "read_file_content", wraps=runtime.file_upload_service.read_file_content) as read, patch.object(service.read_model, "build_job_read_view", wraps=service.read_model.build_job_read_view) as build:
                         expected = full_scan(incidents, **query)
                     self.assertEqual(build.call_count, 5)
                     if current_user.role == "admin":
                         self.assertEqual(prepare.call_count, 1)
                         self.assertGreater(read.call_count, 0)
                     observations = []
-                    observe = service._build_job_read_observation
+                    observe = service.read_model.build_job_read_observation
 
                     def capture(*args, **kwargs):
                         result = observe(*args, **kwargs)
                         observations.append(result)
                         return result
 
-                    with patch("app.domains.document_jobs.service.prepare_publication_evidence", wraps=prepare_publication_evidence) as prepare, patch.object(
-                        runtime.file_upload_service, "read_file_content", wraps=runtime.file_upload_service.read_file_content) as read, patch.object(
-                        service, "build_job_read_view", wraps=service.build_job_read_view) as build, patch.object(
-                        service, "_build_job_read_observation", side_effect=capture):
+                    with patch_publication_evidence(wraps=prepare_publication_evidence) as prepare, patch.object(
+                        runtime.file_upload_service, "read_file_content", wraps=runtime.file_upload_service.read_file_content) as read, patch.object(service.read_model, "build_job_read_view", wraps=service.read_model.build_job_read_view) as build, patch.object(service.read_model, "build_job_read_observation", side_effect=capture):
                         response = client.get("/api/v1/document-job-incidents", headers=current_headers,
                             params={"page_size": 1, "failure_type": "page_degraded"})
                     self.assertEqual(response.status_code, 200, response.text)
@@ -254,7 +247,7 @@ class DocumentJobIncidentPublicationTests(V2PublicationFixture, TestCase):
                     (f"/api/v1/document-job-incidents/{job.id}/diagnostics", client.get, {}),
                     ("/api/v1/document-job-incidents/bulk-refresh", client.post, {"json": {"job_ids": [job.id]}}),
                 ):
-                    with patch("app.domains.document_jobs.service.prepare_publication_evidence", wraps=prepare_publication_evidence) as prepare:
+                    with patch_publication_evidence(wraps=prepare_publication_evidence) as prepare:
                         response = method(path, headers=admin_headers, **values)
                     self.assertEqual(response.status_code, 200, response.text)
                     self.assertEqual(prepare.call_count, 1)

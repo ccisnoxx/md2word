@@ -14,16 +14,16 @@ Evidence:
 
 ## Runtime Composition
 
-`app/main.py` is the composition root. It builds `Settings`, configures logging, builds persistence adapters, wires services, creates `AppRuntime`, registers error handlers, installs middleware, and includes the v1 API router.
+`app/main.py` is the composition root entry. `build_runtime()` builds `Settings`, configures logging, builds persistence adapters (kept in `app.main` so tests can patch `app.main.build_persistence_adapters`), then calls the per-area assembly functions in `app/composition/` in order — `platform.build_platform_services` → `document_pipeline.build_document_pipeline` → `terminology.build_terminology_services` → `startup.run_startup_bootstrap` → `health.build_observability_services` — and creates `AppRuntime` with explicit keyword arguments. 装配函数只构造对象并返回 frozen dataclass；种子写入与登记等幂等 bootstrap 统一在 `run_startup_bootstrap` 中、全部服务构造之后按固定顺序执行，构造函数不得读取 bootstrap 的产物（顺序依据见 `.trellis/tasks/archive/2026-11/11-11-sr-3-composition-root/research/bootstrap-order.md`）。
 
 Follow this pattern for runtime dependencies:
 
-- Construct shared services and adapters in `build_runtime()`.
+- Construct shared services in the owning `app/composition/*.py` assembly function; add new bootstrap side effects only to `run_startup_bootstrap`.
 - Store shared dependencies on `AppRuntime` in `app/core/runtime.py`.
 - Read runtime dependencies in routers through `Depends(get_runtime)` from `app/api/dependencies.py`.
 - Avoid constructing repositories, clients, or services directly inside route handlers unless the existing route already owns a narrow local helper.
 
-`create_app()` registers `register_api_error_handlers(app)`, CORS, trace/access logging middleware, 正式 DocumentJob 启动恢复任务, and `api_v1_router`. `app = LazyDefaultApp()` delays reading `.env` and connecting runtime dependencies until the ASGI app is actually called.
+`create_app()` registers `register_api_error_handlers(app)`, CORS, trace/access logging middleware (`app/api/middleware.py::install_trace_logging_middleware`), 正式 DocumentJob 启动恢复任务, and `api_v1_router`. `app = LazyDefaultApp()` delays reading `.env` and connecting runtime dependencies until the ASGI app is actually called.
 
 ## API Layout
 
@@ -53,7 +53,8 @@ Business domains live under `app/domains/<domain>/`. The exact file set varies b
 
 Examples:
 
-- `app/domains/document_jobs/` has `models.py`, `schemas.py`, `router.py`, `service.py`, `repository.py`, `workflow.py`, `execution.py`, `translation_execution.py`（翻译批次执行协作者，由 `execution.py` 持有）, `render_execution.py`（Word 渲染执行协作者，由 `execution.py` 持有）, `mineru_execution.py`（MinerU 解析与回调执行协作者，由 `execution.py` 持有）, `recovery.py`, and incident routers.
+- `app/domains/document_jobs/` has `models.py`, `schemas.py`, `router.py`, `use_cases/`（应用层用例包，见下）, `repository.py`, `workflow.py`, `execution.py`, `execution_support.py`（执行期状态推进与事件记录的唯一 owner `DocumentJobLifecycle`，以及 `require_uploaded_file`、`document_ir_layout_metadata`；宿主与三个协作者共用）, `translation_execution.py`（翻译批次执行协作者，由 `execution.py` 持有）, `render_execution.py`（Word 渲染执行协作者，由 `execution.py` 持有）, `mineru_execution.py`（MinerU 解析与回调执行协作者，由 `execution.py` 持有）, `recovery.py`, and incident routers. 三个执行协作者不持有宿主引用：共用依赖（`settings`、`job_repository`、`file_repository`、`file_service` 等）在构造时显式注入，与宿主引用同一对象；构造后替换宿主属性不会传到协作者，测试需要替换时须同时替换实际消费方的属性。
+- `app/domains/document_jobs/use_cases/` 取代原 `service.py`（`DocumentJobService` 已删除）。用例模块 `submission`、`lifecycle_commands`、`publication`、`quality_review`、`table_references`、`translation_qa`、`downloads`、`queries` 各为一个类，构造时只注入自己用到的依赖；它们只依赖共享组件 `events`（事件写入）、`access`（读取授权、有效投影、任务文件归属）、`read_model`（读视图与可用动作/禁用原因的唯一 owner）、`review_writer`（评审提交）、`dispatcher`（Worker 投递与投递失败收口）、`request_snapshot`（请求/资源快照与模式、模板、术语版本解析），用例之间互不依赖。`build_document_job_use_cases(...)` 按依赖方向装配并返回不可变的 `DocumentJobUseCases`，挂在 `AppRuntime.document_job_use_cases`；router 与 `DocumentJobIncidentService` 直接调用具体组件。模块级共享常量、结果数据类与 `NewGenerationRequestUnavailable` 在 `use_cases/common.py`。测试替换构造后依赖用 `tests/document_job_use_case_support.py::replace_dependency`，冻结用例层时钟用 `patch_use_case_clock`。
 - `app/domains/jobs/` 保留正式 DocumentJob 共用的模型、资源快照、路径、事件端口及 MinerU callback router；旧服务、调度、状态机和未挂载路由已删除。
 - `app/domains/files/` splits upload service, retention, quota policy, cleanup, validation, repository, schemas, and router.
 

@@ -25,7 +25,8 @@ from app.services.document_ir.table_header_review import TableHeaderReview
 from app.services.document_ir.table_placeholder import PdfCropSource
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
 from app.services.renderer.block_evidence import WordRenderResult
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.render_evidence import build_renderer_evidence
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.services.renderer import image_evidence
 
 

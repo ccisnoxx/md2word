@@ -1,0 +1,22 @@
+{
+  "file": [
+    "AcceptanceRunService.bootstrap_default_runs_if_empty",
+    "AuthService._bootstrap_repository_from_config_if_empty",
+    "TermVersionService.bootstrap_repository_from_csv_if_empty",
+    "Settings.page_quality_policy",
+    "FileTermRuleRepository.__init__",
+    "TermRuleBootstrapService.bootstrap",
+    "TemplateReadService.get_default_template_id",
+    "TemplateReadService.bootstrap_manifest_versions"
+  ],
+  "database": [
+    "AcceptanceRunService.bootstrap_default_runs_if_empty",
+    "AuthService._bootstrap_repository_from_config_if_empty",
+    "TermVersionService.bootstrap_repository_from_csv_if_empty",
+    "Settings.page_quality_policy",
+    "FileTermRuleRepository.__init__",
+    "TermRuleBootstrapService.bootstrap",
+    "TemplateReadService.get_default_template_id",
+    "TemplateReadService.bootstrap_manifest_versions"
+  ]
+}
