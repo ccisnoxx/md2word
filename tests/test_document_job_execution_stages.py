@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 import zipfile
 
 from billiard.exceptions import SoftTimeLimitExceeded
+from PIL import Image
 from pydantic import ValidationError
 
 from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJobRecord
@@ -19,10 +20,15 @@ from app.domains.jobs.models import JobResourceSnapshot
 from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.renderer.render_evidence import build_renderer_evidence
+from app.domains.document_jobs.table_evidence import save_report
+from app.services.renderer import DocumentIRRenderOptions, image_evidence
+from app.services.renderer.layout_plan import build_layout_plan
+from app.services.renderer.render_evidence import validate_persisted_renderer_content
 from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
 from tests import test_database_job_repository as persistence
 from tests import test_fastapi_jobs_backend as fixtures
+from tests.test_image_group_rendering import legacy_image_docx
 
 
 NEW_STAGES = ("translating", "translation_validating", "quality_checking")
@@ -88,20 +94,47 @@ class DocumentJobExecutionStageTests(TestCase):
         self.assertTrue(all(batch.status == "succeeded" for batch in batches))
         return job, batches
 
-    def _register_word(self, runtime, job, *, metadata, job_id=None, file_type="generated_word"):
+    def _register_word(self, runtime, job, *, metadata, job_id=None, file_type="generated_word", legacy=False):
         execution = runtime.document_job_execution_service
-        ir = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(execution.rendering.results.get_document_ir_file(job)))
+        ir_file = execution.rendering.results.get_document_ir_file(job)
+        ir_bytes = runtime.file_upload_service.read_file_content(ir_file)
+        ir = DocumentIR.model_validate_json(ir_bytes)
         template = execution.rendering.template_read_service.resolve_template_version(job.template_version_id)
-        content = execution.rendering.word_renderer.render_to_bytes(
+        # 与产品登记主 DOCX 一致：带 render_result 及其报告构建证据，否则图片布局标记缺少报告会被历史发现拒绝。
+        rendered = execution.rendering.word_renderer.render_to_result(
             ir, template_path=template.template_path, config_path=template.layout_config_path,
-            image_loader=execution.rendering.placeholders.build_image_loader(job),
+            image_loader=execution.rendering.placeholders.build_image_loader(job, ir),
+            options=DocumentIRRenderOptions(
+                subscript_config_path=runtime.settings.subscript_config_path,
+                document_language=ir.metadata.document_language,
+                template_version_id=template.template_version_id,
+            ),
         )
-        metadata = {**build_renderer_evidence(ir, content), **metadata}
+        content = rendered.content
+        if legacy:
+            # 历史主件：无报告、无 IR 绑定、无新 writer 图片标记，只有显式指针路径允许跨代复用。
+            return runtime.file_upload_service.register_generated_content(
+                tenant_id=job.tenant_id, company_id=job.company_id, job_id=job_id or job.id,
+                created_by=job.created_by, file_type=file_type, filename="recovery.docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                content=legacy_image_docx(content), metadata=metadata,
+            )
+        evidence = build_renderer_evidence(
+            ir, content, build_layout_plan(ir), render_result=rendered, formula_report=rendered.formula_report,
+            image_layout_report=rendered.image_layout_report,
+            renderer_content_contract_version=rendered.renderer_content_contract_version,
+            formula_source_coverage=rendered.formula_source_coverage,
+            expected_template_version_id=template.template_version_id,
+            expected_generation_policy=image_evidence.IMAGE_GENERATION_POLICY,
+        )
+        # 表格证据须先保存独立报告并写入描述符，历史发现会据此复核。
+        evidence, preparation = save_report(job, ir_file, ir_bytes, evidence, runtime.file_upload_service)
+        metadata = {**evidence, **metadata}
         return runtime.file_upload_service.register_generated_content(
             tenant_id=job.tenant_id, company_id=job.company_id, job_id=job_id or job.id,
             created_by=job.created_by, file_type=file_type, filename="recovery.docx",
             mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            content=content, metadata=metadata,
+            content=content, metadata=metadata, expires_at=preparation.docx_expires_at,
         )
 
     def test_new_and_legacy_stages_round_trip_all_metadata_backends(self):
@@ -183,14 +216,20 @@ class DocumentJobExecutionStageTests(TestCase):
             def ensure(evidence):
                 job = runtime.document_job_repository.list_document_jobs()[0]
                 observed.append(job.stage)
-                if job.stage == "quality_checking":
-                    self.assertFalse(self._files(runtime, job.id, "generated_word"))
-                else:
-                    self.assertEqual(job.stage, "uploading")
-                    self.assertIsNotNone(job.prepared_result)
+                self.assertEqual(job.stage, "quality_checking")
+                self.assertFalse(self._files(runtime, job.id, "generated_word"))
                 ensure_renderer_integrity(evidence)
 
-            with patch("app.domains.document_jobs.render_execution.ensure_renderer_integrity", side_effect=ensure):
+            # 上传阶段不再重算完整证据，而是从选定凭据的持久化证据复核内容。
+            def revalidate(*args, **kwargs):
+                job = runtime.document_job_repository.list_document_jobs()[0]
+                observed.append(job.stage)
+                self.assertEqual(job.stage, "uploading")
+                self.assertIsNotNone(job.prepared_result)
+                return validate_persisted_renderer_content(*args, **kwargs)
+
+            with patch("app.domains.document_jobs.render_execution.ensure_renderer_integrity", side_effect=ensure), \
+                    patch("app.domains.document_jobs.render_result.validate_persisted_renderer_content", side_effect=revalidate):
                 job_id = self._create(client, headers)
             events = runtime.document_job_event_repository.list_document_job_events(job_id)
             self.assertEqual(observed, ["quality_checking", "uploading"])
@@ -244,8 +283,12 @@ class DocumentJobExecutionStageTests(TestCase):
     def test_zero_translation_units_complete_without_provider_calls(self):
         with self._runtime() as (runtime, execution, provider, client, headers):
             buffer = io.BytesIO()
+            # 空内容会被 MinerU 产物校验拒绝（mineru_content_empty）；只含无图注图片的页才是“有内容、零翻译单元”。
+            image = io.BytesIO()
+            Image.new("RGB", (8, 8), "white").save(image, format="PNG")
             with zipfile.ZipFile(buffer, "w") as archive:
-                archive.writestr("content_list_v2.json", "[]")
+                archive.writestr("content_list_v2.json", json.dumps([[{"type": "image", "img_path": "images/a.png"}]]))
+                archive.writestr("images/a.png", image.getvalue())
             execution.fake_mineru_client.result_zip_bytes = buffer.getvalue()
             job_id = self._create(client, headers, mode="en2zh", language="en")
             job = runtime.document_job_repository.get_document_job(job_id)
@@ -426,10 +469,14 @@ class DocumentJobExecutionStageTests(TestCase):
 
                     with patch.object(execution.rendering.word_renderer, "render_to_result", wraps=execution.rendering.word_renderer.render_to_result) as render, patch(
                         "app.domains.document_jobs.render_execution.build_renderer_evidence", wraps=build_renderer_evidence,
-                    ) as evidence, patch.object(runtime.document_job_repository, "update_document_job_if_current", side_effect=update):
+                    ) as evidence, patch(
+                        "app.domains.document_jobs.render_result.validate_persisted_renderer_content",
+                        wraps=validate_persisted_renderer_content,
+                    ) as revalidate, patch.object(runtime.document_job_repository, "update_document_job_if_current", side_effect=update):
                         result = execution.execute_job(job.id, trace_id="trace_quality_replay")
                     self.assertEqual(result.status, "succeeded", result.error_message)
-                    self.assertEqual((render.call_count, evidence.call_count), (1, 2))
+                    # 渲染期完整构建一次证据；上传期只从选定凭据的持久化证据复核一次，不重渲染、不重建。
+                    self.assertEqual((render.call_count, evidence.call_count, revalidate.call_count), (1, 1, 1))
                     self.assertEqual(progress, sorted(progress))
                     self.assertGreaterEqual(min(progress), 94)
                     self.assertEqual(len(provider.requests), provider_count)
@@ -469,7 +516,7 @@ class DocumentJobExecutionStageTests(TestCase):
                 job = self._pause_after_ir(runtime, execution, client, headers)
                 word = self._register_word(
                     runtime, job, metadata={"retry_count": 0}, job_id="another_job" if invalid == "job" else None,
-                    file_type="document_ir" if invalid == "type" else "generated_word",
+                    file_type="document_ir" if invalid == "type" else "generated_word", legacy=True,
                 )
                 if invalid == "status":
                     runtime.document_file_repository.update_document_file(word.id, status="expired")

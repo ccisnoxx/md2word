@@ -25,6 +25,13 @@ class Rnd503DependencyIntegrationTests(TestCase):
                                 payload["metadata"].pop(key, None)
                             else:
                                 payload["metadata"][key] = None
+                        # 逻辑表格分组与表格参考资产都由校验报告派生；真实历史 IR 三者皆无，只删校验报告会构造出不存在的形态。
+                        payload["metadata"].update(logical_table_groups_version=None, logical_table_groups=[],
+                                                   logical_table_group_counts={}, table_references_version=None)
+                        for block in payload["blocks"]:
+                            for key in ("logical_group_id", "table_fragment_id", "table_reference", "reference_asset_refs"):
+                                block["metadata"].pop(key, None)
+                        payload["assets"] = [asset for asset in payload["assets"] if not asset["id"].startswith("table-reference:")]
                     original = execution.rendering.results.get_document_ir_file(job)
                     ir_file = runtime.file_upload_service.register_generated_content(
                         tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id,
@@ -37,7 +44,7 @@ class Rnd503DependencyIntegrationTests(TestCase):
                     template = execution.rendering.template_read_service.resolve_template_version(job.template_version_id)
                     rendered = execution.rendering.word_renderer.render_to_result(
                         ir, template_path=template.template_path, config_path=template.layout_config_path,
-                        image_loader=execution.rendering.placeholders.build_image_loader(job),
+                        image_loader=execution.rendering.placeholders.build_image_loader(job, ir),
                     )
                     content = base.legacy_image_docx(rendered.content)
                     evidence = build_renderer_evidence(ir, content, formula_report=rendered.formula_report)

@@ -24,7 +24,7 @@ class DocumentFileRetentionTests(TestCase):
                 file_type="generated_word",
                 storage_provider="local_object",
                 bucket="local-object",
-                object_key="document-jobs/tenant_default/docjob_old/generated_word/result.docx",
+                object_key="document-jobs/tenant_default/docjob_old/generated_word/file_old/result.docx",
                 original_filename="result.docx",
                 mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 size_bytes=10,
@@ -36,7 +36,7 @@ class DocumentFileRetentionTests(TestCase):
                 update={
                     "id": "file_recent",
                     "job_id": "docjob_recent",
-                    "object_key": "document-jobs/tenant_default/docjob_recent/generated_word/result.docx",
+                    "object_key": "document-jobs/tenant_default/docjob_recent/generated_word/file_recent/result.docx",
                     "expires_at": now + timedelta(days=1),
                 }
             )

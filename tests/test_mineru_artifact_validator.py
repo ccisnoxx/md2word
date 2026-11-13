@@ -29,6 +29,7 @@ from app.services.renderer import DocumentIRWordRenderer
 from app.services.renderer.render_evidence import build_renderer_evidence, build_renderer_metadata
 from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.services.renderer.render_event_summary import build_renderer_event_summary
+from tests.test_document_ir_mineru_converter_layout import _RecordingTableCropProvider
 from docx import Document
 from docx.image.image import Image as WordImage
 
@@ -55,8 +56,16 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
                 archive.writestr(content_list_name, json.dumps(payload))
                 for name, data in (members or {}).items():
                     archive.writestr(name, data)
-            return MinerUToDocumentIRService(**({"policy": policy} if policy else {})).convert_zip(
-                path, job_id="job", source_file_id="source", document_language="en"
+                if not any(name.endswith("layout.json") for name in members or {}):
+                    # 裁图帧取自 layout 页尺寸，缺失时失败关闭；未自带 layout 的用例补默认页尺寸。
+                    pages = len(payload) if isinstance(payload, list) and payload and isinstance(payload[0], list) else 1
+                    archive.writestr("layout.json", json.dumps(
+                        {"pdf_info": [{"page_idx": index, "page_size": [612, 792]} for index in range(pages)]}))
+            # 无 MinerU 参考图的显式表格占位须从源 PDF 裁图；本组测试关注校验与归一化，注入只记录请求的裁图夹具。
+            crop = _RecordingTableCropProvider("source", [(612, 792)] * 8)
+            return MinerUToDocumentIRService(pdf_crop_provider=crop, **({"policy": policy} if policy else {})).convert_zip(
+                path, job_id="job", source_file_id="source", document_language="en",
+                placeholder_source_loader=lambda: crop.source,
             )
 
     def test_invalid_page_is_not_silently_dropped(self):

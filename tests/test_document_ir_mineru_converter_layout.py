@@ -1779,7 +1779,8 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         with zipfile.ZipFile(zip_path, "w") as archive:
             archive.writestr("content_list.json", json.dumps(blocks, ensure_ascii=False))
             if v2_blocks is not None:
-                archive.writestr("nested/result_content_list_v2.json", json.dumps(v2_blocks, ensure_ascii=False))
+                # v2 与旧版清单须同属一个结果根（不同目录会被判为 multiple_result_roots），v2 优先。
+                archive.writestr("result_content_list_v2.json", json.dumps(v2_blocks, ensure_ascii=False))
             if layout is not None:
                 archive.writestr("layout.json", json.dumps(layout, ensure_ascii=False))
             for image_path, content in (images or {"images/chart.png": MINIMAL_PNG_BYTES}).items():

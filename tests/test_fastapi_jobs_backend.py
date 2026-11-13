@@ -4628,7 +4628,7 @@ class FastAPIJobsBackendTests(TestCase):
                 file_type="generated_word",
                 storage_provider="local_object",
                 bucket="local-object",
-                object_key="document-jobs/tenant_default/docjob_storage_usage/generated_word/reclaimable.docx",
+                object_key="document-jobs/tenant_default/docjob_storage_usage/generated_word/file_storage_usage_reclaimable/reclaimable.docx",
                 original_filename="reclaimable.docx",
                 mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 size_bytes=100,
@@ -4645,7 +4645,7 @@ class FastAPIJobsBackendTests(TestCase):
                 file_type="source_pdf",
                 storage_provider="s3",
                 bucket="bucket",
-                object_key="document-files/source.pdf",
+                object_key="document-files/tenant_default/file_storage_usage_s3/source.pdf",
                 original_filename="source.pdf",
                 mime_type="application/pdf",
                 size_bytes=200,
@@ -4679,7 +4679,7 @@ class FastAPIJobsBackendTests(TestCase):
                 file_type="image_asset",
                 storage_provider="local_object",
                 bucket="local-object",
-                object_key="document-jobs/tenant_default/docjob_storage_usage/image_asset/uploaded.png",
+                object_key="document-jobs/tenant_default/docjob_storage_usage/image_asset/file_storage_usage_uploaded_expired/uploaded.png",
                 original_filename="uploaded.png",
                 mime_type="image/png",
                 size_bytes=400,
@@ -4696,7 +4696,7 @@ class FastAPIJobsBackendTests(TestCase):
                 file_type="source_pdf",
                 storage_provider="local_object",
                 bucket="local-object",
-                object_key="document-files/active.pdf",
+                object_key="document-files/tenant_default/file_storage_usage_active/active.pdf",
                 original_filename="active.pdf",
                 mime_type="application/pdf",
                 size_bytes=500,
@@ -4713,7 +4713,7 @@ class FastAPIJobsBackendTests(TestCase):
                 file_type="generated_word",
                 storage_provider="local_object",
                 bucket="local-object",
-                object_key="document-jobs/tenant_default/docjob_storage_usage/generated_word/deleted.docx",
+                object_key="document-jobs/tenant_default/docjob_storage_usage/generated_word/file_storage_usage_deleted/deleted.docx",
                 original_filename="deleted.docx",
                 mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 size_bytes=600,
@@ -4725,12 +4725,12 @@ class FastAPIJobsBackendTests(TestCase):
             for record in [
                 reclaimable_file,
                 unsupported_s3_file,
-                missing_key_file,
                 uploaded_expired_file,
                 active_file,
                 deleted_file,
             ]:
                 runtime.document_file_repository.create_document_file(record)
+            self._seed_legacy_document_file(runtime, missing_key_file)
             reclaimable_path = runtime.file_upload_service.resolve_local_object_path(reclaimable_file.object_key)
             reclaimable_path.parent.mkdir(parents=True, exist_ok=True)
             reclaimable_path.write_bytes(b"still-present")
@@ -4820,7 +4820,7 @@ class FastAPIJobsBackendTests(TestCase):
                 file_type="source_pdf",
                 storage_provider="local_object",
                 bucket="local-object",
-                object_key="document-files/quota/active.pdf",
+                object_key="document-files/tenant_default/file_quota_active/active.pdf",
                 original_filename="active.pdf",
                 mime_type="application/pdf",
                 size_bytes=1_500,
@@ -4835,7 +4835,7 @@ class FastAPIJobsBackendTests(TestCase):
                 file_type="generated_word",
                 storage_provider="local_object",
                 bucket="local-object",
-                object_key="document-files/quota/deleted.docx",
+                object_key="document-files/tenant_default/file_quota_deleted/deleted.docx",
                 original_filename="deleted.docx",
                 mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 size_bytes=10_000,
@@ -4925,7 +4925,7 @@ class FastAPIJobsBackendTests(TestCase):
                     file_type="source_pdf",
                     storage_provider="local_object",
                     bucket="local-object",
-                    object_key="document-files/quota/existing.pdf",
+                    object_key="document-files/tenant_default/file_quota_existing/existing.pdf",
                     original_filename="existing.pdf",
                     mime_type="application/pdf",
                     size_bytes=1_500,
@@ -4996,7 +4996,7 @@ class FastAPIJobsBackendTests(TestCase):
                     file_type="source_pdf",
                     storage_provider="local_object",
                     bucket="local-object",
-                    object_key="document-files/quota/enforce-existing.pdf",
+                    object_key="document-files/tenant_default/file_quota_enforce_existing/enforce-existing.pdf",
                     original_filename="existing.pdf",
                     mime_type="application/pdf",
                     size_bytes=1_500,
@@ -5077,7 +5077,7 @@ class FastAPIJobsBackendTests(TestCase):
                     file_type="source_pdf",
                     storage_provider="local_object",
                     bucket="local-object",
-                    object_key="document-files/quota/override-existing.pdf",
+                    object_key="document-files/tenant_default/file_quota_override_existing/override-existing.pdf",
                     original_filename="existing.pdf",
                     mime_type="application/pdf",
                     size_bytes=1_500,
@@ -5152,7 +5152,7 @@ class FastAPIJobsBackendTests(TestCase):
                     file_type="source_pdf",
                     storage_provider="local_object",
                     bucket="local-object",
-                    object_key="document-files/quota/ops-existing.pdf",
+                    object_key="document-files/tenant_default/file_quota_ops_existing/ops-existing.pdf",
                     original_filename="existing.pdf",
                     mime_type="application/pdf",
                     size_bytes=1_500,
@@ -5349,7 +5349,7 @@ class FastAPIJobsBackendTests(TestCase):
                 file_type="generated_word",
                 storage_provider="local_object",
                 bucket="private-bucket",
-                object_key="secret/local/report-final.docx",
+                object_key="document-jobs/tenant_default/docjob_library_a/generated_word/file_library_local_expired/secret-report-final.docx",
                 original_filename="report-final.docx",
                 mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 size_bytes=900,
@@ -5370,7 +5370,7 @@ class FastAPIJobsBackendTests(TestCase):
                 file_type="generated_word",
                 storage_provider="s3",
                 bucket="s3-secret-bucket",
-                object_key="secret/s3/report-archive.docx",
+                object_key="document-jobs/tenant_default/docjob_library_b/generated_word/file_library_s3_expired/secret-report-archive.docx",
                 original_filename="report-archive.docx",
                 mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 size_bytes=200,
@@ -5388,7 +5388,7 @@ class FastAPIJobsBackendTests(TestCase):
                 file_type="source_pdf",
                 storage_provider="local_object",
                 bucket="private-bucket",
-                object_key="secret/local/source.pdf",
+                object_key="document-files/tenant_default/file_library_active_source/secret-source.pdf",
                 original_filename="source.pdf",
                 mime_type="application/pdf",
                 size_bytes=100,
@@ -5458,7 +5458,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertNotIn("checksum_sha256", first_item)
         self.assertNotIn("etag", first_item)
         self.assertNotIn("metadata", first_item)
-        self.assertNotIn("secret/local/report-final.docx", serialized_payload)
+        self.assertNotIn("document-jobs/tenant_default/docjob_library_a/generated_word/file_library_local_expired/secret-report-final.docx", serialized_payload)
         self.assertNotIn("secret-checksum", serialized_payload)
         self.assertNotIn("secret-etag", serialized_payload)
         self.assertNotIn("secret prompt", serialized_payload)
@@ -6581,10 +6581,8 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
             )
             stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_delete_no_key")
-            runtime.document_file_repository.update_document_file(
-                stale_file.id,
-                status="expired",
-                object_key="",
+            stale_file = self._seed_legacy_document_file(
+                runtime, stale_file.model_copy(update={"status": "expired", "object_key": ""}),
             )
             app = create_app(runtime)
 
@@ -6629,7 +6627,7 @@ class FastAPIJobsBackendTests(TestCase):
                 file_type="generated_word",
                 storage_provider="s3",
                 bucket="test-bucket",
-                object_key="document-jobs/tenant_default/docjob_retention/generated_word/s3.docx",
+                object_key="document-jobs/tenant_default/docjob_retention/generated_word/file_retention_delete_s3/s3.docx",
                 original_filename="s3.docx",
                 mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 size_bytes=10,
@@ -6677,7 +6675,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["items"][0]["s3_delete_contract"]["bucket"], "test-bucket")
         self.assertEqual(
             payload["items"][0]["s3_delete_contract"]["object_key"],
-            "document-jobs/tenant_default/docjob_retention/generated_word/s3.docx",
+            "document-jobs/tenant_default/docjob_retention/generated_word/file_retention_delete_s3/s3.docx",
         )
         self.assertEqual(payload["items"][0]["s3_delete_contract"]["version_id"], "version-delete-001")
         self.assertTrue(payload["items"][0]["s3_delete_contract"]["target_exact"])
@@ -6705,7 +6703,7 @@ class FastAPIJobsBackendTests(TestCase):
                 file_type="generated_word",
                 storage_provider="s3",
                 bucket="test-bucket",
-                object_key="document-jobs/tenant_default/docjob_retention/generated_word/parity.docx",
+                object_key="document-jobs/tenant_default/docjob_retention/generated_word/file_retention_delete_s3_parity/parity.docx",
                 original_filename="parity.docx",
                 mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 size_bytes=10,
@@ -6740,7 +6738,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(fake_contract["contract_version"], contract_payload["fake_file_retention_contract_version"])
         self.assertEqual(fake_contract["adapter_mode"], contract_payload["fake_adapter_mode"])
         self.assertEqual(fake_contract["bucket"], "test-bucket")
-        self.assertEqual(fake_contract["object_key"], "document-jobs/tenant_default/docjob_retention/generated_word/parity.docx")
+        self.assertEqual(fake_contract["object_key"], "document-jobs/tenant_default/docjob_retention/generated_word/file_retention_delete_s3_parity/parity.docx")
         self.assertEqual(fake_contract["version_id"], "version-parity-001")
         self.assertTrue(fake_contract["target_exact"])
         self.assertEqual(fake_contract["expected_outcome"], "fake_skipped")
@@ -10924,6 +10922,17 @@ class FastAPIJobsBackendTests(TestCase):
         if response.status_code != 201:
             raise AssertionError(response.json())
         return response.json()["job_id"]
+
+    @staticmethod
+    def _seed_legacy_document_file(runtime: AppRuntime, record: DocumentFileRecord) -> DocumentFileRecord:
+        """模拟路径准入规则上线前写入的历史记录（如空 object_key）。
+
+        create_document_file 只对新记录执行规范路径准入，历史数据只能经文件后端直接落盘构造。
+        """
+
+        backend = runtime.document_file_repository.backend
+        backend.write_json(backend.document_files_dir / f"{record.id}.json", record.model_dump(mode="json"))
+        return record
 
     def _seed_expired_document_file(self, runtime: AppRuntime, *, file_id: str) -> DocumentFileRecord:
         """创建一个已过 expires_at 的 document_file，并写入对应本地对象内容。"""

@@ -32,7 +32,7 @@ class DocumentJobDownloadAvailabilityTests(TestCase):
         file = DocumentFileRecord(
             id=f"result_{self.sequence}", tenant_id="tenant", company_id="company", job_id=job_id,
             file_type="generated_word", storage_provider="s3", bucket="private-bucket",
-            object_key=f"private/{job_id}/main.docx", original_filename="main.docx",
+            object_key=f"document-jobs/tenant/{job_id}/generated_word/result_{self.sequence}/main.docx", original_filename="main.docx",
             mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             size_bytes=10, status="uploaded", expires_at=utc_now() + timedelta(hours=1),
         )
