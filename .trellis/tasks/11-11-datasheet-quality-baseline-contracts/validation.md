@@ -91,7 +91,7 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 - AC1。正式扩展清单 v1 已完成准入，覆盖三份非 OPA228 源手册的四个样本项。[扩展清单](extended-sample-manifest.json) · [样本对账](#样本对账-ac1)
 - AC2。指标可从保存的观测复算，人工修改次数、验收耗时和签字等待实际审阅记录。英译中视觉指标需要同模式批准基准。[人工验收记录](en2zh-human-review.md)
 - AC3。六份历史观测已统一复算，保留每次运行及其证据层级。[基线清单](metrics-baseline.json)
-- AC4。结构与质量阻断已有证据，真实缺片段负例的发布拒绝和 Word/WPS 实物复核待办。[结构证据对账](#结构证据对账-ac4)
+- AC4。结构与质量阻断已有证据，WPS 桌面实物已复核。Microsoft Word 和目标环境的缺片段负例仍待实测。[结构证据对账](#结构证据对账-ac4) · [AC4 实测与待办](#ac4-实测与待办)
 - AC5。本地 file/SQLite 状态合同定向通过，正式发布验收待取得目标环境证据。[状态合同](#根因修改与保留边界)
 - AC6。现有合同和证据已对账，正式运行及签字继续跟踪。[合同对账](#合同对账-ac6)
 
@@ -105,7 +105,7 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 | TI TPLD2001 SCPS286C 第 3–4 页 | TI 官方 PDF 与本地原件指纹一致。已绑定切片、原始和派生包指纹，独立标注一张 22×8 续表、两行表头及 60 个技术 Token。用户确认可用于内部 direct 回放。 | 按跨页正例准入。原始包绑定来源校核后得到 22×8 原生续表，两段完整 HTML 继续作为同源结构对照。[独立标注和指纹](cross-page-grid-observations.json) · [预合并复验](upstream-table-coverage-validation.md) |
 | 最小组件夹具 | 组件清单将 OPA228 P1 MinerU 输入标为 `minimized_mineru_fixture`。 | 仅计入组件覆盖，正式 PDF 的样本和分母由对应运行清单确定。[组件清单](../../../tests/fixtures/component_pdf_samples/manifest.yaml) |
 
-2026-11-13 完成[正式扩展样本清单 v1](extended-sample-manifest.json)对账。三项正常样本为 SN74AC244 规格页、RS2G04 第 6 页英译中和 TPLD2001 跨页表。SN74AC244 缺片段单列为预期阻断负例。逐项核对了本地切片与 MinerU 内容列表指纹，以及 RS2G04 和 TPLD2001 已登记的 ZIP 指纹。OPA228 清单和历史统计口径沿用原记录。线上验证、Word/WPS 复核和人工签字仍待完成。[正式验收待办](#正式验收与人工签字待办)
+2026-11-13 完成[正式扩展样本清单 v1](extended-sample-manifest.json)对账。三项正常样本为 SN74AC244 规格页、RS2G04 第 6 页英译中和 TPLD2001 跨页表。SN74AC244 缺片段单列为预期阻断负例。逐项核对了本地切片与 MinerU 内容列表指纹，以及 RS2G04 和 TPLD2001 已登记的 ZIP 指纹。OPA228 清单和历史统计口径沿用原记录。[正式验收待办](#正式验收与人工签字待办)
 
 ### 结构证据对账 AC4
 
@@ -113,8 +113,29 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 | --- | --- |
 | 横纵合并、多级表头、宽表 | 三张实表的独立标注、源 Grid 和 OOXML 已对照，包括 SN74AC244 的 19×8 规格宽表。原排版三表原始 0/3，来源校核后 3/3，技术 Token 8/8。RS2G04 英译中保留原始 0/1 和同源校核后 1/1 两份结果。[三表复验](table-header-review.md#三张表的同源对照) · [RS2G04 表头复验](en2zh-validation.md#使用本次-mineru-结果复验-esd-表头) |
 | 跨页归组、重复表头、可编辑性 | TPLD2001 原始预合并包绑定来源校核后只输出一张 22×8 原生表，两行 `w:tblHeader`，60/60 个标注 Token。图表复验确认 Table 4-1 的单元格可修改、保存和重读。两段完整 HTML 对照已归组为一张 24×8 表，仍缺可信表头标记，保留四行标题和 0/1 结构结果。[续表复验](continuation-contract-validation.md) · [预合并复验](upstream-table-coverage-validation.md) · [可编辑性复验](table-figure-validation.md) |
-| 缺片段和发布阻断 | SN74AC244 第 11–12 页负例的 `/1/0` 保留可追溯的源 PDF 裁图，质量为 `blocked`。待在目标环境对同一类真实负例记录草稿下载和发布拒绝。[来源绑定负例](upstream-table-coverage-validation.md) · [下载与发布合同](../../../docs/api/document-jobs.md#质量审核与正式交付的证据绑定) |
-| Word/WPS 实物复核 | SN74AC244 已有 118/118 个源公式和 LibreOffice 目录刷新证据。Word/WPS 的目录刷新、表格显示及编辑结果待记录。[目录公式复验](toc-formula-verification.md#整份样本结果) |
+| 缺片段和发布阻断 | SN74AC244 第 11–12 页负例的 `/1/0` 保留可追溯的源 PDF 裁图，质量为 `blocked`。同一负例的目标环境下载与发布证据仍待实测。[来源绑定负例](upstream-table-coverage-validation.md) · [下载与发布合同](../../../docs/api/document-jobs.md#质量审核与正式交付的证据绑定) |
+| Word/WPS 实物复核 | SN74AC244 已有 118/118 个源公式和 LibreOffice 目录刷新证据。WPS 桌面实物已复核，Microsoft Word 实物仍待复核。[目录公式复验](toc-formula-verification.md#整份样本结果) · [AC4 实测与待办](#ac4-实测与待办) |
+
+### AC4 实测与待办
+
+2026-11-13 在 macOS WPS Office `12.1.29182` 上复核两份既有 DOCX 的本地副本。以下为客户端实测，目标环境证据单独采集。
+
+| 检查 | WPS 实测结果 |
+| --- | --- |
+| 目录刷新 | 在整份 SN74AC244 DOCX 通过「引用 → 更新目录」刷新并保存。保存件仍有一个原生 `TOC` 域，占位提示「更新目录」已消失，WPS 显示目录条目及页码。文档由 36 页变为 37 页，生成目录的 5.6 项末尾紧接页码，当前环境提示缺少 4 种字体。 |
+| 公式书签 | 刷新后在 WPS 书签对话框分别定位 `md2w_formula_000006` 和 `md2w_formula_000007`，落在 5.5 与 5.6 项的 `V_CC = 3.3V ± 0.3V` 和 `V_CC = 5V ± 0.5V`。保存件中两个书签的起止 ID 均配对，范围内保留 OMML 公式文本及 `CC` 下标结构。 |
+| 主表编辑 | 第 11–12 页负例 DOCX 显示原生主表。在副本首条数据行的 `Status(1)` 单元格将 `Active` 改为 `AC4_WPS_EDIT` 并保存。重读保存件确认标记只出现于该单元格，表格仍为 31 行 × 10 列。 |
+| 裁图显示 | 同一负例在 WPS 第 3 页显示缺片段的源 PDF 裁图、来源页和 bbox，并显示「表格非编辑占位，质量阻塞，不可交付」。保存件正文仍有一个绘图节点。 |
+
+复核输入与保存件指纹如下，原始 DOCX 的指纹复核一致。保存件留在本地忽略目录 `tests/tmp/ac4-client-review.EXrwG0/`。
+
+| DOCX | 输入 SHA-256 | WPS 保存件 SHA-256 |
+| --- | --- | --- |
+| 整份样本 `tests/tmp/datasheet-toc-verified-20261111/sn74ac244.docx` | `8c8ae38289248d531b26f12658e524470c8655ecf4aae71d3696e0b32640d6dc` | `7ee338b3d7fae594fd4cbb36b7991de13b75e5be1fc71200751a9633baf2d9aa` |
+| 缺片段负例 `tests/tmp/datasheet-cross-page-grid-20261112/upstream-coverage-after/missing.docx` | `b01802fbc2450e593f7ee5f952aebd6b4d73495d52555f5bda8030e464a4fa09` | `42e2237ed9f82ef9bd0522f67ba306073ababa634c9b725e4980c720c22a8344` |
+
+- [ ] 目标环境 direct 负例。用户确认 hostdzire 尚未部署本地优化代码，本轮未发起线上运行。待获准环境部署待验版本后，记录版本、任务 ID、内部草稿的实际下载及 SHA-256、发布请求的 `409` 与 `publication_quality_blocked`，并核对请求前后该任务的发布列表，确认未新增发布记录。
+- [ ] Microsoft Word 实物复核。本机未找到 Microsoft Word 桌面版，待在可用客户端用同两份输入复核目录刷新、两个公式书签、主表编辑和裁图显示，并记录客户端版本及实测结果。
 
 ### 合同对账 AC6
 
@@ -123,7 +144,7 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 | 合同 | 实际修复、复用或已有证据 | 待验证 |
 | --- | --- | --- |
 | TAB-301～303、TAB-307 | 复用 `canonical-table/v1`、HTML Grid、质量诊断及表格证据。已补来源绑定和持久化证据重读的样本对照。[Grid 合同](design.md#3-canonical-table-grid) · [来源绑定复验](upstream-table-coverage-validation.md) | Grid 与 Word 的原生 `<th>` 跨盖无锚点行差异已登记，继续保留兼容边界。[问题清单](issues.md) |
-| TAB-304～306、TAB-308 | 宽表合并与跨页结构已有样本和 OOXML 对照。已修复复合表号归组、预合并空片归属和示意图误分类，保留真实缺片段质量阻断和专项回归证据。[结构证据](#结构证据对账-ac4) | Word/WPS 实物复核、真实负例发布阻断及扩展表格发布门禁。 |
+| TAB-304～306、TAB-308 | 宽表合并与跨页结构已有样本和 OOXML 对照。已修复复合表号归组、预合并空片归属和示意图误分类，保留真实缺片段质量阻断、专项回归和 WPS 实物证据。[结构证据](#结构证据对账-ac4) | Microsoft Word 实物复核、真实负例发布阻断及扩展表格发布门禁。 |
 | CON-103/104、QA-601/602/605/607 | 复用现有状态、审核 API 和发布快照。已有 5 项 file/SQLite 定向通过记录，覆盖审核失效、发布重放、冲突、证据变化和主件保护。[设计合同](design.md#4-质量审核发布和交付合同) · [API 证据绑定](../../../docs/api/document-jobs.md#质量审核与正式交付的证据绑定) | 目标环境的权限、批准、发布、失败原子性和固定产物回查继续按 AC5 验收。 |
 | QA-603/604/606 | 复用下载分类和可操作性 API 合同。设计已明确发布成功审计和受保护主件的写入边界。[下载和发布 API](../../../docs/api/document-jobs.md) · [设计合同](design.md#4-质量审核发布和交付合同) | 三栏审核、下载提示、发布 UI 及其审计对账的目标环境验收仍待记录。 |
 | REL-701/704 | 保留 P0 历史报告、隔离实链和英译中实测，复用正式验收及签字流程。[线上验证流程](../../../docs/deploy/online-first-validation-workflow.md) | 正式目标环境的门禁结果、发布版本和运行绑定、人工签字。 |
@@ -135,7 +156,7 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 - [ ] 补 P0/P1 管理员签字。P0 隔离实链自动结果为 4/4，该次仍待签字。RS2G04 第 6 页隔离英译中实测继续作为对应运行的证据。[P0 实链记录](metrics-implementation.md#固定清单隔离实链验收) · [英译中实测](en2zh-validation.md#rs2g04-完整链路复验)
 - [ ] 补 RS2G04 人工审核记录，绑定实际审阅稿 SHA-256、审核轮次和结论，回填有效审核时间及实际修正的独立缺陷数。英译中视觉偏差继续等待同模式版式基准批准。[人工验收记录](en2zh-human-review.md)
 - [ ] 补可归因的正式费用凭据。P0 隔离实链费用 4/4 缺测，RS2G04 记录保留为实测用量估算。[费用与延迟](metrics-implementation.md)
-- [ ] 完成 Word/WPS 实物复核，记录目录刷新及表格显示和编辑结果。[目录公式验证](toc-formula-verification.md)
+- [ ] 完成 Microsoft Word 实物复核。WPS 已复核目录刷新、公式书签、主表编辑和裁图显示。[AC4 实测与待办](#ac4-实测与待办)
 
 ### 既有定向验证记录
 
