@@ -24,6 +24,7 @@ from app.infrastructure.persistence.mysql.jobs import MysqlJobEventRepository
 from app.infrastructure.persistence.mysql.retention_policies import MysqlRetentionPolicyRepository
 from app.infrastructure.persistence.mysql.resources import MysqlResourceVersionRepository
 from app.infrastructure.persistence.mysql.saved_views import MysqlSavedViewRepository
+from app.infrastructure.persistence.mysql.template_catalog import MysqlTemplateCatalogRepository
 from app.infrastructure.persistence.mysql.term_assets import MysqlTermRuleAssetRepository, MysqlTranslationTermRepository
 from app.infrastructure.persistence.mysql.term_rule_proposals import MysqlTermRuleProposalRepository
 from app.infrastructure.persistence.mysql.term_rule_review import MysqlTermRuleReviewRepository
@@ -47,6 +48,7 @@ __all__ = [
     "MysqlRetentionPolicyRepository",
     "MysqlResourceVersionRepository",
     "MysqlSavedViewRepository",
+    "MysqlTemplateCatalogRepository",
     "MysqlTermRuleAssetRepository",
     "MysqlTermRuleProposalRepository",
     "MysqlTermRuleReviewRepository",

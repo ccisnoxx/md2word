@@ -164,6 +164,26 @@ docker compose --env-file .env -f docker/prod/docker-compose.yml down
 docker compose --env-file .env -f docker/prod/docker-compose.yml down -v
 ```
 
+## 旧模板目录导入
+
+MySQL 模板目录由数据库持有。标准镜像读取内置 manifest 登记 seed，API 和 Worker 从共享 `/app/var` 读取已登记的上传资源。全新 MySQL 库在应用启动时登记内置模板。
+
+升级旧部署时，先停止 API、Worker 和其他模板写入者，保留旧容器中实际使用的 manifest、旧 `template_state.json`、MySQL 备份与共享卷备份。旧 manifest 如果留在容器私有层，应在重建该容器前提取。旧配置即使仍指向镜像内的默认文件，也需核对容器实际使用的清单。启动新版本前，从候选镜像运行下列命令。容器应使用实际的 MySQL 连接设置及原共享卷，保留与服务相同的资源挂载路径。将已保全的旧输入目录以只读方式挂载到 `/migration`。
+
+```bash
+docker compose --env-file .env -f docker/prod/docker-compose.yml \
+  run --rm --no-deps -v "$LEGACY_TEMPLATE_INPUTS:/migration:ro" api \
+  python scripts/ops/migrate_template_catalog.py \
+  --legacy-manifest /migration/templates_manifest.yaml \
+  --legacy-state /migration/template_state.json --dry-run
+```
+
+预检只读 MySQL 和文件，输出 JSON。检查 `conflicts`、`historical_issues`、`orphan_versions` 与 `orphan_files`。缺失的当前登记版本、缺失或损坏的当前资产、无法渲染的默认指针，以及和内置 seed 同号但身份不同的版本均需先对账。旧清单已移除内置模板、MySQL 仍有其版本、旧全局默认明确指向另一个可用模板时，将内置模板登记为已删除。证据不足时预检报告冲突。保留孤立草稿、未登记实物和已关闭版本。历史或孤立项目报告中的问题需人工判断其是否影响切换。
+
+确认待导入项目后，使用同一命令和输入，换成 `--apply --expected-evidence <预检报告的 evidence>`。再用 `--verify` 只读复核。预检值覆盖旧输入、候选变更与 MySQL 读取结果。若报告 `migration_commit_unknown_verify_before_retry`，先复核持久化状态，再决定是否重做预检。迁移保留已登记 payload 和 SHA-256，仅按已核对的旧清单应用兼容的版本禁用状态。全局默认尚未登记时导入有效的旧默认。若旧状态文件没有默认，按旧清单的顺序选择启用的默认 seed 或首个启用项，仍要求可用的已发布默认版本。报告中的 `deferred_seed` 由应用首次启动登记，应在启动后核对实际目录及默认指针。
+
+将生产 `TEMPLATES_MANIFEST_PATH` 指向 `resources/template_configs/templates_manifest.yaml`，然后按部署流程启动并验证。升级后的目录变更保存在数据库。若需回退旧应用，保持写入暂停，先从切换记录和数据库备份对账升级后的模板、默认选择及绑定任务，再恢复经验证的旧运行配置与实物。
+
 ## 开发 Compose
 
 需要专门在 Docker 环境里调完整依赖时，可以使用开发编排；同样需要先补齐 57 个 wheel。未设置 `MD2WORD_IMAGE` 时，开发 API/Worker 共用本地默认标签 `md2word-dev:local`；可在当前 shell 导出该变量或在 `.env` 中设置独立开发标签来覆盖，使用默认值时应确保两处没有遗留的生产镜像引用。当前 P0 发布验收不要求本地跑这一步，full-stack 证据以 hostdzire 为准：

@@ -494,8 +494,8 @@ class JobResourceSnapshotService:
             raise JobResourceSnapshotError(
                 "任务资源快照缺少格式规则版本。", category="conflict", code="resource_snapshot_missing_term_rule_set",
             )
-        template_record = self._load_render_record(template, "template")
-        rules_record = self._load_render_record(rules, "term_rule_set")
+        template_record = self.authenticate_render_binding(template, "template")
+        rules_record = self.authenticate_render_binding(rules, "term_rule_set")
         template_payload = template_record.payload
         rules_payload = rules_record.payload
         assert template_payload is not None and rules_payload is not None
@@ -566,20 +566,18 @@ class JobResourceSnapshotService:
             destination, source=self._resolve_payload_path(source), expected_sha256=expected_sha256, hash_error=hash_error,
         )
 
-    def _load_render_record(
+    def authenticate_render_binding(
         self, snapshot: ResolvedResourceVersion, expected_type: ResourceType,
     ) -> ResourceVersionRecord:
+        """校验渲染所需的绑定身份与版本记录，供 Worker 和继承快照的克隆共用。"""
+
         if snapshot.resource_type != expected_type:
             raise JobResourceSnapshotError("任务资源快照类型不匹配。", category="conflict")
-        record = self.load_snapshot_record(snapshot, allow_template_publication=expected_type == "template")
+        record = self.load_snapshot_record(snapshot)
         if (record.resource_type, record.resource_id, record.version) != (
             snapshot.resource_type, snapshot.resource_id, snapshot.version,
         ):
             raise JobResourceSnapshotError("任务资源记录的版本身份不匹配。", category="conflict")
-        if expected_type == "template" and record.status not in {ResourceVersionStatus.PUBLISHED, ResourceVersionStatus.DRAFT}:
-            raise JobResourceSnapshotError(
-                "任务绑定的模板版本状态不可用于生成。", category="conflict", code="resource_snapshot_invalid_status",
-            )
         if record.payload is None or resource_payload_sha256(record.payload) != record.snapshot_hash:
             raise JobResourceSnapshotError(
                 "任务资源版本的 payload SHA-256 不匹配。", category="conflict",
@@ -672,9 +670,7 @@ class JobResourceSnapshotService:
             code="translation_profile_language_pair_missing",
         )
 
-    def load_snapshot_record(
-        self, snapshot: ResolvedResourceVersion, *, allow_template_publication: bool = False,
-    ) -> ResourceVersionRecord:
+    def load_snapshot_record(self, snapshot: ResolvedResourceVersion) -> ResourceVersionRecord:
         """按绑定版本读取记录，允许以原身份重验已发布的模板草稿。"""
 
         if self.resource_version_service is None:
@@ -690,6 +686,13 @@ class JobResourceSnapshotService:
                 category="conflict",
                 code="resource_snapshot_not_found",
             )
+        if snapshot.resource_type == "template" and record.status not in {
+            ResourceVersionStatus.PUBLISHED,
+            ResourceVersionStatus.DRAFT,
+        }:
+            raise JobResourceSnapshotError(
+                "任务绑定的模板版本状态不可用于生成。", category="conflict", code="resource_snapshot_invalid_status",
+            )
         draft_template_is_authorized = (
             record.status == ResourceVersionStatus.DRAFT
             and snapshot.resource_type == "template"
@@ -702,7 +705,7 @@ class JobResourceSnapshotService:
                 code="resource_snapshot_invalid_status",
             )
         if record.snapshot_hash != snapshot.snapshot_hash and not (
-            allow_template_publication and snapshot.resource_type == "template" and snapshot.status == "draft"
+            snapshot.resource_type == "template" and snapshot.status == "draft"
             and record.status == ResourceVersionStatus.PUBLISHED
             and record.payload is not None and resource_payload_sha256({
                 key: value for key, value in record.payload.items()

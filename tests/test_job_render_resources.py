@@ -170,10 +170,13 @@ class JobRenderResourceMaterializationTests(TestCase):
         }))
         first = self.service.materialize_render_resources(snapshot, self.paths)
         self.assertFalse(first.publishable)
-        _register(self.versions, "template", "default", "3", {
+        published = _register(self.versions, "template", "default", "3", {
             **record.payload, "verification_job_id": "sample", "publish_reason": "approved",
         })
         self.assertEqual(self.service.materialize_render_resources(snapshot, self.paths), first)
+        self.assertNotEqual(published.snapshot_hash, draft.snapshot_hash)
+        self.versions.disable("template", "default", "3")
+        self.assert_error("resource_snapshot_invalid_status", snapshot=snapshot)
 
 
 class JobRenderResourceExecutionTests(TestCase):
@@ -270,16 +273,23 @@ class JobRenderResourceExecutionTests(TestCase):
             self.assertEqual(event.payload["blocking_quality_flags"], ["template_docx_hash_mismatch"])
             self.assertNotIn(str(docx), json.dumps(event.payload))
 
-    def test_bound_template_keeps_manifest_disable_gate(self):
+    def test_bound_template_renders_without_catalog_or_manifest(self):
         with self._runtime() as (runtime, execution, _provider, client, headers):
             job = self._pause_after_ir(runtime, execution, client, headers)
             job, _docx, _layout = self._bind_resources(runtime, execution, job)
-            reader = execution.rendering.template_read_service
-            manifest = reader._load_manifest()
-            disabled = manifest.model_copy(update={
-                "templates": [template.model_copy(update={"enabled": False}) for template in manifest.templates],
-            })
-            with patch.object(reader, "_load_manifest", return_value=disabled), patch.object(
+            with patch.object(execution.rendering, "template_read_service", None):
+                finished = execution.execute_job(job.id)
+            self.assertEqual(finished.status, "succeeded", finished.error_message)
+            self.assertTrue(self._files(runtime, job.id, "generated_word"))
+
+    def test_bound_template_rejects_disabled_database_version_before_rendering(self):
+        with self._runtime() as (runtime, execution, _provider, client, headers):
+            job = self._pause_after_ir(runtime, execution, client, headers)
+            job, _docx, _layout = self._bind_resources(runtime, execution, job)
+            service = execution.rendering.job_resource_snapshot_service.resource_version_service
+            template_id, version = job.template_version_id.split("@")
+            service.disable("template", template_id, version)
+            with patch.object(
                 execution.rendering.word_renderer, "render_to_result",
             ) as renderer:
                 failed = execution.execute_job(job.id)

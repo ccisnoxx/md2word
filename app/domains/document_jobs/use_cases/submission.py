@@ -328,6 +328,7 @@ class DocumentJobSubmission:
         clone_config = self.request_snapshot.resolve_clone_config(
             source_job,
             source_file,
+            user=user,
             new_job_id=new_job_id,
             config_strategy=config_strategy,
             document_language=normalized_document_language,

@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/index.md","reason":"后端规范入口"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"MySQL 仓储、事务与 schema 升级"}
+{"file":".trellis/spec/backend/template-layout-configuration.md","reason":"版本、历史 seed、草稿发布与渲染合同"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"API 错误映射和 Worker 快照错误合同"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"定向验证和生产镜像证据边界"}
+{"file":".trellis/spec/backend/document-job-mode-contract.md","reason":"direct 任务与正式资源快照边界"}

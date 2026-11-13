@@ -27,8 +27,7 @@ verification_scope: >-
 
 本页维护模板文档、版式草稿与资源版本的 API 参考。本批仅静态核对路由挂载与声明入口，未逐字段复核响应、权限、副作用或真实请求；示例和原验收声明仍按各自记录范围解释。
 
-当前 Templates API 统一挂在 `/api/v1/templates` 下，模板资产由 manifest
-记录，API 管理上传的 DOCX 会保存到 `TEMPLATES_STORAGE_PATH` 指向的版本目录：
+Templates API 统一挂在 `/api/v1/templates` 下。MySQL 模式以数据库目录和版本快照为准，bundled manifest 只用于只读初始化。上传的 DOCX 保存在 `TEMPLATES_STORAGE_PATH` 指向的共享受管目录。
 
 - 模板列表
 - 单个模板详情
@@ -39,7 +38,7 @@ verification_scope: >-
 - 版式配置读取和保存为 draft version
 - Template Version 创建、发布、设默认和禁用
 
-Template Version 的 publish / set-default / disable 和版式配置 draft 创建成功路径会写入 audit event。普通模板 CRUD 和旧运行态默认模板切换目前只保留 admin 鉴权，不写 audit event。
+模板管理写入需要 admin 权限。创建、更新、替换、删除、默认切换和版本发布、禁用等成功操作均沿用各自的审计事件。
 
 ## API 参考
 
@@ -47,10 +46,10 @@ Template Version 的 publish / set-default / disable 和版式配置 draft 创�
 
 - 用途：列出当前可用模板。
 - 当前行为：
-  - 返回 manifest 中全部可见且启用的模板
+  - 返回当前目录中启用且未删除的模板
   - 每项同时带出：
     - 模板文件元数据
-    - manifest 当前绑定的版式 YAML 元数据
+    - 返回的模板版本所绑定的版式 YAML 元数据
     - 当前运行态术语 YAML 元数据
 
 - 响应关键字段：
@@ -68,7 +67,7 @@ Template Version 的 publish / set-default / disable 和版式配置 draft 创�
 
 - 用途：查询单个模板详情。
 - 当前支持：
-  - 任意 manifest 中可见且启用的 `template_id`
+  - 任意启用且未删除的 `template_id`
 
 - 资产元数据字段：
 
@@ -88,7 +87,7 @@ Template Version 的 publish / set-default / disable 和版式配置 draft 创�
 
 ### `GET /api/v1/templates/{template_id}/versions`
 
-- 用途：列出 API 管理目录中保留的模板文件版本和资源版本状态。
+- 用途：列出模板的版本与状态。MySQL 以已登记记录为准，登记的文件缺失时资产显示 `exists=false`。
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`。
 - 响应：
   - `template_id`
@@ -171,7 +170,7 @@ Template Version 的 publish / set-default / disable 和版式配置 draft 创�
 | `render_policy_json` | 否 | JSON object；默认 `{}` |
 | `template` | 是 | `.docx` 文件 |
 
-- 成功后 `version=1`，文件保存到版本目录。
+- 成功后 `version=1`。MySQL 同时登记模板目录和首版 draft；通过验证并发布后，普通任务才能选择该版本。
 
 ### `PATCH /api/v1/templates/{template_id}`
 
@@ -183,6 +182,7 @@ Template Version 的 publish / set-default / disable 和版式配置 draft 创�
   - `enabled`
   - `layout_config_path`
   - `render_policy`
+- MySQL 的版式路径和渲染策略更新只影响后续上传的缺省配置。已登记版本继续使用原快照。
 
 ### `PUT /api/v1/templates/{template_id}/file`
 
@@ -190,7 +190,7 @@ Template Version 的 publish / set-default / disable 和版式配置 draft 创�
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：`multipart/form-data`
   - `template`: `.docx` 文件
-- 成功后当前 `version` 递增，旧版本文件保留。
+- MySQL 模式创建新 draft，原默认版本和旧版本文件保留。file/SQLite 沿用原本地版本切换。
 
 ### `POST /api/v1/templates/{template_id}/versions`
 
@@ -217,6 +217,7 @@ Template Version 的 publish / set-default / disable 和版式配置 draft 创�
   - `verification_job_id` 必须对应已存在的 Document Job
   - 验证任务 `status` 必须是 `succeeded`
   - 验证任务 `template_version_id` 必须匹配 `{template_id}@{version}`
+  - MySQL 目录模式还要求任务的模板资源快照绑定同一个 draft 及其 SHA-256
 - 成功响应会返回 `verification_job_id`、`verification_note`、`verified_by`、`verified_at`、`publish_reason`、`published_by`、`published_at`。
 
 ### `POST /api/v1/templates/{template_id}/versions/{version}/set-default`
@@ -229,7 +230,7 @@ Template Version 的 publish / set-default / disable 和版式配置 draft 创�
 - 关键语义：
   - 只切资源版本默认指针，不改历史版本内容
   - MySQL `resource_default_versions` 是模板版本默认指针唯一来源
-  - `template_state.json` 只保存默认 template id；manifest 不再被版本切换改写
+  - MySQL 全局默认模板 ID 通过模板的 `PATCH .../default` 单独切换
   - 后续 job 创建时固化该 published version，Worker 严格使用同版本 DOCX 和 YAML
 
 ### `POST /api/v1/templates/{template_id}/versions/{version}/disable`
@@ -239,27 +240,30 @@ Template Version 的 publish / set-default / disable 和版式配置 draft 创�
 - 审计：成功后写 `template.disable`，`target_id={template_id}@{version}`。
 - 约束：
   - 默认版本不能直接禁用
-  - 历史 DOCX 文件保留，不在禁用接口中物理清理
+  - 历史 DOCX 文件保留。仍未渲染的已绑定任务会被 Worker 拒绝，失败原因码为 `resource_snapshot_invalid_status`
 
 ### `PATCH /api/v1/templates/{template_id}/default`
 
 - 用途：将指定模板设为当前运行态默认模板。
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 关键语义：
-  - 不改模板 manifest
-  - 只改运行态 default state
-  - jobs 未显式传 `template_id` 时，后续将回退到这个默认模板
+  - MySQL 更新数据库全局默认模板 ID。目标必须已启用，且有可用的已发布默认版本
+  - 后续未显式选择模板的任务使用此默认模板。file/SQLite 继续使用 `template_state.json`
 
 - 常见状态：
-  - `404`：模板 ID 不存在，或默认模板文件缺失
+  - `404` 表示模板不存在或未启用。在 file/SQLite 模式下也包括模板文件缺失
+  - `400` 表示 MySQL 模式下缺少可用的已发布默认版本，或资源包校验失败
+  - `409` 表示检查完成后该模板的默认版本已发生变化
+  - `503 template_catalog_commit_unknown` 表示提交结果需要重新读取目录确认
 
 ### `DELETE /api/v1/templates/{template_id}`
 
-- 用途：从 manifest 删除模板记录。
+- 用途：从可选模板目录移除模板。MySQL 保留删除状态与历史版本。
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 约束：
   - 当前默认模板不能删除
-  - 历史版本文件保留，不在删除接口中物理清理
+  - 模板级停用或删除后，不能新建或克隆任务来绑定该模板。已绑定快照的同一任务仍能按原版本执行或重试，Worker 继续校验版本状态与资源哈希
+  - 历史版本文件保留
 
 ## 当前限制
 

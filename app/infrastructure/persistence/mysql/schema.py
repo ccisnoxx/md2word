@@ -6,6 +6,24 @@ from __future__ import annotations
 from typing import Any
 
 
+TEMPLATE_CATALOG_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS template_catalog (
+        template_id VARCHAR(128) NOT NULL PRIMARY KEY,
+        enabled TINYINT(1) NOT NULL,
+        deleted TINYINT(1) NOT NULL,
+        payload LONGTEXT NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS template_catalog_defaults (
+        singleton_id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+        template_id VARCHAR(128) NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+)
+
+
 MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS job_events (
@@ -49,6 +67,7 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         PRIMARY KEY (resource_type, resource_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    *TEMPLATE_CATALOG_SCHEMA_STATEMENTS,
     """
     CREATE TABLE IF NOT EXISTS term_rule_proposals (
         id VARCHAR(128) PRIMARY KEY,

@@ -34,7 +34,7 @@ def _validate_runtime_guardrails(settings: Settings) -> None:
         )
 
 
-def build_runtime(settings: Settings | None = None) -> AppRuntime:
+def build_runtime(settings: Settings | None = None, *, bootstrap_templates: bool = True) -> AppRuntime:
     """构建当前进程共享运行时：先构造全部服务，再统一执行启动 bootstrap，最后装配健康检查。"""
 
     resolved_settings = settings or Settings()
@@ -45,7 +45,9 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     platform = build_platform_services(resolved_settings, adapters)
     pipeline = build_document_pipeline(resolved_settings, adapters, platform)
     terminology = build_terminology_services(resolved_settings, adapters, platform)
-    run_startup_bootstrap(resolved_settings, platform, pipeline, terminology)
+    run_startup_bootstrap(
+        resolved_settings, platform, pipeline, terminology, bootstrap_templates=bootstrap_templates,
+    )
     observability = build_observability_services(resolved_settings, adapters, platform, pipeline)
     return AppRuntime(
         settings=resolved_settings,
@@ -106,8 +108,9 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
 
 def create_app(runtime: AppRuntime | None = None) -> FastAPI:
     app_runtime = runtime or build_runtime()
-    # 测试和嵌入式调用可直接注入 runtime；应用边界仍需保证 seed 版本已完成幂等登记。
-    app_runtime.template_read_service.bootstrap_manifest_versions()
+    if runtime is not None:
+        # 注入的 runtime 可能尚未登记 seed。
+        app_runtime.template_read_service.bootstrap_manifest_versions()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

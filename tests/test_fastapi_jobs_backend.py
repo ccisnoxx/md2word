@@ -11416,14 +11416,14 @@ class FastAPIJobsBackendTests(TestCase):
                 changed_draft = draft_record.model_copy(update={
                     "payload": changed_payload, "snapshot_hash": resource_payload_hash(changed_payload),
                 })
-                preflight = runtime.template_read_service._validate_registered_template_package
+                preflight = runtime.template_read_service.validate_registered_template_package
 
                 def validate_then_replace(record):
                     preflight(record)
                     service.repository.save_resource_version(changed_draft)
 
                 with patch.object(
-                    runtime.template_read_service, "_validate_registered_template_package",
+                    runtime.template_read_service, "validate_registered_template_package",
                     side_effect=validate_then_replace,
                 ):
                     stale_publish = client.post(

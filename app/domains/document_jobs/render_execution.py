@@ -123,17 +123,10 @@ class WordRenderExecution:
             raise JobResourceSnapshotError(
                 "任务模板版本与绑定资源不一致。", category="conflict", code="resource_snapshot_template_version_mismatch",
             )
-        version = int(template.version)
-        try:
-            self.template_read_service.resolve_template_render_state(template.resource_id, version)
-        except (ValueError, FileNotFoundError):
-            raise JobResourceSnapshotError(
-                "任务绑定的模板版本未启用。", category="conflict", code="resource_snapshot_invalid_status",
-            ) from None
         resources = service.materialize_render_resources(snapshot, build_job_paths(self.settings.data_path, job.id))
         return TemplateVersionSelection(
             template_id=template.resource_id,
-            version=version,
+            version=int(template.version),
             template_version_id=job.template_version_id,
             template_path=resources.template_path,
             layout_config_path=resources.layout_config_path,

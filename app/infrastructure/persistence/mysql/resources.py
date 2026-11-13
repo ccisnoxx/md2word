@@ -93,24 +93,7 @@ class MysqlResourceVersionRepository:
 
         with self.backend.connect() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO resource_versions
-                        (resource_type, resource_id, version, status, snapshot_hash, payload_ref, payload, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        record.resource_type,
-                        record.resource_id,
-                        record.version,
-                        record.status.value,
-                        record.snapshot_hash,
-                        record.payload_ref,
-                        json.dumps(record.payload, ensure_ascii=False) if record.payload is not None else None,
-                        record.created_at.isoformat(),
-                        record.updated_at.isoformat(),
-                    ),
-                )
+                insert_resource_version(cursor, record)
         return record
 
     def allocate_next_version(self, resource_type: ResourceType, resource_id: str, minimum_next: int) -> int:
@@ -171,7 +154,7 @@ class MysqlResourceVersionRepository:
                 row = cursor.fetchone()
         if row is None:
             return None
-        return self._load_resource_version(row)
+        return load_resource_version(row)
 
     def list_resource_versions(self, resource_type: ResourceType, resource_id: str) -> list[ResourceVersionRecord]:
         with self.backend.connect() as connection:
@@ -186,7 +169,7 @@ class MysqlResourceVersionRepository:
                     (resource_type, resource_id),
                 )
                 rows = cursor.fetchall()
-        return [self._load_resource_version(row) for row in rows]
+        return [load_resource_version(row) for row in rows]
 
     def set_default_resource_version(self, resource_type: ResourceType, resource_id: str, version: str) -> None:
         with self.backend.connect() as connection:
@@ -221,18 +204,40 @@ class MysqlResourceVersionRepository:
                 row = cursor.fetchone()
         if row is None:
             return None
-        return self._load_resource_version(row)
+        return load_resource_version(row)
 
-    def _load_resource_version(self, row: dict[str, Any]) -> ResourceVersionRecord:
-        payload = json.loads(row["payload"]) if row["payload"] is not None else None
-        return ResourceVersionRecord(
-            resource_type=row["resource_type"],
-            resource_id=row["resource_id"],
-            version=row["version"],
-            status=row["status"],
-            snapshot_hash=row["snapshot_hash"],
-            payload_ref=row["payload_ref"],
-            payload=payload,
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
+
+def insert_resource_version(cursor: Any, record: ResourceVersionRecord) -> None:
+    cursor.execute(
+        """
+        INSERT INTO resource_versions
+            (resource_type, resource_id, version, status, snapshot_hash, payload_ref, payload, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            record.resource_type,
+            record.resource_id,
+            record.version,
+            record.status.value,
+            record.snapshot_hash,
+            record.payload_ref,
+            json.dumps(record.payload, ensure_ascii=False) if record.payload is not None else None,
+            record.created_at.isoformat(),
+            record.updated_at.isoformat(),
+        ),
+    )
+
+
+def load_resource_version(row: dict[str, Any]) -> ResourceVersionRecord:
+    payload = json.loads(row["payload"]) if row["payload"] is not None else None
+    return ResourceVersionRecord(
+        resource_type=row["resource_type"],
+        resource_id=row["resource_id"],
+        version=row["version"],
+        status=row["status"],
+        snapshot_hash=row["snapshot_hash"],
+        payload_ref=row["payload_ref"],
+        payload=payload,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
