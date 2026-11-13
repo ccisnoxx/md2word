@@ -1674,3 +1674,36 @@ Worker 失败消息只保留固定码构造的消息，其余输出异常类型�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 51: 归档 P1 默认模板版本切换完整性修复
+
+**Date**: 2026-11-13
+**Task**: 归档 P1 默认模板版本切换完整性修复
+**Branch**: `main`
+
+### Summary
+
+显式切换先验证登记的 DOCX 和 YAML，再在 MySQL 事务中比较并切换默认指针、读回确认并写入审计。全局默认模板 ID 由独立接口管理。
+
+### Main Changes
+
+- 归档 template-default-switch-integrity，保留 AC1–AC5 验收记录。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a3d74d74` | (see git log) |
+
+### Testing
+
+- [OK] 24 个本地定向测试通过，其中 8 个使用真实 MySQL 8.4.9，覆盖并发、回滚及提交结果未知。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 提交保留在本地，按用户要求暂不推送。
