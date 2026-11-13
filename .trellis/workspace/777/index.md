@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 50
-- **Last Active**: 2026-11-12
+- **Total Sessions**: 51
+- **Last Active**: 2026-11-13
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1676 | Active |
+| `journal-1.md` | ~1709 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 51 | 2026-11-13 | 生产动态模板目录迁入 MySQL | `094b405f` | `codex/production-template-catalog` |
 | 50 | 2026-11-12 | 模板与渲染资源完整性收尾 | `2a6a4cb03e93be398f20990b4bf695847c8d42d6` | `codex/template-render-integrity` |
 | 49 | 2026-11-09 | 前端链接修复与登录有效期 7 天上线 | `2f274109`, `6d25b99f`, `5c36d334`, `94088455` | `fix/frontend-links-and-login-ttl` |
 | 48 | 2026-11-06 | 表格占位失败诊断上线与真实任务验收 | `af33c940`, `fdd12f91` | `codex/table-placeholder-deploy-record` |
