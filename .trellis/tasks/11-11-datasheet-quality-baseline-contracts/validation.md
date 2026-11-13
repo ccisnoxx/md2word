@@ -91,7 +91,7 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 - AC1。正式扩展清单 v1 已完成准入，覆盖三份非 OPA228 源手册的四个样本项。[扩展清单](extended-sample-manifest.json) · [样本对账](#样本对账-ac1)
 - AC2。指标可从保存的观测复算，人工修改次数、验收耗时和签字等待实际审阅记录。英译中视觉指标需要同模式批准基准。[人工验收记录](en2zh-human-review.md)
 - AC3。六份历史观测已统一复算，保留每次运行及其证据层级。[基线清单](metrics-baseline.json)
-- AC4。结构与质量阻断已有证据，WPS 桌面实物已复核。Microsoft Word 和目标环境的缺片段负例仍待实测。[结构证据对账](#结构证据对账-ac4) · [AC4 实测与待办](#ac4-实测与待办)
+- AC4。hostdzire 隔离缺片段负例已通过，WPS 桌面实物已复核。AC4 总项仍待验收，生产验证、Microsoft Word 复核和人工签字继续待办。[AC4 实测与待办](#ac4-实测与待办) · [人工签字待办](#正式验收与人工签字待办)
 - AC5。本地 file/SQLite 状态合同定向通过，正式发布验收待取得目标环境证据。[状态合同](#根因修改与保留边界)
 - AC6。现有合同和证据已对账，正式运行及签字继续跟踪。[合同对账](#合同对账-ac6)
 
@@ -113,12 +113,12 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 | --- | --- |
 | 横纵合并、多级表头、宽表 | 三张实表的独立标注、源 Grid 和 OOXML 已对照，包括 SN74AC244 的 19×8 规格宽表。原排版三表原始 0/3，来源校核后 3/3，技术 Token 8/8。RS2G04 英译中保留原始 0/1 和同源校核后 1/1 两份结果。[三表复验](table-header-review.md#三张表的同源对照) · [RS2G04 表头复验](en2zh-validation.md#使用本次-mineru-结果复验-esd-表头) |
 | 跨页归组、重复表头、可编辑性 | TPLD2001 原始预合并包绑定来源校核后只输出一张 22×8 原生表，两行 `w:tblHeader`，60/60 个标注 Token。图表复验确认 Table 4-1 的单元格可修改、保存和重读。两段完整 HTML 对照已归组为一张 24×8 表，仍缺可信表头标记，保留四行标题和 0/1 结构结果。[续表复验](continuation-contract-validation.md) · [预合并复验](upstream-table-coverage-validation.md) · [可编辑性复验](table-figure-validation.md) |
-| 缺片段和发布阻断 | SN74AC244 第 11–12 页负例的 `/1/0` 保留可追溯的源 PDF 裁图，质量为 `blocked`。同一负例的目标环境下载与发布证据仍待实测。[来源绑定负例](upstream-table-coverage-validation.md) · [下载与发布合同](../../../docs/api/document-jobs.md#质量审核与正式交付的证据绑定) |
+| 缺片段和发布阻断 | SN74AC244 第 11–12 页负例的 `/1/0` 保留可追溯的源 PDF 裁图，质量为 `blocked`。hostdzire 隔离实链已验证内部草稿下载和发布拒绝，生产实测待办。[来源绑定负例](upstream-table-coverage-validation.md) · [隔离负例实测](#隔离负例实测) |
 | Word/WPS 实物复核 | SN74AC244 已有 118/118 个源公式和 LibreOffice 目录刷新证据。WPS 桌面实物已复核，Microsoft Word 实物仍待复核。[目录公式复验](toc-formula-verification.md#整份样本结果) · [AC4 实测与待办](#ac4-实测与待办) |
 
 ### AC4 实测与待办
 
-2026-11-13 在 macOS WPS Office `12.1.29182` 上复核两份既有 DOCX 的本地副本。以下为客户端实测，目标环境证据单独采集。
+2026-11-13 在 macOS WPS Office `12.1.29182` 上复核两份既有 DOCX 的本地副本。
 
 | 检查 | WPS 实测结果 |
 | --- | --- |
@@ -134,8 +134,21 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 | 整份样本 `tests/tmp/datasheet-toc-verified-20261111/sn74ac244.docx` | `8c8ae38289248d531b26f12658e524470c8655ecf4aae71d3696e0b32640d6dc` | `7ee338b3d7fae594fd4cbb36b7991de13b75e5be1fc71200751a9633baf2d9aa` |
 | 缺片段负例 `tests/tmp/datasheet-cross-page-grid-20261112/upstream-coverage-after/missing.docx` | `b01802fbc2450e593f7ee5f952aebd6b4d73495d52555f5bda8030e464a4fa09` | `42e2237ed9f82ef9bd0522f67ba306073ababa634c9b725e4980c720c22a8344` |
 
-- [ ] 目标环境 direct 负例。用户确认 hostdzire 尚未部署本地优化代码，本轮未发起线上运行。待获准环境部署待验版本后，记录版本、任务 ID、内部草稿的实际下载及 SHA-256、发布请求的 `409` 与 `publication_quality_blocked`，并核对请求前后该任务的发布列表，确认未新增发布记录。
+- [ ] 生产环境 direct 负例。待获准的生产环境部署待验版本并具备发布拒绝验证条件后，记录版本、任务 ID、内部草稿的实际下载及 SHA-256、发布请求的 `409 publication_quality_blocked`，以及请求前后的发布记录数。
 - [ ] Microsoft Word 实物复核。本机未找到 Microsoft Word 桌面版，待在可用客户端用同两份输入复核目录刷新、两个公式书签、主表编辑和裁图显示，并记录客户端版本及实测结果。
+
+#### 隔离负例实测
+
+- [x] 2026-11-13，SN74AC244 第 11–12 页 `direct` 负例在 hostdzire 隔离环境通过。API 和 Worker 共用从 `1748f5ee` 构建的 `md2word-p0:1748f5ee-ac4-isolated`，镜像 ID 为 `sha256:1c50d72534cefaf27dc35801706bdb44d5bff457a9857dbf348ea6c1890be8c6`。该环境使用独立 MySQL、Redis 和文件卷，并启用发布写入。
+
+| 证据 | 实测结果 |
+| --- | --- |
+| 任务与质量 | `docjob_530717cc627f` 最终为 `succeeded` / `completed`，质量为 `blocked`，交付状态为 `internal_draft`。表格证据记录了空 HTML 片段的源 PDF 裁图和 `table_noneditable_placeholder`。 |
+| 内部草稿下载 | 实际下载返回 HTTP `200`，分类 `internal_only`，警告码 `quality_blocked_not_deliverable`。DOCX 可读取，SHA-256 为 `c47240978d09880f47ca89fba590e4f08bb53492409686015c27e980139f60fd`，与隔离 MySQL 登记一致。 |
+| 发布拒绝 | 发布返回 HTTP `409`，原因码 `publication_quality_blocked`，trace ID `255a20156e9a4fb5a969c36b3782f344`。发布列表请求前后均为 0 条，隔离 MySQL 复核为 0 条，任务仍为 `internal_draft`。 |
+| 同一任务重试 | 首次解析因隔离环境读取了旧 MinerU 凭据而以 `mineru_failed` 结束，旧凭据的只读查询返回 HTTP `401`。改用当前生效的凭据后，同一任务 ID 重试一次并完成。隔离 MySQL 中只有这一个任务。 |
+
+隔离服务已停止，镜像、数据卷和运行证据保留。证据文件在 hostdzire 的 `/root/md2word-releases/1748f5ee-ac4-isolated/run/ac4-evidence.json`。
 
 ### 合同对账 AC6
 
@@ -144,7 +157,7 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 | 合同 | 实际修复、复用或已有证据 | 待验证 |
 | --- | --- | --- |
 | TAB-301～303、TAB-307 | 复用 `canonical-table/v1`、HTML Grid、质量诊断及表格证据。已补来源绑定和持久化证据重读的样本对照。[Grid 合同](design.md#3-canonical-table-grid) · [来源绑定复验](upstream-table-coverage-validation.md) | Grid 与 Word 的原生 `<th>` 跨盖无锚点行差异已登记，继续保留兼容边界。[问题清单](issues.md) |
-| TAB-304～306、TAB-308 | 宽表合并与跨页结构已有样本和 OOXML 对照。已修复复合表号归组、预合并空片归属和示意图误分类，保留真实缺片段质量阻断、专项回归和 WPS 实物证据。[结构证据](#结构证据对账-ac4) | Microsoft Word 实物复核、真实负例发布阻断及扩展表格发布门禁。 |
+| TAB-304～306、TAB-308 | 宽表合并与跨页结构已有样本和 OOXML 对照。已修复复合表号归组、预合并空片归属和示意图误分类，保留隔离负例发布拒绝、专项回归和 WPS 实物证据。[结构证据](#结构证据对账-ac4) | Microsoft Word 实物复核、生产负例发布阻断及扩展表格发布门禁。 |
 | CON-103/104、QA-601/602/605/607 | 复用现有状态、审核 API 和发布快照。已有 5 项 file/SQLite 定向通过记录，覆盖审核失效、发布重放、冲突、证据变化和主件保护。[设计合同](design.md#4-质量审核发布和交付合同) · [API 证据绑定](../../../docs/api/document-jobs.md#质量审核与正式交付的证据绑定) | 目标环境的权限、批准、发布、失败原子性和固定产物回查继续按 AC5 验收。 |
 | QA-603/604/606 | 复用下载分类和可操作性 API 合同。设计已明确发布成功审计和受保护主件的写入边界。[下载和发布 API](../../../docs/api/document-jobs.md) · [设计合同](design.md#4-质量审核发布和交付合同) | 三栏审核、下载提示、发布 UI 及其审计对账的目标环境验收仍待记录。 |
 | REL-701/704 | 保留 P0 历史报告、隔离实链和英译中实测，复用正式验收及签字流程。[线上验证流程](../../../docs/deploy/online-first-validation-workflow.md) | 正式目标环境的门禁结果、发布版本和运行绑定、人工签字。 |
@@ -152,7 +165,7 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 
 ### 正式验收与人工签字待办
 
-- [ ] 在获准的目标环境补审核、下载和发布证据，覆盖真实缺片段负例，并将正式 P0/P1 门禁结论绑定对应发布版本和运行。[状态合同实施](implement.md#3-明确并验证状态合同ac5ac6) · [正式验收流程](../../../docs/deploy/online-first-validation-workflow.md)
+- [ ] 在获准的生产环境补审核、下载和发布证据，覆盖真实缺片段负例，并将正式 P0/P1 门禁结论绑定对应发布版本和运行。[状态合同实施](implement.md#3-明确并验证状态合同ac5ac6) · [正式验收流程](../../../docs/deploy/online-first-validation-workflow.md)
 - [ ] 补 P0/P1 管理员签字。P0 隔离实链自动结果为 4/4，该次仍待签字。RS2G04 第 6 页隔离英译中实测继续作为对应运行的证据。[P0 实链记录](metrics-implementation.md#固定清单隔离实链验收) · [英译中实测](en2zh-validation.md#rs2g04-完整链路复验)
 - [ ] 补 RS2G04 人工审核记录，绑定实际审阅稿 SHA-256、审核轮次和结论，回填有效审核时间及实际修正的独立缺陷数。英译中视觉偏差继续等待同模式版式基准批准。[人工验收记录](en2zh-human-review.md)
 - [ ] 补可归因的正式费用凭据。P0 隔离实链费用 4/4 缺测，RS2G04 记录保留为实测用量估算。[费用与延迟](metrics-implementation.md)
