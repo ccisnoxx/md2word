@@ -2,7 +2,7 @@
 
 ## 样本与范围
 
-本地回放使用正式 MinerU → DocumentIR → Word 适配器，解析输入是已有 MinerU 缓存。扩展样本使用用户提供的 TI SN54AC244/SN74AC244 SCAS514H，以及本地既有的 RS2G04 RevA.4。原 PDF、MinerU JSON、图像和 DOCX 均留在本地。版本化清单只保留身份指纹、来源页段和独立标注。[扩展清单](../../../tests/fixtures/datasheet_quality/local_baseline_manifest.json)
+本地回放使用正式 MinerU → DocumentIR → Word 适配器，解析输入是已有 MinerU 缓存。首轮扩展样本使用用户提供的 TI SN54AC244/SN74AC244 SCAS514H，以及本地既有的 RS2G04 RevA.4。原 PDF、MinerU JSON、图像和 DOCX 均留在本地。首轮清单保留身份指纹、来源页段和独立标注。[首轮本地回放清单](../../../tests/fixtures/datasheet_quality/local_baseline_manifest.json)
 
 | 样本范围 | 本地证据 |
 | --- | --- |
@@ -88,7 +88,7 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 
 ## 验收进度
 
-- AC1。已对账现有样本，正式扩展清单的准入记录待补。[样本对账](#样本对账-ac1)
+- AC1。正式扩展清单 v1 已完成准入，覆盖三份非 OPA228 源手册的四个样本项。[扩展清单](extended-sample-manifest.json) · [样本对账](#样本对账-ac1)
 - AC2。指标可从保存的观测复算，人工修改次数、验收耗时和签字等待实际审阅记录。英译中视觉指标需要同模式批准基准。[人工验收记录](en2zh-human-review.md)
 - AC3。六份历史观测已统一复算，保留每次运行及其证据层级。[基线清单](metrics-baseline.json)
 - AC4。结构与质量阻断已有证据，真实缺片段负例的发布拒绝和 Word/WPS 实物复核待办。[结构证据对账](#结构证据对账-ac4)
@@ -101,11 +101,11 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 | --- | --- | --- |
 | OPA228 四项 | 正式 P0 清单固定 `gs-003`、`gs-004`、`gs-006`、`gs-008` 及各项验收重点。缓存回放的 PDF 指纹另存。 | P0 隔离实链 direct 4/4。缓存回放 4/4，按各自输入和证据层级保留。[P0 清单](../../../tests/fixtures/golden_samples/manifest.yaml) · [隔离实链](metrics-implementation.md#固定清单隔离实链验收) |
 | TI SN54AC244/SN74AC244 SCAS514H | 用户提供并授权用于验收。扩展清单固定整份及第 3–6、11–12 页的 PDF 和内容列表指纹。规格页标注 19×8 宽表、双层表头、合并和技术 Token。 | 第 3–6 页 direct 可打开。第 11–12 页为预期阻断负例，定位 `/1/0`、原因 `table_noneditable_placeholder`，单列于正常样本。英译中失败已定位至原 PDF 第 5 页批次，具体单元格差异待补响应证据。[扩展清单](../../../tests/fixtures/datasheet_quality/local_baseline_manifest.json) · [英译中失败定位](en2zh-validation.md#sn74ac244-英译中失败批次的离线定位) |
-| RS2G04 Rev A.4 | 来源为本地既有 PDF。清单及观测绑定整份和第 6 页派生样本指纹，独立标注 ESD Ratings 4×4 网格、两处合并、表头和 3 个技术 Token。 | 整份 direct 回放可打开。第 6 页隔离 API/Worker 英译中成功下载，技术 Token 3/3。正式扩展准入的来源和使用范围待确认。[扩展清单](../../../tests/fixtures/datasheet_quality/local_baseline_manifest.json) · [英译中实链观测](en2zh-rs2g04-live-observations.json) |
-| TI TPLD2001 SCPS286C 第 3–4 页 | 专项观测记录 TI 来源链接、原件及切片 SHA-256、原始和派生包指纹，独立标注为一张 22×8 续表、两行表头及 60 个技术 Token。 | 已取得真实 PDF 的跨页结构回放。原始包及两段完整 HTML 对照分别保留，正式扩展清单的准入和使用范围待确认。[跨页对照](cross-page-grid-validation.md) · [独立标注和指纹](cross-page-grid-observations.json) |
+| RS2G04 Rev A.4 | 本地原件、官方同版 PDF 和第 6 页切片各自保留指纹。独立标注 ESD Ratings 4×4 网格、两处合并、表头和 3 个技术 Token。用户确认可用于内部英译中验收及所需外部服务处理。 | 整份 direct 回放可打开。第 6 页隔离 API/Worker 英译中成功下载，技术 Token 3/3，按英译中正例准入。原始结构和同源表头校核结果分别保留。[英译中实链观测](en2zh-rs2g04-live-observations.json) · [表头复验](en2zh-validation.md#使用本次-mineru-结果复验-esd-表头) |
+| TI TPLD2001 SCPS286C 第 3–4 页 | TI 官方 PDF 与本地原件指纹一致。已绑定切片、原始和派生包指纹，独立标注一张 22×8 续表、两行表头及 60 个技术 Token。用户确认可用于内部 direct 回放。 | 按跨页正例准入。原始包绑定来源校核后得到 22×8 原生续表，两段完整 HTML 继续作为同源结构对照。[独立标注和指纹](cross-page-grid-observations.json) · [预合并复验](upstream-table-coverage-validation.md) |
 | 最小组件夹具 | 组件清单将 OPA228 P1 MinerU 输入标为 `minimized_mineru_fixture`。 | 仅计入组件覆盖，正式 PDF 的样本和分母由对应运行清单确定。[组件清单](../../../tests/fixtures/component_pdf_samples/manifest.yaml) |
 
-正式样本准入待补的是至少两份非 OPA228 源件的统一清单记录。记录需关联来源和使用范围、版本或页段、指纹、独立预期、模式及正负例分类。PDF 和 MinerU 原包继续按各自存放约定管理。
+2026-11-13 完成[正式扩展样本清单 v1](extended-sample-manifest.json)对账。三项正常样本为 SN74AC244 规格页、RS2G04 第 6 页英译中和 TPLD2001 跨页表。SN74AC244 缺片段单列为预期阻断负例。逐项核对了本地切片与 MinerU 内容列表指纹，以及 RS2G04 和 TPLD2001 已登记的 ZIP 指纹。OPA228 清单和历史统计口径沿用原记录。线上验证、Word/WPS 复核和人工签字仍待完成。[正式验收待办](#正式验收与人工签字待办)
 
 ### 结构证据对账 AC4
 

@@ -10,7 +10,7 @@
 - [P0 清单](../../../tests/fixtures/golden_samples/manifest.yaml)的四项均为 OPA228 切页。现有 [P1 英译中清单](../../../tests/fixtures/p1_translation_samples/manifest.yaml)也来自 OPA228。[组件样本策略](../../../docs/engineering/testing-acceptance-strategy.md#8-样本体系)记录了其他风险场景，最小 MinerU 夹具只证明组件行为。
 - 当前分支已有 [Canonical Table Grid](../../../app/services/tables/models.py)、[质量与交付状态](../../../app/domains/document_jobs/delivery_state.py)、[追加式审核记录](../../../app/domains/document_jobs/review.py)和[发布快照](../../../app/domains/document_jobs/publication.py)。以当前实现、公开合同和可重放证据为基线，核对原实施清单的状态差异。
 
-用户已确认七组指标和实施顺序，并授权将其提供的 TI SN54AC244/SN74AC244（SCAS514H）PDF 与 MinerU 结果用于验收。该样本按外部本地输入管理，另一个数据手册来源按既定准入规则补齐。
+用户已确认七组指标和实施顺序，并授权将其提供的 TI SN54AC244/SN74AC244（SCAS514H）PDF 与 MinerU 结果用于验收。2026-11-13，用户确认 RS2G04 可用于内部英译中验收及所需外部服务处理，TPLD2001 可用于内部 direct 回放。原 PDF、切片和 MinerU 结果留在授权存放位置，仓库登记来源、指纹和证据引用。[正式扩展样本清单](extended-sample-manifest.json)
 
 2026-11-12 调整本阶段优先级，先完成 Q2 的七组指标计算、统一复算和人工回填接口。现有样本与历史观测用于验证计算和覆盖范围，发现的偏差进入[问题清单](issues.md)。Q3 的统一表格结构验收和 Q4 状态合同沿用既有记录。
 
@@ -25,9 +25,9 @@
 
 ## 验收
 
-- [ ] AC1 / Q1。提供两份或以上非 OPA228 源数据手册的合规来源、版本或页段、内容指纹和独立预期。正式 PDF、组件夹具、正常样本和阻断负例可区分。既有四项仍可按原口径对照，正常样本和负例分别汇总。
+- [x] AC1 / Q1。提供两份或以上非 OPA228 源数据手册的合规来源、版本或页段、内容指纹和独立预期。正式 PDF、组件夹具、正常样本和阻断负例可区分。既有四项仍可按原口径对照，正常样本和负例分别汇总。
   - [x] 对账 OPA228 四项、SN74AC244、RS2G04 和 TPLD2001 的现有来源与样本证据，区分正常 PDF、预期阻断和组件夹具，记录 direct 和英译中已覆盖的范围。[样本对账](validation.md#样本对账-ac1)
-  - [ ] 补齐纳入正式扩展清单的样本准入记录，逐项确认来源和使用范围，并绑定版本、页段、指纹、独立预期及运行模式。[样本准入缺口](validation.md#样本对账-ac1)
+  - [x] 正式扩展清单 v1 已登记三份非 OPA228 源手册的四个样本项，逐项绑定来源、使用范围、版本、页段、指纹、独立预期和运行模式。[扩展清单](extended-sample-manifest.json) · [准入对账](validation.md#样本对账-ac1)
 - [x] AC2 / Q2。固定输入可复算七组指标，人工记录可绑定具体产物和审核轮次。比率保留分子、分母和覆盖，逐计划项记录缺测原因。失败与未采集边界有定向用例。[指标实施](metrics-implementation.md)
 - [x] AC3 / Q2。统一清单已复算六份历史观测。报告按运行、转换模式和证据层级保留独立口径。既有 P0 目标沿用清单，受保护技术 Token 完整率目标为 100%，新增阈值待校准。[基线清单](metrics-baseline.json)
 - [ ] AC4 / Q3。用独立标注分别核对网格和实际 OOXML。至少覆盖横纵合并、多级或重复表头、跨页续表、宽表和缺片段。缺片段报告定位与质量状态，并按现有规则阻断发布。合格样本保留单元格结构、可编辑性和技术内容归属。
