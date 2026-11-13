@@ -35,6 +35,7 @@
   - 页脚：`font_name`、`western_font_name`、`complex_script_font_name`。
 - `ResourceVersionRepositoryProtocol.create_resource_version(record)`：只插入，不覆盖。
 - `ResourceVersionRepositoryProtocol.allocate_next_version(type, id, minimum_next)`：MySQL 事务内分配不复用整数。
+- `get_default_resource_pointer(type, id)` 读取原始指针的版本和更新时间。`switch_default_resource_version(record, expected_pointer=..., audit_event=...)` 返回事务确认后的记录，条件冲突返回 `None`。
 - 内部 `TemplateConfigPackage.load_content(content: bytes)`：与 `load(path)` 共享既有 YAML object、schema、归一化和字段值校验；renderer 单次读取字节后同时计算 hash 和解析，不增加 API/schema 字段。
 - 内部 `resolve_bundled_template_seed(root_dir)` 返回 manifest 唯一启用的内置默认版本及 DOCX/YAML 路径。
 - 内部 `validate_template_package(template_path=..., layout_config_path=...)` 返回已预检字节的 SHA-256；失败提供固定 `code` 和逻辑 `path`。
@@ -48,6 +49,8 @@
 - `schema_version`、`template_name`、`output_filename`、`sample_content`、隐藏 renderer 字段和页面宽高不允许修改。
 - 保存只创建 draft；只有真实验证任务成功后才能 publish，只有 published 才能 set-default。带模板快照的验证任务须绑定同一草稿的 SHA-256。发布以预检时的 DRAFT 状态和快照哈希为条件，一次写入发布状态与验证字段。旧替换入口与版本创建共用版本分配，目录和记录仅创建。
 - MySQL 模式下 `resource_default_versions` 是版本默认指针唯一来源；manifest 只登记 seed，`template_state.json` 只登记默认 template id。
+- 显式 `set-default` 先验证 published 登记记录、DOCX 和已绑定 YAML 的实际字节及哈希。MySQL 按请求观察到的旧指针及预检快照比较写入，在同一事务读回确认并保存成功审计。两个请求从同一指针切到新版本时，冲突请求返回 HTTP 409 `template_default_conflict`。模板禁用与该切换按目标版本行互斥。
+- `set-default` 只更新指定模板的版本指针。全局默认模板 ID 使用独立 `PATCH /api/v1/templates/{template_id}/default`。COMMIT 已发送但结果无法确认时，客户端先读版本列表核对当前状态。
 - Job 创建时固化 Template Version；普通用户只能选 published，admin 可显式创建 draft 验证任务，Worker 只消费已固化版本。
 - 版本 YAML 缺失、损坏、schema 不支持或 hash 不匹配时失败关闭，不回退其他 YAML 或 renderer 默认值。
 - RND-503 图片历史重验消费原文件冻结的必要规范化格式输入，不重读当前 YAML/默认指针。配置 owner 继续只定义唯一结构；图片私有输入/报告版本与恢复合同由 Word 生成规则拥有，不把任意 YAML 或可变路径存入事件。
@@ -109,6 +112,10 @@
 | 空 MySQL 资源库启动 v2 manifest | 创建并默认到 `default@2` |
 | 历史 payload 的资源 hash 不匹配 | 明确失败，不探测 v2 或其他路径 |
 | set-default 指向非 published 版本或理由为空 | 明确拒绝，不移动默认指针 |
+| set-default 的 DOCX 或已绑定 YAML 缺失、包无效或哈希变化 | HTTP 400，沿用模板包原因码，原指针和审计保持原值 |
+| 预检后目标或原默认指针变化 | HTTP 409 `template_default_conflict`，保留其他事务的写入 |
+| set-default 在提交前读回不符或审计写入失败 | 回滚本次版本切换 |
+| set-default 提交结果未知 | HTTP 503 `template_default_commit_unknown`，客户端读取实际默认指针 |
 | 同号内置 seed 的 DOCX 身份或 payload 自洽性冲突 | 启动明确抛出 ValueError，不覆盖冲突记录/默认指针 |
 | 同号非 draft 记录使用同版本受管 DOCX 路径，内容 hash 相同且 payload 自洽 | 启动通过，保留登记记录及原默认指针语义 |
 | 默认模板已替换成受管目录的已有 draft | 初始化保留 draft，不误判内置冲突或自动发布 |
@@ -124,13 +131,14 @@
 - Good：从当前 `default@2` 只提交 `normal.western_font_name`，生成 `default@3` draft，seed YAML 与默认指针不变；真实 DOCX 的 `eastAsia/ascii/hAnsi/cs` 分别匹配三类字体。
 - Good：manifest 发布 bundled `default@2` 后，已有生产 `default@1` 仍按固定路径/hash 读取，运维验证通过后再显式 set-default。
 - Base：旧 YAML 只有 `font_name: 宋体`，无需迁移即可读取和生成，四个字体槽位继续使用宋体。
-- Base：历史 published 版本通过 set-default 回滚，只移动 DB 指针，不改历史内容。
+- Base：历史 published 版本通过 set-default 回滚，使用原登记文件及哈希，指针和成功审计一起提交。
 - Good：manifest 进入 seed v2 后，旧 v1 仍按数据库默认指针和原 payload 列出；目录残留 DOCX 不遮蔽登记文件。
 - Bad：为消除同号冲突更新 published payload/hash，或用完整新 manifest hash 拒绝合法元数据变化。
 - Bad：提交完整 YAML、只读字段、未知字段或不存在的 Word table style。
 - Bad：普通用户通过 create/clone/retry 注入 draft version。
 - Bad：在 renderer 中再次直接写 `rFonts`，或用 truthy fallback 吞掉显式空字符串。
 - Bad：在相同 manifest 版本下原地修改 bundled YAML，或在 hash 失败时猜测另一个资源路径。
+- Bad：先更新默认指针，再校验文件或另开连接追加审计。正确顺序是先做资源预检，再在同一事务内切换、读回及写审计。
 
 ### 6. Tests Required
 
@@ -141,7 +149,7 @@
 - `tests.test_document_ir_word_renderer_layout`：正文、页眉、页脚、装饰块和模板既有页码域的 OOXML 字体槽位。
 - 持久化测试：create-only 冲突、整数序列单调、DB 失败清理 staging/目标目录。
 - bundled seed 测试：锁定 v1 固定 SHA-256 和旧字段兼容读取；严格校验 v2 显式三类字体；用 fake-MySQL adapter 覆盖“已有 v1 默认不迁移”和“空库默认 v2”。
-- set-default 测试：只有 published 版本可切换，理由写入审计；发布回滚演练先恢复默认指针，再切换旧代码。
+- set-default 测试：目标资源缺失、哈希变化或事务失败保留原指针。真实 MySQL 并发测试覆盖已有指针和首次插入，只提交胜出指针和审计。发布回滚演练先恢复默认指针，再切换旧代码。
 - 配置 API/schema 变化后运行前端 unit/build；smoke mock 至少验证三种字体标签可见。
 - `tests.test_template_seed_history`：真实读取/版本服务、临时自有资源和最小内存仓储端口，覆盖登记幂等与默认保留、内置冲突、元数据/关闭状态、上传 draft 排除、历史补全、登记路径优先/丢失和去重/legacy。该证据只保护服务层与文件快照合同，不推断真实 MySQL 并发或 Word 外观结论；具体运行范围遵守当前用户授权。
 

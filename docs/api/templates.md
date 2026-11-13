@@ -225,12 +225,16 @@ Template Version 的 publish / set-default / disable 和版式配置 draft 创�
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：JSON
   - `set_default_reason`: 必填，切换原因
-- 审计：成功后写 `template.set_default`，`target_id={template_id}@{version}`，`set_default_reason` 写入 audit reason。
+- 审计：指针和 `template.set_default` 在同一 MySQL 事务提交，`target_id={template_id}@{version}`，`set_default_reason` 写入审计理由。
 - 关键语义：
-  - 只切资源版本默认指针，不改历史版本内容
-  - MySQL `resource_default_versions` 是模板版本默认指针唯一来源
-  - `template_state.json` 只保存默认 template id；manifest 不再被版本切换改写
-  - 后续 job 创建时固化该 published version，Worker 严格使用同版本 DOCX 和 YAML
+  - 切换前预检已登记的 DOCX 和已绑定 YAML，比对实际 SHA-256。
+  - MySQL `resource_default_versions` 是每个模板的默认版本指针唯一来源。事务按旧指针及目标快照比较写入，并读回确认。
+  - 此接口只切换指定 `template_id` 的默认版本。切换全局默认模板 ID 使用 `PATCH /api/v1/templates/{template_id}/default`。
+  - 后续按该模板创建任务时固化其默认版本，Worker 使用同版本的登记资源。
+- 常见错误：
+  - `400` 表示目标状态或登记资源未通过校验。文件问题通过 `error.reason_code` 给出具体原因，原指针保留。
+  - `409` 与 `template_default_conflict` 表示指针或目标状态、快照已变化。重新读取版本列表后再决定是否发起切换。
+  - `503` 与 `template_default_commit_unknown` 表示数据库提交结果无法确认。先读取版本列表核对实际默认版本，再决定后续操作。
 
 ### `POST /api/v1/templates/{template_id}/versions/{version}/disable`
 

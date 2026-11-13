@@ -9,6 +9,7 @@ from app.domains.resources.models import (
     ResourceType,
     ResourceVersionRecord,
     ResourceVersionStatus,
+    disable_nondefault_resource_version,
     utc_now,
 )
 from app.domains.resources.repository import ResourceVersionRepositoryProtocol
@@ -154,14 +155,11 @@ class ResourceVersionService:
 
     def disable(self, resource_type: ResourceType, resource_id: str, version: str) -> ResourceVersionRecord:
         record = self._require_version(resource_type, resource_id, version)
-        self._ensure_not_default(record, "默认资源版本不能直接禁用，请先切换默认指针。")
-        if record.status == ResourceVersionStatus.DISABLED:
-            return record
-        if record.status == ResourceVersionStatus.SUPERSEDED:
-            raise ValueError("superseded 资源版本不能再切换为 disabled。")
-        return self.repository.save_resource_version(
-            record.model_copy(update={"status": ResourceVersionStatus.DISABLED, "updated_at": utc_now()})
+        default = self.repository.get_default_resource_version(resource_type, resource_id)
+        disabled = disable_nondefault_resource_version(
+            record, default_version=default.version if default is not None else None,
         )
+        return record if disabled is record else self.repository.save_resource_version(disabled)
 
     def mark_superseded(self, resource_type: ResourceType, resource_id: str, version: str) -> ResourceVersionRecord:
         record = self._require_version(resource_type, resource_id, version)

@@ -315,7 +315,7 @@ def set_default_template_version(
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
-        raise bad_request_http_exception(exc) from exc
+        raise _template_write_bad_request(exc) from exc
 
 
 @router.post("/{template_id}/versions/{version}/disable", response_model=TemplateVersionResponse)

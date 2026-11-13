@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/index.md","reason":"后端目录边界和实现前检查清单"}
+{"file":".trellis/spec/backend/template-layout-configuration.md","reason":"模板版本、默认指针、资源校验与历史兼容合同"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"MySQL 连接、事务和锁的仓库约定"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"应用层与 HTTP 层错误映射"}

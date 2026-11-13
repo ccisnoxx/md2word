@@ -16,11 +16,13 @@ from uuid import uuid4
 import yaml
 from pydantic import ValidationError
 
-from app.domains.audit.models import ActorContext
 from app.core.config import Settings
+from app.core.errors import ApplicationError
+from app.domains.audit.models import ActorContext
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.resources.integrity import content_sha256, resource_payload_sha256
 from app.domains.resources.models import ResolvedResourceVersion, ResourceVersionRecord, ResourceVersionStatus, utc_now
+from app.domains.resources.repository import ResourceDefaultCommitUnknownError
 from app.domains.templates.layout_config_schema import (
     apply_layout_changes,
     editor_field_schema,
@@ -513,29 +515,41 @@ class TemplateReadService:
         actor: ActorContext | None = None,
         trace_id: str | None = None,
     ) -> TemplateVersionResponse:
-        """把默认模板指针切到指定已发布版本，并同步当前转换兼容态。"""
+        """校验已发布资源并原子切换指定模板的默认版本。"""
 
         template = self._require_template_item(template_id)
-        service = self._require_resource_version_service()
-        service.set_default("template", template.id, str(version))
-        record = service.repository.get_resource_version("template", template.id, str(version))
+        repository = self._require_resource_version_service().repository
+        record = repository.get_resource_version("template", template.id, str(version))
         if record is None:
             raise FileNotFoundError(f"模板版本不存在: {template.id}@{version}")
-        self._activate_template_version(template, version, record.payload)
-        self._record_audit(
-            actor=actor,
-            action="template.set_default",
-            target_id=f"{template.id}@{version}",
-            trace_id=trace_id,
-            reason=set_default_reason,
-        )
-        refreshed_template = self._require_template_item(template.id)
-        return self._build_template_version_response(
-            template=refreshed_template,
-            version=version,
-            template_path=self._template_version_path(refreshed_template, version, record.payload),
-            record=record,
-        )
+        if record.status != ResourceVersionStatus.PUBLISHED:
+            raise ValueError("默认资源版本只能指向 published 版本。")
+        expected_pointer = repository.get_default_resource_pointer("template", template.id)
+        response = self._prepare_default_template_version_response(template, version, record)
+        audit_event = None
+        if actor is not None and self.audit_service is not None:
+            audit_event = self.audit_service.build_event(
+                actor=actor,
+                action="template.set_default",
+                target_type="template",
+                target_id=f"{template.id}@{version}",
+                trace_id=trace_id or "",
+                reason=set_default_reason,
+            )
+        try:
+            confirmed = repository.switch_default_resource_version(
+                record, expected_pointer=expected_pointer, audit_event=audit_event,
+            )
+        except ResourceDefaultCommitUnknownError as exc:
+            raise ApplicationError(
+                "service_unavailable", str(exc), reason_code="template_default_commit_unknown",
+            ) from exc
+        if confirmed is None:
+            raise ApplicationError(
+                "conflict", "默认指针或目标版本已变化，请重新读取模板版本。",
+                reason_code="template_default_conflict",
+            )
+        return response
 
     def disable_template_version(
         self,
@@ -548,8 +562,8 @@ class TemplateReadService:
         """禁用非默认模板版本，历史 DOCX 文件保留用于人工恢复。"""
 
         template = self._require_template_item(template_id)
-        service = self._require_resource_version_service()
-        record = service.disable("template", template.id, str(version))
+        repository = self._require_resource_version_service().repository
+        record = repository.disable_template_version_if_not_default(template.id, str(version))
         if version not in template.disabled_versions:
             self._replace_template_item(
                 template.model_copy(update={"disabled_versions": [*template.disabled_versions, version]})
@@ -1105,7 +1119,13 @@ class TemplateReadService:
                 path="template_version",
                 code="template_resource_payload_invalid",
             )
-        fingerprint = self._preflight_template_package(self._resolve_manifest_path(docx_path), layout_path)
+        try:
+            template_path = self._resolve_manifest_path(docx_path)
+        except (OSError, RuntimeError):
+            raise TemplatePackageValidationError(
+                "模板 DOCX 路径不可解析。", path="docx", code="template_docx_unavailable",
+            ) from None
+        fingerprint = self._preflight_template_package(template_path, layout_path)
         self._require_resource_hash(fingerprint.docx_sha256, payload.get("docx_sha256"), kind="docx")
         self._require_resource_hash(
             fingerprint.layout_config_sha256, payload.get("layout_config_sha256"), kind="layout_config",
@@ -1132,6 +1152,41 @@ class TemplateReadService:
             raise FileNotFoundError(f"模板版式配置不存在: {template.id}@{version}")
         self._write_state(TemplateState(default_template_id=template.id))
 
+    def _prepare_default_template_version_response(
+        self, template: TemplateManifestItem, version: int, record: ResourceVersionRecord,
+    ) -> TemplateVersionResponse:
+        """预检登记文件并在指针事务开始前准备响应元数据。"""
+
+        self._validate_registered_template_package(record)
+        payload = record.payload or {}
+        if "layout_config_path" not in payload and template.layout_config_path:
+            raise TemplatePackageValidationError(
+                "模板资源版本未登记实际使用的版式配置。",
+                path="layout_config",
+                code="template_resource_payload_invalid",
+            )
+
+        template_path = self._template_version_path(template, version, payload)
+        try:
+            response = self._build_template_version_response(
+                template=template, version=version, template_path=template_path, record=record, default_version=version,
+            )
+        except OSError:
+            raise TemplatePackageValidationError(
+                "无法读取已校验的模板资源。", path="template_version", code="template_resource_unavailable",
+            ) from None
+
+        # 响应元数据会重新读文件。两次读取之间被替换或删除时拒绝切换。
+        for kind, asset in (("docx", response.template), ("layout_config", response.layout_config)):
+            expected_hash = payload.get(f"{kind}_sha256")
+            if expected_hash is not None and (asset is None or not asset.exists):
+                raise TemplatePackageValidationError(
+                    "模板资源不存在或不可读取。", path=kind, code=f"template_{kind}_unavailable",
+                )
+            actual_hash = f"sha256:{asset.sha256}" if asset is not None and asset.sha256 is not None else None
+            self._require_resource_hash(actual_hash, expected_hash, kind=kind)
+        return response
+
     def _build_template_version_response(
         self,
         *,
@@ -1157,7 +1212,7 @@ class TemplateReadService:
             template_version_id=self.build_template_version_id(template.id, version),
             version=version,
             status=status,
-            is_current=version == (self._resource_default_version(template.id) or template.version),
+            is_current=version == (resolved_default_version if resolved_default_version is not None else template.version),
             is_default=is_default,
             snapshot_hash=record.snapshot_hash if record is not None else None,
             render_policy=render_policy,
