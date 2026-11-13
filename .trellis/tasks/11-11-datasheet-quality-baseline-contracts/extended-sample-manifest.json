@@ -1,0 +1,121 @@
+{
+  "schema_version": "datasheet-quality-extension-manifest/v1",
+  "manifest_version": 1,
+  "admitted_on": "2026-11-13",
+  "baseline_manifest": "../../../tests/fixtures/golden_samples/manifest.yaml",
+  "scope": "内部 Datasheet 验收样本准入。正常样本与预期阻断负例分别统计，组件夹具另计。原 PDF、切片和 MinerU 结果留在授权存放位置。发布门禁另行验收。",
+  "sources": {
+    "gsx-sn74ac244": {
+      "publisher": "Texas Instruments",
+      "document": "SN54AC244/SN74AC244",
+      "revision": "SCAS514H",
+      "provenance": "用户提供 PDF 和 MinerU 结果，并授权用于验收。",
+      "authorized_use": "内部验收，本清单登记 direct 回放的正例和阻断负例。",
+      "authorization_ref": "prd.md#背景",
+      "original_pdf_sha256": "158bc0aa0bb84d2a059367a111e1e349515cb10cb952fac9600cc3fb741088c3",
+      "original_input_ref": "../../../tests/fixtures/datasheet_quality/local_baseline_manifest.json"
+    },
+    "gsx-rs2g04": {
+      "publisher": "RUNIC",
+      "document": "RS2G04",
+      "revision": "Rev A.4",
+      "source_url": "https://www.run-ic.com/en/upload/goods/20240520/202405201450057481.pdf",
+      "provenance": "本地既有原件与厂商同版 PDF 的 13 页提取文本在归一化空白后相同，两份 PDF 的字节指纹分别保留。",
+      "authorized_use": "用户确认可用于内部英译中验收及所需外部服务处理。",
+      "authorization_ref": "prd.md#背景",
+      "official_pdf_sha256": "f7c25fc3d6e27a022205b23243a0842fbe55d104e2fab43f5cd989bd7e3b660a",
+      "original_pdf_sha256": "52aad9f6373a02114a6418142dacfc3a7d844558e1c4be7c61b92b192cb34ece",
+      "original_input_ref": "../../../tests/fixtures/datasheet_quality/local_baseline_manifest.json"
+    },
+    "tpld2001-scps286c": {
+      "publisher": "Texas Instruments",
+      "document": "TPLD2001",
+      "revision": "SCPS286C",
+      "source_url": "https://www.ti.com/lit/ds/symlink/tpld2001.pdf",
+      "provenance": "本地原件与 TI 官方 PDF 的 SHA-256 一致。",
+      "authorized_use": "用户确认可用于内部 direct 回放。",
+      "authorization_ref": "prd.md#背景",
+      "original_pdf_sha256": "a62a3eb3a193c20790a292349f061c48996c8174e7e2349d15819040885bd796",
+      "original_input_ref": "../../../tests/tmp/datasheet-cross-page-grid-20261112/TPLD2001.pdf"
+    }
+  },
+  "samples": [
+    {
+      "sample_id": "gsx-sn74ac244-specs",
+      "source_id": "gsx-sn74ac244",
+      "source_pages": [3, 4, 5, 6],
+      "mode": "direct",
+      "expected_outcome": "normal",
+      "risk_tags": ["wide_table", "multilevel_header", "merged_cells", "technical_tokens"],
+      "input_ref": "../../../tests/tmp/datasheet-quality-inputs-20261111/sn74ac244-specs/",
+      "pdf_sha256": "04c5b23af2877ebd686b032caa25c9f0d2ace7b123fb0d013c83cc562285fc74",
+      "content_list_v2_sha256": "ce67f934da47b4abbccd127fe20c9bd16193ea86dcd3b0ddcf02cb50667c6595",
+      "independent_expectation": "5.2 节规格表为 19×8 原生表，保留两行表头、横纵合并及已标注技术 Token。",
+      "annotation_version": "source-pdf-layout/v1",
+      "annotation_ref": "../../../tests/fixtures/datasheet_quality/local_baseline_manifest.json",
+      "evidence_refs": ["observations.json", "table-header-review.md"]
+    },
+    {
+      "sample_id": "gsx-sn74ac244-packaging",
+      "source_id": "gsx-sn74ac244",
+      "source_pages": [11, 12],
+      "mode": "direct",
+      "expected_outcome": "blocked",
+      "risk_tags": ["cross_page_table", "missing_fragment"],
+      "input_ref": "../../../tests/tmp/datasheet-quality-inputs-20261111/sn74ac244-packaging/",
+      "pdf_sha256": "3d23d7e9ae3da3607942bc6cdc4b705c32a0c27a6323d875c0562dbb198d024d",
+      "content_list_v2_sha256": "98273dedc954bdce4d0d461cda6c1ad00558624622394f0f660a1188be8ddde9",
+      "independent_expectation": "空 HTML 续表片段保留可追溯裁图，表格质量阻断，交付预期为内部草稿。",
+      "expected_blocker": {
+        "code": "table_noneditable_placeholder",
+        "scope": "/1/0",
+        "delivery_status": "internal_draft"
+      },
+      "annotation_version": "source-pdf-layout/v1",
+      "annotation_ref": "../../../tests/fixtures/datasheet_quality/local_baseline_manifest.json",
+      "evidence_refs": ["observations.json", "upstream-table-coverage-validation.md"]
+    },
+    {
+      "sample_id": "gsx-rs2g04-esd-page",
+      "source_id": "gsx-rs2g04",
+      "source_pages": [6],
+      "mode": "en2zh",
+      "expected_outcome": "normal",
+      "risk_tags": ["translated_table", "merged_cells", "technical_tokens"],
+      "input_ref": "../../../tests/tmp/datasheet-en2zh-live-20261111/rs2g04-esd-input/sample_origin.pdf",
+      "mineru_zip_ref": "../../../tests/tmp/datasheet-en2zh-live-20261111/rs2g04-live-20261111T124043105544Z/data/object_artifacts/document-jobs/acceptance/docjob_309d603ab44c/mineru_raw_result/file_3ecff6ddcfd1/mineru_raw_result.zip",
+      "pdf_sha256": "3c3b8125f3ca2e420c9dd26ad997d54b9457649cf15221fde115698be32e1c9c",
+      "mineru_zip_sha256": "7fa3872d5138d7bb7156021fb60161490d71d9400e90cf6ca5cfa7b49209f7f0",
+      "content_list_v2_sha256": "69944959d08bcd21c4c938b5eaed5b77ec441af07d22ce0e69a23139e88edddf",
+      "independent_expectation": "ESD Ratings 保留 4×4 原生表、首行表头、两处合并及 3 个技术 Token。",
+      "annotation_version": "source-pdf-layout/v1",
+      "annotation_ref": "../../../tests/fixtures/datasheet_quality/local_baseline_manifest.json",
+      "annotation_source_sample_id": "gsx-rs2g04",
+      "evidence_refs": ["en2zh-rs2g04-live-observations.json", "en2zh-rs2g04-live-header-review.json", "en2zh-validation.md"]
+    },
+    {
+      "sample_id": "gsx-tpld2001-pin-functions",
+      "source_id": "tpld2001-scps286c",
+      "source_pages": [3, 4],
+      "mode": "direct",
+      "expected_outcome": "normal",
+      "risk_tags": ["cross_page_table", "repeated_header", "merged_cells", "technical_tokens"],
+      "input_ref": "../../../tests/tmp/datasheet-cross-page-grid-20261112/TPLD2001-Table-4-1.pdf",
+      "pdf_sha256": "3eefb3ff6d23abfd2f04b00e3fcc076767dcc8c02fc1d9d391bc08807bc40803",
+      "mineru_zip_ref": "../../../tests/tmp/datasheet-cross-page-grid-20261112/mineru-result.zip",
+      "mineru_zip_sha256": "56276ab85990b363d9a348fd5a4952c2b91b2601f56579ecff8daeb95e59bdaf",
+      "content_list_v2_sha256": "d57460c11567265b46f846846675713020069aec165fd64d7b690399a441e8e4",
+      "header_review_ref": "tpld2001-premerge-header-review.json",
+      "independent_expectation": "Table 4-1 输出一张 22×8 原生续表，保留两行表头、20 条引脚数据和 60 个技术 Token。",
+      "annotation_ref": "cross-page-grid-observations.json#/metadata/independent_source_annotation",
+      "comparison_input": {
+        "sample_id": "gsx-tpld2001-pin-functions-premerge",
+        "mineru_zip_ref": "../../../tests/tmp/datasheet-cross-page-grid-20261112/mineru-premerge-derived.zip",
+        "mineru_zip_sha256": "564a7dadb3b083b344e96f05a71148b744476df13246899e4742777300677106",
+        "content_list_v2_sha256": "bd973dfdf69734ce88af7cac769380772f8ea7d01ef1b088076f87fab1f96932",
+        "role": "同源完整片段结构对照，沿用专项观测的独立记录。"
+      },
+      "evidence_refs": ["cross-page-grid-observations.json", "continuation-contract-validation.md", "upstream-table-coverage-validation.md", "table-figure-validation.md"]
+    }
+  ]
+}
