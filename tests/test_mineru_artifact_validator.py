@@ -25,6 +25,7 @@ from app.services.document_ir.mineru_package import (
     MinerUPackageError, MinerUValidationPolicy, extract_zip, resolve_asset_path,
 )
 from app.services.document_ir.integrity import DocumentIntegrityError
+from app.services.document_ir.table_placeholder import TablePlaceholderError
 from app.services.renderer import DocumentIRWordRenderer
 from app.services.renderer.render_evidence import build_renderer_evidence, build_renderer_metadata
 from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
@@ -39,6 +40,13 @@ def png_bytes() -> bytes:
     with Image.new("RGB", (2, 2), "white") as image:
         image.save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+def _crop_layout_members(page_count: int = 1) -> dict[str, str]:
+    """为需要从源 PDF 裁图的用例提供与裁图夹具一致的页尺寸。"""
+    return {"layout.json": json.dumps({
+        "pdf_info": [{"page_idx": index, "page_size": [612, 792]} for index in range(page_count)],
+    })}
 
 
 @contextmanager
@@ -56,12 +64,7 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
                 archive.writestr(content_list_name, json.dumps(payload))
                 for name, data in (members or {}).items():
                     archive.writestr(name, data)
-                if not any(name.endswith("layout.json") for name in members or {}):
-                    # 裁图帧取自 layout 页尺寸，缺失时失败关闭；未自带 layout 的用例补默认页尺寸。
-                    pages = len(payload) if isinstance(payload, list) and payload and isinstance(payload[0], list) else 1
-                    archive.writestr("layout.json", json.dumps(
-                        {"pdf_info": [{"page_idx": index, "page_size": [612, 792]} for index in range(pages)]}))
-            # 无 MinerU 参考图的显式表格占位须从源 PDF 裁图；本组测试关注校验与归一化，注入只记录请求的裁图夹具。
+            # 无 MinerU 参考图的表格占位依赖源 PDF 裁图；这里使用只记录请求的裁图夹具。
             crop = _RecordingTableCropProvider("source", [(612, 792)] * 8)
             return MinerUToDocumentIRService(pdf_crop_provider=crop, **({"policy": policy} if policy else {})).convert_zip(
                 path, job_id="job", source_file_id="source", document_language="en",
@@ -726,7 +729,8 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
         self.assertIn("suspicious_table_html", result.validation_report.issue_counts["warning"])
         self.assertTrue(result.validation_report.can_convert)
         result = self.convert([[{"type": "table", "html": "<table><tr><td>12 V</td></tr></table>"},
-                                {"type": "table", "html": "", "img_path": "./images/"}]])
+                                {"type": "table", "html": "", "img_path": "./images/", "bbox": [0, 0, 10, 10]}]],
+                              _crop_layout_members())
         self.assertEqual(len(result.document.blocks), 1)
         self.assertEqual(result.validation_report.issue_counts["blocker"]["empty_table_html"], 1)
 
@@ -1132,7 +1136,7 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
     def test_normalization_keeps_raw_issues_and_distinguishes_resolved_tables(self):
         real = {"type": "table", "html": "<table><tr><td>12 V</td></tr></table>", "bbox": [0, 0, 10, 10]}
         empty = {"type": "table", "html": "", "img_path": "images/", "bbox": [0, 0, 10, 10]}
-        result = self.convert([[real], [empty]])
+        result = self.convert([[real], [empty]], _crop_layout_members(page_count=2))
         report = result.validation_report
         self.assertEqual(report.inventory["raw_block_count"], 2)
         self.assertEqual(report.effective_inventory["block_count"], 1)
@@ -1145,18 +1149,20 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
         self.assertEqual(receipt["rule_id"], "mineru_empty_table_continuation/v1")
         self.assertEqual(receipt["reason"], "strict_empty_table_placeholder")
         for payload in ([[empty]], [[real], [{**empty, "text": "12 µV"}]]):
-            with self.subTest(payload=payload), self.assertRaises(DocumentIntegrityError) as caught:
-                self.convert(payload)
-            failure = caught.exception.evidence["mineru_validation"]
-            self.assertEqual(failure["normalization"]["resolved_issue_counts"], {"blocker": {}})
-            self.assertEqual(failure["effective_inventory"]["block_count"], len(payload))
-            self.assertIn("source_ir_integrity:payload_missing:table", caught.exception.evidence["blocking_quality_flags"])
+            with self.subTest(payload=payload):
+                with self.assertRaises(TablePlaceholderError) as caught:
+                    self.convert(payload)
+                self.assertEqual(caught.exception.code, "table_placeholder_geometry_invalid")
+                failure = caught.exception.mineru_validation_report
+                self.assertEqual(failure.normalization["resolved_issue_counts"], {"blocker": {}})
+                self.assertEqual(failure.effective_inventory["block_count"], len(payload))
 
     def test_normalization_metadata_cannot_cross_report_byte_limit(self):
         real = {"type": "table", "html": "<table><tr><td>12 V</td></tr></table>", "bbox": [0, 0, 10, 10]}
         empty = {"type": "table", "html": "", "img_path": "images/", "bbox": [0, 0, 10, 10]}
         blocks = [[real, *[dict(empty) for _ in range(8)]]]
-        completed = self.convert(blocks).validation_report
+        layout_members = _crop_layout_members()
+        completed = self.convert(blocks, layout_members).validation_report
         before_normalization = completed.model_copy(deep=True)
         before_normalization.effective_inventory = {}
         before_normalization.normalization = {}
@@ -1165,7 +1171,7 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
         self.assertGreater(final_size, raw_size)
         byte_limit = (raw_size + final_size) // 2
         with self.assertRaises(MinerUArtifactValidationError) as caught:
-            self.convert(blocks, policy=MinerUValidationPolicy(max_report_bytes=byte_limit))
+            self.convert(blocks, layout_members, policy=MinerUValidationPolicy(max_report_bytes=byte_limit))
         report = caught.exception.report
         self.assertFalse(report.complete)
         self.assertIn("report_limit_exceeded", report.issue_counts["blocker"])
@@ -1302,7 +1308,8 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
                         {"content": {"image_source": {"path": "images/"}, "table_type": "simple_table",
                                      "table_nest_level": 0, "html": "", "table_caption": [], "table_footnote": []}}):
             with self.subTest(content=content):
-                result = self.convert([[{"type": "table", "html": html}, {"type": "table_placeholder", **content}]])
+                placeholder = {"type": "table_placeholder", "bbox": [0, 0, 10, 10], **content}
+                result = self.convert([[{"type": "table", "html": html}, placeholder]], _crop_layout_members())
                 self.assertEqual(len(result.document.blocks), 1)
                 self.assertEqual(result.document.blocks[0].html, html)
                 self.assertTrue(result.validation_report.can_convert)
@@ -1325,10 +1332,10 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
                 self.assertEqual(report.normalization["resolved_issue_counts"], {"blocker": {}})
                 self.assertNotIn("12 µV", report.model_dump_json())
 
-        result = self.convert([[real, {"type": "table", "img_path": "images/", "content": {
+        result = self.convert([[real, {"type": "table", "img_path": "images/", "bbox": [0, 0, 10, 10], "content": {
             "table_type": "simple_table", "table_nest_level": 0,
             "image_source": {"path": "images/"}, "table_caption": [], "table_footnote": [],
-        }}]])
+        }}]], _crop_layout_members())
         self.assertTrue(result.validation_report.can_convert)
         self.assertEqual(len(result.document.blocks), 1)
         self.assertEqual(result.document.blocks[0].html, real["html"])
@@ -1350,7 +1357,8 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
                             {"table_type": "simple_table", "table_nest_level": 0,
                              "metadata": {"labels": ["height only"]}}):
                 with self.subTest(source_type=source_type, structure=content):
-                    result = self.convert([[real, {"type": source_type, "img_path": "images/", "content": content}]])
+                    placeholder = {"type": source_type, "img_path": "images/", "bbox": [0, 0, 10, 10], "content": content}
+                    result = self.convert([[real, placeholder]], _crop_layout_members())
                     self.assertTrue(result.validation_report.can_convert)
                     self.assertEqual(len(result.document.blocks), 1)
                     self.assertEqual(result.document.blocks[0].html, real["html"])
