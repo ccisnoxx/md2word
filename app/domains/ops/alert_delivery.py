@@ -7,10 +7,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from fastapi import status
 
 from app.api.v1.routers.health_schemas import HealthOpsAlertItem
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.audit.models import AuditEvent
 from app.domains.audit.repository import AuditEventRepositoryProtocol
 from app.domains.resources.models import utc_now
@@ -146,10 +145,9 @@ class OpsAlertDeliveryService:
 
         normalized_reason = reason.strip()
         if not normalized_reason:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "reason 不能为空。")
+            raise ApplicationError("invalid_request", "reason 不能为空。")
         if confirmation != ALERT_DELIVERY_CONFIRMATION_PHRASE:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"confirmation 必须为 {ALERT_DELIVERY_CONFIRMATION_PHRASE}。",
             )
@@ -216,18 +214,17 @@ class OpsAlertDeliveryService:
         """校验 alert code 列表，避免隐式全量或重复投递。"""
 
         if not alert_codes:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "alert_codes 不能为空。")
+            raise ApplicationError("invalid_request", "alert_codes 不能为空。")
         if len(alert_codes) > ALERT_DELIVERY_BATCH_LIMIT:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"单次最多允许处理 {ALERT_DELIVERY_BATCH_LIMIT} 个 alert code。",
             )
         normalized = [alert_code.strip() for alert_code in alert_codes]
         if any(not alert_code for alert_code in normalized):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "alert_codes 不能包含空白项。")
+            raise ApplicationError("invalid_request", "alert_codes 不能包含空白项。")
         if len(set(normalized)) != len(normalized):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "alert_codes 不能包含重复项。")
+            raise ApplicationError("invalid_request", "alert_codes 不能包含重复项。")
         return normalized
 
     def _ensure_alerts_active(
@@ -239,8 +236,7 @@ class OpsAlertDeliveryService:
 
         inactive = [alert_code for alert_code in alert_codes if alert_code not in alerts_by_code]
         if inactive:
-            raise ApiError(
-                status.HTTP_409_CONFLICT,
+            raise ApplicationError(
                 "conflict",
                 f"alert code 当前未激活: {', '.join(inactive)}",
             )

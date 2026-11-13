@@ -8,9 +8,8 @@ from http import HTTPStatus
 from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError, http_status_for
 from app.domains.audit.models import ActorContext
 from app.domains.term_rules.models import (
     RuleApplyScope,
@@ -74,9 +73,9 @@ class TermRuleReviewService:
         trace_id: str | None = None,
     ) -> tuple[TermRuleReviewBatchRecord, list[TermRuleReviewItemRecord]]:
         if not raw_items:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "review batch 至少需要一条变更。")
+            raise ApplicationError("invalid_request", "review batch 至少需要一条变更。")
         if len(raw_items) > 50:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "review batch 最多支持 50 条变更。")
+            raise ApplicationError("invalid_request", "review batch 最多支持 50 条变更。")
 
         department_id = self._normalize_required_text(submitter_department_id, "department_id")
         batch = TermRuleReviewBatchRecord(
@@ -117,7 +116,7 @@ class TermRuleReviewService:
     def get_batch(self, batch_id: str) -> TermRuleReviewBatchRecord:
         batch = self.repository.get_batch(batch_id)
         if batch is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"术语规则审核批次不存在: {batch_id}")
+            raise ApplicationError("not_found", f"术语规则审核批次不存在: {batch_id}")
         return batch
 
     def list_items(self, *, batch_id: str | None = None) -> list[TermRuleReviewItemRecord]:
@@ -126,7 +125,7 @@ class TermRuleReviewService:
     def get_item(self, item_id: str) -> TermRuleReviewItemRecord:
         item = self.repository.get_item(item_id)
         if item is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"术语规则审核项不存在: {item_id}")
+            raise ApplicationError("not_found", f"术语规则审核项不存在: {item_id}")
         return item
 
     def approve_item(
@@ -206,7 +205,7 @@ class TermRuleReviewService:
     ) -> list[TermRuleReviewBulkResultItem]:
         normalized_ids = self._normalize_bulk_ids(item_ids)
         if action == "reject" and not self._normalize_optional_text(reason):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "批量拒绝必须填写原因。")
+            raise ApplicationError("invalid_request", "批量拒绝必须填写原因。")
         results: list[TermRuleReviewBulkResultItem] = []
         for item_id in normalized_ids:
             try:
@@ -227,12 +226,12 @@ class TermRuleReviewService:
                         trace_id=trace_id,
                     )
                 )
-            except ApiError as exc:
+            except ApplicationError as exc:
                 results.append(
                     TermRuleReviewBulkResultItem(
                         item_id=item_id,
                         ok=False,
-                        status_code=exc.status_code,
+                        status_code=http_status_for(exc),
                         error_code=exc.code,
                         detail=exc.message,
                     )
@@ -271,7 +270,7 @@ class TermRuleReviewService:
         )
         conflict = self._find_active_by_identity(store, rule.scope_type, rule.scope_id, rule.normalized_term)
         if conflict is not None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "同 scope 下 active source_term 已存在。")
+            raise ApplicationError("conflict", "同 scope 下 active source_term 已存在。")
         store.rules.append(rule)
         self._save_direct_version(action=TermRuleReviewAction.CREATE, before_rule=None, after_rule=rule, created_by=reviewed_by)
         self._publish_store(store, reviewed_by=reviewed_by, reason=f"admin create global rule {rule.source_term}", actor=actor, trace_id=trace_id)
@@ -289,7 +288,7 @@ class TermRuleReviewService:
         store = self.term_rule_service.repository.load()
         before = self._find_rule(store, rule_id)
         if before.scope_type != TermRuleScopeType.GLOBAL:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "管理员正式编辑仅支持 global 规则。")
+            raise ApplicationError("invalid_request", "管理员正式编辑仅支持 global 规则。")
         merged = self._merged_update_snapshot(before, raw_item)
         after = self._rule_from_snapshot(
             merged,
@@ -302,7 +301,7 @@ class TermRuleReviewService:
         )
         conflict = self._find_active_by_identity(store, after.scope_type, after.scope_id, after.normalized_term, exclude_rule_id=before.id)
         if conflict is not None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "同 scope 下 active source_term 已存在。")
+            raise ApplicationError("conflict", "同 scope 下 active source_term 已存在。")
         self._replace_rule(store, after)
         self._save_direct_version(action=TermRuleReviewAction.UPDATE, before_rule=before, after_rule=after, created_by=reviewed_by)
         self._publish_store(store, reviewed_by=reviewed_by, reason=f"admin update global rule {after.source_term}", actor=actor, trace_id=trace_id)
@@ -319,7 +318,7 @@ class TermRuleReviewService:
         store = self.term_rule_service.repository.load()
         before = self._find_rule(store, rule_id)
         if before.scope_type != TermRuleScopeType.GLOBAL:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "管理员正式删除仅支持 global 规则。")
+            raise ApplicationError("invalid_request", "管理员正式删除仅支持 global 规则。")
         after = before.model_copy(update={"active": False, "enabled": False, "current_version": before.current_version + 1, "updated_at": utc_now()})
         self._replace_rule(store, after)
         self._save_direct_version(action=TermRuleReviewAction.DELETE, before_rule=before, after_rule=after, created_by=reviewed_by)
@@ -347,7 +346,7 @@ class TermRuleReviewService:
         if action in {TermRuleReviewAction.UPDATE, TermRuleReviewAction.DELETE}:
             target_rule = self._find_rule(store, self._normalize_required_text(getattr(raw_item, "target_rule_id", None), "target_rule_id"))
             if submitter_role != "admin" and (target_rule.scope_type != scope_type or target_rule.scope_id != scope_id):
-                raise ApiError(status.HTTP_403_FORBIDDEN, "role_forbidden", "普通用户只能提交本部门规则变更。")
+                raise ApplicationError("role_forbidden", "普通用户只能提交本部门规则变更。")
         snapshot = self._snapshot_from_raw_item(raw_item, store=store, action=action, target_rule=target_rule)
         normalized_term = normalize_term_key(snapshot["source_term"])
         return TermRuleReviewItemRecord(
@@ -373,10 +372,10 @@ class TermRuleReviewService:
     ) -> tuple[TermRuleScopeType, str | None]:
         if submitter_role != "admin":
             if action == TermRuleReviewAction.DELETE:
-                raise ApiError(status.HTTP_403_FORBIDDEN, "role_forbidden", "普通用户不能提交删除规则请求。")
+                raise ApplicationError("role_forbidden", "普通用户不能提交删除规则请求。")
             requested_scope = getattr(raw_item, "scope_type", None)
             if requested_scope == TermRuleScopeType.GLOBAL.value:
-                raise ApiError(status.HTTP_403_FORBIDDEN, "role_forbidden", "普通用户不能提交 global 规则变更。")
+                raise ApplicationError("role_forbidden", "普通用户不能提交 global 规则变更。")
             return TermRuleScopeType.DEPARTMENT, submitter_department_id
         raw_scope = getattr(raw_item, "scope_type", None) or TermRuleScopeType.GLOBAL.value
         scope_type = TermRuleScopeType(raw_scope)
@@ -393,7 +392,7 @@ class TermRuleReviewService:
     ) -> dict[str, Any]:
         if action == TermRuleReviewAction.DELETE:
             if target_rule is None:
-                raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "delete item 缺少目标规则。")
+                raise ApplicationError("invalid_request", "delete item 缺少目标规则。")
             return target_rule.model_dump(mode="json")
         source_term = self._normalize_required_text(getattr(raw_item, "source_term", None), "source_term")
         category_id = self._normalize_required_text(getattr(raw_item, "category_id", None), "category_id")
@@ -440,7 +439,7 @@ class TermRuleReviewService:
             return "同 scope 下 active source_term 已存在。" if existing is not None else None
         try:
             target = self._find_rule(store, item.target_rule_id or "")
-        except ApiError:
+        except ApplicationError:
             return "目标规则不存在或已被删除。"
         if not target.active:
             return "目标规则已被删除。"
@@ -490,7 +489,7 @@ class TermRuleReviewService:
             store.rules.append(rule)
             return rule
         if before_rule is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", "目标规则不存在。")
+            raise ApplicationError("not_found", "目标规则不存在。")
         if item.action == TermRuleReviewAction.DELETE:
             deleted = before_rule.model_copy(update={"active": False, "enabled": False, "current_version": before_rule.current_version + 1, "updated_at": utc_now()})
             self._replace_rule(store, deleted)
@@ -615,20 +614,20 @@ class TermRuleReviewService:
     def _require_pending_item(self, item_id: str) -> TermRuleReviewItemRecord:
         item = self.get_item(item_id)
         if item.status != TermRuleReviewItemStatus.PENDING:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "只有 pending 审核项可以处理。")
+            raise ApplicationError("invalid_request", "只有 pending 审核项可以处理。")
         return item
 
     @staticmethod
     def _normalize_bulk_ids(item_ids: list[str]) -> list[str]:
         normalized = [item_id.strip() for item_id in item_ids]
         if not normalized:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "item_ids 不能为空。")
+            raise ApplicationError("invalid_request", "item_ids 不能为空。")
         if len(normalized) > 50:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "item_ids 最多支持 50 个。")
+            raise ApplicationError("invalid_request", "item_ids 最多支持 50 个。")
         if any(not item_id for item_id in normalized):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "item_ids 不能包含空值。")
+            raise ApplicationError("invalid_request", "item_ids 不能包含空值。")
         if len(set(normalized)) != len(normalized):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "item_ids 不能重复。")
+            raise ApplicationError("invalid_request", "item_ids 不能重复。")
         return normalized
 
     @staticmethod
@@ -636,7 +635,7 @@ class TermRuleReviewService:
         for rule in store.rules:
             if rule.id == rule_id:
                 return rule
-        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"规则不存在: {rule_id}")
+        raise ApplicationError("not_found", f"规则不存在: {rule_id}")
 
     @staticmethod
     def _replace_rule(store: TermRulesStore, replacement: TermRuleRecord) -> None:
@@ -644,7 +643,7 @@ class TermRuleReviewService:
             if rule.id == replacement.id:
                 store.rules[index] = replacement
                 return
-        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"规则不存在: {replacement.id}")
+        raise ApplicationError("not_found", f"规则不存在: {replacement.id}")
 
     @staticmethod
     def _find_active_by_identity(
@@ -665,23 +664,23 @@ class TermRuleReviewService:
     @staticmethod
     def _require_category(store: TermRulesStore, category_id: str) -> None:
         if not any(category.id == category_id for category in store.categories):
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"分类不存在: {category_id}")
+            raise ApplicationError("not_found", f"分类不存在: {category_id}")
 
     @staticmethod
     def _build_segments(raw_segments: list[Any]) -> list[TermRuleSegmentRecord]:
         if not raw_segments:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "segments 必须是非空数组。")
+            raise ApplicationError("invalid_request", "segments 必须是非空数组。")
         segments: list[TermRuleSegmentRecord] = []
         for index, raw_segment in enumerate(raw_segments, start=1):
             segment_payload = raw_segment if isinstance(raw_segment, dict) else {}
             text = str(getattr(raw_segment, "segment_text", None) or segment_payload.get("segment_text", "")).strip()
             if not text:
-                raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "segment_text 不能为空。")
+                raise ApplicationError("invalid_request", "segment_text 不能为空。")
             render_type_value = str(getattr(raw_segment, "render_type", None) or segment_payload.get("render_type", "")).strip()
             try:
                 render_type = RuleRenderType(render_type_value)
             except ValueError as exc:
-                raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", f"不支持的 render_type: {render_type_value}") from exc
+                raise ApplicationError("invalid_request", f"不支持的 render_type: {render_type_value}") from exc
             segments.append(TermRuleSegmentRecord(seq=index, segment_text=text, render_type=render_type))
         return segments
 
@@ -689,7 +688,7 @@ class TermRuleReviewService:
     def _normalize_required_text(value: Any, field_name: str) -> str:
         normalized = str(value or "").strip()
         if not normalized:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", f"{field_name} 不能为空。")
+            raise ApplicationError("invalid_request", f"{field_name} 不能为空。")
         return normalized
 
     @staticmethod

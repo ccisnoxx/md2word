@@ -8,11 +8,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Protocol, get_args
 from uuid import uuid4
 
-from fastapi import status
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.files.models import DocumentFileRecord, DocumentFileType
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.resources.models import utc_now
@@ -153,7 +152,7 @@ class FileRetentionPolicyService:
 
         record = self.policy_repository.get_policy(policy_id)
         if record is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"保留策略不存在: {policy_id}")
+            raise ApplicationError("not_found", f"保留策略不存在: {policy_id}")
         return record
 
     def create_policy(
@@ -198,7 +197,7 @@ class FileRetentionPolicyService:
 
         existing = self.get_policy(policy_id)
         if existing.status != "draft":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "只有 draft 保留策略可以编辑。")
+            raise ApplicationError("conflict", "只有 draft 保留策略可以编辑。")
         patch: dict[str, Any] = {"updated_at": utc_now()}
         if name is not None:
             patch["name"] = name
@@ -230,7 +229,7 @@ class FileRetentionPolicyService:
 
         existing = self.get_policy(policy_id)
         if existing.status != "draft":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "只有 draft 保留策略可以发布。")
+            raise ApplicationError("conflict", "只有 draft 保留策略可以发布。")
         normalized_reason = self._require_reason(reason)
         now = utc_now()
         published = self.policy_repository.update_policy(
@@ -255,7 +254,7 @@ class FileRetentionPolicyService:
 
         existing = self.get_policy(policy_id)
         if existing.status != "published":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "只有 published 保留策略可以设为默认。")
+            raise ApplicationError("conflict", "只有 published 保留策略可以设为默认。")
         normalized_reason = self._require_reason(reason)
         return self._set_default_for_scope(existing, now=utc_now(), reason=normalized_reason, actor_id=actor_id)
 
@@ -415,9 +414,9 @@ class FileRetentionPolicyService:
 
         normalized = " ".join(reason.strip().split())
         if not normalized:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "reason 不能为空。")
+            raise ApplicationError("invalid_request", "reason 不能为空。")
         if len(normalized) > 500:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "reason 不能超过 500 个字符。")
+            raise ApplicationError("invalid_request", "reason 不能超过 500 个字符。")
         return normalized
 
     def _build_policy_record(self, **payload: Any) -> FileRetentionPolicyRecord:
@@ -426,7 +425,7 @@ class FileRetentionPolicyService:
         try:
             return FileRetentionPolicyRecord(**payload)
         except (ValidationError, ValueError) as exc:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc)) from exc
+            raise ApplicationError("invalid_request", str(exc)) from exc
 
 
 def _normalize_optional_text(value: str | None) -> str | None:

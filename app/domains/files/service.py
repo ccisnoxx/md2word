@@ -14,11 +14,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Literal
 from uuid import uuid4
 
-from fastapi import status
 
 from app.services.auth.models import AuthenticatedUser
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.files.result_registration import is_result_candidate, is_preview_candidate
 from app.domains.files.models import DocumentFileRecord, DocumentFileStorageProvider, DocumentFileType, WORD_PREVIEW_FILE_TYPES
 from app.domains.files.repository import DocumentFileRepositoryProtocol
@@ -158,8 +157,7 @@ class FileUploadService:
             max_bytes=self.settings.jobs_upload_max_bytes,
         )
         if job_id is not None and job_id.strip():
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 "source_pdf 上传授权不支持预绑定 job_id；请上传完成后通过 document_jobs 创建任务。",
             )
@@ -167,7 +165,7 @@ class FileUploadService:
         provider = self._storage_provider()
         bucket = self._bucket_for(provider)
         if provider == "s3" and not bucket:
-            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 bucket 未配置。")
+            raise ApplicationError("service_unavailable", "S3 bucket 未配置。")
         object_key = self._object_key_for(user.tenant_id, file_id, filename, provider)
         now = utc_now()
         expires_at = now + timedelta(days=self.retention_days_resolver("source_pdf"))
@@ -204,10 +202,10 @@ class FileUploadService:
 
         record = self.repository.get_document_file(file_id)
         if record is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文件不存在: {file_id}")
+            raise ApplicationError("not_found", f"文件不存在: {file_id}")
         self._ensure_visible(record, user)
         if record.file_type == "quality_report" or record.metadata.get("asset_role") in {"table_reference", "table_placeholder", "table_evidence"}:
-            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "表格证据不能通过通用文件元数据入口访问。")
+            raise ApplicationError("forbidden", "表格证据不能通过通用文件元数据入口访问。")
         return record
 
     def upload_authorized_content(
@@ -222,9 +220,9 @@ class FileUploadService:
 
         record = self.get_document_file(file_id, user=user)
         if is_result_candidate(record) or is_preview_candidate(record):
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "内部结果候选不允许代理上传。")
+            raise ApplicationError("conflict", "内部结果候选不允许代理上传。")
         if record.status != "pending_upload":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件当前状态不允许重复上传。")
+            raise ApplicationError("conflict", "文件当前状态不允许重复上传。")
         validation = validate_pdf_upload(
             filename=record.original_filename,
             content_type=content_type or record.mime_type,
@@ -233,11 +231,11 @@ class FileUploadService:
             max_pages=self.settings.pdf_upload_max_pages,
         )
         if validation.size_bytes != record.size_bytes:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "上传内容大小与授权元数据不一致。")
+            raise ApplicationError("invalid_request", "上传内容大小与授权元数据不一致。")
 
         checksum_sha256 = f"sha256:{hashlib.sha256(content).hexdigest()}"
         if record.checksum_sha256 and record.checksum_sha256 != checksum_sha256:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "上传内容 checksum 与授权元数据不一致。")
+            raise ApplicationError("conflict", "上传内容 checksum 与授权元数据不一致。")
 
         etag = self._write_object(record, content)
         metadata = dict(record.metadata)
@@ -274,7 +272,7 @@ class FileUploadService:
         """读取 document_file 二进制内容，供 Worker 提交源文件和解析中间资产。"""
 
         if record.deletion_claim is not None:
-            raise ApiError(409, "conflict", "文件已预留删除，不能读取。")
+            raise ApplicationError("conflict", "文件已预留删除，不能读取。")
         if record.storage_provider == "s3":
             response = self._s3_client().get_object(Bucket=record.bucket, Key=record.object_key)
             body = response["Body"]
@@ -285,11 +283,11 @@ class FileUploadService:
         """为 S3 文件生成临时下载 URL；本地存储由 API 路由签发本地 URL。"""
 
         if record.file_type == "quality_report" or record.metadata.get("asset_role") == "table_evidence":
-            raise ApiError(403, "forbidden", "表格报告必须通过受控任务查询读取。")
+            raise ApplicationError("forbidden", "表格报告必须通过受控任务查询读取。")
         if record.storage_provider != "s3":
             raise ValueError("本地文件下载不支持 S3 presigned URL。")
         if not record.bucket:
-            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 bucket 未配置。")
+            raise ApplicationError("service_unavailable", "S3 bucket 未配置。")
         if record.file_type.startswith("word_preview_"):
             expires_seconds = self.preview_download_ttl(record, expires_seconds=expires_seconds)
         return self._s3_client().generate_presigned_url(
@@ -302,12 +300,12 @@ class FileUploadService:
         """预览直连 URL 的有效期同时受文件、主件和现有签发上限约束。"""
         source = self.repository.get_document_file(record.metadata.get("source_result_file_id", ""))
         if source is None or source.expires_at is None or record.expires_at is None:
-            raise ApiError(409, "conflict", "预览文件缺少有效主件保留期。")
+            raise ApplicationError("conflict", "预览文件缺少有效主件保留期。")
         expiries = [file.expires_at for file in (source, record) if not self.is_publication_retained(file)]
         ttl = min(expires_seconds, self.settings.oss_download_presign_expires_seconds,
                   *(int((expiry - utc_now()).total_seconds()) for expiry in expiries))
         if ttl <= 0:
-            raise ApiError(409, "conflict", "预览文件或主件已过期。")
+            raise ApplicationError("conflict", "预览文件或主件已过期。")
         return ttl
 
     def preview_retention_physical_delete(
@@ -343,10 +341,9 @@ class FileUploadService:
 
         normalized_reason = reason.strip()
         if not normalized_reason:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "reason 不能为空。")
+            raise ApplicationError("invalid_request", "reason 不能为空。")
         if confirmation != RETENTION_DELETE_CONFIRMATION_PHRASE:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"confirmation 必须为 {RETENTION_DELETE_CONFIRMATION_PHRASE}。",
             )
@@ -426,7 +423,7 @@ class FileUploadService:
         provider = self._storage_provider()
         bucket = self._bucket_for(provider)
         if provider == "s3" and not bucket:
-            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 bucket 未配置。")
+            raise ApplicationError("service_unavailable", "S3 bucket 未配置。")
         preview = file_type in WORD_PREVIEW_FILE_TYPES
         object_key = self._generated_object_key_for(
             tenant_id=tenant_id,
@@ -485,7 +482,7 @@ class FileUploadService:
         provider = self._storage_provider()
         bucket = self._bucket_for(provider)
         if provider == "s3" and not bucket:
-            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 bucket 未配置。")
+            raise ApplicationError("service_unavailable", "S3 bucket 未配置。")
         now = utc_now()
         pending = DocumentFileRecord(
             id=file_id, tenant_id=tenant_id, company_id=company_id, job_id=job_id,
@@ -506,18 +503,17 @@ class FileUploadService:
         """校验物理删除批量 file_id，避免空值、重复和过大批次。"""
 
         if not file_ids:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "file_ids 不能为空。")
+            raise ApplicationError("invalid_request", "file_ids 不能为空。")
         if len(file_ids) > RETENTION_DELETE_BATCH_LIMIT:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"单次最多允许处理 {RETENTION_DELETE_BATCH_LIMIT} 个文件。",
             )
         normalized = [file_id.strip() for file_id in file_ids]
         if any(not file_id for file_id in normalized):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "file_ids 不能包含空白项。")
+            raise ApplicationError("invalid_request", "file_ids 不能包含空白项。")
         if len(set(normalized)) != len(normalized):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "file_ids 不能包含重复项。")
+            raise ApplicationError("invalid_request", "file_ids 不能包含重复项。")
         return normalized
 
     def _preview_retention_delete_item(self, file_id: str, *, now: datetime) -> FileRetentionDeleteItem:
@@ -809,12 +805,12 @@ class FileUploadService:
 
     def _ensure_visible(self, record: DocumentFileRecord, user: AuthenticatedUser) -> None:
         if record.tenant_id != user.tenant_id or record.company_id != user.company_id:
-            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "无权限访问该文件。")
+            raise ApplicationError("forbidden", "无权限访问该文件。")
         if user.role == "admin":
             return
         if record.created_by == user.id:
             return
-        raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "无权限访问该文件。")
+        raise ApplicationError("forbidden", "无权限访问该文件。")
 
     def _storage_provider(self) -> DocumentFileStorageProvider:
         if self.settings.jobs_artifact_storage_backend == "s3":
@@ -904,7 +900,7 @@ class FileUploadService:
         current = self.repository.get_document_file(record.id)
         if current is not None and (current.status in {"expired", "deleted"} or current.deletion_claim is not None
                 or current.expires_at is not None and current.expires_at <= utc_now()):
-            raise ApiError(409, "conflict", "文件生命周期已失效，不能写入对象。")
+            raise ApplicationError("conflict", "文件生命周期已失效，不能写入对象。")
         checksum = f"sha256:{hashlib.sha256(content).hexdigest()}"
         if record.storage_provider == "s3":
             try:
@@ -914,7 +910,7 @@ class FileUploadService:
                 if error.response.get("Error", {}).get("Code") not in {"PreconditionFailed", "412"}:
                     raise
                 if self.read_file_content(record) != content:
-                    raise ApiError(409, "conflict", "既有对象内容不同，不能覆盖。") from None
+                    raise ApplicationError("conflict", "既有对象内容不同，不能覆盖。") from None
                 return current.etag if current is not None else record.etag
             etag = response.get("ETag") if isinstance(response, dict) else None
             return str(etag).strip('"') if etag else None
@@ -929,7 +925,7 @@ class FileUploadService:
                 os.link(temporary, target_path)
             except FileExistsError:
                 if target_path.read_bytes() != content:
-                    raise ApiError(409, "conflict", "既有对象内容不同，不能覆盖。") from None
+                    raise ApplicationError("conflict", "既有对象内容不同，不能覆盖。") from None
         finally:
             temporary.unlink(missing_ok=True)
         return checksum
@@ -943,7 +939,7 @@ class FileUploadService:
         try:
             import boto3
         except ModuleNotFoundError as exc:  # pragma: no cover - depends on deployment env
-            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 上传需要安装 boto3。") from exc
+            raise ApplicationError("service_unavailable", "S3 上传需要安装 boto3。") from exc
 
         kwargs: dict[str, str] = {}
         if self.settings.jobs_artifact_s3_endpoint_url:
@@ -980,5 +976,5 @@ def _normalize_key_prefix(key_prefix: str) -> str:
         return ""
     prefix = PurePosixPath(stripped)
     if prefix.is_absolute() or any(part in {"", ".", ".."} for part in prefix.parts):
-        raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", f"S3 object_key prefix 非法: {key_prefix}")
+        raise ApplicationError("invalid_request", f"S3 object_key prefix 非法: {key_prefix}")
     return prefix.as_posix()

@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from starlette.requests import Request
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError, http_status_for
 from app.domains.audit.models import ActorContext
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.router import upload_file_content
@@ -192,7 +192,7 @@ class FileUploadAsyncTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_upload_errors_propagate_without_audit(self) -> None:
         for error in (
-            ApiError(409, "conflict", "文件当前状态不允许重复上传。"),
+            ApplicationError("conflict", "文件当前状态不允许重复上传。"),
             OSError("测试对象写入失败。"),
         ):
             with self.subTest(error_type=type(error).__name__):
@@ -254,7 +254,7 @@ class FileUploadAsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.file.id, self.record.id)
 
     async def test_oversized_body_rejects_before_upload_and_audit(self) -> None:
-        with self.assertRaises(ApiError) as caught:
+        with self.assertRaises(ApplicationError) as caught:
             await upload_file_content(
                 self.record.id,
                 self._request(b"%PDF", b"large"),
@@ -263,7 +263,7 @@ class FileUploadAsyncTests(unittest.IsolatedAsyncioTestCase):
                 "trace_upload",
             )
 
-        self.assertEqual(caught.exception.status_code, 413)
+        self.assertEqual(http_status_for(caught.exception), 413)
         self.assertEqual(caught.exception.code, "file_too_large")
         self.runtime.file_upload_service.upload_authorized_content.assert_not_called()
         self.runtime.audit_service.record.assert_not_called()

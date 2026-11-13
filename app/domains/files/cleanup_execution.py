@@ -9,9 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import uuid4
 
-from fastapi import status
 
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.files.service import (
     FileRetentionDeleteReport,
     FileUploadService,
@@ -72,10 +71,9 @@ class FileRetentionCleanupRunService:
 
         normalized_reason = reason.strip()
         if not normalized_reason:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "reason 不能为空。")
+            raise ApplicationError("invalid_request", "reason 不能为空。")
         if confirmation != CLEANUP_RUN_CONFIRMATION_PHRASE:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"confirmation 必须为 {CLEANUP_RUN_CONFIRMATION_PHRASE}。",
             )
@@ -83,8 +81,7 @@ class FileRetentionCleanupRunService:
         physical_preview = self.file_upload_service.preview_retention_physical_delete(file_ids)
         expected_hash = self._preview_hash(physical_preview)
         if preview_hash != expected_hash:
-            raise ApiError(
-                status.HTTP_409_CONFLICT,
+            raise ApplicationError(
                 "conflict",
                 "preview_hash 与当前 cleanup preview 不匹配，请重新 preview 后再执行。",
             )
@@ -117,8 +114,7 @@ class FileRetentionCleanupRunService:
         """校验 cleanup run 自身限流边界，file_id 细节仍由 physical-delete service 校验。"""
 
         if len(file_ids) > max_files:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"file_ids 数量不能超过 max_files={max_files}。",
             )

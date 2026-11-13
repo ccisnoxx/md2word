@@ -141,3 +141,11 @@ router 保留：`request.url_for` + `_externalize_url`（HTTP 关注点）、`au
 - 保留的例外：`use_cases/request_snapshot.py` 透传 jobs 域 `JobResourceSnapshotError` 的状态与错误码（其错误码不在映射内，状态由 jobs 域决定），待 jobs 域迁移时一并处理。
   - **已修复**：`ApplicationError` 增加可选 `category`（语义类别，决定 HTTP 状态），`code` 可为更具体的对外错误码；jobs 域 `JobResourceSnapshotError` 的 `status_code` 改为 `category`（39 处抛出逐一核对 400↔invalid_request、404↔not_found、409↔conflict、503↔service_unavailable，含 4 处按版本是否显式给出而动态决定的类别）；`request_snapshot` 改为 `ApplicationError(exc.code, exc.message, category=exc.category)`，API 专用处理器经中央映射取状态。此后 document_jobs 应用层不再构造 `ApiError`。
 - 验收：错误响应的状态码、`error_code`、`reason_code` 与消息不变；路由与保序 OpenAPI 不变；受影响测试失败集合与 `1fb48844` 一致；document_jobs 应用层（除上述例外）不再构造 `ApiError`。
+
+## 10. 其他领域应用层错误迁移（2026-11-12 追加，叠加分支 `refactor/application-errors-domains`）
+
+- 范围：files、term_rules、saved_views、ops、users、terminology、acceptance 的应用层共 137 处 `ApiError` → `ApplicationError`（134 处机械转换并逐处核对状态/错误码与映射一致；users 的 `user_conflict`、`last_admin_conflict` 用 `category="conflict"`；terminology 发布预检按是否重复范围选 `conflict`/`invalid_request`）。HTTP 层 31 处保留 `ApiError`。
+- 映射新增 `file_too_large → 413`（`files/validation.py`）；`files/router.py` 的 `cleanup_plan_signing_not_configured`（500）属 HTTP 层，保留。
+- `FileRetentionCleanupPlanValidationError` 的 `status_code` 改为 `category`（400 → invalid_request，默认 409 → conflict）；router 改为 `ApplicationError(..., category=exc.category)`，响应不变。
+- `term_rules` 批量条目 `status_code` 经 `http_status_for`；`except ApiError` 捕获点改为 `ApplicationError`。
+- 迁移中发现并在 PR #46 修复（`2e822a1b`）：`worker_failure_message` 兜底分支输出异常类名，`c65a3a22` 后业务错误会写成“（ApplicationError）”；对恰为 `ApplicationError` 的错误沿用“ApiError”，保持任务 `error_message` 不变。日志中的异常类名保持真实类名。

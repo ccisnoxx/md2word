@@ -11,6 +11,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
+from app.core.errors import ApplicationErrorCode
 from app.domains.files.cleanup_execution import FileRetentionCleanupRunReport
 from app.domains.files.cleanup_lock import FileRetentionCleanupLockRecord
 from app.domains.files.scheduled_cleanup import FileRetentionCleanupReadonlyReport
@@ -27,11 +28,12 @@ SIGNED_CLEANUP_PLAN_KEY_NAMESPACE = "md2word.file_retention.cleanup_plan.v1"
 class FileRetentionCleanupPlanValidationError(ValueError):
     """表示 cleanup plan 校验失败，router 会据此阻断执行并记录 failed history。"""
 
-    def __init__(self, error_code: str, message: str, *, status_code: int = 409) -> None:
+    def __init__(self, error_code: str, message: str, *, category: ApplicationErrorCode = "conflict") -> None:
         super().__init__(message)
         self.error_code = error_code
         self.message = message
-        self.status_code = status_code
+        # 语义类别；HTTP 状态由 app/core/errors 的中央映射决定。
+        self.category = category
 
 
 class FileRetentionSignedCleanupPlan(BaseModel):
@@ -254,7 +256,7 @@ class FileRetentionCleanupRunHistoryService:
             raise FileRetentionCleanupPlanValidationError(
                 "cleanup_run_plan_incomplete",
                 "plan_id 和 plan_signature 必须同时提供。",
-                status_code=400,
+                category="invalid_request",
             )
         existing = self.repository.get_run(run_id)
         if existing is None:

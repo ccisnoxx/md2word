@@ -8,10 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from fastapi import status
-
 from app.api.v1.routers.health_schemas import HealthOpsAlertItem
-from app.core.errors import ApiError
+from app.core.errors import ApplicationError
 from app.domains.resources.models import utc_now
 from app.domains.ops.alert_delivery import ALERT_DELIVERY_BATCH_LIMIT
 
@@ -318,16 +316,15 @@ class OpsAlertDestinationDryRunService:
         """校验请求 alert code 列表，避免隐式全量或重复 target。"""
 
         if len(alert_codes) > ALERT_DELIVERY_BATCH_LIMIT:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
+            raise ApplicationError(
                 "invalid_request",
                 f"单次最多允许 dry-run {ALERT_DELIVERY_BATCH_LIMIT} 个 alert code。",
             )
         normalized = [alert_code.strip() for alert_code in alert_codes]
         if any(not alert_code for alert_code in normalized):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "alert_codes 不能包含空白项。")
+            raise ApplicationError("invalid_request", "alert_codes 不能包含空白项。")
         if len(set(normalized)) != len(normalized):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "alert_codes 不能包含重复项。")
+            raise ApplicationError("invalid_request", "alert_codes 不能包含重复项。")
         return normalized
 
     def _validate_destination_ids(self, destination_ids: list[str]) -> list[str]:
@@ -335,9 +332,9 @@ class OpsAlertDestinationDryRunService:
 
         normalized = [destination_id.strip() for destination_id in destination_ids]
         if any(not destination_id for destination_id in normalized):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "destination_ids 不能包含空白项。")
+            raise ApplicationError("invalid_request", "destination_ids 不能包含空白项。")
         if len(set(normalized)) != len(normalized):
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "destination_ids 不能包含重复项。")
+            raise ApplicationError("invalid_request", "destination_ids 不能包含重复项。")
         return normalized
 
     def _ensure_alerts_active(self, alert_codes: list[str]) -> None:
@@ -348,8 +345,7 @@ class OpsAlertDestinationDryRunService:
         active_codes = {alert.code for alert in self.current_alerts}
         inactive = [alert_code for alert_code in alert_codes if alert_code not in active_codes]
         if inactive:
-            raise ApiError(
-                status.HTTP_409_CONFLICT,
+            raise ApplicationError(
                 "conflict",
                 f"alert code 当前未激活: {', '.join(inactive)}",
             )
