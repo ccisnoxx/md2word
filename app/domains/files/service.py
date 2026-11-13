@@ -632,10 +632,12 @@ class FileUploadService:
 
         if self.is_publication_retained(record):
             return "skipped_publication_protected", "文件已被发布记录永久引用。"
-        if record.deletion_claim is not None:
-            return "skipped_deletion_reserved", "文件已预留删除，需核对原删除结果。"
+        # deleted 只能由与预留匹配的收尾写入，故已删除记录即便仍带预留也属已完成删除；
+        # 预留检查只拦截“已预留但未收尾”的中间态。
         if record.status == "deleted":
             return "skipped_already_deleted", "文件 metadata 已是 deleted。"
+        if record.deletion_claim is not None:
+            return "skipped_deletion_reserved", "文件已预留删除，需核对原删除结果。"
         if record.status == "pending_upload":
             return "skipped_pending_upload", "文件仍处于 pending_upload，未执行物理删除。"
         if record.storage_provider not in RETENTION_DELETE_SUPPORTED_LOCAL_PROVIDERS:
@@ -649,10 +651,12 @@ class FileUploadService:
 
         if self.is_publication_retained(record):
             return "skipped_publication_protected", "文件已被发布记录永久引用。"
-        if record.deletion_claim is not None:
-            return "skipped_deletion_reserved", "文件已预留删除，需核对原删除结果。"
+        # deleted 只能由与预留匹配的收尾写入，故已删除记录即便仍带预留也属已完成删除；
+        # 预留检查只拦截“已预留但未收尾”的中间态。
         if record.status == "deleted":
             return "skipped_already_deleted", "文件 metadata 已是 deleted。"
+        if record.deletion_claim is not None:
+            return "skipped_deletion_reserved", "文件已预留删除，需核对原删除结果。"
         if record.status != "expired":
             return "skipped_not_expired_status", "文件必须先标记为 expired。"
         if record.expires_at is None:

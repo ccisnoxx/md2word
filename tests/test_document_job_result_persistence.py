@@ -3,7 +3,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import timedelta
-from dataclasses import replace
 import hashlib
 import multiprocessing
 import os
@@ -147,7 +146,7 @@ class DocumentJobResultPersistenceTests(TestCase):
             rules.write_text("subscript_rules:\n  symbols:\n    DemoToken: PRIVATE_FORMAT_SENTINEL\n", encoding="utf-8")
             with patch.object(image_evidence, "IMAGE_GENERATION_POLICY", writer_policy):
                 rendered = execution.rendering.word_renderer.render_to_result(ir, template_path=None, config_path=config,
-                    image_loader=execution.rendering.placeholders.build_image_loader(job), options=DocumentIRRenderOptions(
+                    image_loader=execution.rendering.placeholders.build_image_loader(job, ir), options=DocumentIRRenderOptions(
                         subscript_config_path=rules, template_version_id=job.template_version_id))
             metadata = build_renderer_evidence(ir, rendered.content, formula_report=rendered.formula_report,
                 image_layout_report=rendered.image_layout_report, expected_template_version_id=job.template_version_id,
@@ -225,7 +224,7 @@ class DocumentJobResultPersistenceTests(TestCase):
             job, ir = self._install_image_ir(runtime, execution, job, image_count=image_count, annotations=False)
             with patch.object(image_evidence, "IMAGE_GENERATION_POLICY", writer_policy):
                 rendered = execution.rendering.word_renderer.render_to_result(
-                    ir, template_path=None, config_path=None, image_loader=execution.rendering.placeholders.build_image_loader(job),
+                    ir, template_path=None, config_path=None, image_loader=execution.rendering.placeholders.build_image_loader(job, ir),
                     options=DocumentIRRenderOptions(template_version_id=job.template_version_id),
                 )
             metadata = build_renderer_evidence(ir, rendered.content, formula_report=rendered.formula_report,
@@ -302,15 +301,20 @@ class DocumentJobResultPersistenceTests(TestCase):
                 render.assert_not_called()
 
     def test_formula_fallback_quality_summary_and_events_use_selected_result(self):
-        for quality, expected in (("pending", "pending"), ("blocked", "blocked"), ("passed", "warning"), ("warning", "warning")):
+        # 新任务渲染完成即产生 document_base 贡献；公式降级的 warning 由基础质量派生吸收（只在无 base 贡献的旧任务上
+        # 直接降为 warning）。本夹具的 base 因风险未分类为 pending、预览未配置亦为 pending，聚合取最差状态。
+        for quality, expected in (("pending", "pending"), ("blocked", "blocked"), ("passed", "pending"), ("warning", "pending")):
             with self.subTest(quality=quality), self._runtime() as (root, runtime, execution, job, client, headers):
                 job, ir = self._install_formula_ir(runtime, execution, job)
+                # 质量贡献（checks_v1）由各 producer 归属维护，普通更新只能在保留它们的前提下追加无关摘要。
+                current_summary = runtime.document_job_repository.get_document_job(job.id).quality_summary
                 runtime.document_job_repository.update_document_job(
-                    job.id, quality_status=quality, quality_summary={"retained": {"check": "existing"}},
+                    job.id, quality_status=quality, quality_summary={**current_summary, "retained": {"check": "existing"}},
                 )
                 result = execution.execute_job(job.id)
                 self.assertEqual(result.status, "succeeded", result.error_message)
                 self.assertEqual(result.quality_status, expected)
+                self.assertEqual(result.quality_summary["checks_v1"]["document_base"]["quality_status"], "pending")
                 self.assertEqual(result.quality_summary["retained"], {"check": "existing"})
                 self.assertEqual(result.quality_summary["formula"]["fallback_count"], 1)
                 self.assertEqual((result.review_status, result.delivery_status), ("unreviewed", "internal_draft"))
@@ -333,7 +337,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                     template = execution.rendering.template_read_service.resolve_template_version(job.template_version_id)
                     rendered = execution.rendering.word_renderer.render_to_result(
                         ir, template_path=template.template_path, config_path=template.layout_config_path,
-                        image_loader=execution.rendering.placeholders.build_image_loader(job),
+                        image_loader=execution.rendering.placeholders.build_image_loader(job, ir),
                     )
                     content = legacy_image_docx(rendered.content)
                     evidence = build_renderer_evidence(ir, content, formula_report=rendered.formula_report)
@@ -413,7 +417,10 @@ class DocumentJobResultPersistenceTests(TestCase):
         self.assertEqual(file.checksum_sha256, f"sha256:{hashlib.sha256(content).hexdigest()}")
         ir_file = runtime.document_file_repository.get_document_file(result.document_ir_file_id)
         ir = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(ir_file))
-        self.assertTrue(all(file.metadata[key] == value for key, value in build_renderer_evidence(ir, content).items()))
+        # 不带 render_result 重建时无法复原渲染 trace；与产品持久化校验一致，trace 相关字段不参与逐项比较。
+        trace_keys = {"render_trace_status", "render_plan", "block_render_evidence", "block_anchor_evidence", "block_anchor_summary"}
+        self.assertTrue(all(file.metadata[key] == value for key, value in build_renderer_evidence(ir, content).items()
+                            if key not in trace_keys))
         self.assertEqual(len({file.object_key for file in files}), len(files))
         return files
 
@@ -428,12 +435,10 @@ class DocumentJobResultPersistenceTests(TestCase):
                     original_materialize = runtime.document_file_repository.materialize_prepared_result
                     original_render = execution.rendering.word_renderer.render_to_result
 
+                    # 渲染结果的 trace 绑定 docx_sha256，渲染后改写字节会被完整性校验拒绝；渲染又是确定性的，
+                    # 两次尝试字节相同。字节隔离改由“各自独立对象路径 + 逐文件校验和 + 永不覆盖”共同证明。
                     def render(*args, **kwargs):
-                        rendered = original_render(*args, **kwargs)
-                        data = io.BytesIO(rendered.content)
-                        with zipfile.ZipFile(data, "a") as archive:
-                            archive.writestr("docProps/con102-attempt.txt", current_thread().name)
-                        return replace(rendered, content=data.getvalue())
+                        return original_render(*args, **kwargs)
 
                     def write(record, content):
                         if current_thread().name.startswith("late-uploader") and record.file_type == "generated_word":
@@ -467,7 +472,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                     files = self._assert_result_bytes(runtime, result)
                     self.assertEqual(result.result_file_id, selected.prepared_result.file.id)
                     self.assertEqual(sorted(file.status for file in files), ["pending_upload", "uploaded"])
-                    self.assertEqual(len({file.checksum_sha256 for file in files}), 2)
+                    self.assertEqual(len({str(runtime.file_upload_service.resolve_file_object_path(file)) for file in files}), 2)
                     loser = next(file for file in files if file.id != result.result_file_id)
                     listed = client.get(f"/api/v1/document-jobs/{job.id}/files", headers=headers)
                     self.assertNotIn(loser.id, str(listed.json()))
@@ -492,6 +497,10 @@ class DocumentJobResultPersistenceTests(TestCase):
 
                     def interrupt(*args, **kwargs):
                         value = original(*args, **kwargs)
+                        # 渲染前后还会登记报告等其他产物；只在主 DOCX 的对应步骤中断，保持四个中断点的原意。
+                        record = args[0] if args and hasattr(args[0], "file_type") else None
+                        if point in {"pending", "object"} and (record is None or record.file_type != "generated_word"):
+                            return value
                         raise SimulatedProcessExit()
 
                     with patch.object(target, method, side_effect=interrupt), self.assertRaises(SimulatedProcessExit):
@@ -505,11 +514,13 @@ class DocumentJobResultPersistenceTests(TestCase):
                         restarted.file_upload_service, "_write_object", wraps=restarted.file_upload_service._write_object,
                     ) as write:
                         result = new_execution.execute_job(job.id)
+                    # 恢复可能补写报告类产物；本测试只约束主 DOCX 不被重写。
+                    word_writes = [call for call in write.call_args_list if call.args[0].file_type == "generated_word"]
                     files = self._assert_result_bytes(restarted, result)
                     if point in {"receipt", "materialized"}:
                         self.assertEqual(result.result_file_id, before.prepared_result.file.id)
                         render.assert_not_called()
-                        write.assert_not_called()
+                        self.assertEqual(word_writes, [])
                         self.assertEqual(len(files), 1)
                         after_file = files[0]
                         self.assertEqual(after_file.expires_at, before_files[0].expires_at)
@@ -518,7 +529,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                         self.assertEqual(len(files), 2)
                         self.assertNotEqual(result.result_file_id, before_files[0].id)
                         self.assertEqual(render.call_count, 1)
-                        self.assertEqual(write.call_count, 1)
+                        self.assertEqual(len(word_writes), 1)
 
     def test_selected_receipt_rejects_stale_rollback_and_candidate_failure(self):
         for kind in ("file", "sqlite"):
@@ -712,7 +723,8 @@ class DocumentJobResultPersistenceTests(TestCase):
                 descriptor = _candidate()
                 now = descriptor.expires_at + timedelta(seconds=1)
                 files.create_document_file(descriptor.model_copy(update={"status": "pending_upload", "etag": None}))
-                source = descriptor.model_copy(update={"id": "source", "file_type": "source_pdf", "metadata": {}, "status": "pending_upload"})
+                source = descriptor.model_copy(update={"id": "source", "file_type": "source_pdf", "metadata": {}, "status": "pending_upload",
+                                                     "object_key": "document-files/tenant/source/source.pdf"})
                 files.create_document_file(source)
                 DocumentFileRetentionPlanner(files, retention_days=1).mark_expired(now=now)
                 self.assertEqual(files.get_document_file(descriptor.id).status, "expired")
@@ -838,7 +850,8 @@ class DocumentJobResultPersistenceTests(TestCase):
             pending = descriptor.model_copy(update={"status": "pending_upload", "etag": None})
             runtime.document_file_repository.create_document_file(pending)
             runtime.document_file_repository.create_document_file(pending.model_copy(update={
-                "id": "ordinary-source", "file_type": "source_pdf", "metadata": {}}))
+                "id": "ordinary-source", "file_type": "source_pdf", "metadata": {},
+                "object_key": "document-files/tenant/ordinary-source/source.pdf"}))
             admin_headers = fixtures.build_auth_header(client, username="admin", password="admin-pass")
             response = client.post("/api/v1/files/retention/mark-expired", headers=admin_headers)
             self.assertEqual(response.status_code, 200, response.text)
