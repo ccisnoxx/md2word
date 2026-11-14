@@ -18,9 +18,10 @@
 ## 定向回归
 
 ```sh
-B1_PREVIEW_ROLLBACK_EVIDENCE=.trellis/tasks/11-14-b1-preview-rollback-validation/evidence \
-  .venv/bin/python -m unittest tests.test_b1_preview_rollback
+.venv/bin/python -m unittest tests.test_b1_preview_rollback
 ```
+
+归档时更新了定向回归定位构建配方的路径。本报告和证据保留 `46cb4948` 上实际运行的结果及脚本指纹。复跑如需导出证据，可将 `B1_PREVIEW_ROLLBACK_EVIDENCE` 指向新的输出目录。
 
 最终运行 1 个矩阵测试通过，耗时 16.504 秒。外部 MinerU、预览转换器和页面观察器用测试替身，正式 DOCX 渲染、文件登记、证据读回和恢复流程实际运行。[逐项结果与产物哈希](evidence/offline-results.json)
 

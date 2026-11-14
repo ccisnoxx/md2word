@@ -34,7 +34,7 @@ from tests.test_image_group_rendering import neutral_png
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-TASK = PROJECT / ".trellis/tasks/11-14-b1-preview-rollback-validation"
+TASK = PROJECT / ".trellis/tasks/archive/2026-11/11-14-b1-preview-rollback-validation"
 ARCHIVED_IMAGES = Path(".trellis/tasks/archive/2026-10/10-23-rnd-503-image-group-caption-rendering/artifact-hashes.json")
 BACKENDS = ("file", "sqlite")
 W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
