@@ -222,7 +222,22 @@ def _verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, 
     _check(report["rule_version"] == IMAGE_GROUP_VERSION and report["thresholds"] == IMAGE_GROUP_THRESHOLDS, "归组规则")
     from app.services.renderer.render_plan import legacy_document_ir_payload
     ir_payload = legacy_document_ir_payload(document_ir) if legacy_ir_identity else document_ir.model_dump(mode="json")
-    _check(report["source_ir_sha256"] == canonical_sha256(ir_payload), "原始 IR 绑定")
+    source_ir_sha256 = report["source_ir_sha256"]
+    matches_ir = source_ir_sha256 == canonical_sha256(ir_payload)
+    if legacy_ir_identity and not matches_ir:
+        # 旧图片报告绑定的 IR 早于这四个元数据字段；显式声明的默认值仍参与绑定。
+        metadata = ir_payload["metadata"]
+        implicit_defaults = {
+            field for field, default in (
+                ("degraded_pages", []), ("logical_table_groups_version", None),
+                ("logical_table_groups", []), ("logical_table_group_counts", {}),
+            )
+            if field not in document_ir.metadata.model_fields_set and metadata[field] == default
+        }
+        if implicit_defaults:
+            ir_payload["metadata"] = {field: value for field, value in metadata.items() if field not in implicit_defaults}
+            matches_ir = source_ir_sha256 == canonical_sha256(ir_payload)
+    _check(matches_ir, "原始 IR 绑定")
     inputs = report["render_inputs"]
     _check(set(inputs) == {"schema_version", "projection_version", "writer_version", "rule_version", "generation_policy",
                           "document_language", "template", "caption_style", "format_rules", "spans"}, "输入字段白名单")
