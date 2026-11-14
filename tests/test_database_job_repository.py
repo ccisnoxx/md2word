@@ -157,6 +157,8 @@ class _FakeMysqlDatabase:
         self.document_job_callback_messages: dict[str, dict[str, Any]] = {}
         self.document_job_translation_batches: dict[str, dict[str, Any]] = {}
         self.saved_views: dict[str, dict[str, Any]] = {}
+        self.template_catalog: dict[str, dict[str, Any]] = {}
+        self.template_catalog_default: str | None = None
         self.resource_versions: dict[tuple[str, str, str], dict[str, Any]] = {}
         self.resource_default_versions: dict[tuple[str, str], dict[str, Any]] = {}
         self.resource_version_sequences: dict[tuple[str, str], dict[str, Any]] = {}
@@ -223,6 +225,8 @@ class _FakeMysqlCursor:
                 "resource_versions",
                 "resource_default_versions",
                 "resource_version_sequences",
+                "template_catalog",
+                "template_catalog_defaults",
                 "term_rule_proposals",
                 "term_rule_categories",
                 "term_rules",
@@ -751,6 +755,35 @@ class _FakeMysqlCursor:
             for row in rows:
                 counts[row["status"]] = counts.get(row["status"], 0) + 1
             self._rows = [{"status": status, "count": count} for status, count in counts.items()]
+            return
+        if normalized.startswith("insert into template_catalog_defaults"):
+            self._rows = []
+            return
+        if normalized.startswith("select template_id from template_catalog_defaults"):
+            self._rows = [{"template_id": self.database.template_catalog_default}]
+            return
+        if normalized.startswith("update template_catalog_defaults set template_id"):
+            self.database.template_catalog_default = params[0]
+            self._rows = []
+            return
+        if normalized.startswith("insert into template_catalog "):
+            template_id, enabled, deleted, payload = params
+            self.database.template_catalog.setdefault(template_id, {
+                "template_id": template_id, "enabled": enabled, "deleted": deleted, "payload": payload,
+            })
+            self._rows = []
+            return
+        if normalized.startswith("select template_id, enabled, deleted, payload from template_catalog"):
+            if params:
+                row = self.database.template_catalog.get(params[0])
+                self._rows = [row.copy()] if row is not None else []
+            else:
+                self._rows = [row.copy() for row in self.database.template_catalog.values()
+                              if row["enabled"] and not row["deleted"]]
+            return
+        if normalized.startswith("select version from resource_default_versions"):
+            row = self.database.resource_default_versions.get(tuple(params))
+            self._rows = [row.copy()] if row is not None else []
             return
         if normalized.startswith("insert into resource_versions"):
             resource_type, resource_id, version, status, snapshot_hash, payload_ref, payload, created_at, updated_at = params
@@ -1502,6 +1535,8 @@ class PersistenceAdapterTests(TestCase):
                 "resource_versions",
                 "resource_default_versions",
                 "resource_version_sequences",
+                "template_catalog",
+                "template_catalog_defaults",
                 "term_rule_proposals",
                 "term_rule_categories",
                 "term_rules",

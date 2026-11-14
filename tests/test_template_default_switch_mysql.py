@@ -191,14 +191,14 @@ class MysqlTemplateDefaultSwitchTests(TestCase):
     def test_disable_after_switch_observation_rejects_switch(self):
         validated = Event()
         proceed = Event()
-        validate = self.reader._validate_registered_template_package
+        validate = self.reader.validate_registered_template_package
 
         def pause_after_validation(record):
             validate(record)
             validated.set()
             self.assertTrue(proceed.wait(10))
 
-        with patch.object(self.reader, "_validate_registered_template_package", side_effect=pause_after_validation):
+        with patch.object(self.reader, "validate_registered_template_package", side_effect=pause_after_validation):
             with ThreadPoolExecutor(max_workers=1) as pool:
                 pending = pool.submit(self._set_default, 2)
                 try:
@@ -213,13 +213,13 @@ class MysqlTemplateDefaultSwitchTests(TestCase):
         self.assertEqual(self.audit.list_audit_events(), [])
 
     def test_changed_snapshot_after_validation_rejects_switch(self):
-        validate = self.reader._validate_registered_template_package
+        validate = self.reader.validate_registered_template_package
 
         def change_record(record):
             validate(record)
             self.repository.save_resource_version(record.model_copy(update={"snapshot_hash": "sha256:" + "0" * 64}))
 
-        with patch.object(self.reader, "_validate_registered_template_package", side_effect=change_record):
+        with patch.object(self.reader, "validate_registered_template_package", side_effect=change_record):
             result = self._set_default(2)
         self.assertEqual(result.status_code, 409, result.text)
         self.assertEqual(self._default().version, "1")

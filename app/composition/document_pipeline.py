@@ -124,6 +124,7 @@ def build_document_pipeline(
         platform.resource_version_service,
         audit_service,
         document_job_repository=adapters.document_job_repository,
+        catalog_repository=adapters.template_catalog_repository,
     )
     document_word_renderer = DocumentIRWordRenderer()
     # 启动期校验页面质量策略配置，配置非法时在构造预览与执行服务前失败。

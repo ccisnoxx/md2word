@@ -1707,3 +1707,36 @@ Worker 失败消息只保留固定码构造的消息，其余输出异常类型�
 ### Next Steps
 
 - 提交保留在本地，按用户要求暂不推送。
+
+
+## Session 52: 生产动态模板目录迁入 MySQL
+
+**Date**: 2026-11-13
+**Task**: 生产动态模板目录迁入 MySQL
+**Branch**: `codex/production-template-catalog`
+
+### Summary
+
+归档 11-13-production-template-catalog。生产 MySQL 持有模板目录与默认选择，Worker 按已绑定快照渲染，提供旧清单预检、导入与复核。
+
+### Main Changes
+
+- 模板级停用和删除阻止新建与克隆。已绑定任务可继续执行或重试，显式禁用绑定版本仍会阻止渲染。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `094b405f` | (see git log) |
+
+### Testing
+
+- [OK] 77 项定向用例、4 项真实 MySQL 检查及生产 Compose 专项通过。API 与 Worker 分别重启后均重新生成 DOCX。Compose 使用本地 MinerU I/O 夹具。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留本地分支。生产数据迁移和上线尚未执行。

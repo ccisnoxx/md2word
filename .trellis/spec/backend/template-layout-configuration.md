@@ -12,7 +12,7 @@
 ### 2. Signatures
 
 - `TemplateReadService.bootstrap_manifest_versions() -> None`：启动登记缺失 seed，并核对已有内置 seed 的 DOCX 身份。
-- `TemplateReadService.list_template_versions(template_id: str) -> list[TemplateVersionResponse]`：合并已登记历史版本与旧目录/manifest 视图。
+- `TemplateReadService.list_template_versions(template_id: str) -> list[TemplateVersionResponse]`：MySQL 列出已登记版本。file/SQLite 保留旧目录/manifest 视图。
 - `GET /api/v1/templates/{template_id}/versions`：沿用 admin-only 和现有响应字段。
 - `GET /api/v1/templates/{template_id}/layout-config?version={int}`：admin-only 读取默认或指定版本。
 - `POST /api/v1/templates/{template_id}/layout-config/versions`：admin-only 创建不可变 draft。
@@ -35,7 +35,7 @@
   - 页脚：`font_name`、`western_font_name`、`complex_script_font_name`。
 - `ResourceVersionRepositoryProtocol.create_resource_version(record)`：只插入，不覆盖。
 - `ResourceVersionRepositoryProtocol.allocate_next_version(type, id, minimum_next)`：MySQL 事务内分配不复用整数。
-- `get_default_resource_pointer(type, id)` 读取原始指针的版本和更新时间。`switch_default_resource_version(record, expected_pointer=..., audit_event=...)` 返回事务确认后的记录，条件冲突返回 `None`。
+- `get_default_resource_pointer(type, id)` 读取原始指针的版本和更新时间。`switch_default_resource_version(record, expected_pointer=..., audit_event=...)` 返回事务确认后的记录，条件冲突返回 `None`。目录仓储的 `set_default_template_version(record, expected_pointer=..., audit_event=...)` 在持有目录锁的事务内复用同一切换逻辑。
 - 内部 `TemplateConfigPackage.load_content(content: bytes)`：与 `load(path)` 共享既有 YAML object、schema、归一化和字段值校验；renderer 单次读取字节后同时计算 hash 和解析，不增加 API/schema 字段。
 - 内部 `resolve_bundled_template_seed(root_dir)` 返回 manifest 唯一启用的内置默认版本及 DOCX/YAML 路径。
 - 内部 `validate_template_package(template_path=..., layout_config_path=...)` 返回已预检字节的 SHA-256；失败提供固定 `code` 和逻辑 `path`。
@@ -48,12 +48,16 @@
 - `changes` 只能出现编辑 schema 中 `readonly=false` 的叶子字段，服务从 exact base 合并后做完整严格模型校验。
 - `schema_version`、`template_name`、`output_filename`、`sample_content`、隐藏 renderer 字段和页面宽高不允许修改。
 - 保存只创建 draft；只有真实验证任务成功后才能 publish，只有 published 才能 set-default。带模板快照的验证任务须绑定同一草稿的 SHA-256。发布以预检时的 DRAFT 状态和快照哈希为条件，一次写入发布状态与验证字段。旧替换入口与版本创建共用版本分配，目录和记录仅创建。
-- MySQL 模式下 `resource_default_versions` 是版本默认指针唯一来源；manifest 只登记 seed，`template_state.json` 只登记默认 template id。
-- 显式 `set-default` 先验证 published 登记记录、DOCX 和已绑定 YAML 的实际字节及哈希。MySQL 按请求观察到的旧指针及预检快照比较写入，在同一事务读回确认并保存成功审计。两个请求从同一指针切到新版本时，冲突请求返回 HTTP 409 `template_default_conflict`。模板禁用与该切换按目标版本行互斥。
+- MySQL 的模板目录持有名称、描述、启用与删除状态、上传缺省配置。全局默认模板 ID 与每模板的默认版本均由 MySQL 持有，后者仍保存在 `resource_default_versions`。版本默认和全局默认使用独立 API。生产清单只作为只读 seed，`template_state.json` 仅用于迁移与本地兼容。
+- 显式 `set-default` 先验证 published 登记记录、DOCX 和已绑定 YAML 的实际字节及哈希。MySQL 按请求观察到的旧指针及预检快照比较写入，在同一事务读回确认并保存成功审计。两个请求从同一指针切到新版本时，冲突请求返回 HTTP 409 `template_default_conflict`。目录模式先锁模板目录行，再锁目标版本和指针，版本禁用与切换共享该锁顺序。
 - `set-default` 只更新指定模板的版本指针。全局默认模板 ID 使用独立 `PATCH /api/v1/templates/{template_id}/default`。COMMIT 已发送但结果无法确认时，客户端先读版本列表核对当前状态。
 - Job 创建时固化 Template Version；普通用户只能选 published，admin 可显式创建 draft 验证任务，Worker 只消费已固化版本。
 - 版本 YAML 缺失、损坏、schema 不支持或 hash 不匹配时失败关闭，不回退其他 YAML 或 renderer 默认值。
 - RND-503 图片历史重验消费原文件冻结的必要规范化格式输入，不重读当前 YAML/默认指针。配置 owner 继续只定义唯一结构；图片私有输入/报告版本与恢复合同由 Word 生成规则拥有，不把任意 YAML 或可变路径存入事件。
+
+生产目录写入通过 `TemplateCatalogRepositoryProtocol`。目录键 `template_catalog.template_id` 与资源版本按 MySQL 唯一性规则匹配；`template_catalog_defaults` 持有单行全局默认。目录与首版 draft 同事务提交。写入先固化受管文件，事务回滚只清理本次上传拥有的候选。事务提交应答丢失时，独立连接读回路径和哈希；不能确认时返回 `503 template_catalog_commit_unknown` 并保留文件供对账。目录停用、删除和全局默认切换按全局指针再按模板行加锁。版本生命周期写入使用同一模板行锁。
+
+旧部署用 `scripts/ops/migrate_template_catalog.py --legacy-manifest <旧清单>` 只读预检。通过 `--apply --expected-evidence <预检指纹>` 明确执行，再用 `--verify` 复核。清单、旧默认状态、数据库及资产需在停写期间冻结。未获证据的孤立草稿和文件仅列出；已明确删除的 seed 保留删除状态。无冲突的重复应用保持历史快照身份。
 
 #### 3.2 多文种字体
 
@@ -76,22 +80,22 @@
 - 已有内置 seed 的 `payload.template_id/version`、`docx_sha256` 必须与该 seed 一致；`docx_path` 按 `root_dir` 解析相对路径并规范化真实路径后，允许等于 seed 路径或位于 `settings.templates_storage_dir/<template_id>/v<version>/` 内。该规则允许同内容的受管上传记录与 bundled seed 共存，仅用于启动身份判定，不改登记路径、不探测备用文件。其他模板/版本目录或任意其他路径仍为冲突。
 - `snapshot_hash` 必须匹配持久化 payload 自身；同号 draft 或身份/完整性冲突抛出含 `template_id@version` 的 `ValueError`，不覆写该记录或移动其默认指针。
 - 不将新 manifest 的完整 payload hash 与旧记录直接比较；合法名称、描述等元数据变化不得覆写旧快照。身份有效的 disabled/superseded seed 保持关闭，不因初始化复活。
-- 生产迁移必须先分别读取并验证 `default@1` 与 `default@2`，再显式调用 set-default；若后续发布门禁失败，必须在新后端仍在线时先把默认指针恢复到 v1，读回成功后才能回滚旧代码。
+- 生产环境将内置默认版本从 `default@1` 切到 `default@2` 时，先分别读取并验证两版，再显式调用 set-default。若后续发布门禁失败，在新后端在线时把默认指针恢复到 v1，读回成功后回滚旧代码。模板目录迁移保留现有的合法版本默认指针。
 
 #### 3.4 历史版本列表与 payload 归属
 
-- 列表保留受管 `vN` 目录和当前 manifest 的 legacy 视图，并补回仅由持久化 payload 引用的可解析整数版本；同版去重、整数降序，沿用 draft/published/disabled/superseded、默认标识和验证/发布字段。
+- MySQL 版本列表只显示登记记录，并使用对应 payload 定位资源。file/SQLite 列表保留受管 `vN` 目录与 manifest 视图。可解析整数版本去重并降序，保留 draft/published/disabled/superseded、默认标识与验证/发布字段。
 - 目录、manifest 和补回阶段共用按可解析整数建立的 record 索引；`"01"` 等历史 key 不能因后续整数去重而丢失 payload。并存时优先规范 key `str(version)`，没有规范 key 时沿仓储返回顺序保留首条等价整数记录，不改写持久化 key。
-- 对已有 record 的目录、manifest 与补回条目，均复用 `_template_version_path(template, version, record.payload)`；不得以目录首个残留 DOCX 或新 seed 遮蔽登记路径。无 record 的目录条目保留原候选。
+- 对已有 record 的目录、manifest 与补回条目，均复用 `_template_version_path(template, version, record.payload)`；不得以目录首个残留 DOCX 或新 seed 遮蔽登记路径。file/SQLite 兼容视图保留无 record 的旧目录候选。
 - payload 指向的原文件丢失时，现有 asset builder 返回 `exists=false`；不借用其他版本充数。列表展示不替代生成时的授权和 YAML 严格校验，生产 `resolve_template_version()` 不用作列表过滤器。
-- 新增补回逻辑不保存资源版本或移动数据库默认指针；既有默认 template id 的 legacy 懒初始化保持原行为。持久化 hash 的 `sha256:` 前缀与列表 asset 的裸 hex 格式保持不变。
+- 版本列表为只读投影。file/SQLite 沿用原默认 template id 懒初始化。持久化 hash 的 `sha256:` 前缀与列表 asset 的裸 hex 格式保持不变。
 
 #### 3.5 联合预检与任务实物
 
 - 模板创建、替换、版式草稿、发布和 seed bootstrap 共用联合预检。输入为实际 DOCX 与可选 YAML 字节，校验 OPC 内部关系、可达装饰媒体、Word 样式、页面几何和语言配置变体。版式草稿的严格编辑规则继续由 `apply_layout_changes` 拥有。
 - `part_number` 和 `category` 保留历史配置与预览值，编辑器两组均只读。消费测试登记每个可编辑叶子及适用的 OOXML 分支。
 - 正式任务的 `request_snapshot.resources` 固化同一已解析模板版本和格式规则。快照记录及 canonical payload 自洽后，按内容 SHA-256 核验 DOCX、YAML 和部门规则，从任务目录使用同次已认证字节。任务路径按绑定身份定位，文件以同目录临时文件、flush、fsync、原子 replace 写入，已有副本先对账。
-- 普通重试保留绑定。显式术语重绑保留模板版本和原部门，允许重新绑定规则版本。正式渲染与发布证明共用实际资源身份。没有资源快照的历史任务继续通过既有模板与规则入口。
+- 普通重试和显式术语重绑都保留模板绑定。模板级停用或删除只阻止新建和克隆任务，包含继承源快照的克隆。已绑定任务的 Worker 仅认证数据库版本状态及快照，显式禁用版本仍阻止渲染。正式渲染与发布证明共用实际资源身份；无快照的历史任务继续通过既有模板与规则入口。
 
 ### 4. Validation & Error Matrix
 
@@ -124,6 +128,9 @@
 | DOCX、关系、媒体或 YAML 联合预检失败 | 写入前返回逻辑字段和稳定原因码。默认指针、草稿目录和资源记录不写入 |
 | 预检后的草稿状态或快照身份发生变化 | HTTP 409 `template_draft_conflict`，不切换默认指针 |
 | 初次物化时源或任务副本内容与绑定不符 | 失败码 `template_docx_hash_mismatch`、`template_layout_config_hash_mismatch` 或 `term_rule_hash_mismatch`，事件不含文件系统路径 |
+| 停用或删除模板后新建或克隆，或 Worker 执行已绑定任务 | 新绑定拒绝；已有快照继续按原版本认证渲染 |
+| 显式禁用非默认版本后执行已绑定任务 | 渲染返回 `resource_snapshot_invalid_status` |
+| 事务提交结果未知且无法核实本次候选 | `503 template_catalog_commit_unknown`，保留候选以供对账 |
 | 默认模板切换或共享文件在首次物化后被改写 | 已绑定任务核验并复用其副本，新任务使用新默认绑定 |
 
 ### 5. Good / Base / Bad Cases

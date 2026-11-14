@@ -23,8 +23,11 @@ from app.domains.files.models import DocumentFileRecord
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
 from app.domains.resources.models import ResourceType, ResourceVersionRecord, ResourceVersionStatus
 from app.domains.resources.service import ResourceVersionService
+from app.domains.templates.manifest import BUNDLED_TEMPLATE_MANIFEST
+from app.domains.templates.models import TemplateCatalogItem
 from app.domains.templates.package_validator import TemplatePackageValidationError
 from app.domains.templates.read_service import TemplateReadService
+from app.domains.templates.repository import TemplateCatalogCommitUnknown
 from app.domains.templates.schemas import TemplateAssetResponse
 from app.domains.term_rules.models import TermRulesStore
 from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
@@ -374,6 +377,113 @@ class TemplateSeedHistoryTests(TestCase):
         self.assertEqual(publish().status, "published")
         self.assertEqual(self.repository.get_default_resource_version("template", "default").version, "3")
 
+    def test_catalog_publish_requires_bound_draft_proof(self) -> None:
+        draft_path = self._docx("history/catalog-draft.docx", "目录草稿")
+        self._register(3, self._payload(3, draft_path), status=ResourceVersionStatus.DRAFT)
+        job = DocumentJobRecord(
+            id="verification-job", tenant_id="tenant", company_id="company", created_by="admin",
+            source_file_id="source", status="succeeded", stage="completed", template_version_id="default@3",
+        )
+        catalog = Mock(get_template=Mock(return_value=TemplateCatalogItem(id="default", name="内置模板")))
+        self.reader.catalog_repository = catalog
+        self.reader.document_job_repository = Mock(get_document_job=Mock(return_value=job))
+
+        with self.assertRaises(TemplatePackageValidationError) as caught:
+            self.reader.publish_template_version(
+                "default", 3, make_default=True, publish_reason="准备发布",
+                verification_job_id=job.id, verification_note="仅完成任务",
+            )
+        self.assertEqual(caught.exception.code, "template_verification_resource_mismatch")
+        catalog.publish_template_version.assert_not_called()
+
+    def test_catalog_seed_reads_bundled_file_and_preserves_older_default(self) -> None:
+        bundled_path = self.root / BUNDLED_TEMPLATE_MANIFEST
+        bundled_path.write_bytes(self.settings.templates_manifest_file.read_bytes())
+        self.settings.templates_manifest_path = str(bundled_path)
+        old_path = self._docx("history/old-catalog-seed.docx", "旧默认")
+        self._register(1, self._payload(1, old_path))
+        self.repository.set_default_resource_version("template", "default", "1")
+        self.reader.catalog_repository = catalog = Mock(
+            get_default_template_id=Mock(return_value=None),
+            get_template=Mock(return_value=None),
+        )
+        catalog.bootstrap_seed.side_effect = lambda _item, record: self.repository.create_resource_version(record)
+
+        self.reader.bootstrap_manifest_versions()
+
+        catalog.initialize_default_template.assert_called_once_with("default", "1")
+        self.assertEqual(self.repository.get_default_resource_version("template", "default").version, "1")
+        self.assertEqual(self.repository.get_resource_version("template", "default", "2").status, "published")
+        self.assertFalse(self.settings.template_state_file.exists())
+
+    def test_catalog_seed_does_not_reinstate_deleted_default(self) -> None:
+        bundled_path = self.root / BUNDLED_TEMPLATE_MANIFEST
+        bundled_path.write_bytes(self.settings.templates_manifest_file.read_bytes())
+        self.settings.templates_manifest_path = str(bundled_path)
+        self.seed_path.unlink()
+        self.reader.catalog_repository = catalog = Mock(
+            get_default_template_id=Mock(return_value="custom"),
+            get_template=Mock(return_value=TemplateCatalogItem(id="default", name="内置模板", deleted=True)),
+        )
+
+        self.reader.bootstrap_manifest_versions()
+
+        catalog.bootstrap_seed.assert_not_called()
+        catalog.initialize_default_template.assert_not_called()
+        self.assertIsNone(self.repository.get_resource_version("template", "default", "2"))
+        self.assertEqual(self.reader.get_default_template_id(), "custom")
+
+    def test_catalog_upload_distinguishes_rollback_and_unknown_commit(self) -> None:
+        manifest = self.settings.templates_manifest_file.read_bytes()
+        catalog = Mock(get_template=Mock(return_value=None))
+        self.reader.catalog_repository = catalog
+
+        def create(source: Path) -> None:
+            self.reader.create_template(
+                template_id="custom", name="自定义模板", description="", source_path=source,
+                source_filename="upload.docx", layout_config_path=None,
+            )
+
+        catalog.create_template.side_effect = RuntimeError("事务回滚")
+        with self.assertRaisesRegex(RuntimeError, "事务回滚"):
+            create(self._docx("rollback.docx", "回滚"))
+        version_dir = self.settings.templates_storage_dir / "custom" / "v1"
+        self.assertEqual(list(version_dir.rglob("*.docx")), [])
+
+        catalog.create_template.side_effect = TemplateCatalogCommitUnknown()
+        with self.assertRaises(TemplateCatalogCommitUnknown):
+            create(self._docx("unknown.docx", "提交待核对"))
+        unresolved = next(version_dir.rglob("*.docx"))
+
+        def commit_then_disconnect(item: TemplateCatalogItem, record: ResourceVersionRecord) -> None:
+            self.repository.create_resource_version(record)
+            catalog.get_template.return_value = item
+            raise TemplateCatalogCommitUnknown()
+
+        catalog.create_template.side_effect = commit_then_disconnect
+        create(self._docx("committed.docx", "已提交"))
+        committed = self.repository.get_resource_version("template", "custom", "1")
+        self.assertNotEqual(self.root / committed.payload["docx_path"], unresolved)
+        self.assertEqual(len(list(version_dir.rglob("*.docx"))), 2)
+        detail = self.reader.get_template_detail("custom", url_for=None)
+        self.assertTrue(detail.template.exists)
+        self.assertFalse(detail.downloadable)
+        self.assertEqual(self.settings.templates_manifest_file.read_bytes(), manifest)
+        self.assertFalse(self.settings.template_state_file.exists())
+
+    def test_catalog_create_rejects_path_segments_before_storage(self) -> None:
+        self.reader.catalog_repository = catalog = Mock()
+        source = self._docx("unsafe.docx", "无效模板 ID")
+        for template_id in (".", ".."):
+            with self.subTest(template_id=template_id), self.assertRaisesRegex(ValueError, "template_id"):
+                self.reader.create_template(
+                    template_id=template_id, name="无效模板", description="", source_path=source,
+                    source_filename="unsafe.docx", layout_config_path=None,
+                )
+        catalog.create_template.assert_not_called()
+        self.assertTrue(source.exists())
+        self.assertFalse(self.settings.templates_storage_dir.exists())
+
     def test_publish_and_create_job_without_layout_does_not_consult_manifest_layout(self) -> None:
         self.reader.bootstrap_manifest_versions()
         draft_path = self._docx("history/unbound.docx", "只使用 Word 模板")
@@ -444,7 +554,7 @@ class TemplateSeedHistoryTests(TestCase):
         )
         self.reader.document_job_repository = Mock(get_document_job=Mock(return_value=job))
         self.reader.audit_service = Mock()
-        check = self.reader._validate_registered_template_package
+        check = self.reader.validate_registered_template_package
         changed_payload = self._payload(3, self._docx("history/replacement.docx", "未验证的同号模板"))
         changes = (
             draft.model_copy(update={"payload": changed_payload, "snapshot_hash": _snapshot_hash(changed_payload)}),
@@ -459,7 +569,7 @@ class TemplateSeedHistoryTests(TestCase):
                     check(record)
                     self.repository.save_resource_version(changed)
 
-                with patch.object(self.reader, "_validate_registered_template_package", side_effect=preflight_and_change):
+                with patch.object(self.reader, "validate_registered_template_package", side_effect=preflight_and_change):
                     with self.assertRaises(TemplatePackageValidationError) as caught:
                         self.reader.publish_template_version(
                             "default", 3, make_default=True, publish_reason="通过验收",

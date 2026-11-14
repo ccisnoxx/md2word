@@ -1,0 +1,110 @@
+{
+  "topology_before": {
+    "image_id": "sha256:eebe46b5b1052d188289566ae5df317f7388fe3ca66afab021aff50a376af89b",
+    "processes": {
+      "api": {
+        "uid": 1000,
+        "seed_writable": false,
+        "architecture": "x86_64",
+        "seed_sha256": "e39b086772c3c9d40f910602276d296fc425df52a757a30b74cd860e12fb9800"
+      },
+      "worker": {
+        "uid": 1000,
+        "seed_writable": false,
+        "architecture": "x86_64",
+        "seed_sha256": "e39b086772c3c9d40f910602276d296fc425df52a757a30b74cd860e12fb9800"
+      }
+    },
+    "shared_runtime_volume": "md2word-catalog-61450c5ebf42_md2word-var"
+  },
+  "topology_after": {
+    "image_id": "sha256:eebe46b5b1052d188289566ae5df317f7388fe3ca66afab021aff50a376af89b",
+    "processes": {
+      "api": {
+        "uid": 1000,
+        "seed_writable": false,
+        "architecture": "x86_64",
+        "seed_sha256": "e39b086772c3c9d40f910602276d296fc425df52a757a30b74cd860e12fb9800"
+      },
+      "worker": {
+        "uid": 1000,
+        "seed_writable": false,
+        "architecture": "x86_64",
+        "seed_sha256": "e39b086772c3c9d40f910602276d296fc425df52a757a30b74cd860e12fb9800"
+      }
+    },
+    "shared_runtime_volume": "md2word-catalog-61450c5ebf42_md2word-var"
+  },
+  "restarts": [
+    {
+      "service": "api",
+      "container_id": "a1606bc01fa00096f91ced0a13df6a3c05548abea0aa4cfffeb87ebb3fcb301f",
+      "before": "2026-11-13T08:57:29.358626712Z",
+      "after": "2026-11-13T08:59:33.200545729Z"
+    },
+    {
+      "service": "worker",
+      "container_id": "20224306482d389ea69e7a7cfd8494d009a9ff949303bde7691caf725e77a9b4",
+      "before": "2026-11-13T08:57:59.96077406Z",
+      "after": "2026-11-13T09:00:26.551284129Z"
+    }
+  ],
+  "jobs": [
+    {
+      "id": "docjob_29871e23d76b",
+      "template_version_id": "catalog-compose@1",
+      "snapshot_status": "draft",
+      "snapshot_hash": "sha256:2a7a922216eea9d06689af471e2c55054193023ac0d8c25774dbfcf2b27743b6",
+      "docx_sha256": "18ef0aa6faf93700cec2d08b2098e1635c6fb1398568746512ffcfc805bbeec8"
+    },
+    {
+      "id": "docjob_a0435e0b0f8b",
+      "template_version_id": "catalog-compose@1",
+      "snapshot_status": "published",
+      "snapshot_hash": "sha256:3a0835007deb2ea752dca5a21d534308bdb90cf83973ec27c4fbdecd42f99523",
+      "docx_sha256": "79798f085bf112ef37fcde67cbc4a980491c11be786c30bfc05a6a8cc24470b5"
+    },
+    {
+      "id": "docjob_c04b19cdda62",
+      "template_version_id": "catalog-compose@2",
+      "snapshot_status": "draft",
+      "snapshot_hash": "sha256:961cca6e1a5c2ed9ec9402bc6cd15ca5c3ef3a24410df58b703e7782e7e22c21",
+      "docx_sha256": "fdb46c897476a7812a4effaeab6c70512a01f46bd4f1657047ed1372a4db86a6"
+    },
+    {
+      "id": "docjob_00d3eb8922ce",
+      "template_version_id": "catalog-compose@1",
+      "snapshot_status": "published",
+      "snapshot_hash": "sha256:3a0835007deb2ea752dca5a21d534308bdb90cf83973ec27c4fbdecd42f99523",
+      "docx_sha256": "9548a2ff6536c4b63cfe0d0a69aecff19f4c97f59ffab91a7e539ddfdcecd015"
+    },
+    {
+      "id": "docjob_7fec21d4992f",
+      "template_version_id": "catalog-compose@1",
+      "snapshot_status": "published",
+      "snapshot_hash": "sha256:3a0835007deb2ea752dca5a21d534308bdb90cf83973ec27c4fbdecd42f99523",
+      "docx_sha256": "5dcfdb8e968095bdfe45ea529b1a1ff5fcf7d6694ab39f17c0264019da843af0"
+    },
+    {
+      "id": "docjob_71ea81705e25",
+      "template_version_id": "catalog-compose@1",
+      "snapshot_status": "published",
+      "snapshot_hash": "sha256:3a0835007deb2ea752dca5a21d534308bdb90cf83973ec27c4fbdecd42f99523",
+      "docx_sha256": "8f697e5652422989963941bbedf8b72d379dc9164f0ee0d9c1872523c52840f6"
+    },
+    {
+      "id": "docjob_84cf3e810721",
+      "template_version_id": "catalog-compose@1",
+      "snapshot_status": "published",
+      "snapshot_hash": "sha256:3a0835007deb2ea752dca5a21d534308bdb90cf83973ec27c4fbdecd42f99523",
+      "docx_sha256": "724c89759bccce82540811de2fb746c0b5e57eaea85fdaffc5f3c233e4cd5d18"
+    }
+  ],
+  "disabled_version_job_id": "docjob_7009f81170ae",
+  "disabled_version_reason": "resource_snapshot_invalid_status",
+  "retained_assets": {
+    "v3/4dcc4d2b0c2b4de287ca0f59b4e45d89/catalog-v3.docx": "5ae5c7eb749cc1fab0e7f1ce361c1e62a0b595435146ae165a6cbb38cdb4b434",
+    "v2/e8e7c24457b34beb86b49f07e2430b69/catalog-v2.docx": "ef6e26bbe6e67f273c4dd5f14209780df3e82c3a3dda2555508ec79ea73aec17",
+    "v1/a1d459fda778442297fd2cfc1752c235/catalog-v1.docx": "03b2a7a12b4d3beb5643ff683bc57647da7b27a9b437138cc4614254b2e96d72"
+  }
+}

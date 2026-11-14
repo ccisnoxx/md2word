@@ -116,8 +116,8 @@ async def create_template(
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
 ) -> TemplateDetailResponse:
-    temp_path = await _save_template_upload_to_temp(template, runtime)
     render_policy = _parse_render_policy(render_policy_json)
+    temp_path = await _save_template_upload_to_temp(template, runtime)
     try:
         runtime.template_read_service.create_template(
             template_id=template_id,
@@ -130,14 +130,13 @@ async def create_template(
             render_policy=render_policy,
         )
     except FileNotFoundError as exc:
-        temp_path.unlink(missing_ok=True)
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
-        temp_path.unlink(missing_ok=True)
         raise _template_write_bad_request(exc) from exc
+    finally:
+        temp_path.unlink(missing_ok=True)
 
-    detail = runtime.template_read_service.get_template_detail(template_id, url_for=request.url_for)
-    assert detail is not None
+    detail = _get_management_template_detail(runtime, template_id, request)
     runtime.audit_service.record(
         actor=actor,
         action="template.create",
@@ -158,8 +157,8 @@ async def create_template_version(
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
 ) -> TemplateVersionResponse:
-    temp_path = await _save_template_upload_to_temp(template, runtime)
     render_policy = _parse_render_policy(render_policy_json)
+    temp_path = await _save_template_upload_to_temp(template, runtime)
     try:
         version = runtime.template_read_service.create_template_version(
             template_id,
@@ -177,14 +176,13 @@ async def create_template_version(
         )
         return version
     except RuntimeError as exc:
-        temp_path.unlink(missing_ok=True)
         raise _template_versioning_unavailable_http_exception(exc) from exc
     except FileNotFoundError as exc:
-        temp_path.unlink(missing_ok=True)
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
-        temp_path.unlink(missing_ok=True)
         raise _template_write_bad_request(exc) from exc
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 @router.get("/{template_id}/versions", response_model=TemplateVersionListResponse)
@@ -361,14 +359,12 @@ def download_template(
     template_id: str,
     runtime: AppRuntime = Depends(get_runtime),
 ) -> FileResponse:
-    detail = runtime.template_read_service.get_template_detail(template_id, url_for=None)
-    if detail is None or not detail.template.exists:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"模板文件不存在: {template_id}",
-        )
-    path = runtime.template_read_service.get_active_template_path(template_id)
-    assert path is not None
+    try:
+        path = runtime.template_read_service.get_active_template_path(template_id)
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    if path is None or not path.is_file():
+        raise not_found_http_exception(FileNotFoundError(f"模板文件不存在: {template_id}"))
     return FileResponse(
         path,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -399,12 +395,7 @@ def update_template(
     except ValueError as exc:
         raise bad_request_http_exception(exc) from exc
 
-    detail = runtime.template_read_service.get_template_detail(template_id, url_for=request.url_for)
-    if detail is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"模板不存在: {template_id}",
-        )
+    detail = _get_management_template_detail(runtime, template_id, request)
     runtime.audit_service.record(
         actor=actor,
         action="template.update",
@@ -432,14 +423,13 @@ async def replace_template_file(
             source_filename=template.filename or f"{template_id}.docx",
         )
     except FileNotFoundError as exc:
-        temp_path.unlink(missing_ok=True)
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
-        temp_path.unlink(missing_ok=True)
         raise _template_write_bad_request(exc) from exc
+    finally:
+        temp_path.unlink(missing_ok=True)
 
-    detail = runtime.template_read_service.get_template_detail(template_id, url_for=request.url_for)
-    assert detail is not None
+    detail = _get_management_template_detail(runtime, template_id, request)
     runtime.audit_service.record(
         actor=actor,
         action="template.replace_file",
@@ -462,6 +452,8 @@ def set_default_template(
         runtime.template_read_service.set_default_template(template_id)
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise _template_write_bad_request(exc) from exc
 
     detail = runtime.template_read_service.get_template_detail(template_id, url_for=request.url_for)
     assert detail is not None
@@ -472,6 +464,17 @@ def set_default_template(
         target_id=template_id,
         trace_id=trace_id,
     )
+    return detail
+
+
+def _get_management_template_detail(runtime: AppRuntime, template_id: str, request: Request) -> TemplateDetailResponse:
+    """写入接口可返回停用模板的管理视图。"""
+
+    detail = runtime.template_read_service.get_template_detail(
+        template_id.strip(), url_for=request.url_for, include_disabled=True,
+    )
+    if detail is None:
+        raise not_found_http_exception(FileNotFoundError(f"模板不存在: {template_id}"))
     return detail
 
 

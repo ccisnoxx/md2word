@@ -22,6 +22,7 @@ from app.domains.files.retention_policy import FileRetentionPolicyRepositoryProt
 from app.domains.jobs.repository import JobEventRepositoryProtocol
 from app.domains.resources.repository import ResourceVersionRepositoryProtocol
 from app.domains.saved_views.repository import SavedViewRepositoryProtocol
+from app.domains.templates.repository import TemplateCatalogRepositoryProtocol
 from app.domains.term_rules.repository import (
     TermRuleAssetRepositoryProtocol,
     TermRuleProposalRepositoryProtocol,
@@ -65,6 +66,7 @@ from app.infrastructure.persistence.mysql import (
     MysqlRetentionPolicyRepository,
     MysqlResourceVersionRepository,
     MysqlSavedViewRepository,
+    MysqlTemplateCatalogRepository,
     MysqlTermRuleAssetRepository,
     MysqlTermRuleProposalRepository,
     MysqlTermRuleReviewRepository,
@@ -110,6 +112,7 @@ class PersistenceAdapters:
     saved_view_repository: SavedViewRepositoryProtocol
     terminology_release_repository: TerminologyReleaseRepositoryProtocol
     resource_version_repository: ResourceVersionRepositoryProtocol | None = None
+    template_catalog_repository: TemplateCatalogRepositoryProtocol | None = None
     term_rule_proposal_repository: TermRuleProposalRepositoryProtocol | None = None
     term_rule_review_repository: TermRuleReviewRepositoryProtocol | None = None
     term_rule_asset_repository: TermRuleAssetRepositoryProtocol | None = None
@@ -197,6 +200,7 @@ def build_mysql_persistence_adapters(
         saved_view_repository=MysqlSavedViewRepository(backend),
         terminology_release_repository=MysqlTerminologyReleaseRepository(backend),
         resource_version_repository=MysqlResourceVersionRepository(backend),
+        template_catalog_repository=MysqlTemplateCatalogRepository(backend),
         term_rule_proposal_repository=MysqlTermRuleProposalRepository(backend),
         term_rule_review_repository=MysqlTermRuleReviewRepository(backend),
         term_rule_asset_repository=MysqlTermRuleAssetRepository(backend),

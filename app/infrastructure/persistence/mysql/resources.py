@@ -102,24 +102,7 @@ class MysqlResourceVersionRepository:
 
         with self.backend.connect() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO resource_versions
-                        (resource_type, resource_id, version, status, snapshot_hash, payload_ref, payload, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        record.resource_type,
-                        record.resource_id,
-                        record.version,
-                        record.status.value,
-                        record.snapshot_hash,
-                        record.payload_ref,
-                        json.dumps(record.payload, ensure_ascii=False) if record.payload is not None else None,
-                        record.created_at.isoformat(),
-                        record.updated_at.isoformat(),
-                    ),
-                )
+                insert_resource_version(cursor, record)
         return record
 
     def allocate_next_version(self, resource_type: ResourceType, resource_id: str, minimum_next: int) -> int:
@@ -187,7 +170,7 @@ class MysqlResourceVersionRepository:
         """
         cursor.execute(sql + (" FOR UPDATE" if for_update else ""), (resource_type, resource_id, version))
         row = cursor.fetchone()
-        return self._load_resource_version(row) if row is not None else None
+        return load_resource_version(row) if row is not None else None
 
     def list_resource_versions(self, resource_type: ResourceType, resource_id: str) -> list[ResourceVersionRecord]:
         with self.backend.connect() as connection:
@@ -202,7 +185,7 @@ class MysqlResourceVersionRepository:
                     (resource_type, resource_id),
                 )
                 rows = cursor.fetchall()
-        return [self._load_resource_version(row) for row in rows]
+        return [load_resource_version(row) for row in rows]
 
     def set_default_resource_version(self, resource_type: ResourceType, resource_id: str, version: str) -> None:
         with self.backend.connect() as connection:
@@ -240,7 +223,7 @@ class MysqlResourceVersionRepository:
             (resource_type, resource_id),
         )
         row = cursor.fetchone()
-        return self._load_resource_version(row) if row is not None else None
+        return load_resource_version(row) if row is not None else None
 
     def get_default_resource_pointer(self, resource_type: ResourceType, resource_id: str) -> ResourceDefaultPointer | None:
         with self.backend.connect() as connection:
@@ -268,48 +251,63 @@ class MysqlResourceVersionRepository:
     ) -> ResourceVersionRecord | None:
         """比较已验证目标和旧指针，读回确认后原子提交指针与审计。"""
 
-        resource_type, resource_id, version = record.resource_type, record.resource_id, record.version
         commit_ready = False
         try:
             with self.backend.connect() as connection:
                 with connection.cursor() as cursor:
-                    target = self._get_resource_version(cursor, resource_type, resource_id, version, for_update=True)
-                    if (target is None or target.status != ResourceVersionStatus.PUBLISHED
-                            or target.snapshot_hash != record.snapshot_hash):
-                        return None
-                    if expected_pointer is None:
-                        # 空指针由主键裁决，避免两个锁定读同时拿到间隙锁。
-                        if not self._insert_default_resource_pointer(cursor, resource_type, resource_id, version):
-                            return None
-                    else:
-                        pointer = self._get_default_resource_pointer(cursor, resource_type, resource_id, for_update=True)
-                        if pointer != expected_pointer:
-                            return None
-                        if expected_pointer.version != version:
-                            cursor.execute(
-                                """
-                                UPDATE resource_default_versions
-                                SET version = %s, updated_at = %s
-                                WHERE resource_type = %s AND resource_id = %s
-                                """,
-                                (version, utc_now().isoformat(), resource_type, resource_id),
-                            )
-                    confirmed = self._get_default_resource_version(cursor, resource_type, resource_id)
-                    if (confirmed is None or confirmed.version != version
-                            or confirmed.status != ResourceVersionStatus.PUBLISHED
-                            or confirmed.snapshot_hash != record.snapshot_hash):
-                        raise RuntimeError("默认资源版本指针读回确认失败。")
-                    if audit_event is not None:
-                        cursor.execute(
-                            "INSERT INTO audit_events (audit_id, payload, created_at) VALUES (%s, %s, %s)",
-                            (audit_event.audit_id, self.backend.dump_payload(audit_event), audit_event.created_at.isoformat()),
-                        )
+                    confirmed = self.switch_default_with_cursor(
+                        cursor, record, expected_pointer=expected_pointer, audit_event=audit_event,
+                    )
                 # 连接上下文退出时提交，连接中断后无法通过回滚结果判定是否已提交。
-                commit_ready = True
+                commit_ready = confirmed is not None
         except Exception as exc:
             if commit_ready:
                 raise ResourceDefaultCommitUnknownError("默认模板版本切换结果暂不可确认，请重新读取默认版本。") from exc
             raise
+        return confirmed
+
+    def switch_default_with_cursor(
+        self,
+        cursor: Any,
+        record: ResourceVersionRecord,
+        *,
+        expected_pointer: ResourceDefaultPointer | None,
+        audit_event: AuditEvent | None,
+    ) -> ResourceVersionRecord | None:
+        """在调用方的事务内完成条件切换、读回与审计。"""
+
+        resource_type, resource_id, version = record.resource_type, record.resource_id, record.version
+        target = self._get_resource_version(cursor, resource_type, resource_id, version, for_update=True)
+        if (target is None or target.status != ResourceVersionStatus.PUBLISHED
+                or target.snapshot_hash != record.snapshot_hash):
+            return None
+        if expected_pointer is None:
+            # 空指针由主键裁决，避免两个锁定读同时拿到间隙锁。
+            if not self._insert_default_resource_pointer(cursor, resource_type, resource_id, version):
+                return None
+        else:
+            pointer = self._get_default_resource_pointer(cursor, resource_type, resource_id, for_update=True)
+            if pointer != expected_pointer:
+                return None
+            if expected_pointer.version != version:
+                cursor.execute(
+                    """
+                    UPDATE resource_default_versions
+                    SET version = %s, updated_at = %s
+                    WHERE resource_type = %s AND resource_id = %s
+                    """,
+                    (version, utc_now().isoformat(), resource_type, resource_id),
+                )
+        confirmed = self._get_default_resource_version(cursor, resource_type, resource_id)
+        if (confirmed is None or confirmed.version != version
+                or confirmed.status != ResourceVersionStatus.PUBLISHED
+                or confirmed.snapshot_hash != record.snapshot_hash):
+            raise RuntimeError("默认资源版本指针读回确认失败。")
+        if audit_event is not None:
+            cursor.execute(
+                "INSERT INTO audit_events (audit_id, payload, created_at) VALUES (%s, %s, %s)",
+                (audit_event.audit_id, self.backend.dump_payload(audit_event), audit_event.created_at.isoformat()),
+            )
         return confirmed
 
     @staticmethod
@@ -355,16 +353,38 @@ class MysqlResourceVersionRepository:
                     )
         return disabled
 
-    def _load_resource_version(self, row: dict[str, Any]) -> ResourceVersionRecord:
-        payload = json.loads(row["payload"]) if row["payload"] is not None else None
-        return ResourceVersionRecord(
-            resource_type=row["resource_type"],
-            resource_id=row["resource_id"],
-            version=row["version"],
-            status=row["status"],
-            snapshot_hash=row["snapshot_hash"],
-            payload_ref=row["payload_ref"],
-            payload=payload,
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
+
+def insert_resource_version(cursor: Any, record: ResourceVersionRecord) -> None:
+    cursor.execute(
+        """
+        INSERT INTO resource_versions
+            (resource_type, resource_id, version, status, snapshot_hash, payload_ref, payload, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            record.resource_type,
+            record.resource_id,
+            record.version,
+            record.status.value,
+            record.snapshot_hash,
+            record.payload_ref,
+            json.dumps(record.payload, ensure_ascii=False) if record.payload is not None else None,
+            record.created_at.isoformat(),
+            record.updated_at.isoformat(),
+        ),
+    )
+
+
+def load_resource_version(row: dict[str, Any]) -> ResourceVersionRecord:
+    payload = json.loads(row["payload"]) if row["payload"] is not None else None
+    return ResourceVersionRecord(
+        resource_type=row["resource_type"],
+        resource_id=row["resource_id"],
+        version=row["version"],
+        status=row["status"],
+        snapshot_hash=row["snapshot_hash"],
+        payload_ref=row["payload_ref"],
+        payload=payload,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )

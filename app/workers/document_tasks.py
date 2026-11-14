@@ -20,7 +20,8 @@ def ping() -> str:
 def run_document_job(_task, job_id: str, *, trace_id: str | None = None) -> dict | None:
     """单次推进任务；等待 MinerU 时延时续投，由绝对任务期限限制总时长。"""
 
-    runtime = build_runtime()
+    # 模板由 API 初始化，消费任务不依赖内置 seed 或当前默认选择。
+    runtime = build_runtime(bootstrap_templates=False)
     job = runtime.document_job_execution_service.execute_job(job_id, trace_id=trace_id)
     if job is None:
         return None
@@ -34,7 +35,7 @@ def run_document_job(_task, job_id: str, *, trace_id: str | None = None) -> dict
 def run_document_translation_batch(_task, batch_id: str, *, trace_id: str | None = None) -> dict | None:
     """按 batch_id 执行 translation provider 批次任务。"""
 
-    runtime = build_runtime()
+    runtime = build_runtime(bootstrap_templates=False)
     batch = runtime.document_job_execution_service.translation_batches.execute_translation_batch(batch_id, trace_id=trace_id)
     if batch is None:
         return None
@@ -45,7 +46,7 @@ def run_document_translation_batch(_task, batch_id: str, *, trace_id: str | None
 def recover_mineru_polling_jobs(sender=None, **_kwargs) -> None:
     """Worker 就绪后复用现有恢复入口，仅唤醒已知 MinerU 批次。"""
 
-    runtime = build_runtime()
+    runtime = build_runtime(bootstrap_templates=False)
     if runtime.settings.mineru_callback_url.strip():
         return
     result = runtime.document_job_recovery_service.run_startup_recovery(
