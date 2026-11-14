@@ -1740,3 +1740,37 @@ Worker 失败消息只保留固定码构造的消息，其余输出异常类型�
 ### Next Steps
 
 - 保留本地分支。生产数据迁移和上线尚未执行。
+
+
+## Session 53: RND-505 页映射合同与兼容回归
+
+**Date**: 2026-11-14
+**Task**: RND-505 页映射合同与兼容回归
+**Branch**: `main`
+
+### Summary
+
+PR #59 已合入 main（合并提交 f8342714）。交付页映射合同与兼容回归，B1 回退待验证，历史 PR #8 暂缓。
+
+### Main Changes
+
+- 记录当前页映射 v1/v2、证据绑定和预览校验边界。
+- 补齐历史 manifest、内外层校验、单页页码 0 和多页估算回归。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1b981e97` | (see git log) |
+
+### Testing
+
+- [OK] 复用实施阶段结果：.venv/bin/python -m unittest tests.test_preview_page_mapping，5 个用例通过（1.341 秒）；收尾未重跑、未部署。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- B1 回退资格待候选构建及历史产物恢复证据验证。
