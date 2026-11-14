@@ -11384,6 +11384,108 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(audit_events[-1].target_id, "managed@1")
         self.assertNotIn("term_rules", records["2"].payload)
 
+    def test_set_default_template_rejects_missing_or_changed_registered_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            runtime = build_mysql_test_runtime(root, admin_token="secret-admin")
+            service = runtime.template_read_service
+            repository = runtime.resource_version_service.repository
+            upload = root / "candidate.docx"
+            upload.write_bytes(template_docx_content("候选模板"))
+            layout = root / "candidate.yaml"
+            layout.write_text("schema_version: template-config/v1\nnormal:\n  font_name: 宋体\n", encoding="utf-8")
+            with TestClient(create_app(runtime)) as client:
+                draft = service.create_template_version(
+                    "default", source_path=upload, source_filename=upload.name, layout_config_path=str(layout),
+                )
+                create_template_verification_job(runtime, job_id="verify_default_candidate", template_version_id=draft.template_version_id)
+                service.publish_template_version(
+                    "default", draft.version, make_default=False, publish_reason="发布候选模板",
+                    verification_job_id="verify_default_candidate", verification_note="验证通过",
+                )
+                old_default = repository.get_default_resource_version("template", "default")
+                old_pointer = repository.get_default_resource_pointer("template", "default")
+                record = repository.get_resource_version("template", "default", str(draft.version))
+                audit_before = runtime.audit_event_repository.list_audit_events()
+                headers = {"X-Admin-Token": "secret-admin"}
+                for kind, path_field in (("docx", "docx_path"), ("layout_config", "layout_config_path")):
+                    path = runtime.settings.root_dir / record.payload[path_field]
+                    self.assertTrue(path.is_relative_to(root), path)
+                    original = path.read_bytes()
+                    altered = template_docx_content("文件内容已变") if kind == "docx" else original + b"\n\n"
+                    for mutation, expected in ((None, "unavailable"), (altered, "hash_mismatch")):
+                        with self.subTest(kind=kind, expected=expected):
+                            try:
+                                if mutation is None:
+                                    path.unlink()
+                                else:
+                                    path.write_bytes(mutation)
+                                response = client.post(
+                                    f"/api/v1/templates/default/versions/{draft.version}/set-default",
+                                    json={"set_default_reason": "试切候选版本"}, headers=headers,
+                                )
+                                self.assertEqual(response.status_code, 400, response.text)
+                                self.assertEqual(response.json()["error"]["reason_code"], f"template_{kind}_{expected}")
+                                self.assertEqual(repository.get_default_resource_version("template", "default"), old_default)
+                                self.assertEqual(repository.get_default_resource_pointer("template", "default"), old_pointer)
+                                self.assertEqual(runtime.audit_event_repository.list_audit_events(), audit_before)
+                            finally:
+                                path.write_bytes(original)
+
+    def test_set_default_template_version_does_not_select_global_template(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            seed = root / "seed.docx"
+            seed.write_bytes(template_docx_content("初始模板"))
+            manifest = root / "templates.yaml"
+            write_templates_manifest(manifest, [
+                {"id": template_id, "name": template_id, "enabled": True, "is_default_seed": is_seed,
+                 "template_path": str(seed), "version": 1}
+                for template_id, is_seed in (("default", True), ("managed", False))
+            ])
+            runtime = build_mysql_test_runtime(
+                root, templates_manifest_path=str(manifest), auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            service = runtime.template_read_service
+            repository = runtime.resource_version_service.repository
+            with TestClient(create_app(runtime)) as client:
+                headers = build_auth_header(client, username="admin", password="admin-pass")
+                self.assertEqual(service.get_default_template_id(), "default")
+                source = root / "candidate.docx"
+                source.write_bytes(template_docx_content("候选模板"))
+                draft = service.create_template_version("managed", source_path=source, source_filename=source.name)
+                create_template_verification_job(runtime, job_id="verify_managed_candidate", template_version_id=draft.template_version_id)
+                service.publish_template_version(
+                    "managed", draft.version, make_default=False, publish_reason="发布候选模板",
+                    verification_job_id="verify_managed_candidate", verification_note="验证通过",
+                )
+                publish_term_rule_resource_version(runtime, version="1", source_term="VONE", make_default=True)
+                for version in (draft.version, 1):
+                    response = client.post(
+                        f"/api/v1/templates/managed/versions/{version}/set-default",
+                        json={"set_default_reason": "切换模板内部版本"}, headers=headers,
+                    )
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertTrue(response.json()["is_default"])
+                    self.assertTrue(response.json()["is_current"])
+                    self.assertFalse(response.json()["layout_config"]["exists"])
+                    self.assertEqual(repository.get_default_resource_version("template", "managed").version, str(version))
+                    self.assertEqual(service.get_default_template_id(), "default")
+                    job = client.post(
+                        "/api/v1/document-jobs", headers=headers,
+                        json={"source_file_id": self._upload_source_pdf(client, headers)["id"],
+                              "mode": "direct_pdf_to_word", "document_language": "en", "template_version_id": "managed"},
+                    )
+                    self.assertEqual(job.status_code, 201, job.text)
+                    self.assertEqual(job.json()["job"]["template_version_id"], f"managed@{version}")
+                selected = client.patch("/api/v1/templates/managed/default", headers=headers)
+                self.assertEqual(selected.status_code, 200, selected.text)
+                self.assertEqual(service.get_default_template_id(), "managed")
+                audits = [event.target_id for event in runtime.audit_event_repository.list_audit_events()
+                          if event.action == "template.set_default"]
+                self.assertEqual(audits, [draft.template_version_id, "managed@1"])
+
     def test_template_file_replacement_preserves_version_published_outside_manifest(self):
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as temp_dir:

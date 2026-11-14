@@ -5,13 +5,18 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from app.domains.resources.models import ResourceVersionRecord, ResourceVersionStatus, utc_now
+from app.domains.audit.models import AuditEvent
+from app.domains.resources.models import ResourceDefaultPointer, ResourceVersionRecord, ResourceVersionStatus, utc_now
 from app.domains.templates.catalog_migration import CatalogMigrationSnapshot, TemplateCatalogMigrationConflict
 from app.domains.templates.models import TemplateCatalogItem
 from app.domains.templates.package_validator import TemplatePackageValidationError
 from app.domains.templates.repository import TemplateCatalogCommitUnknown
 from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend, pymysql
-from app.infrastructure.persistence.mysql.resources import insert_resource_version, load_resource_version
+from app.infrastructure.persistence.mysql.resources import (
+    MysqlResourceVersionRepository,
+    insert_resource_version,
+    load_resource_version,
+)
 from app.infrastructure.persistence.mysql.schema import TEMPLATE_CATALOG_SCHEMA_STATEMENTS
 
 
@@ -20,6 +25,7 @@ class MysqlTemplateCatalogRepository:
 
     def __init__(self, backend: MysqlPersistenceBackend) -> None:
         self.backend = backend
+        self._versions = MysqlResourceVersionRepository(backend)
 
     @contextmanager
     def _write(self) -> Iterator[Any]:
@@ -142,17 +148,20 @@ class MysqlTemplateCatalogRepository:
                 self._write_version_default(cursor, record)
             return record
 
-    def set_default_template_version(self, record: ResourceVersionRecord) -> None:
+    def set_default_template_version(
+        self,
+        record: ResourceVersionRecord,
+        *,
+        expected_pointer: ResourceDefaultPointer | None,
+        audit_event: AuditEvent | None = None,
+    ) -> ResourceVersionRecord | None:
+        """先锁定目录，再在同一事务内切换并审计该模板的默认版本。"""
+
         with self._write() as cursor:
             self._require_item(cursor, record.resource_id)
-            current = self._get_version(cursor, record.resource_id, record.version)
-            if (
-                current is None
-                or current.status != ResourceVersionStatus.PUBLISHED
-                or current.snapshot_hash != record.snapshot_hash
-            ):
-                raise self._version_conflict("模板版本在设置默认前已变化。")
-            self._write_version_default(cursor, current)
+            return self._versions.switch_default_with_cursor(
+                cursor, record, expected_pointer=expected_pointer, audit_event=audit_event,
+            )
 
     def disable_template_version(self, template_id: str, version: str) -> ResourceVersionRecord:
         with self._write() as cursor:

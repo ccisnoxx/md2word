@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from app.core.errors import ApplicationError
-from app.domains.resources.models import ResourceVersionRecord
+from app.domains.audit.models import AuditEvent
+from app.domains.resources.models import ResourceDefaultPointer, ResourceVersionRecord
 from app.domains.templates.models import TemplateCatalogItem
 
 
@@ -45,6 +46,12 @@ class TemplateCatalogRepositoryProtocol(Protocol):
         self, record: ResourceVersionRecord, *, expected_snapshot_hash: str, make_default: bool,
     ) -> ResourceVersionRecord | None: ...
 
-    def set_default_template_version(self, record: ResourceVersionRecord) -> None: ...
+    def set_default_template_version(
+        self,
+        record: ResourceVersionRecord,
+        *,
+        expected_pointer: ResourceDefaultPointer | None,
+        audit_event: AuditEvent | None = None,
+    ) -> ResourceVersionRecord | None: ...
 
     def disable_template_version(self, template_id: str, version: str) -> ResourceVersionRecord: ...

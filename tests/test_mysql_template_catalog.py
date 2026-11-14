@@ -8,11 +8,15 @@ from threading import Barrier
 from unittest.mock import patch
 from uuid import uuid4
 
+from pymysql import MySQLError
+
+from app.domains.audit.models import AuditEvent
 from app.domains.resources.models import ResourceVersionRecord, ResourceVersionStatus
 from app.domains.templates.catalog_migration import TemplateCatalogMigrationConflict
 from app.domains.templates.models import TemplateCatalogItem
 from app.domains.templates.package_validator import TemplatePackageValidationError
 from app.domains.templates.repository import TemplateCatalogCommitUnknown
+from app.infrastructure.persistence.mysql.audit import MysqlAuditEventRepository
 from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend, MysqlPersistenceConfig
 from app.infrastructure.persistence.mysql.resources import MysqlResourceVersionRepository
 from app.infrastructure.persistence.mysql.schema import MYSQL_SCHEMA_STATEMENTS, TEMPLATE_CATALOG_SCHEMA_STATEMENTS
@@ -142,11 +146,15 @@ class MysqlTemplateCatalogIntegrationTests(unittest.TestCase):
             with ThreadPoolExecutor(max_workers=2) as pool:
                 return sorted(pool.map(run, operations))
 
+        observed = self.versions.get_default_resource_pointer("template", "custom")
+
+        def switch_default() -> None:
+            target = self.record("custom", "2", published=True)
+            if self.catalog.set_default_template_version(target, expected_pointer=observed) is None:
+                raise ValueError("切换条件已变化。")
+
         self.assertEqual(
-            race(
-                lambda: self.catalog.set_default_template_version(self.record("custom", "2", published=True)),
-                lambda: self.catalog.disable_template_version("custom", "2"),
-            ),
+            race(switch_default, lambda: self.catalog.disable_template_version("custom", "2")),
             ["committed", "rejected"],
         )
         published = self.versions.get_default_resource_version("template", "custom")
@@ -159,6 +167,41 @@ class MysqlTemplateCatalogIntegrationTests(unittest.TestCase):
             ["committed", "rejected"],
         )
         self.assertTrue(self.catalog.get_template(self.catalog.get_default_template_id()).enabled)
+
+    def test_catalog_switch_compares_pointer_and_commits_audit_with_it(self) -> None:
+        self.create_catalog_schema()
+        with self.backend.connect() as connection, connection.cursor() as cursor:
+            ddl, = (sql for sql in MYSQL_SCHEMA_STATEMENTS if sql.strip().startswith("CREATE TABLE IF NOT EXISTS audit_events ("))
+            cursor.execute(ddl)
+        old = self.record("custom", "1", published=True)
+        target = self.record("custom", "2", published=True)
+        self.catalog.bootstrap_seed(TemplateCatalogItem(id="custom", name="自定义模板"), old)
+        self.catalog.add_template_version(target)
+        observed = self.versions.get_default_resource_pointer("template", "custom")
+        audit = AuditEvent(
+            audit_id="catalog-switch", actor_role="admin", action="template.set_default",
+            target_type="template", target_id="custom@2", trace_id="catalog-switch",
+        )
+        audits = MysqlAuditEventRepository(self.backend)
+
+        with self.backend.connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "CREATE TRIGGER reject_switch_audit BEFORE INSERT ON audit_events FOR EACH ROW "
+                "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '拒绝写入审计'"
+            )
+        with self.assertRaises(MySQLError):
+            self.catalog.set_default_template_version(target, expected_pointer=observed, audit_event=audit)
+        self.assertEqual(self.versions.get_default_resource_pointer("template", "custom"), observed)
+        self.assertEqual(audits.list_audit_events(), [])
+        with self.backend.connect() as connection, connection.cursor() as cursor:
+            cursor.execute("DROP TRIGGER reject_switch_audit")
+
+        self.assertEqual(
+            self.catalog.set_default_template_version(target, expected_pointer=observed, audit_event=audit), target,
+        )
+        self.assertIsNone(self.catalog.set_default_template_version(old, expected_pointer=observed, audit_event=audit))
+        self.assertEqual(self.versions.get_default_resource_version("template", "custom"), target)
+        self.assertEqual(audits.list_audit_events(), [audit])
 
     def test_migration_preflight_and_repeat_preserve_history(self) -> None:
         v1, v2 = (self.record("legacy", version, published=True) for version in ("1", "2"))

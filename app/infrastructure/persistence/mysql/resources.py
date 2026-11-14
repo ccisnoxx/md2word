@@ -5,8 +5,17 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.domains.resources.models import ResourceType, ResourceVersionRecord, ResourceVersionStatus, utc_now
-from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend
+from app.domains.audit.models import AuditEvent
+from app.domains.resources.models import (
+    ResourceDefaultPointer,
+    ResourceType,
+    ResourceVersionRecord,
+    ResourceVersionStatus,
+    disable_nondefault_resource_version,
+    utc_now,
+)
+from app.domains.resources.repository import ResourceDefaultCommitUnknownError
+from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend, pymysql
 
 
 class MysqlResourceVersionRepository:
@@ -143,18 +152,25 @@ class MysqlResourceVersionRepository:
     ) -> ResourceVersionRecord | None:
         with self.backend.connect() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT resource_type, resource_id, version, status, snapshot_hash, payload_ref, payload, created_at, updated_at
-                    FROM resource_versions
-                    WHERE resource_type = %s AND resource_id = %s AND version = %s
-                    """,
-                    (resource_type, resource_id, version),
-                )
-                row = cursor.fetchone()
-        if row is None:
-            return None
-        return load_resource_version(row)
+                return self._get_resource_version(cursor, resource_type, resource_id, version)
+
+    def _get_resource_version(
+        self,
+        cursor: Any,
+        resource_type: ResourceType,
+        resource_id: str,
+        version: str,
+        *,
+        for_update: bool = False,
+    ) -> ResourceVersionRecord | None:
+        sql = """
+            SELECT resource_type, resource_id, version, status, snapshot_hash, payload_ref, payload, created_at, updated_at
+            FROM resource_versions
+            WHERE resource_type = %s AND resource_id = %s AND version = %s
+        """
+        cursor.execute(sql + (" FOR UPDATE" if for_update else ""), (resource_type, resource_id, version))
+        row = cursor.fetchone()
+        return load_resource_version(row) if row is not None else None
 
     def list_resource_versions(self, resource_type: ResourceType, resource_id: str) -> list[ResourceVersionRecord]:
         with self.backend.connect() as connection:
@@ -188,23 +204,154 @@ class MysqlResourceVersionRepository:
     def get_default_resource_version(self, resource_type: ResourceType, resource_id: str) -> ResourceVersionRecord | None:
         with self.backend.connect() as connection:
             with connection.cursor() as cursor:
+                return self._get_default_resource_version(cursor, resource_type, resource_id)
+
+    def _get_default_resource_version(
+        self, cursor: Any, resource_type: ResourceType, resource_id: str,
+    ) -> ResourceVersionRecord | None:
+        cursor.execute(
+            """
+            SELECT rv.resource_type, rv.resource_id, rv.version, rv.status, rv.snapshot_hash,
+                   rv.payload_ref, rv.payload, rv.created_at, rv.updated_at
+            FROM resource_default_versions rdv
+            JOIN resource_versions rv
+              ON rv.resource_type = rdv.resource_type
+             AND rv.resource_id = rdv.resource_id
+             AND rv.version = rdv.version
+            WHERE rdv.resource_type = %s AND rdv.resource_id = %s
+            """,
+            (resource_type, resource_id),
+        )
+        row = cursor.fetchone()
+        return load_resource_version(row) if row is not None else None
+
+    def get_default_resource_pointer(self, resource_type: ResourceType, resource_id: str) -> ResourceDefaultPointer | None:
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                return self._get_default_resource_pointer(cursor, resource_type, resource_id)
+
+    @staticmethod
+    def _get_default_resource_pointer(
+        cursor: Any, resource_type: ResourceType, resource_id: str, *, for_update: bool = False,
+    ) -> ResourceDefaultPointer | None:
+        sql = """
+            SELECT version, updated_at FROM resource_default_versions
+            WHERE resource_type = %s AND resource_id = %s
+        """
+        cursor.execute(sql + (" FOR UPDATE" if for_update else ""), (resource_type, resource_id))
+        row = cursor.fetchone()
+        return ResourceDefaultPointer(row["version"], row["updated_at"]) if row is not None else None
+
+    def switch_default_resource_version(
+        self,
+        record: ResourceVersionRecord,
+        *,
+        expected_pointer: ResourceDefaultPointer | None,
+        audit_event: AuditEvent | None = None,
+    ) -> ResourceVersionRecord | None:
+        """比较已验证目标和旧指针，读回确认后原子提交指针与审计。"""
+
+        commit_ready = False
+        try:
+            with self.backend.connect() as connection:
+                with connection.cursor() as cursor:
+                    confirmed = self.switch_default_with_cursor(
+                        cursor, record, expected_pointer=expected_pointer, audit_event=audit_event,
+                    )
+                # 连接上下文退出时提交，连接中断后无法通过回滚结果判定是否已提交。
+                commit_ready = confirmed is not None
+        except Exception as exc:
+            if commit_ready:
+                raise ResourceDefaultCommitUnknownError("默认模板版本切换结果暂不可确认，请重新读取默认版本。") from exc
+            raise
+        return confirmed
+
+    def switch_default_with_cursor(
+        self,
+        cursor: Any,
+        record: ResourceVersionRecord,
+        *,
+        expected_pointer: ResourceDefaultPointer | None,
+        audit_event: AuditEvent | None,
+    ) -> ResourceVersionRecord | None:
+        """在调用方的事务内完成条件切换、读回与审计。"""
+
+        resource_type, resource_id, version = record.resource_type, record.resource_id, record.version
+        target = self._get_resource_version(cursor, resource_type, resource_id, version, for_update=True)
+        if (target is None or target.status != ResourceVersionStatus.PUBLISHED
+                or target.snapshot_hash != record.snapshot_hash):
+            return None
+        if expected_pointer is None:
+            # 空指针由主键裁决，避免两个锁定读同时拿到间隙锁。
+            if not self._insert_default_resource_pointer(cursor, resource_type, resource_id, version):
+                return None
+        else:
+            pointer = self._get_default_resource_pointer(cursor, resource_type, resource_id, for_update=True)
+            if pointer != expected_pointer:
+                return None
+            if expected_pointer.version != version:
                 cursor.execute(
                     """
-                    SELECT rv.resource_type, rv.resource_id, rv.version, rv.status, rv.snapshot_hash,
-                           rv.payload_ref, rv.payload, rv.created_at, rv.updated_at
-                    FROM resource_default_versions rdv
-                    JOIN resource_versions rv
-                      ON rv.resource_type = rdv.resource_type
-                     AND rv.resource_id = rdv.resource_id
-                     AND rv.version = rdv.version
-                    WHERE rdv.resource_type = %s AND rdv.resource_id = %s
+                    UPDATE resource_default_versions
+                    SET version = %s, updated_at = %s
+                    WHERE resource_type = %s AND resource_id = %s
                     """,
-                    (resource_type, resource_id),
+                    (version, utc_now().isoformat(), resource_type, resource_id),
                 )
-                row = cursor.fetchone()
-        if row is None:
-            return None
-        return load_resource_version(row)
+        confirmed = self._get_default_resource_version(cursor, resource_type, resource_id)
+        if (confirmed is None or confirmed.version != version
+                or confirmed.status != ResourceVersionStatus.PUBLISHED
+                or confirmed.snapshot_hash != record.snapshot_hash):
+            raise RuntimeError("默认资源版本指针读回确认失败。")
+        if audit_event is not None:
+            cursor.execute(
+                "INSERT INTO audit_events (audit_id, payload, created_at) VALUES (%s, %s, %s)",
+                (audit_event.audit_id, self.backend.dump_payload(audit_event), audit_event.created_at.isoformat()),
+            )
+        return confirmed
+
+    @staticmethod
+    def _insert_default_resource_pointer(
+        cursor: Any, resource_type: ResourceType, resource_id: str, version: str,
+    ) -> bool:
+        try:
+            cursor.execute(
+                """
+                INSERT INTO resource_default_versions (resource_type, resource_id, version, updated_at)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (resource_type, resource_id, version, utc_now().isoformat()),
+            )
+        except Exception as exc:
+            if (pymysql is not None and isinstance(exc, pymysql.err.IntegrityError)
+                    and exc.args[:1] == (pymysql.constants.ER.DUP_ENTRY,)):
+                return False
+            raise
+        return True
+
+    def disable_template_version_if_not_default(self, template_id: str, version: str) -> ResourceVersionRecord:
+        """与显式切换争用同一目标行，禁止把已切为默认的版本禁用。"""
+
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                record = self._get_resource_version(cursor, "template", template_id, version, for_update=True)
+                if record is None:
+                    raise FileNotFoundError(f"资源版本不存在: template/{template_id}@{version}")
+                # 获得目标锁后才建立一致读快照，能看到持有同一锁的切换已提交的指针。
+                pointer = self._get_default_resource_pointer(cursor, "template", template_id)
+                disabled = disable_nondefault_resource_version(
+                    record, default_version=pointer.version if pointer is not None else None,
+                )
+                if disabled is not record:
+                    cursor.execute(
+                        """
+                        UPDATE resource_versions
+                        SET status = %s, updated_at = %s
+                        WHERE resource_type = %s AND resource_id = %s AND version = %s
+                        """,
+                        (disabled.status.value, disabled.updated_at.isoformat(), "template", template_id, version),
+                    )
+        return disabled
 
 
 def insert_resource_version(cursor: Any, record: ResourceVersionRecord) -> None:
