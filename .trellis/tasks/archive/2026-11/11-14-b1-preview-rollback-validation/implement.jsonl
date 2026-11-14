@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "后端所有权和定向验证边界"}
+{"file": "docs/contracts/pdf-ir-word-page-mapping-contract.md", "reason": "现行页映射及 B1 回退合同"}
+{"file": ".trellis/tasks/archive/2026-11/11-14-b1-preview-rollback-validation/design.md", "reason": "候选停写边界和恢复矩阵"}
