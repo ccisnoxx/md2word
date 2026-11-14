@@ -393,7 +393,13 @@ P0 通过证据是 `report.json` / `report.md` 中 `p0_release_ready=true`，并
 
 ## P1 翻译 Beta 线上验收
 
-P1 不重跑 P0 Word 质量线，也不扩大到泛 PDF。P1 验证对象是 `tests/fixtures/p1_translation_samples/manifest.yaml` 中 `source_status=available` 的英文 datasheet 样本，链路为 `en2zh_pdf_to_word`、翻译 QA 证据、术语命中和 admin 人工签字。
+P1 不重跑 P0 Word 质量线，也不扩大到泛 PDF。默认使用 `tests/fixtures/p1_translation_samples/manifest.yaml` 中 `source_status=available` 的英文 datasheet 样本，链路为 `en2zh_pdf_to_word`、翻译 QA 证据、术语命中和 admin 人工签字。
+
+预检与实际运行使用同一份配置。需要隔离一轮回归时，可按以下方式设置环境变量。
+
+- `P1_TRANSLATION_MANIFEST` 指向本轮独立清单。沿用 `schema_version: 1`、`default_mode: en2zh_pdf_to_word` 和 `default_document_language: en`，将已就绪样本标记为 `source_status: available`。自定义清单的相对 `sample_root` 以清单所在目录为基准。
+- `P1_TRANSLATION_RUNS_DIR` 指向本轮独立输出根目录。每次执行会在其下建立 `<run_id>/`，保存 DOCX 和报告。`--preflight-output` 需单独指定，可放在同一输出根目录下。
+- `P1_TRANSLATION_DEBUG_FULL_TEXT=0` 让本轮新建任务不请求全文调试归档。翻译 QA、AI 调用审计、批次诊断和术语命中仍需采集。该设置也意味着本轮不验证全文归档及其过期行为。
 
 先做 P1 预检：
 
@@ -425,7 +431,7 @@ P1_TRANSLATION_PASSWORD='<admin-password>' \
 .venv/bin/python scripts/ops/run_p1_translation_regression.py
 ```
 
-管理员打开本次 `tests/tmp/p1_translation_runs/<run_id>/` 下的中文 DOCX，并在 QA 页面核对源文/AI/最终文本、术语命中、AI call log 和 debug archive 过期状态。通过后复制并填写 `manual-signoff.yaml`，再应用签字：
+管理员打开实际输出目录 `<P1_TRANSLATION_RUNS_DIR>/<run_id>/` 下的中文 DOCX（默认根目录为 `tests/tmp/p1_translation_runs`），核对翻译质量、术语命中和 AI 调用审计。若本轮启用了全文归档，再核对 QA 页面中的源文、AI 译文、最终文本和归档过期状态。通过后复制并填写 `manual-signoff.yaml`，再对本轮目录应用签字。下面使用默认路径：
 
 ```bash
 .venv/bin/python scripts/ops/run_p1_translation_regression.py \
@@ -433,6 +439,8 @@ P1_TRANSLATION_PASSWORD='<admin-password>' \
 ```
 
 P1 beta 通过证据是 `report.json` / `report.md` 中 `p1_beta_ready=true`。未设置 `P1_TRANSLATION_FORMAL=1` 的 smoke run 只能证明链路可运行，不能声明 beta ready。
+
+正式 P1 证据对应通过 MySQL + Celery 预检的环境、该轮真实 PDF 任务、可下载且能打开的主 DOCX、翻译 QA 和人工签字。使用 SQLite + Celery 的隔离实链即使实际调用 MinerU 和翻译服务，也只证明该隔离环境和样本的运行结果。使用已保存 MinerU 结果的[本地回放](../dev/local-conversion-sandbox.md)可以核对译文和 DOCX，真实 provider 调用仍属于回放，计时单列，不计入从 PDF 提交到主 DOCX 下载授权的端到端延迟。费用以可归因的服务用量和计价依据或账单为准，QA 摘要和本地全文 trace 不能替代这些凭证。
 
 ## 证据回填
 
