@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 56
+- **Total Sessions**: 57
 - **Last Active**: 2026-11-14
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1878 | Active |
+| `journal-1.md` | ~1913 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 57 | 2026-11-14 | RND-503 旧图片报告 IR 绑定兼容 | `c588c46a`, `c2e93202` | `main` |
 | 56 | 2026-11-14 | B1 页级质量报告读回兼容 | `68046e87` | `main` |
 | 55 | 2026-11-14 | B1 回退候选与历史产物离线验证 | `46cb4948` | `main` |
 | 54 | 2026-11-14 | RND-504 Word 预览兼容回归与运行说明 | `a7beacb0` | `main` |
