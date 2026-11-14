@@ -1774,3 +1774,37 @@ PR #59 已合入 main（合并提交 f8342714）。交付页映射合同与兼�
 ### Next Steps
 
 - B1 回退资格待候选构建及历史产物恢复证据验证。
+
+
+## Session 54: RND-504 Word 预览兼容回归与运行说明
+
+**Date**: 2026-11-14
+**Task**: RND-504 Word 预览兼容回归与运行说明
+**Branch**: `main`
+
+### Summary
+
+PR #61 已合入 main（合并提交 c763d224）。交付 Word 预览运行说明和三类兼容回归。B1 回退仍待验证。
+
+### Main Changes
+
+- 补充默认配置、沙箱启用条件、任务快照、存储故障处置和下载期限说明。
+- 覆盖 file/SQLite 跨进程单一领取、部分产物登记失败隔离和 S3 签名最短期限。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a7beacb0` | (see git log) |
+
+### Testing
+
+- [OK] 复用实施阶段结果：.venv/bin/python -m unittest tests.test_word_preview_compatibility，3 个用例通过（3.213 秒），S3 使用测试替身。收尾未重跑测试、未部署。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- B1 回退资格待候选构建及历史产物恢复证据验证。
