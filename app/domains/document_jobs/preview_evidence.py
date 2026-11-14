@@ -37,7 +37,7 @@ from app.services.preview.page_quality import (
     read_page_quality_run,
     page_quality_summary,
 )
-from app.services.renderer.block_anchors import validate_block_anchor_evidence
+from app.services.renderer.block_anchors import BLOCK_ANCHOR_V2_VERSION, validate_block_anchor_evidence
 from app.services.renderer.render_evidence import validate_persisted_renderer_content
 from app.services.renderer.render_evidence_validation import validate_persisted_render_evidence
 
@@ -116,7 +116,7 @@ def read_page_quality(job, run, records, body, file_repository, file_service, *,
         source_content = read_artifact(records[0], file_service)
         try:
             authenticated_plan, _, _ = mapping_source(job.prepared_result.file, source_content,
-                                                       file_repository, file_service)
+                                                       file_repository, file_service, for_page_quality=True)
         except ValueError:
             # 严格新 key 不能把原 IR 字节或描述符完整性失败误当作缺报告。
             raise ValueError("当前页面质量上下文无法认证。") from None
@@ -136,7 +136,7 @@ def page_quality_contribution(job, run, policy, report, manifest_file_id):
         "policy_sha256": policy_sha256(policy), "manifest_file_id": manifest_file_id}
 
 
-def mapping_source(source, content, file_repository, file_service, *, authentication_files=None):
+def mapping_source(source, content, file_repository, file_service, *, authentication_files=None, for_page_quality=False):
     """只读取选定主件的原始 IR 与持久证据；存储/原件损坏不能借映射降级。"""
     metadata = source.metadata
     if metadata.get("render_trace_status") != "complete":
@@ -170,6 +170,12 @@ def mapping_source(source, content, file_repository, file_service, *, authentica
     anchors = validate_block_anchor_evidence(metadata.get("block_anchor_evidence"), plan=plan,
         block_evidence=trace, word_content=content)
     if plan.schema_version == "render-plan/v2" and anchors is None:
+        # 明确停写的 B1 主件只为页级质量复用已认证的同次计划。
+        summary = metadata.get("block_anchor_summary")
+        if (for_page_quality and "block_anchor_evidence" not in metadata
+                and summary == {"schema_version": BLOCK_ANCHOR_V2_VERSION, "created": 0, "generation_disabled": 1}
+                and type(summary["created"]) is int and type(summary["generation_disabled"]) is int):
+            return plan, trace, None
         return None, None, None
     if authentication_files is not None:
         authentication_files[ir_file.id] = ir_file
