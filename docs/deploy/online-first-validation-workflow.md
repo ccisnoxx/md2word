@@ -401,6 +401,10 @@ P1 不重跑 P0 Word 质量线，也不扩大到泛 PDF。默认使用 `tests/fi
 - `P1_TRANSLATION_RUNS_DIR` 指向本轮独立输出根目录。每次执行会在其下建立 `<run_id>/`，保存 DOCX 和报告。`--preflight-output` 需单独指定，可放在同一输出根目录下。
 - `P1_TRANSLATION_DEBUG_FULL_TEXT=0` 让本轮新建任务不请求全文调试归档。翻译 QA、AI 调用审计、批次诊断和术语命中仍需采集。该设置也意味着本轮不验证全文归档及其过期行为。
 
+隔离 API 和 Celery Worker 通过轮询获取 MinerU 结果时，在这两个进程的环境中显式设置 `MINERU_CALLBACK_URL=''`，以免继承项目 `.env` 中的远端回调地址。
+
+执行 smoke 回归或正式 P1 时，使用管理员登录密码 `P1_TRANSLATION_PASSWORD` 或管理员 Bearer 令牌 `P1_TRANSLATION_BEARER_TOKEN`。单独提供 `P1_TRANSLATION_ADMIN_TOKEN` 或 `ADMIN_TOKEN` 时，只支持 `--preflight` 的只读鉴权。
+
 先做 P1 预检：
 
 ```bash
