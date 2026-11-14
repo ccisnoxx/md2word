@@ -1876,3 +1876,38 @@ PR #65 已合入 main（合并提交 48699a10）。正常 main 已支持明确�
 ### Next Steps
 
 - 完整历史恢复仍待原始产物及登记样本。RND-503 旧 IR 绑定暂缓，生产回退演练另行验收。
+
+
+## Session 57: RND-503 旧图片报告 IR 绑定兼容
+
+**Date**: 2026-11-14
+**Task**: RND-503 旧图片报告 IR 绑定兼容
+**Branch**: `main`
+
+### Summary
+
+PR #67 已合入 main（合并提交 c2e93202）。旧图片报告可认证原始 IR，完整历史恢复仍缺样本。任务及定向验证结果已归档。[PR #67](https://github.com/ccisnoxx/md2word/pull/67)
+
+### Main Changes
+
+- 现行历史 IR 哈希失配时，兼容投影仅省略原 IR 未声明且仍为默认值的四个字段。显式字段、非默认值、图片实物检查及 v1 plan／trace 绑定继续沿用既有规则。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c588c46a` | (see git log) |
+| `c2e93202` | (see git log) |
+
+### Testing
+
+- [OK] 复用实施阶段结果。`.venv/bin/python -m unittest tests.test_image_group_rendering.LegacyImageIRBindingTests` 共 5 个用例通过，0 跳过，耗时 0.217 秒。
+- [OK] `actual-B1` 单图和 `large-indent-table` 正常分组的 6 个原件 SHA-256 与归档一致。IR／报告／DOCX 篡改拒绝，v1 plan／trace 匹配与失配使用受控夹具验证。收尾未重跑测试。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 完整历史恢复仍待原始登记和成功预览样本。B1 回退仍待验证，生产回退演练另行验收。
