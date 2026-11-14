@@ -1,0 +1,83 @@
+diff --git a/app/domains/document_jobs/preview.py b/app/domains/document_jobs/preview.py
+--- a/app/domains/document_jobs/preview.py
++++ b/app/domains/document_jobs/preview.py
+@@ -23,3 +23,2 @@
+     mapping_source,
+-    mapping_binding,
+     artifact_evidence,
+@@ -42,3 +41,2 @@
+ )
+-from app.services.preview.page_mapping import build_page_mapping, unavailable_mapping
+ from app.services.preview.page_quality import policy_sha256, build_page_quality_run
+@@ -225,17 +223,11 @@
+             if status == "succeeded":
+-                plan, trace, anchors = mapping_source(file, docx, self.file_repository, self.file_service)
+-                binding = mapping_binding(file, state, run, pdf=pdf, page_count=output.page_count, plan=plan)
+-                try:
+-                    manifest["page_mapping"] = build_page_mapping(binding=binding, plan=plan,
+-                        block_evidence=trace, block_anchor_evidence=anchors)
+-                except Exception:
+-                    # 只有纯 mapper 隔离未预期错误；上面的原件读取/认证与下面登记仍显式失败。
+-                    manifest["page_mapping"] = unavailable_mapping(binding, "unexpected_error")
+-                    self.logger.error("[job_id=%s trace_id=%s reason_code=unexpected_error] 页映射推断失败。", job.id, trace_id)
++                # B1 停止新页映射写入，仍认证主件及页级质量所用计划。
++                plan, _, _ = mapping_source(file, docx, self.file_repository, self.file_service,
++                                             for_page_quality=True)
+                 if page_hash is not None:
+                     quality_binding = page_quality_binding(current, file, state, run, page_policy, pdf=pdf,
+-                        page_count=output.page_count, mapping=manifest.get("page_mapping"), authenticated_plan=plan)
++                        page_count=output.page_count, mapping=None, authenticated_plan=plan)
+                     try:
+                         manifest["page_quality_run"] = build_page_quality_run(binding=quality_binding,
+-                            policy=page_policy, observation=observed, mapping=manifest.get("page_mapping"),
++                            policy=page_policy, observation=observed,
+                             created_at=run.started_at.isoformat(), reason_code=observation_reason)
+diff --git a/app/domains/document_jobs/preview_evidence.py b/app/domains/document_jobs/preview_evidence.py
+--- a/app/domains/document_jobs/preview_evidence.py
++++ b/app/domains/document_jobs/preview_evidence.py
+@@ -118,3 +118,3 @@
+             authenticated_plan, _, _ = mapping_source(job.prepared_result.file, source_content,
+-                                                       file_repository, file_service)
++                                                       file_repository, file_service, for_page_quality=True)
+         except ValueError:
+@@ -138,3 +138,4 @@
+
+-def mapping_source(source, content, file_repository, file_service, *, authentication_files=None):
++def mapping_source(source, content, file_repository, file_service, *, authentication_files=None,
++                   for_page_quality=False):
+     """只读取选定主件的原始 IR 与持久证据；存储/原件损坏不能借映射降级。"""
+@@ -172,2 +173,8 @@
+     if plan.schema_version == "render-plan/v2" and anchors is None:
++        # 已认证的 B1 停写件只为页级质量使用同次 plan，不补认旧件的导航证明。
++        if (for_page_quality and "block_anchor_evidence" not in metadata
++                and metadata.get("block_anchor_summary") == {
++                    "schema_version": "block-anchor-evidence/v2", "created": 0, "generation_disabled": 1,
++                }):
++            return plan, trace, None
+         return None, None, None
+diff --git a/app/services/renderer/block_anchors.py b/app/services/renderer/block_anchors.py
+--- a/app/services/renderer/block_anchors.py
++++ b/app/services/renderer/block_anchors.py
+@@ -24,3 +24,3 @@
+ # B1 兼容构建仅停止新写入；已有证明和图片报告的 reader 必须保留。
+-BLOCK_ANCHOR_GENERATION_POLICY = "enabled/v1"
++BLOCK_ANCHOR_GENERATION_POLICY = "disabled/b1"
+ ANCHOR_NAME_RE = re.compile(r"md2w_blk_[0-9a-f]{30}\Z")
+diff --git a/app/services/renderer/render_evidence.py b/app/services/renderer/render_evidence.py
+--- a/app/services/renderer/render_evidence.py
++++ b/app/services/renderer/render_evidence.py
+@@ -360,3 +360,3 @@
+             block_render_evidence=trace.model_dump(mode="json"))
+-        from app.services.renderer.block_anchors import validate_block_anchor_evidence
++        from app.services.renderer.block_anchors import BLOCK_ANCHOR_GENERATION_POLICY, validate_block_anchor_evidence
+         # 新件缺运行期创建事实时不可借名字或持久化 reader 追认；历史件只读原证明。
+@@ -368,3 +368,8 @@
+         elif v2 and render_result is not None:
+-            raise content_failure("ir_render_evidence:target_mismatch")
++            # 只承认本次候选生成器主动停写的状态，缺证或坏证仍失败。
++            stopped = (BLOCK_ANCHOR_GENERATION_POLICY == "disabled/b1"
++                       and render_result.block_anchor_counts == {"created": 0, "generation_disabled": 1}
++                       and block_anchor_evidence is None and ownership is None)
++            if not stopped:
++                raise content_failure("ir_render_evidence:target_mismatch")
+         if render_result is not None:
