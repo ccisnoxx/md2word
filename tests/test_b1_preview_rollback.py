@@ -20,10 +20,13 @@ from docx import Document
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.preview_evidence import read_current_preview_evidence
 from app.domains.files.models import DocumentFileRecord
+from app.services.auth.models import AuthenticatedUser
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import DocumentIR
 from app.services.preview.models import sha256
 from app.services.preview.page_quality import (
-    PageObservation, PageObservationBatch, PageQualityPolicy, RasterObservation, RulePolicy, policy_sha256,
+    PageObservation, PageObservationBatch, PageQualityPolicy, RasterObservation, RulePolicy, canonical_bytes,
+    policy_sha256, read_page_quality_run,
 )
 from app.services.renderer import image_evidence
 from app.services.renderer.block_anchors import ANCHOR_NAME_RE
@@ -153,6 +156,27 @@ def mutate_manifest(runtime, run, variant):
     files.update_document_file(manifest.id, size_bytes=len(content), checksum_sha256=sha256(content))
 
 
+def change_report_context(case, runtime, run):
+    """重算内外层哈希，使负例仅在同次绑定比较失败。"""
+    files = runtime.document_file_repository
+    manifest = files.get_document_file(run.manifest_file_id)
+    path = runtime.file_upload_service.resolve_file_object_path(manifest)
+    body = read_json(path)
+    report = body["page_quality_run"]
+    report["binding"]["actual_context_sha256"] = "0" * 64
+    report["id"] = "page-quality:" + hashlib.sha256(canonical_bytes({
+        "binding": report["binding"],
+        "policy_sha256": report["binding"]["policy_sha256"],
+        "analyzer_version": report["analyzer_version"],
+    })).hexdigest()
+    report.pop("run_sha256")
+    report["run_sha256"] = hashlib.sha256(canonical_bytes(report)).hexdigest()
+    case.assertEqual(read_page_quality_run(report), report)
+    write_json(path, body)
+    content = path.read_bytes()
+    files.update_document_file(manifest.id, size_bytes=len(content), checksum_sha256=sha256(content))
+
+
 def inspect_docx(case, runtime, job, producer):
     repository = runtime.document_file_repository
     service = runtime.file_upload_service
@@ -246,6 +270,116 @@ class Probe(V2PublicationFixture, TestCase):
         self.assertEqual(restored_state(runtime, job), before)
         return {"reader": reader, "producer": producer, "backend": kind, "variant": variant,
                 "preview": variant != "outer_damage", "mapping": mapping, "page_quality": quality}
+
+
+def change_result_metadata(runtime, job, *, remove=(), replace=None):
+    """在临时仓库同步凭据与主件描述符，让读者继续进入内容认证。"""
+    source = job.prepared_result.file
+    metadata = {key: value for key, value in source.metadata.items() if key not in remove}
+    metadata.update(replace or {})
+    updated = runtime.document_file_repository.update_document_file(source.id, metadata=metadata)
+    receipt = job.prepared_result.model_copy(update={"file": updated})
+    return runtime.document_job_repository.update_document_job(job.id, prepared_result=receipt)
+
+
+def run_quality_readback(project, root, kind):
+    """以工作树中的正常读者读取冻结的 B1 与正常基线产物。"""
+    case = Probe()
+    reader = Path(read_current_preview_evidence.__code__.co_filename).resolve()
+    case.assertEqual(reader, project / "app/domains/document_jobs/preview_evidence.py")
+
+    def restore(producer, variant):
+        runtime = case._build_runtime(root / "quality-readback" / kind / variant, kind)
+        return runtime, load_bundle(runtime, root / "samples" / producer / kind)
+
+    def check_report(runtime, job, label, *, producer=None):
+        before = restored_state(runtime, job)
+        evidence = read_current_preview_evidence(job, runtime.document_file_repository,
+                                                runtime.file_upload_service, include_page_quality=True,
+                                                include_mapping=True, include_render=True)
+        case.assertTrue(evidence.observation.available, label)
+        if producer is None:
+            case.assertIsNone(evidence.page_quality_run, label)
+        else:
+            report = evidence.manifest["page_quality_run"]
+            case.assertEqual(evidence.page_quality_run, report, label)
+            case.assertIsNotNone(report["binding"]["actual_context_sha256"], label)
+            case.assertEqual((report["evaluation_state"], report["quality_status"]), ("incomplete", "pending"), label)
+            if producer == "b1":
+                case.assertEqual(evidence.page_mapping["reason_code"], "legacy_evidence_missing", label)
+                case.assertIsNone(evidence.render_plan, label)
+                case.assertEqual(evidence.authentication_files, (), label)
+            else:
+                case.assertEqual(evidence.page_mapping, evidence.manifest["page_mapping"], label)
+                case.assertEqual(evidence.page_mapping["status"], "available", label)
+                case.assertIsNotNone(evidence.render_plan, label)
+            user = AuthenticatedUser(id=job.created_by, username="operator", role="operator",
+                                     tenant_id=job.tenant_id, company_id=job.company_id)
+            response = runtime.document_job_use_cases.quality_review.get_document_quality_pages(job.id, user=user)
+            case.assertEqual(response.availability, "available", label)
+            case.assertIsNotNone(response.report, label)
+            case.assertEqual(response.report.run_sha256, report["run_sha256"], label)
+            case.assertEqual((response.report.evaluation_state, response.report.quality_status), ("incomplete", "pending"), label)
+        case.assertEqual(restored_state(runtime, job), before, label)
+
+    for producer in ("normal", "b1"):
+        runtime, job = restore(producer, producer)
+        check_report(runtime, job, producer, producer=producer)
+
+    runtime, job = restore("normal", "ordinary_missing_proof")
+    job = change_result_metadata(runtime, job, remove=("block_anchor_evidence",))
+    check_report(runtime, job, "ordinary_missing_proof")
+
+    runtime, job = restore("b1", "missing_stop_declaration")
+    job = change_result_metadata(runtime, job, remove=("block_anchor_summary",))
+    check_report(runtime, job, "missing_stop_declaration")
+
+    summary = job.prepared_result.file.metadata
+    case.assertNotIn("block_anchor_summary", summary)
+    for label, summary_patch in (
+        ("boolean_created", {"created": False}),
+        ("float_disabled", {"generation_disabled": 1.0}),
+        ("extra_summary_field", {"name_conflict": 0}),
+    ):
+        runtime, job = restore("b1", label)
+        stopped = job.prepared_result.file.metadata["block_anchor_summary"]
+        job = change_result_metadata(runtime, job, replace={"block_anchor_summary": {**stopped, **summary_patch}})
+        check_report(runtime, job, label)
+
+    for label, proof in (("null_anchor_proof", None), ("malformed_anchor_proof", {"entries": []})):
+        runtime, job = restore("b1", label)
+        job = change_result_metadata(runtime, job, replace={"block_anchor_evidence": proof})
+        check_report(runtime, job, label)
+
+    for field, checksum in (("render_plan", "plan_sha256"), ("block_render_evidence", "docx_sha256")):
+        runtime, job = restore("b1", field)
+        invalid = {**job.prepared_result.file.metadata[field], checksum: "0" * 64}
+        job = change_result_metadata(runtime, job, replace={field: invalid})
+        check_report(runtime, job, field)
+
+    runtime, job = restore("b1", "report_binding")
+    change_report_context(case, runtime, job.word_preview_state.current_run)
+    check_report(runtime, job, "report_binding")
+
+    for label, error, message in (
+        ("outer_damage", ValueError, "预览Artifact字节与描述符不一致"),
+        ("ir_damage", ValueError, "当前页面质量上下文无法认证"),
+        ("mandatory_evidence", DocumentIntegrityError, "内容完整性校验失败"),
+    ):
+        runtime, job = restore("b1", label)
+        files, service = runtime.document_file_repository, runtime.file_upload_service
+        if label == "outer_damage":
+            mutate_manifest(runtime, job.word_preview_state.current_run, label)
+        elif label == "ir_damage":
+            ir = files.get_document_file(job.document_ir_file_id)
+            path = service.resolve_file_object_path(ir)
+            path.write_bytes(path.read_bytes() + b" ")
+        else:
+            job = change_result_metadata(runtime, job, remove=("formula_source_coverage",))
+        before = restored_state(runtime, job)
+        with case.assertRaisesRegex(error, message):
+            read_current_preview_evidence(job, files, service, include_page_quality=True)
+        case.assertEqual(restored_state(runtime, job), before, label)
 
 
 def check_archived_word(directory):
@@ -342,7 +476,36 @@ run_probe(source, fingerprints[key], mode, phase, root, project / 'tests/tmp/rnd
 """
 
 
+QUALITY_READBACK_ENTRY = """
+import sys
+from pathlib import Path
+project, root = (Path(value).resolve() for value in sys.argv[1:3])
+sys.path.insert(0, str(project))
+from tests.test_b1_preview_rollback import run_quality_readback
+run_quality_readback(project, root, sys.argv[3])
+"""
+
+
 class B1PreviewRollbackTests(TestCase):
+    def test_main_authenticates_b1_page_quality_readback(self):
+        with TemporaryDirectory(prefix="md2word-b1-quality-") as temporary:
+            root = Path(temporary)
+            build = root / "build"
+            subprocess.run([sys.executable, str(TASK / "build_candidate.py"), "--output", str(build)],
+                           check=True, cwd=PROJECT, timeout=120)
+            for mode in ("normal", "b1"):
+                source = build / mode
+                invocation = subprocess.run([sys.executable, "-I", "-B", "-c", PROBE_ENTRY,
+                                             str(source), str(PROJECT), mode, "produce", str(root)],
+                                            cwd=source, capture_output=True, text=True, timeout=180)
+                self.assertEqual(invocation.returncode, 0, invocation.stdout + invocation.stderr)
+            for kind in BACKENDS:
+                with self.subTest(backend=kind):
+                    invocation = subprocess.run([sys.executable, "-I", "-B", "-c", QUALITY_READBACK_ENTRY,
+                                                 str(PROJECT), str(root), kind],
+                                                cwd=PROJECT, capture_output=True, text=True, timeout=180)
+                    self.assertEqual(invocation.returncode, 0, invocation.stdout + invocation.stderr)
+
     def test_b1_candidate_build_and_offline_matrix(self):
         with TemporaryDirectory(prefix="md2word-b1-") as temporary:
             root = Path(temporary)
