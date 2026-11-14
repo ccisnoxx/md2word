@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # app/domains/resources/models.py: 定义模板、术语和翻译配置共用的资源版本记录。
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
@@ -23,6 +24,14 @@ class ResourceVersionStatus(str, Enum):
     PUBLISHED = "published"
     DISABLED = "disabled"
     SUPERSEDED = "superseded"
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceDefaultPointer:
+    """默认指针的版本及更新时间，用于识别预检期间发生的切换。"""
+
+    version: str
+    updated_at: str
 
 
 class ResourceVersionRecord(BaseModel):
@@ -47,6 +56,20 @@ class ResourceVersionRecord(BaseModel):
         if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest.lower()):
             raise ValueError("snapshot_hash 必须包含 64 位十六进制 sha256。")
         return value
+
+
+def disable_nondefault_resource_version(
+    record: ResourceVersionRecord, *, default_version: str | None,
+) -> ResourceVersionRecord:
+    """根据调用方观察的默认版本计算允许的禁用状态。"""
+
+    if record.version == default_version:
+        raise ValueError("默认资源版本不能直接禁用，请先切换默认指针。")
+    if record.status == ResourceVersionStatus.DISABLED:
+        return record
+    if record.status == ResourceVersionStatus.SUPERSEDED:
+        raise ValueError("superseded 资源版本不能再切换为 disabled。")
+    return record.model_copy(update={"status": ResourceVersionStatus.DISABLED, "updated_at": utc_now()})
 
 
 class ResolvedResourceVersion(BaseModel):

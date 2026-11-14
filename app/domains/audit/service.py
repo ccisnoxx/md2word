@@ -26,23 +26,44 @@ class AuditService:
         reason: str | None = None,
         details: AuditDetails | None = None,
     ) -> AuditEvent:
-        """记录一条审计事件，保留 human reason 并可附加安全结构化 details。"""
+        """记录一条审计事件，保留人工填写的理由和可选的结构化证据。"""
 
-        normalized_reason = self._normalize_optional_text(reason)
-        normalized_details = self._normalize_details(details)
-        event = AuditEvent(
+        event = self.build_event(
+            actor=actor,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            trace_id=trace_id,
+            reason=reason,
+            details=details,
+        )
+        self.repository.append_audit_event(event)
+        return event
+
+    def build_event(
+        self,
+        *,
+        actor: ActorContext,
+        action: str,
+        target_type: str,
+        target_id: str,
+        trace_id: str,
+        reason: str | None = None,
+        details: AuditDetails | None = None,
+    ) -> AuditEvent:
+        """构造审计事件，供需要在业务事务中一并写入的调用方使用。"""
+
+        return AuditEvent(
             audit_id=f"audit_{uuid4().hex[:12]}",
             actor_id=actor.actor_id,
             actor_role=actor.actor_role,
             action=action,
             target_type=target_type,
             target_id=target_id,
-            reason=normalized_reason,
-            details=normalized_details,
+            reason=self._normalize_optional_text(reason),
+            details=self._normalize_details(details),
             trace_id=trace_id,
         )
-        self.repository.append_audit_event(event)
-        return event
 
     def _normalize_optional_text(self, value: str | None) -> str | None:
         """清理可选文本，空白字符串统一为 None。"""

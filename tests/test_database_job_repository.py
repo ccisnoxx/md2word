@@ -844,14 +844,40 @@ class _FakeMysqlCursor:
             ]
             self._rows = sorted(rows, key=lambda item: (item["created_at"], item["version"]))
             return
+        if normalized.startswith("select version, updated_at from resource_default_versions"):
+            pointer = self.database.resource_default_versions.get(params)
+            self._rows = [pointer.copy()] if pointer is not None else []
+            return
+        if normalized.startswith("update resource_default_versions set version"):
+            version, updated_at, resource_type, resource_id = params
+            pointer = self.database.resource_default_versions.get((resource_type, resource_id))
+            if pointer is not None:
+                pointer.update(version=version, updated_at=updated_at)
+                self.rowcount = 1
+            self._rows = []
+            return
+        if normalized.startswith("update resource_versions set status"):
+            status, updated_at, resource_type, resource_id, version = params
+            row = self.database.resource_versions.get((resource_type, resource_id, version))
+            if row is not None:
+                row.update(status=status, updated_at=updated_at)
+                self.rowcount = 1
+            self._rows = []
+            return
         if normalized.startswith("insert into resource_default_versions"):
             resource_type, resource_id, version, updated_at = params
+            key = (resource_type, resource_id)
+            if key in self.database.resource_default_versions and "on duplicate key update" not in normalized:
+                from pymysql.err import IntegrityError
+
+                raise IntegrityError(1062, "默认版本指针已存在。")
             self.database.resource_default_versions[(resource_type, resource_id)] = {
                 "resource_type": resource_type,
                 "resource_id": resource_id,
                 "version": version,
                 "updated_at": updated_at,
             }
+            self.rowcount = 1
             self._rows = []
             return
         if "from resource_default_versions" in normalized and "join resource_versions" in normalized:
