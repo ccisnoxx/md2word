@@ -1065,3 +1065,22 @@ TPL-GOV-001
 - [ ] 在线 Word Preview。
 
 ---
+
+# 复审更新（2026-11-14）
+
+复审基线为 `main@8dd428c1`。以下状态来自已合入的代码和对应的历史验收记录。
+
+## 已合入
+
+- **模板与渲染完整性**已随 [PR #48](https://github.com/ccisnoxx/md2word/pull/48) 合入。正式渲染校验并物化任务绑定的 DOCX、已绑定 YAML 和术语规则。页眉、页脚与 Logo 的 OOXML 符合性证据已接入质量门。 [实施验证](../.trellis/tasks/archive/2026-11/11-12-template-render-integrity/validation.md)
+- **动态模板目录与默认版本切换**已随 [PR #55](https://github.com/ccisnoxx/md2word/pull/55) 和 [PR #56](https://github.com/ccisnoxx/md2word/pull/56) 合入。MySQL 持有动态目录和全局默认模板 ID，内置清单用于只读 seed，Worker 按已绑定的资源快照渲染。显式切换版本先预检文件和哈希，再在同一事务比较旧指针、切换、读回并写入成功审计。原目录分支通过了隔离 Compose 复验，整合版本只做了静态核对。 [目录验证](../.trellis/tasks/archive/2026-11/11-13-production-template-catalog/research/verification.md) · [切换验证](../.trellis/tasks/archive/2026-11/11-13-template-default-switch-integrity/verification.md)
+- **Datasheet 结构修复**已有复验证据。整份 SN74AC244 的源公式由 116/118 写入提高到 118/118，第 12 页缺表仍按负例阻断。TPLD2001 的两段完整续表已归组为一张 24×8 原生表，该对照仍缺可信表头证据，结构完整匹配为 0/1。 [目录公式](../.trellis/tasks/11-11-datasheet-quality-baseline-contracts/toc-formula-verification.md#整份样本结果) · [续表归组](../.trellis/tasks/11-11-datasheet-quality-baseline-contracts/continuation-contract-validation.md)
+
+## 仍待决
+
+- **无 YAML 模板的发布合同。** 已发布的无 YAML 模板版本可以生成 DOCX。渲染缺少绑定的 YAML 字节时，来源证明无法成为 `complete`，生成件会被正式发布拒绝（`publication_snapshot_unavailable`）。待决定是否要求新模板和新版本绑定 YAML，以及历史无 YAML 版本的使用范围。 [发布来源证明](../app/domains/document_jobs/publication_provenance.py) · [发布校验](../app/domains/document_jobs/publication_evidence.py)
+- **外部页眉 Logo 的版本归属。** 内置默认 Logo 来自模板 DOCX。使用 `header.logo_path` 时，Renderer 仍从原 YAML 所在目录读取图片，任务快照未绑定该图片的预期 SHA-256。待决定正式模板是否继续允许外部覆盖。若允许，需登记并随任务物化覆盖图片的字节。 [资源物化](../app/domains/jobs/resource_snapshots.py) · [Renderer](../app/services/renderer/word_renderer.py)
+
+## 待验收
+
+2026-11-13 的生产缺片段负例运行在 `1748f5ee`，当次默认模板为 `default@1`。仓库内置 seed 为 `default@2`。生产目录迁移、`default@2` 正例和在线 Word Preview 仍需对应运行的证据。Microsoft Word 桌面复核、人工签字和编辑效率继续由 Datasheet 验收记录跟踪。 [生产负例及人工待办](../.trellis/tasks/11-11-datasheet-quality-baseline-contracts/validation.md)
