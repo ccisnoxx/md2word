@@ -22,6 +22,8 @@ mkdir -p tests/tmp/datasheet-quality-metrics
 
 设置 `GOLDEN_SAMPLE_COST_EVIDENCE` 可接入本批费用凭据。回归结束时读取 `golden-sample-cost-evidence/v1` JSON 的 `receipts` 数组，每项按 `job_id` 和 `retry_count` 归属。内层 `cost` 沿用指标 v1 的 `currency`、`basis`、`reference`、`components` 和 `complete`。完整凭据须覆盖解析、翻译和截至该代的全部尝试。凭据缺失、无效、代次错配或只取得分项时，总费用记录为缺测。普通回归中没有采集的表格标注、技术 Token、视觉及人工数据分别记录缺测原因。
 
+翻译费用可通过 `ai-call-log/v1` 将应用层调用关联到任务、批次和尝试。失败记录可能缺少 `usage`，同一次应用层调用也可能包含 SDK 的请求重试。根据可归因的供应商账单对账，或用可归因的用量按适用模型、币种及费率版本估算，计入可收费的失败和重试。凭据仅覆盖部分费用时，保留已知分项，总费用记录为缺测。
+
 本地以原 P0 清单的四份 PDF 运行正式 CLI，任务和费用响应由回环服务提供，报告证据层级为 `local_http_fixture`。四项分别模拟有效主件、坏 DOCX、任务失败和下载失败。指标成功率为 1/4，P0 目标继续为 100%。完整、部分和代次不匹配的测试凭据分别得到总额、已知分项和缺测结果。直接复算 `observations.json` 与自动生成的 `metrics.json` 逐项一致。[回环复验入口](../../../tests/tmp/datasheet-quality-regression/replay.py)
 
 常规入口、P0 报告和指标采集的 42 项定向测试通过，另有 2 项 P1 清单兼容检查通过。无效费用凭据保留转换和时延结果，终态身份错配保留费用缺测。机器指标先于可选 P0 人工签字文件保存。3 个本轮 Python 文件通过语法编译，`git diff --check` 通过。
