@@ -25,10 +25,13 @@ from app.domains.templates.layout_config_schema import TemplateConfigPackage
 from app.services.document_ir.models import DocumentIR, DocumentIRMetadata, DocumentIRPage, DocumentIRBlock, DocumentIRBlockLayout, DocumentIRAsset
 from app.services.document_ir.mineru_converter import MinerUToDocumentIRService
 from app.services.renderer import image_evidence
+from app.services.renderer.block_evidence import RenderCollector, paragraph_target
 from app.services.renderer.docx_quality import analyze_docx_quality_bytes, build_docx_quality_flags
 from app.services.renderer.render_evidence import build_renderer_evidence, validate_persisted_renderer_content
-from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
-from app.services.renderer.layout_plan import build_image_plan, image_row_metrics, _aligned, IMAGE_GROUP_THRESHOLDS
+from app.services.renderer.render_evidence_validation import ensure_renderer_integrity, validate_persisted_render_evidence
+from app.services.renderer.layout_plan import build_image_plan, build_layout_plan, image_row_metrics, _aligned, IMAGE_GROUP_THRESHOLDS
+from app.services.renderer.render_plan import _build_render_plan_v1, legacy_document_ir_payload
+from app.services.renderer.resource_identity import normalized_resource_identity
 from app.services.renderer.word_renderer import DocumentIRWordRenderer, DocumentIRRenderOptions
 
 NS = image_evidence._NS
@@ -206,6 +209,142 @@ class ImageGroupPlanTests(unittest.TestCase):
                 formula_report=result.formula_report,image_layout_report=report))
             # Pydantic 的新 IR 序列化会把非有限值变 null；该无效 typed bbox 本来就不能再读。
             with self.assertRaises(ValidationError): DocumentIR.model_validate_json(ir.model_dump_json())
+
+
+class LegacyImageIRBindingTests(unittest.TestCase):
+    _sample_prefixes = {
+        "actual-B1": "tests/tmp/rnd503/b1/b1-generated",
+        "large-indent-table": "tests/tmp/rnd503/post-review/large-indent-table",
+    }
+
+    def _read_archive_sample(self, sample):
+        """本机归档缺件时明示跳过，已有原件与指纹失配则失败。"""
+        project = Path(__file__).resolve().parents[1]
+        manifest = project / (
+            ".trellis/tasks/archive/2026-10/10-23-rnd-503-image-group-caption-rendering/artifact-hashes.json"
+        )
+        entry = next(item for item in json.loads(manifest.read_bytes()) if item["sample"] == sample)
+        blobs = []
+        missing = []
+        for suffix in (".docx", ".ir.json", ".reports.json"):
+            relative = self._sample_prefixes[sample] + suffix
+            path = project / relative
+            if not path.is_file():
+                missing.append(relative)
+                continue
+            data = path.read_bytes()
+            self.assertEqual(hashlib.sha256(data).hexdigest(), entry["files"]["${PROJECT_ROOT}/" + relative], relative)
+            self.addCleanup(lambda path=path, data=data: self.assertEqual(path.read_bytes(), data, str(path)))
+            blobs.append(data)
+        if missing:
+            self.skipTest("本机缺少 RND-503 归档原件：" + "、".join(missing))
+        content, ir_bytes, report_bytes = blobs
+        return content, json.loads(ir_bytes), json.loads(report_bytes)["image_layout_report"]
+
+    def test_archived_b1_single_and_normal_group_are_authenticated(self):
+        for sample, policy, counts in (
+            ("actual-B1", "single-only/v1", (0, 2)),
+            ("large-indent-table", "grouped/v1", (1, 0)),
+        ):
+            with self.subTest(sample=sample):
+                content, raw_ir, report = self._read_archive_sample(sample)
+                ir = DocumentIR.model_validate(raw_ir)
+                self.assertEqual(report["source_ir_sha256"], canonical_sha256(raw_ir))
+                self.assertNotEqual(report["source_ir_sha256"], canonical_sha256(legacy_document_ir_payload(ir)))
+                summary = image_evidence.verify_image_report(ir, content, report,
+                    expected_generation_policy=policy, _legacy_ir_identity=True)
+                self.assertEqual((summary["accepted_group_count"], summary["single_image_count"]), counts)
+                self.assertEqual(summary["report_sha256"], canonical_sha256(report))
+                with self.assertRaisesRegex(ValueError, "原始 IR 绑定"):
+                    image_evidence.verify_image_report(ir, content, report)
+
+    def test_archived_report_still_rejects_ir_report_and_docx_tampering(self):
+        content, raw_ir, report = self._read_archive_sample("large-indent-table")
+        ir = DocumentIR.model_validate(raw_ir)
+        changed_ir = copy.deepcopy(raw_ir)
+        changed_ir["metadata"]["source_file_id"] += "-changed"
+        changed_report = {**report, "source_ir_sha256": "0" * 64}
+
+        def change_image_distance(root):
+            root.find(".//wp:inline", NS).set("distR", "1")
+
+        changed_docx = change_docx(content, change_image_distance)
+        for case, source, word, evidence_report, error in (
+            ("IR", DocumentIR.model_validate(changed_ir), content, report, "原始 IR 绑定"),
+            ("图片报告", ir, content, changed_report, "原始 IR 绑定"),
+            ("DOCX", ir, changed_docx, report, "图片对象外距"),
+        ):
+            with self.subTest(case=case), self.assertRaisesRegex(ValueError, error):
+                image_evidence.verify_image_report(source, word, evidence_report, _legacy_ir_identity=True)
+
+    def test_explicit_and_changed_implicit_metadata_still_participate_in_binding(self):
+        content, raw_ir, report = self._read_archive_sample("actual-B1")
+        for field, default in (
+            ("degraded_pages", []),
+            ("logical_table_groups_version", None),
+            ("logical_table_groups", []),
+            ("logical_table_group_counts", {}),
+        ):
+            explicit_ir = {**raw_ir, "metadata": {**raw_ir["metadata"], field: default}}
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "原始 IR 绑定"):
+                image_evidence.verify_image_report(DocumentIR.model_validate(explicit_ir), content, report,
+                    _legacy_ir_identity=True)
+
+        ir = DocumentIR.model_validate(raw_ir)
+        ir.metadata.degraded_pages.append({"page_index": 0})
+        self.assertNotIn("degraded_pages", ir.metadata.model_fields_set)
+        with self.assertRaisesRegex(ValueError, "原始 IR 绑定"):
+            image_evidence.verify_image_report(ir, content, report, _legacy_ir_identity=True)
+
+    def test_existing_legacy_hash_and_current_persisted_content_remain_valid(self):
+        ir = image_ir()
+        result = render(ir)
+        current = build_renderer_evidence(ir, result.content, render_result=result)
+        persisted = validate_persisted_renderer_content(ir, result.content, current)
+        self.assertEqual(persisted["image_layout_report"], result.image_layout_report)
+
+        # 模拟按现行历史投影登记报告，覆盖补默认值后的原有哈希优先匹配。
+        report = {**result.image_layout_report, "source_ir_sha256": canonical_sha256(legacy_document_ir_payload(ir))}
+        summary = image_evidence.verify_image_report(ir, result.content, report, _legacy_ir_identity=True)
+        self.assertEqual(summary["report_sha256"], canonical_sha256(report))
+        self.assertEqual(summary["accepted_group_count"], 1)
+
+    def test_persisted_v1_plan_trace_accept_match_and_reject_mismatched_binding(self):
+        ir = DocumentIR(metadata=DocumentIRMetadata(job_id="job", source_file_id="source", document_language="en",
+            table_references_version=None, table_placeholders_version=None, table_placeholders=[]),
+            blocks=[DocumentIRBlock(id="body", type="paragraph", order=0, text="Legacy v1 content")])
+        config = TemplateConfigPackage()
+        identity = normalized_resource_identity(template_content=None, config=config, logo_content=None,
+            document_language=ir.metadata.document_language)
+        plan = _build_render_plan_v1(ir, layout_plan=build_layout_plan(ir), effective_config=config,
+            resource_identity=identity)
+        # 此夹具显式声明 TAB 字段，现有 v1 身份绑定完整序列化数据，包括这次兼容的四个隐式默认字段。
+        self.assertEqual(plan.input_ir_sha256, canonical_sha256(ir.model_dump(mode="json")))
+        self.assertNotIn("degraded_pages", ir.metadata.model_fields_set)
+        self.assertEqual(plan.schema_version, "render-plan/v1")
+        document = Document()
+        paragraph = document.add_paragraph(ir.blocks[0].text)
+        collector = RenderCollector(ir, plan)
+        collector.add(ir.blocks[0].id, [paragraph_target(paragraph, item_index=0)])
+        output = io.BytesIO()
+        document.save(output)
+        content = output.getvalue()
+        trace, _, _, _ = collector.freeze(document, content, plan)
+        self.assertEqual(trace.schema_version, "block-render-evidence/v1")
+        stored_plan = plan.model_dump(mode="json")
+        stored_trace = trace.model_dump(mode="json")
+        self.assertEqual(validate_persisted_render_evidence(ir, content,
+            render_plan=stored_plan, block_render_evidence=stored_trace), (plan, trace))
+
+        changed_ir = ir.model_copy(deep=True)
+        changed_ir.metadata.source_file_id = "different-source"
+        for source, candidate in (
+            (changed_ir, stored_trace),
+            (ir, {**stored_trace, "plan_sha256": "0" * 64}),
+        ):
+            with self.subTest(changed_ir=source is changed_ir):
+                self.assertIsNone(validate_persisted_render_evidence(source, content,
+                    render_plan=stored_plan, block_render_evidence=candidate))
 
 
 class ImageGroupWriterTests(unittest.TestCase):
