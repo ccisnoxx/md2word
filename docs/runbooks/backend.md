@@ -11,6 +11,7 @@ last_verified_commit: null
 owner: null
 verification_scope: >-
   全文用途、原字段与现有入口/命令参数声明的局部静态核对；原历史结果和执行条件保留，未运行命令或重新验收。输入身份及旧说明差异见 ../../.trellis/tasks/archive/2026-11/11-10-documentation-evidence-governance/research/b3-preparation.md。
+  §2.3 单独按 ab03ba49 静态核对 Word 预览的配置、产物登记与读取、失败处置和下载授权；生产运行与 B1 回退仍待验证。
 ---
 
 # 后端运行与线上验证说明
@@ -170,6 +171,27 @@ B05 第 3、4 步已移除旧 StageWorker、stage 调度/重放、Jobs 仓储与
 `FileUploadService` 继续按 `JOBS_ARTIFACT_STORAGE_BACKEND=local_file|local_object|s3` 管理正式文件。`local_file` 使用 `DATA_DIR/document_file_objects`，`local_object` 使用配置的对象目录，S3 使用现有 bucket/endpoint/凭据配置。下载依据文件记录中的 `object_key`，不重建历史路径。
 
 旧 `JobFile` artifact adapter、shadow upload 和 `ArtifactRetentionPlanner` 已删除。正式保留期与物理清理由 Files API 的 preview、确认和审计合同负责；任务删除与文件清理是不同操作。
+
+## 2.3 Word 预览配置与恢复
+
+仓库默认 `WORD_PREVIEW_BACKEND=disabled`、`WORD_PREVIEW_REQUIRED=false`、`WORD_PREVIEW_RENDER_PAGES=false`。关闭且非必需时，预览检查贡献为 `pending`。已确认的其他预览失败会写入 `blocked` 贡献，主 DOCX 保留。发布还要求当前预览成功且已确认。任务快照冻结预览策略和预算，历史任务缺少快照时跳过预览。全局配置变更不会改写已有快照，执行器仍须匹配任务的冻结 profile。
+
+### 沙箱启用条件
+
+启用 `sandboxed` 前，核对以下配置和证据。
+
+- `WORD_PREVIEW_LAUNCHER` 和 `WORD_PREVIEW_PROFILE_PATH` 使用批准的绝对路径，指向非符号链接的常规文件，launcher 须可执行。
+- `WORD_PREVIEW_PROFILE_ID` 与 profile 内的 ID 一致，`WORD_PREVIEW_PROFILE_SHA256` 对应 profile 原始字节。profile 记录 launcher 哈希、`word-preview-exec/v1` 协议及非空 `approval_reference`。
+- 核对实际执行器的无网络、无宏、非特权运行、私有挂载、资源上限和隔离域终止能力。确认完整 PDF 解码，开启页图时也确认 PNG 解码。引擎、字体和沙箱隔离能力需有目标环境实证。定向回归的本地适配器和 S3 替身只覆盖仓储、登记和授权行为。
+
+### 故障处置与下载
+
+1. **核对选定结果。** 按任务代次、DOCX 凭据、当前 run 和 attempt 定位。预览先领取再登记，PDF 和页图写入后还需认证本次终态 manifest 并确认状态。部分登记的产物可能已在存储中，任务文件列表仍会隐藏它们，下载授权也会拒绝。
+2. **区分失败类型。** Provider 或 profile 不可用时，核对冻结策略和执行器配置。超时或暂态引擎错误只在当前 run 的时限和 attempt 额度内重试。登记期间的未知存储错误应保留主件、凭据、已写产物和审计，先核对对象与元数据；初次预览的登记错误可使任务按 `oss_failed` 收尾。明确过期、删除或不存在时，才按生命周期失效处理。
+3. **复用当前重试合同。** 现有预览单独重试为内部应用入口，要求有权操作、有效主件、已成功且未发布、归档或删除的任务，以及原因和 UUID 请求标识。重放非当前的旧请求时，先校验主 DOCX，再查询已确认的历史 run，当前 run 保持原样。新请求复用成功预览前会重验当前证据，必要时按原预算领取新 run。未知存储状态或完整性错误应先查明，避免把异常当成缺失重建。
+4. **核对签名期限。** 签发预览下载授权时，期限受配置上限及主 DOCX、manifest、PDF 和必需页图的最短适用保留期约束。已签发的 S3 直连 URL 仍受原签名期限约束。
+
+**B1 回退待验证。** 保留现有产物和审计。候选构建及历史产物恢复的实证要求见[页映射合同的 B1 回退条款](../contracts/pdf-ir-word-page-mapping-contract.md#b1-回退待验证)。
 
 ## 2.4 OpenAPI 快照与发布前检查
 
