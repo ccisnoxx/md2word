@@ -196,6 +196,31 @@ def mineru_list_items(block: dict[str, Any]) -> list[str]:
     return coerce_text_list(value)
 
 
+LIST_ITEM_LEDGER_VERSION = "list-item-ledger/v1"
+
+
+def mineru_list_item_ledger(block: dict[str, Any]) -> dict[str, Any]:
+    """在 MinerU→DocumentIR 边界冻结列表项数，供后续环节逐块对账。
+
+    ``v2_items`` 与纯字符串 legacy 项可由源结构独立计数，必须满足 ``源项数 = 项数 + 空项数``；
+    legacy dict 展开项与按行拆分的文本只能由消费函数本身推导，源项数和空项数记为 None。
+    """
+
+    field, mode, value = select_mineru_list_source(block)
+    source_count: int | None = None
+    empty_count: int | None = None
+    if mode == "v2_items":
+        source_count = len(value)
+        empty_count = sum(1 for item in value if isinstance(item, dict) and isinstance(item.get("item_content"), list)
+                          and not join_text_fragments(item["item_content"]))
+    elif mode == "legacy_items" and not any(isinstance(item, dict) for item in value):
+        source_count = len(value)
+        empty_count = sum(1 for item in value if not clean_text(str(item)))
+    return {"version": LIST_ITEM_LEDGER_VERSION, "selected_field": field, "mode": mode,
+            "source_item_count": source_count, "empty_item_count": empty_count,
+            "item_count": len(mineru_list_items(block))}
+
+
 def classify_mineru_block(
     block: dict[str, Any], source_type: str,
 ) -> Literal["heading", "paragraph", "table", "image", "list", "formula"]:
@@ -558,51 +583,6 @@ def is_empty_table_placeholder(
         return True
 
     return image_path is not None and bbox[0] <= 130 and bbox[1] <= 100 and bbox[2] >= 860 and bbox[3] >= 880
-
-
-def select_mineru_list_source(
-    block: dict[str, Any],
-) -> tuple[str, Literal["legacy_items", "v2_items", "selected_text", "content"], Any]:
-    """只选择实际列表分支；验证器可先检查原始 runs，再让消费器读取。"""
-
-    raw_items = block.get("items", block.get("list_items"))
-    if isinstance(raw_items, list):
-        return "items" if "items" in block else "list_items", "legacy_items", raw_items
-    content = block.get("content")
-    if isinstance(content, dict) and isinstance(content.get("list_items"), list):
-        return "content/list_items", "v2_items", content["list_items"]
-    raw_text = mineru_raw_text_preserving_lines(block)
-    items = split_multiline_list_items(raw_text) or split_toc_like_lines(raw_text)
-    if items:
-        selected = select_mineru_text_source(block)
-        return selected[0] if selected is not None else "text", "selected_text", items
-    return "content", "content", content
-
-
-
-def mineru_list_items(block: dict[str, Any]) -> list[str]:
-    """消费经过输入验证的实际列表分支，保持既有分组、公式与 legacy 字符串语义。"""
-
-    _field, mode, value = select_mineru_list_source(block)
-    if mode == "legacy_items":
-        items: list[str] = []
-        for item in value:
-            if isinstance(item, dict):
-                items.extend(coerce_text_list(item))
-            else:
-                text = clean_text(str(item))
-                if text:
-                    items.append(text)
-        return items
-    if mode == "v2_items":
-        items = [join_text_fragments(item.get("item_content", [])) for item in value
-                 if isinstance(item, dict) and isinstance(item.get("item_content"), list)]
-        return [item for item in items if item]
-    if mode == "selected_text":
-        return value
-    return coerce_text_list(value)
-
-
 
 
 def select_mineru_table_html(block: dict[str, Any]) -> str | None:

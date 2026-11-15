@@ -75,8 +75,22 @@ def validate_render_result(document_ir: DocumentIR, word_content: bytes, render_
     """同次结果必须保有真实运行期归属，缺失时不能降级到历史读者。"""
     if word_content != render_result.content:
         raise render_contract_failure(ValueError("ir_render_evidence:binding_mismatch"))
-    _validate_render_evidence(document_ir, word_content, render_result.plan, render_result.block_evidence,
+    plan, _trace = _validate_render_evidence(document_ir, word_content, render_result.plan, render_result.block_evidence,
         ownership=render_result._ownership, require_ownership=True)
+    _ensure_toc_policies_inside_region(document_ir, plan)
+
+
+def _ensure_toc_policies_inside_region(document_ir: DocumentIR, plan: RenderPlan) -> None:
+    """独立重算目录区域，区域外的目录类策略意味着正文被并入 TOC 字段而不可见。
+
+    只在生成期执行；持久化读取不重新判定历史产物。
+    """
+    from app.services.renderer.render_plan import TOC_TEXT_MODES, toc_region_block_ids
+    region = toc_region_block_ids(document_ir, plan.operations)
+    if any(policy.mode in TOC_TEXT_MODES and decision.block_id not in region
+           for decision in plan.decisions for policy in decision.text_policies):
+        raise DocumentIntegrityError("DocumentIR→DOCX", {
+            "blocking_quality_flags": ["ir_docx_integrity:toc_coalesced_outside_region"]})
 
 
 def _validate_persisted_image_targets(index, records, blocks, image_ids) -> None:

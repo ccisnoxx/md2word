@@ -266,11 +266,15 @@ def read_render_plan(value: Any) -> RenderPlan | RenderPlanV2:
     return model.model_validate(raw)
 
 
-def select_text_policy(text: str, *, list_item: bool = False, allow_heading_inference: bool = True) -> TextPolicy:
-    """保留原自动文字分派优先级，writer 只执行这里选定的策略。"""
-    if is_toc_title_text(text):
+def select_text_policy(text: str, *, list_item: bool = False, allow_heading_inference: bool = True,
+                       allow_toc: bool = True) -> TextPolicy:
+    """保留原自动文字分派优先级，writer 只执行这里选定的策略。
+
+    ``allow_toc=False`` 用于目录区域外：跳过目录标题/目录项分支，原文按列表项或正文输出。
+    """
+    if allow_toc and is_toc_title_text(text):
         return TextPolicy(mode="toc_title", style_group="toc_title")
-    parsed = parse_toc_entry_text(text)
+    parsed = parse_toc_entry_text(text) if allow_toc else None
     if parsed is not None:
         level = max(1, min(infer_heading_level(parsed[0]) or 1, 3))
         return TextPolicy(mode="toc", style_group=f"toc_level{level}", heading_level=level)
@@ -280,6 +284,43 @@ def select_text_policy(text: str, *, list_item: bool = False, allow_heading_infe
         level = max(1, min(infer_heading_level(text) or 1, 3))
         return TextPolicy(mode="heading", style_group=f"heading{level}", heading_level=level)
     return TextPolicy(mode="paragraph", style_group="normal")
+
+
+TOC_TEXT_MODES = frozenset({"toc_title", "toc", "coalesced", "toc_formula", "toc_formula_first"})
+
+
+def toc_region_block_ids(document_ir: DocumentIR, operations: list[Any]) -> frozenset[str]:
+    """按写入顺序确定全文唯一的目录区域，目录类文本策略只允许出现在区域内。
+
+    区域从首个含目录标题或目录项的正文块开始，到其后首个非目录正文标题为止（该标题不入区）。
+    只看正文 block 操作：页眉页脚页码、表格、分栏等不改变状态，跨页目录不会被截断。
+    修订历史等正文条目即使带点引导符和页码，也因位于区域外而不会并入 TOC 字段。
+    """
+    blocks = {block.id: block for block in document_ir.blocks}
+    infer_headings = document_ir.schema_version == "document-ir/v1"
+    region: set[str] = set()
+    inside = False
+    for operation in operations:
+        if operation.kind != "block" or not operation.block_ids:
+            continue
+        block = blocks[operation.block_ids[0]]
+        if block.layout is not None and block.layout.role != "body":
+            continue
+        if block.type == "list":
+            texts = block.list_items or []
+        elif block.type in {"heading", "paragraph"}:
+            texts = [block.text or ""]
+        else:
+            continue
+        tocish = any(is_toc_title_text(text) or parse_toc_entry_text(text) is not None for text in texts)
+        if inside and not tocish and (block.type == "heading" or block.type == "paragraph" and select_text_policy(
+                texts[0], allow_heading_inference=infer_headings).mode == "heading"):
+            break
+        if tocish:
+            inside = True
+        if inside:
+            region.add(block.id)
+    return frozenset(region)
 
 
 def _complete_two_column_text_region(page: LayoutPage, source_blocks: list[DocumentIRBlock]) -> LayoutRegion | None:
@@ -511,6 +552,7 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
                     "annotation_count": len(decision.annotation_styles)}
                 decision.reason_codes = list(first.reason_codes)
     representative = None
+    toc_region = toc_region_block_ids(document_ir, operations)
     for operation in operations:
         if operation.kind != "block":
             continue
@@ -524,7 +566,8 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
             decision.formula_strategy = "omml_subset_or_text"
         elif block.type in {"paragraph", "list"}:
             texts = block.list_items or [] if block.type == "list" else [block.text or ""]
-            policies = [select_text_policy(text, list_item=block.type == "list", allow_heading_inference=document_ir.schema_version == "document-ir/v1") for text in texts]
+            policies = [select_text_policy(text, list_item=block.type == "list", allow_heading_inference=document_ir.schema_version == "document-ir/v1",
+                                          allow_toc=block.id in toc_region) for text in texts]
             # table_context 原实现先占用 TOC 槽位，再采用 context 样式；保持该顺序。
             for index, policy in enumerate(policies):
                 if policy.mode == "toc":

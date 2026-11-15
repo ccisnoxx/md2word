@@ -13,6 +13,7 @@ from app.conversion.docx_rules.mineru_content import (
     clean_text,
     classify_mineru_block,
     mineru_raw_text_preserving_lines,
+    mineru_list_item_ledger,
     mineru_list_items,
     coerce_text_list,
     collect_text_from_fields,
@@ -254,6 +255,16 @@ class MinerUToDocumentIRService:
             )
             metadata = self._metadata_from_raw(raw_block)
             metadata.update(build_block_layout_metadata(layout, page_width=page_width))
+            if block_type == "list":
+                ledger = mineru_list_item_ledger(raw_block)
+                if (ledger["source_item_count"] is not None
+                        and ledger["source_item_count"] != ledger["item_count"] + ledger["empty_item_count"]):
+                    # 源项既非有效项也非已记账空项：属于静默丢项，构建 IR 前失败关闭。
+                    raise DocumentIntegrityError("MinerU→DocumentIR", {
+                        "blocking_quality_flags": ["source_ir_integrity:list_item_count_mismatch"],
+                        "mineru_validation": validation_report.model_dump(mode="json"),
+                    })
+                metadata["list_item_ledger"] = ledger
             caption_result = reconciled[index]
             captions = caption_result.captions
             if caption_result.evidence is not None:

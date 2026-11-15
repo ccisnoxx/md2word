@@ -57,6 +57,41 @@ class DocumentIRLayoutContractTests(unittest.TestCase):
         evidence = build_source_integrity(document)
         self.assertEqual(evidence["blocking_quality_flags"], [])
 
+    def test_list_item_ledger_blocks_item_count_drift(self) -> None:
+        ledger = {"version": "list-item-ledger/v1", "selected_field": "content/list_items", "mode": "v2_items",
+                  "source_item_count": 2, "empty_item_count": 0, "item_count": 2}
+
+        def document(items: list[str], *, with_ledger: bool) -> DocumentIR:
+            return DocumentIR(
+                schema_version="document-ir/v2",
+                metadata=DocumentIRMetadata(job_id="docjob_ledger", source_file_id="file_ledger", document_language="en",
+                                            source_block_count=1, source_type_counts={"list": 1}),
+                blocks=[DocumentIRBlock(id="block_0001", type="list", order=0, list_items=items,
+                                        metadata={"source_type": "list", **({"list_item_ledger": ledger} if with_ledger else {})})],
+            )
+
+        intact = build_source_integrity(document(["A", "B"], with_ledger=True))
+        self.assertEqual(intact["blocking_quality_flags"], [])
+        self.assertEqual(intact["list_item_ledger"], {"version": "list-item-ledger/v1", "block_count": 1,
+                                                      "item_count": 2, "mismatch_block_ids": []})
+
+        dropped = build_source_integrity(document(["B"], with_ledger=True))
+        self.assertEqual(dropped["blocking_quality_flags"], ["source_ir_integrity:list_item_count_mismatch"])
+        self.assertEqual(dropped["list_item_ledger"]["mismatch_block_ids"], ["block_0001"])
+
+        # 历史 IR 没有账本：不报阻断，也不新增证据键。
+        legacy = build_source_integrity(document(["B"], with_ledger=False))
+        self.assertEqual(legacy["blocking_quality_flags"], [])
+        self.assertNotIn("list_item_ledger", legacy)
+
+    def test_list_and_toc_region_flags_project_as_controlled_codes(self) -> None:
+        from app.domains.document_jobs.review import _safe_quality_flag
+        from app.services.renderer.render_event_summary import controlled_quality_flags
+
+        flags = ["source_ir_integrity:list_item_count_mismatch", "ir_docx_integrity:toc_coalesced_outside_region"]
+        self.assertEqual(controlled_quality_flags(flags), flags)
+        self.assertTrue(all(_safe_quality_flag(flag) for flag in flags))
+
     def test_v2_payload_round_trips_page_and_block_layout(self) -> None:
         document = DocumentIR(
             schema_version="document-ir/v2",
