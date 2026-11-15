@@ -8,7 +8,7 @@
 4. **脚注上标。** 更新共享公式渲染器。覆盖新上标、原 OMML、畸形式降级、历史降级重放和新上标证据篡改。证明原式仍走现有翻译保护。
 5. **合并验证并核对交付。** 运行下列定向检查和 RS2G04 同源复验。按实际改变的抽取范围、证据及公式合同更新 Specs。检查 diff 和工作树，确认相关的 Python 注释、docstring 和开发可见文本符合项目语言约定。规划、实现、测试证据及人工签字分别记录。
 
-实施和复核时直接阅读 [Word 生成规则](../../spec/backend/word-generation-rules.md) 的 IR-005、TABLE-002、TABLE-004、MATH-002、MATH-003、RND-502 及 COL-003 的注释约束。该文件超出上下文注入文件大小限制，相关章节以工作区原文为准。
+实施和复核时直接阅读 [Word 生成规则](../../../../spec/backend/word-generation-rules.md) 的 IR-005、TABLE-002、TABLE-004、MATH-002、MATH-003、RND-502 及 COL-003 的注释约束。该文件超出上下文注入文件大小限制，相关章节以工作区原文为准。
 
 ## 验证矩阵
 
@@ -25,7 +25,7 @@
 
 ## RS2G04 第 6 页实物复验
 
-- 复用 [扩展样本清单](../11-11-datasheet-quality-baseline-contracts/extended-sample-manifest.json) 中 `gsx-rs2g04-esd-page` 的 PDF、MinerU ZIP 和 content list。规划时本地 PDF 与 ZIP 已通过 SHA-256 对账。本轮实施时从清单复核输入并记录实际 commit、模式、Profile、模板和输出指纹。
+- 复用 [扩展样本清单](../../../11-11-datasheet-quality-baseline-contracts/extended-sample-manifest.json) 中 `gsx-rs2g04-esd-page` 的 PDF、MinerU ZIP 和 content list。规划时本地 PDF 与 ZIP 已通过 SHA-256 对账。本轮实施时从清单复核输入并记录实际 commit、模式、Profile、模板和输出指纹。
 - 先用同一 MinerU 包从源 IR 到正式 DOCX 做隔离 direct 对照和受控翻译回放，再按样本既有授权用隔离环境和现有服务配置做英译中实译。现有代码入口为 `scripts.dev.formal_mineru_conversion` 及已有隔离应用入口。用当前修复产生新结果，并保留原预审副本作为对照。服务、凭据或样本不可用时记录对应阶段缺测，保留已有本地证据。
 - 核对 `block_0003.footnotes.0000` 至 `.0004`、`block_0005.captions.0000` 和 `block_0005.footnotes.0000` 至 `.0001`，先核身份再对照原 PDF 的文本和技术含义。检查 8.2 说明只在原归属展示一次。检查 `block_0003_context_0001.text` 末端标记的 `w:r`。目标仅允许有依据保留的专名、标准号等原文。
 - 按原清单分别记录 ESD 表原始输入与同源表头校核稿。对通过同源校核的输入核对 4×4 网格、首行表头、两处合并和原 3 个标注技术 Token。原始输入的已知表头差异仍在原质量任务跟踪。检查审核视图中的单元、批次证据以及输出报告。可用时打开 Word 审阅标记和说明，OOXML 与语义、视觉签字分别记载。

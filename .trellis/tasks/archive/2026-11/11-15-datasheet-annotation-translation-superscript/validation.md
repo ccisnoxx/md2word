@@ -26,14 +26,14 @@
 
 ## RS2G04 Rev A.4 第 6 页
 
-以 [扩展样本清单](../11-11-datasheet-quality-baseline-contracts/extended-sample-manifest.json) 中登记的第 6 页为准。PDF、MinerU ZIP 和 content list v2 三份字节指纹均匹配。使用隔离的 FastAPI 应用、eager Worker、SQLite 和本地对象存储，注入同一份已保存的 MinerU ZIP。英译中使用现有版本化资源及 `deepseek-v4-flash`，真实 Provider 调用 1 次，共 87 项，应用重试 0 次。随后按同一有序编码请求和 Prompt 内容摘要重放已取得的响应，分别验证当前工作区的原始表头稿和同源校核稿。模板均为 `default@2`。
+以 [扩展样本清单](../../../11-11-datasheet-quality-baseline-contracts/extended-sample-manifest.json) 中登记的第 6 页为准。PDF、MinerU ZIP 和 content list v2 三份字节指纹均匹配。使用隔离的 FastAPI 应用、eager Worker、SQLite 和本地对象存储，注入同一份已保存的 MinerU ZIP。英译中使用现有版本化资源及 `deepseek-v4-flash`，真实 Provider 调用 1 次，共 87 项，应用重试 0 次。随后按同一有序编码请求和 Prompt 内容摘要重放已取得的响应，分别验证当前工作区的原始表头稿和同源校核稿。模板均为 `default@2`。
 
 | 样本产物 | 注释、公式与结构 | DOCX SHA-256 |
 | --- | --- | --- |
-| [direct](../../../tests/tmp/datasheet-annotation-20261115/direct-final/RS2G04-p6.docx) | 注释原文与翻译源一致，零 Provider 调用和零批次。上标及签发下载通过。原始 ESD 表 4×4、两处合并，MinerU 缺首行表头语义。 | `462eddcfeb9666a4ce9557e5d67b5229bdf96317d428445e1033a5fe19563f12` |
-| [原始输入实译](../../../tests/tmp/datasheet-annotation-20261115/live-original/RS2G04-p6.docx) | 8 组注释实译和恢复摘要通过。上标、签发下载和持久化读取通过。 | `20a7076554ea1125ac498061ee3f24213c80207f5f87c3f3f9020949ff952c28` |
-| [最终代码复用实译响应](../../../tests/tmp/datasheet-annotation-20261115/live-recorded-original-final/RS2G04-p6.docx) | 8 组原译文、8 个对应批次绑定及 8 个 QA 单元通过。仅首行表头与独立标注有差异。 | `e88c28a348fc36a4c03cc8640e408d2e7e732ce37b3f12a6491920358d7e29db` |
-| [同源表头校核稿](../../../tests/tmp/datasheet-annotation-20261115/live-header-reviewed-final/RS2G04-p6.docx) | 与上行的八条译文相同。4×4 原生表、首行表头、两处合并和标注的三个数值均通过。 | `1e29bc39ae1a8a5496a919a1f88cbbbfec1dbb718df9641c63e0653315bea9bb` |
+| [direct](../../../../../tests/tmp/datasheet-annotation-20261115/direct-final/RS2G04-p6.docx) | 注释原文与翻译源一致，零 Provider 调用和零批次。上标及签发下载通过。原始 ESD 表 4×4、两处合并，MinerU 缺首行表头语义。 | `462eddcfeb9666a4ce9557e5d67b5229bdf96317d428445e1033a5fe19563f12` |
+| [原始输入实译](../../../../../tests/tmp/datasheet-annotation-20261115/live-original/RS2G04-p6.docx) | 8 组注释实译和恢复摘要通过。上标、签发下载和持久化读取通过。 | `20a7076554ea1125ac498061ee3f24213c80207f5f87c3f3f9020949ff952c28` |
+| [最终代码复用实译响应](../../../../../tests/tmp/datasheet-annotation-20261115/live-recorded-original-final/RS2G04-p6.docx) | 8 组原译文、8 个对应批次绑定及 8 个 QA 单元通过。仅首行表头与独立标注有差异。 | `e88c28a348fc36a4c03cc8640e408d2e7e732ce37b3f12a6491920358d7e29db` |
+| [同源表头校核稿](../../../../../tests/tmp/datasheet-annotation-20261115/live-header-reviewed-final/RS2G04-p6.docx) | 与上行的八条译文相同。4×4 原生表、首行表头、两处合并和标注的三个数值均通过。 | `1e29bc39ae1a8a5496a919a1f88cbbbfec1dbb718df9641c63e0653315bea9bb` |
 
 源 PDF 文本独立核对额定值的风险、负电压例外、参考条件、JESD-51、最大功耗以及 ESD 使用限制、JEP155 和 JEP157。逐条对照八组源 IR、译后 IR 与审核返回，五条额定值脚注和两条 JEDEC 脚注保留限定条件，8.2 使用说明只出现一次。注释中的 19 个 Codec 占位通过批次完整性验证，ESD 标注的三个表格数值保留。
 
@@ -43,7 +43,7 @@ LibreOffice 26.2.4.2 预览显示第一处上标及注释落在预期位置。�
 
 ### Microsoft Word 人工验收
 
-2026-11-15，用户在 Microsoft Word 中核对了 [RS2G04 第 6 页同源表头校核稿](../../../tests/tmp/datasheet-annotation-20261115/live-header-reviewed-final/RS2G04-p6.docx)，确认 **10/10 通过**。验收绑定的 DOCX SHA-256 为 `1e29bc39ae1a8a5496a919a1f88cbbbfec1dbb718df9641c63e0653315bea9bb`。
+2026-11-15，用户在 Microsoft Word 中核对了 [RS2G04 第 6 页同源表头校核稿](../../../../../tests/tmp/datasheet-annotation-20261115/live-header-reviewed-final/RS2G04-p6.docx)，确认 **10/10 通过**。验收绑定的 DOCX SHA-256 为 `1e29bc39ae1a8a5496a919a1f88cbbbfec1dbb718df9641c63e0653315bea9bb`。
 
 | 清单项 | 人工结果 |
 | --- | --- |

@@ -8,8 +8,8 @@
 
 ## 已核实的问题
 
-- 当前抽取器只处理 `text`、`list_items` 和表格 HTML 文本节点。用含表题、表注、图题、图注的最小 IR 调用，只有表格 HTML 节点进入翻译。TR-401 的 `ae3e49ca` 和集成快照 `956be112` 保有抽取、回填实现，当前 `main` 不含该能力。[当前抽取器](../../../app/domains/translation/document_ir_translator.py#L554)
-- 对照 RS2G04 Rev A.4 第 6 页的源 IR 与译后 IR，`block_0003` 的五条脚注、`block_0005` 的一条 8.2 说明和两条 JEDEC 脚注原样保留。8.2 说明在源 IR 还兼作该表的 `text`，两处走了不同翻译路径。温度条件处的标记位于独立上下文段落 `block_0003_context_0001.text`，共享公式渲染器将其判为 `invalid_syntax` 并降级。[预审记录](../11-11-datasheet-quality-baseline-contracts/issues.md#rs2g04-两稿共有的问题与表头差异) · [公式渲染器](../../../app/conversion/docx_rules/formula.py#L333)
+- 当前抽取器只处理 `text`、`list_items` 和表格 HTML 文本节点。用含表题、表注、图题、图注的最小 IR 调用，只有表格 HTML 节点进入翻译。TR-401 的 `ae3e49ca` 和集成快照 `956be112` 保有抽取、回填实现，当前 `main` 不含该能力。[当前抽取器](../../../../../app/domains/translation/document_ir_translator.py#L554)
+- 对照 RS2G04 Rev A.4 第 6 页的源 IR 与译后 IR，`block_0003` 的五条脚注、`block_0005` 的一条 8.2 说明和两条 JEDEC 脚注原样保留。8.2 说明在源 IR 还兼作该表的 `text`，两处走了不同翻译路径。温度条件处的标记位于独立上下文段落 `block_0003_context_0001.text`，共享公式渲染器将其判为 `invalid_syntax` 并降级。[预审记录](../../../11-11-datasheet-quality-baseline-contracts/issues.md#rs2g04-两稿共有的问题与表头差异) · [公式渲染器](../../../../../app/conversion/docx_rules/formula.py#L333)
 
 ## 需求
 
