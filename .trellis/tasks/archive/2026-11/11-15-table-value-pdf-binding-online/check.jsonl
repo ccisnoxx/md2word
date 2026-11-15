@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "规范入口，Word 条款按 implement.md 定位并读取"}
+{"file": ".trellis/spec/backend/document-job-mode-contract.md", "reason": "direct 与既有 stage、续跑、结果凭据和结果可见性"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "当前代条件提交、新代接纳锁及 Artifact 唯一身份"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "使用既有错误边界，分别处理可选未决、交付阻断和正式失败"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "定向验收范围、实物与 API 合同及生成快照"}
+{"file": ".trellis/tasks/archive/2026-11/11-15-table-value-pdf-binding-online/research/source-and-attempt.md", "reason": "源 PDF 与当前 raw 包及原解析代的实际核对"}
+{"file": ".trellis/tasks/archive/2026-11/11-15-table-value-pdf-binding-online/research/quality-and-delivery.md", "reason": "实物认证、报告重读、基础质量、审批与发布"}
+{"file": ".trellis/tasks/archive/2026-11/11-15-table-value-pdf-binding-online/research/manual-review.md", "reason": "权限、可定位未决、累计核定、新代和幂等"}
+{"file": ".trellis/tasks/archive/2026-11/11-15-table-value-pdf-binding-online/research/runtime-and-acceptance.md", "reason": "两种实际表格版式、工具预算和降级路径"}
