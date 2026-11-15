@@ -100,7 +100,7 @@ class TableValuePdfBindingDeliveryTests(TestCase):
         table, = Document(result.output_docx_path).tables
         self.assertEqual([row[1] for row in _word_value_columns(table)], [("±5", 2), ("±100", 3)])
 
-    def _one_proposed_binding(self, source, observation, table_bbox, *, layout_sha256, skip_cells=frozenset()):
+    def _one_proposed_binding(self, source, observation, table_bbox, *, layout_sha256, skip_cells, layout_bbox, protected_regions):
         """替换坐标取证结果，保留修正接纳、渲染和实物认证链路。"""
         self.assertEqual(skip_cells, frozenset())
         self.assertEqual(layout_sha256, sha256(self.layout_path.read_bytes()).hexdigest())

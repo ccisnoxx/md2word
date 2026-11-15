@@ -143,7 +143,7 @@ class PdfValueColumnIntegrationTests(TestCase):
             self.assertEqual(path.read_bytes(), self.source.content)
             return observed
 
-        def proposal(result, observation, table_bbox, *, layout_sha256, skip_cells):
+        def proposal(result, observation, table_bbox, *, layout_sha256, skip_cells, layout_bbox, protected_regions):
             self.assertIs(observation, observed)
             self.assertEqual(skip_cells, {(1, 1)})
             correction = self._cell_correction(result, 2, 3, "MAX").model_copy(

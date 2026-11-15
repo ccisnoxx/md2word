@@ -21,6 +21,10 @@ _Index = Annotated[int, Field(ge=0)]
 _Point = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 _Interval = tuple[_Point, _Point]
 _Box = tuple[_Point, _Point, _Point, _Point]
+_AxisSegment = tuple[_Point, _Point, _Point]
+TABLE_EDGE_SEARCH_LIMIT = 1.0
+TABLE_EDGE_CONTACT_TOLERANCE = 0.02
+TABLE_EDGE_STROKE_OVERHANG = 0.5
 # v1 的 Poppler SVG 与文字输出各自舍入。余量只用于词框内字形锚，行列归属仍用实际词框。
 _GLYPH_POSITION_ROUNDING = 0.02
 
@@ -35,6 +39,47 @@ class TableValueColumnReviewError(ValueError):
         super().__init__(f"{self.code}：人工数值列校核无效（{reason}）。")
 
 
+class PdfValueColumnTableEdge(BaseModel):
+    """保存与上传 PDF 相接线段对应的单侧取证范围。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True,
+                              revalidate_instances="always")
+    side: Literal["left", "right"]
+    layout_bbox: _Box
+    corrected_bbox: _Box
+    wall: _Point
+    horizontal_lines: Annotated[tuple[_AxisSegment, ...], Field(min_length=3)]
+    vertical_lines: Annotated[tuple[_AxisSegment, ...], Field(min_length=1)]
+
+    def verify_original(self, original: _Box) -> None:
+        edge, direction = (0, -1) if self.side == "left" else (2, 1)
+        opposite = 2 - edge
+        resolved = self.corrected_bbox[edge]
+        tolerance = TABLE_EDGE_CONTACT_TOLERANCE
+        overhang = TABLE_EDGE_STROKE_OVERHANG
+        if (len(self.horizontal_lines) > 4 or len(self.vertical_lines) != 1
+                or any(self.corrected_bbox[i] != original[i] for i in range(4) if i != edge)
+                or direction * (resolved - original[edge]) <= 0
+                or direction * (self.wall - original[edge]) < -overhang
+                or abs(self.wall - self.layout_bbox[edge]) > TABLE_EDGE_SEARCH_LIMIT
+                or abs(resolved - self.layout_bbox[edge]) > TABLE_EDGE_SEARCH_LIMIT
+                or resolved != direction * max(direction * point for point in (
+                    self.wall, *(line[edge] for line in self.horizontal_lines)))
+                or len({line[1] for line in self.horizontal_lines}) != len(self.horizontal_lines)):
+            raise ValueError("PDF 表框校正必须由实测边线确定唯一侧缘。")
+        x, top, bottom = self.vertical_lines[0]
+        if x != self.wall or not original[1] <= top < bottom <= original[3]:
+            raise ValueError("PDF 表框校正缺少有效的外竖线。")
+        for left, y, right in self.horizontal_lines:
+            points = (left, y, right)
+            if (not original[1] <= y <= original[3]
+                    or not -tolerance <= direction * (points[edge] - self.wall) <= overhang
+                    or direction * (original[edge] - points[opposite]) < overhang
+                    or direction * (points[opposite] - original[opposite]) < -tolerance
+                    or not top - tolerance <= y <= bottom + tolerance):
+                raise ValueError("PDF 表框校正缺少相接的横线。")
+
+
 class PdfValueColumnBinding(BaseModel):
     """冻结自动核定涉及的 PDF 左上原点坐标，单位为点。"""
 
@@ -44,6 +89,7 @@ class PdfValueColumnBinding(BaseModel):
     extractor_version: str = Field(min_length=1, max_length=128)
     layout_sha256: _Sha256
     table_bbox: _Box
+    table_edge: PdfValueColumnTableEdge | None = Field(default=None, exclude_if=lambda value: value is None)
     row_range: _Interval
     column_range: _Interval
     header_bbox: _Box
@@ -54,7 +100,11 @@ class PdfValueColumnBinding(BaseModel):
 
     @model_validator(mode="after")
     def _validate_geometry(self) -> Self:
-        left, top, right, bottom = self.table_bbox
+        evidence_bbox = self.table_bbox
+        if self.table_edge is not None:
+            self.table_edge.verify_original(self.table_bbox)
+            evidence_bbox = self.table_edge.corrected_bbox
+        left, top, right, bottom = evidence_bbox
         row_top, row_bottom = self.row_range
         column_left, column_right = self.column_range
         value_left, value_top, value_right, value_bottom = self.value_bbox
@@ -169,13 +219,24 @@ class TableValueColumnReview(BaseModel):
         bindings = [item.pdf_binding for item in self.corrections if item.pdf_binding is not None]
         if not bindings:
             return
-        from app.services.document_ir.layout_signals import NORMALIZED_BBOX_SPACE, pdf_point_bbox
+        from app.services.document_ir.layout_signals import NORMALIZED_BBOX_SPACE, _parse_page_size, pdf_point_bbox
 
         if page is None or page.metadata.get("bbox_coordinate_space") != NORMALIZED_BBOX_SPACE:
             raise TableValueColumnReviewError("pdf_binding_geometry")
         point_bbox = pdf_point_bbox(fragment.source_span.bbox, page)
         if any(binding.table_bbox != point_bbox for binding in bindings):
             raise TableValueColumnReviewError("pdf_binding_geometry")
+        corrected = bindings[0].table_edge
+        if any(binding.table_edge != corrected for binding in bindings):
+            raise TableValueColumnReviewError("pdf_binding_geometry")
+        if corrected is not None:
+            frame = _parse_page_size(page.metadata.get("pdf_page_size"))
+            if (frame is None
+                    or any(value > frame[index % 2] for box in (corrected.layout_bbox, corrected.corrected_bbox)
+                           for index, value in enumerate(box))
+                    or tuple(int(value * 1000 / frame[index % 2])
+                             for index, value in enumerate(corrected.layout_bbox)) != fragment.source_span.bbox):
+                raise TableValueColumnReviewError("pdf_binding_geometry")
 
 
 def supports_value_column_review_grid(result: TableBuildResult) -> bool:

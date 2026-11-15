@@ -45,6 +45,13 @@ class PdfValueColumnWord:
 
 
 @dataclass(frozen=True)
+class PdfValueColumnStroke:
+    horizontal: bool
+    segment: AxisSegment
+    bbox: Box
+
+
+@dataclass(frozen=True)
 class PdfValueColumnPage:
     width: float
     height: float
@@ -56,6 +63,8 @@ class PdfValueColumnPage:
     extractor_version: str
     unsupported_regions: tuple[Box, ...] = ()
     unmapped_glyph_regions: tuple[Box, ...] = ()
+    opaque_fill_regions: tuple[Box, ...] = ()
+    stroke_footprints: tuple[PdfValueColumnStroke, ...] = ()
 
 
 _COLOR = re.compile(r"rgb\(([\d.]+)%,\s*([\d.]+)%,\s*([\d.]+)%\)")
@@ -568,26 +577,32 @@ def _observe_words(
 
 def _geometry(
     paint: list[_Paint],
-) -> tuple[tuple[Box, ...], tuple[AxisSegment, ...], tuple[AxisSegment, ...], tuple[Box, ...]]:
-    rectangles, horizontal, vertical, unsupported = [], [], [], []
+) -> tuple[
+    tuple[Box, ...], tuple[AxisSegment, ...], tuple[AxisSegment, ...], tuple[Box, ...],
+    tuple[PdfValueColumnStroke, ...],
+]:
+    rectangles, horizontal, vertical, unsupported, footprints = [], [], [], [], []
     for i, mark in enumerate(paint):
         if mark.kind == "unsupported":
             unsupported.append(mark.bbox)
         if mark.kind not in {"rect", "stroke"}:
             continue
+        footprint = None
+        if mark.stroke is not None:
+            x0, y0 = mark.stroke.start
+            x1, y1 = mark.stroke.end
+            is_horizontal = y0 == y1
+            segment = (min(x0, x1), y0, max(x0, x1)) if is_horizontal else (x0, min(y0, y1), max(y0, y1))
+            # 填充可能只覆盖部分线宽。保留原绘制范围供新增条带排除异物。
+            footprint = PdfValueColumnStroke(is_horizontal, segment, mark.bbox)
+            footprints.append(footprint)
         if any(later.kind == "rect" and _intersection(mark.bbox, later.bbox) for later in paint[i + 1:]):
             continue
         if mark.kind == "rect" and mark.light:
             rectangles.append(mark.bbox)
-        if mark.stroke is not None:
-            x0, y0 = mark.stroke.start
-            x1, y1 = mark.stroke.end
-            if y0 == y1:
-                horizontal.append((min(x0, x1), y0, max(x0, x1)))
-            else:
-                vertical.append((x0, min(y0, y1), max(y0, y1)))
-    return tuple(rectangles), tuple(horizontal), tuple(vertical), tuple(unsupported)
-
+        if footprint is not None:
+            (horizontal if footprint.horizontal else vertical).append(footprint.segment)
+    return tuple(rectangles), tuple(horizontal), tuple(vertical), tuple(unsupported), tuple(footprints)
 
 def observe_pdf_value_column_page(
     pdf_path: Path, *, page_index: int, deadline: float | None = None,
@@ -617,12 +632,14 @@ def observe_pdf_value_column_page(
         )
         svg = _read_xml(read([cairo_tool, *options, "-svg", source, "-"]))
         paint = _svg_paint(svg, frame)
-        rectangles, horizontal, vertical, unsupported = _geometry(paint)
+        rectangles, horizontal, vertical, unsupported, footprints = _geometry(paint)
         observed_words, unmapped = _observe_words(words, paint, rendered_indexes)
+        # 深色矩形不能作表头色带证据，但侧缘校正仍须知道这些区域已被绘制。
+        opaque_fills = tuple(mark.bbox for mark in paint if mark.kind == "rect" and not mark.light)
         _observation_timeout(deadline)
         return PdfValueColumnPage(
             width, height, count, observed_words, rectangles, horizontal, vertical,
-            f"poppler-value-geometry/v1:{version}", unsupported, unmapped,
+            f"poppler-value-geometry/v1:{version}", unsupported, unmapped, opaque_fills, footprints,
         )
     except PdfObservationUnavailable:
         raise

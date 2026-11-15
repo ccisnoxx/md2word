@@ -4,6 +4,7 @@ from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from hashlib import sha256
 from io import BytesIO
+import json
 from os import getenv
 from pathlib import Path
 from shutil import which
@@ -14,9 +15,11 @@ from uuid import uuid4
 from zipfile import ZipFile
 
 from docx import Document
+from pydantic import ValidationError
 
 from app.domains.document_jobs.base_quality import current_base
 from app.domains.document_jobs.table_evidence import verify_report
+from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.pdf_value_column_observer import observe_pdf_value_column_page
 from app.services.preview.models import PreviewPolicy
 from tests.document_job_list_query_v2_publication_fixtures import RecordingPreviewProvider, V2PublicationFixture
@@ -171,6 +174,39 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                 self.assertIn(waiting["reason_code"], {"column_ambiguous", "value_visibility_unverified"})
                 self.check_blocked_delivery(client, owner, admin, job.id)
 
+    def test_clipped_ruled_edges_keep_original_bbox_and_certify_actual_word(self) -> None:
+        for side, bounds in (("left", (50.5, 70, 450, 230)), ("right", (50, 70, 449.5, 230))):
+            with self.subTest(side=side), TemporaryDirectory() as directory:
+                package, source = _ruled_table_package(Path(directory), point_box=bounds)
+                with self.worker_case(package.read_bytes(), source.read_bytes()) as (
+                    runtime, _, job, client, owner, admin,
+                ):
+                    report, word = self.read_verified_word(runtime, job)
+                    self._check_ruled_word(report, word, last_row=[("48", 2), ("48", 2), ("ms", 1)])
+                    fragment, = report.document.metadata.logical_table_groups[0].fragments
+                    self.assertEqual(fragment.source_span.bbox, tuple(value * 2 for value in bounds))
+                    table, = report.envelope.report.tables
+                    self.assertEqual(len(table.value_column_corrections), 2)
+                    self.assertEqual({c.pdf_binding_sha256 for c in table.value_column_corrections},
+                                     {c.pdf_binding.binding_sha256 for c in fragment.value_column_review.corrections})
+                    for correction in fragment.value_column_review.corrections:
+                        binding = correction.pdf_binding
+                        self.assertEqual(binding.table_bbox, bounds)
+                        self.assertEqual(binding.table_edge.side, side)
+                        self.assertEqual(binding.table_edge.corrected_bbox, (50, 70, 450, 230))
+                        self.assertLessEqual(len(binding.table_edge.horizontal_lines), 4)
+                        self.assertEqual(len(binding.table_edge.vertical_lines), 1)
+                    self.check_blocked_delivery(client, owner, admin, job.id)
+
+                    for field, shift in (("corrected_bbox", -2 if side == "left" else 2),
+                                         ("layout_bbox", -0.5 if side == "left" else 0.5)):
+                        payload = report.document.model_dump(mode="json")
+                        evidence = payload["metadata"]["logical_table_groups"][0]["fragments"][0]["value_column_review"]
+                        for correction in evidence["corrections"]:
+                            correction["pdf_binding"]["table_edge"][field][0 if side == "left" else 2] += shift
+                        with self.subTest(tampered_field=field), self.assertRaises(ValidationError):
+                            DocumentIR.model_validate_json(json.dumps(payload))
+
     def test_admin_replays_the_same_package_and_publishes_after_actual_word_certification(self) -> None:
         for kind in ("file", "sqlite"):
             with self.subTest(kind=kind), TemporaryDirectory() as directory:
@@ -240,7 +276,7 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
 
     @skipUnless(which("pdftoppm") and getenv("MD2WORD_TABLE_VALUE_P7_PDF") and getenv("MD2WORD_TABLE_VALUE_P7_ZIP"),
                 "需要隔离验收保留的真实 P7 提交及原包")
-    def test_retained_p7_real_package_keeps_unproven_columns_blocked_after_page_comparison(self) -> None:
+    def test_retained_p7_real_package_certifies_word_after_table_edge_recovery(self) -> None:
         source = Path(getenv("MD2WORD_TABLE_VALUE_P7_PDF")).read_bytes()
         package = Path(getenv("MD2WORD_TABLE_VALUE_P7_ZIP")).read_bytes()
         self.assertEqual(sha256(source).hexdigest(), "24f724cf0e795f6afeb6fec5c72ff8f144085c59d57fbf0a5c9efbf1808b1eb3")
@@ -252,16 +288,25 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
             output, = table.outputs
             rows = Document(BytesIO(word)).tables[output.actual.table_index].rows
             header = [cell.text.strip() for cell in rows[0].cells]
-            # 新鲜回包的表框右侧切入 UNIT 表头，既有列核定必须保留歧义。
-            for value, columns in (("±5", (("MIN", 2), ("TYP", 2))), ("±100", (("MAX", 1),))):
-                occurrences = [(index, cell.grid_span) for row in rows[1:]
-                               for index, cell in enumerate(row.cells) if cell.text.strip() == value]
-                self.assertEqual(occurrences, [(header.index(column), span) for column, span in columns])
+            for value, column in (("±5", "TYP"), ("±100", "MAX")):
+                hits = [(index, cell.grid_span, row.cells[header.index("UNIT")].text.strip().replace("μ", "µ"))
+                        for row in rows[1:] for index, cell in enumerate(row.cells) if cell.text.strip() == value]
+                self.assertEqual(hits, [(header.index(column), 1, "µV")])
             self.assertEqual(len(table.validation.findings), 18)
+            self.assertEqual(len(table.value_column_corrections), 5)
             waiting = report.document.metadata.pdf_value_column_unresolved
-            self.assertFalse(table.value_column_corrections)
-            self.assertEqual({item.reason for item in waiting}, {"header_ambiguous"})
-            self.assertEqual({item.finding_id for item in waiting}, {item.finding_id for item in table.validation.findings})
+            self.assertEqual(len(waiting), 13)
+            self.assertEqual({item.reason for item in waiting}, {"row_ambiguous"})
+            certified = {item.finding_id for item in table.value_column_corrections}
+            self.assertEqual({item.finding_id for item in waiting},
+                             {item.finding_id for item in table.validation.findings} - certified)
+            self.assertEqual({flag.identity for flag in table.flags if flag.identity in certified}, set())
+            fragment, = report.document.metadata.logical_table_groups[0].fragments
+            self.assertEqual(fragment.source_span.bbox, (89, 122, 906, 657))
+            for correction in fragment.value_column_review.corrections:
+                binding = correction.pdf_binding
+                self.assertAlmostEqual(binding.table_bbox[2], 554.472)
+                self.assertAlmostEqual(binding.table_edge.corrected_bbox[2], 555.480469, places=4)
             self.check_blocked_delivery(client, owner, admin, job.id)
 
     @skipUnless(which("pdftoppm"), "逐页比对需要 Poppler 栅格渲染")

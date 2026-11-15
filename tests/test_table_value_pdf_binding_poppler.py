@@ -16,7 +16,10 @@ from scripts.dev import formal_mineru_conversion, run_local_mineru_conversion
 from tests.test_pdf_value_column_observer import make_pdf
 
 
-def _ruled_table_package(root: Path, *, manual_review_case: bool = False) -> tuple[Path, Path]:
+def _ruled_table_package(
+    root: Path, *, manual_review_case: bool = False,
+    point_box: tuple[float, float, float, float] = (50, 70, 450, 230),
+) -> tuple[Path, Path]:
     """默认第三个值压列界。人工核定场景的列明确，但独立条件跨两行。"""
     column_edges = (50, 140, 200, 280, 380, 450)
     row_edges = (430, 390, 350, 310, 270)
@@ -45,10 +48,9 @@ def _ruled_table_package(root: Path, *, manual_review_case: bool = False) -> tup
         f'<tr><td>Lockout</td><td>{last_condition}</td><td colspan="2">48</td><td>ms</td></tr></table>'
     )
     block = {
-        "type": "table", "bbox": [100, 140, 900, 460],
+        "type": "table", "bbox": [int(value * 2) for value in point_box],
         "content": {"html": html, "table_caption": [], "table_footnote": []},
     }
-    point_box = [50, 70, 450, 230]
     body = {"type": "table_body", "index": 0, "bbox": point_box, "lines": [
         {"spans": [{"type": "table", "html": html, "bbox": point_box}]},
     ]}

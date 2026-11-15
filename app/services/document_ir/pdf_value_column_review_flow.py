@@ -3,12 +3,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
 from typing import Any, TYPE_CHECKING
 
+from app.services.document_ir.artifact_validator import parse_valid_bbox
 from app.services.document_ir.integrity import is_visible_body_block
 from app.services.document_ir.layout_signals import (
     NORMALIZED_BBOX_MIN_VERSION, NORMALIZED_BBOX_SPACE, _parse_page_size, _parse_version, pdf_point_bbox,
@@ -17,7 +19,7 @@ from app.services.document_ir.layout_signals import (
 from app.services.document_ir.mineru_package import (
     DEFAULT_POLICY, MinerUValidationPolicy, extract_zip, find_content_list, package_sha256,
 )
-from app.services.document_ir.models import DocumentIR, DocumentIRPage, TableFragment
+from app.services.document_ir.models import DocumentIR, DocumentIRBlock, DocumentIRPage, TableFragment
 from app.services.document_ir.table_placeholder import PdfCropSource, TablePlaceholderError, checksum
 from app.services.document_ir.table_upstream_coverage import _match_table
 from app.services.document_ir.table_value_column_review import (
@@ -133,28 +135,78 @@ def _layout_pages(payload: Any) -> list[dict[str, Any]]:
     return pages
 
 
+@dataclass(frozen=True)
+class _TableRegion:
+    source_bbox: _Box
+    layout_bbox: _Box
+    protected: tuple[_Box, ...]
+
+
+def _neighbouring_layout_boxes(
+    layout_page: dict[str, Any], matched: dict[str, Any], body_bbox: _Box,
+) -> set[_Box]:
+    protected = set()
+    for stage in ("para_blocks", "preproc_blocks", "discarded_blocks"):
+        blocks = layout_page.get(stage)
+        if not isinstance(blocks, list):
+            continue
+        for block in blocks:
+            if not isinstance(block, dict):
+                continue
+            box = parse_valid_bbox(block.get("bbox"))
+            # 两个布局阶段可能记录同一表体，表题和表注仍算邻块。
+            same_table = (stage != "discarded_blocks" and block.get("type") == "table"
+                          and block.get("index") == matched.get("index") and box == body_bbox)
+            if same_table:
+                children = block.get("blocks")
+                if isinstance(children, list):
+                    for child in children:
+                        if (isinstance(child, dict)
+                                and (child_box := parse_valid_bbox(child.get("bbox"))) is not None
+                                and (child.get("type") != "table_body" or child_box != body_bbox
+                                     or child.get("index") != matched.get("index"))):
+                            protected.add(child_box)
+            elif box is not None:
+                protected.add(box)
+    return protected
+
+
 def _matching_table_box(
     fragment: TableFragment,
     page: DocumentIRPage | None,
     layout_page: dict[str, Any],
     other_tables: list[TableFragment],
-) -> _Box | str:
-    """同一表的点框须可在同文档 layout 中唯一复算，避免两张源表重复把同一证据领走。"""
+    page_blocks: list[DocumentIRBlock],
+) -> _TableRegion | str:
+    """先唯一定位表体，再保留同页可占用拟校正条带的邻块。"""
     span = fragment.source_span
     box = pdf_point_bbox(span.bbox, page)
     frame = _parse_page_size(layout_page.get("page_size"))
     if (page is None or page.metadata.get("bbox_coordinate_space") != NORMALIZED_BBOX_SPACE
             or box is None or frame is None or _parse_page_size(page.metadata.get("pdf_page_size")) != frame
-            or _match_table(layout_page, frame, fragment, "para_blocks") is None):
+            or (match := _match_table(layout_page, frame, fragment, "para_blocks")) is None):
         return "table_layout_unverified"
+    matched, (_, layout_bbox), _ = match
+    protected = _neighbouring_layout_boxes(layout_page, matched, layout_bbox)
     for other in other_tables:
         if other.fragment_id == fragment.fragment_id:
             continue
         other_box = pdf_point_bbox(other.source_span.bbox, page)
-        if (other_box is not None and max(box[0], other_box[0]) < min(box[2], other_box[2])
-                and max(box[1], other_box[1]) < min(box[3], other_box[3])):
+        if other_box is None:
+            continue
+        if max(box[0], other_box[0]) < min(box[2], other_box[2]) and max(box[1], other_box[1]) < min(box[3], other_box[3]):
             return "table_region_ambiguous"
-    return box
+        protected.add(other_box)
+    for block in page_blocks:
+        if block.id == fragment.block_id or block.layout is None:
+            continue
+        block_box = pdf_point_bbox(block.layout.bbox, page)
+        # 同表拆出的条件段继承表体框。其物理表题框仍由 layout 邻块保护。
+        inherited_context = (block_box == box and block.metadata.get("annotation_role") == "table_context"
+                             and block.metadata.get("source_block_id") == fragment.block_id)
+        if block_box is not None and not inherited_context:
+            protected.add(block_box)
+    return _TableRegion(box, layout_bbox, tuple(sorted(protected)))
 
 
 def _propose_reviews(
@@ -182,6 +234,10 @@ def _propose_reviews(
 
     pages = {page.index: page for page in document.pages}
     tables_by_page: dict[int, list[TableFragment]] = defaultdict(list)
+    blocks_by_page: dict[int, list[DocumentIRBlock]] = defaultdict(list)
+    for block in document.blocks:
+        if block.layout is not None and block.layout.page_index is not None:
+            blocks_by_page[block.layout.page_index].append(block)
     visible = {block.id for block in document.blocks if block.type == "table" and is_visible_body_block(block)}
     for group in document.metadata.logical_table_groups:
         for fragment in group.fragments:
@@ -272,15 +328,18 @@ def _propose_reviews(
                 if page_index is None or page_index >= len(layout_pages):
                     reason = "table_layout_unverified"
                 else:
-                    box = _matching_table_box(fragment, pages.get(page_index), layout_pages[page_index],
-                                              tables_by_page[page_index])
-                    observation = box if isinstance(box, str) else observe(page_index)
+                    region = _matching_table_box(
+                        fragment, pages.get(page_index), layout_pages[page_index],
+                        tables_by_page[page_index], blocks_by_page[page_index],
+                    )
+                    observation = region if isinstance(region, str) else observe(page_index)
                     if isinstance(observation, str):
                         reason = observation
                     else:
-                        assert not isinstance(box, str)
+                        assert isinstance(region, _TableRegion)
                         corrections, undecided = match_pdf_value_columns(
-                            result, observation, box, layout_sha256=layout_sha256, skip_cells=skip,
+                            result, observation, region.source_bbox, layout_sha256=layout_sha256, skip_cells=skip,
+                            layout_bbox=region.layout_bbox, protected_regions=region.protected,
                         )
                         if budget_exhausted():
                             reason = PDF_OBSERVATION_BUDGET_EXHAUSTED

@@ -8,8 +8,9 @@ from functools import lru_cache
 import re
 
 from app.services.document_ir.pdf_value_column_observer import Box, PdfValueColumnPage, PdfValueColumnWord
+from app.services.document_ir.pdf_value_column_table_edge import find_pdf_table_edge
 from app.services.document_ir.table_value_column_review import (
-    PdfValueColumnBinding, PdfValueColumnUnresolved, TableValueColumnCorrection,
+    PdfValueColumnBinding, PdfValueColumnTableEdge, PdfValueColumnUnresolved, TableValueColumnCorrection,
 )
 from app.services.tables.grid_builder import TableBuildResult
 from app.services.tables.models import TableCell
@@ -408,6 +409,7 @@ def _match_unit(
 def _correction(
     cell: TableCell, covered: dict[int, str], active: list[TableCell], header: _Header, geometry: _Geometry,
     bands: tuple[_Band, ...], layout_sha256: str, version: str,
+    original_bbox: Box, table_edge: PdfValueColumnTableEdge | None,
 ) -> TableValueColumnCorrection | str:
     old_columns = tuple(heading for heading in header.numeric
                         if cell.column <= heading.column < cell.column + cell.colspan)
@@ -448,7 +450,8 @@ def _correction(
         content_sha256=cell.content_sha256, original_column_range=(cell.column, cell.column + cell.colspan),
         target_column=target.column, target_header=covered[target.column].upper(),
         pdf_binding=PdfValueColumnBinding(
-            extractor_version=version, layout_sha256=layout_sha256, table_bbox=geometry.table,
+            extractor_version=version, layout_sha256=layout_sha256,
+            table_bbox=original_bbox, table_edge=table_edge,
             row_range=_y(band.area), column_range=_x(target.box.area),
             header_bbox=target.box.text, value_bbox=word.bbox, unit_bbox=unit,
             row_anchor_bboxes=anchors, glyph_anchors=word.glyphs,
@@ -456,9 +459,31 @@ def _correction(
     )
 
 
+def _edge_for_header(edge: PdfValueColumnTableEdge, header: _Header) -> PdfValueColumnTableEdge | None:
+    """保留与表头、表体和取证边界直接相关的线段，避免逐格重复整表线网。"""
+    extreme = header.context[0].box.area if edge.side == "left" else header.unit.box.area
+    outer = extreme[0] if edge.side == "left" else extreme[2]
+    lines = edge.horizontal_lines
+    top, bottom = (min(lines, key=lambda line: abs(line[1] - border)) for border in (extreme[1], extreme[3]))
+    body = next((line for line in lines if line[1] > extreme[3] + _MARGIN), None)
+    if (abs(outer - edge.wall) > _MARGIN or abs(top[1] - extreme[1]) > _MARGIN
+            or abs(bottom[1] - extreme[3]) > _MARGIN or top == bottom or body is None):
+        return None
+    outermost = (min(lines, key=lambda line: line[0]) if edge.side == "left"
+                 else max(lines, key=lambda line: line[2]))
+    start = min(line[1] for line in edge.vertical_lines)
+    end = max(line[2] for line in edge.vertical_lines)
+    return edge.model_copy(update={
+        "horizontal_lines": tuple(sorted({top, bottom, body, outermost}, key=lambda line: line[1])),
+        "vertical_lines": ((edge.wall, start, end),),
+    })
+
+
 def match_pdf_value_columns(
     result: TableBuildResult, observation: PdfValueColumnPage, table_bbox: Box, *, layout_sha256: str,
     skip_cells: frozenset[tuple[int, int]] = frozenset(),
+    layout_bbox: Box | None = None,
+    protected_regions: tuple[Box, ...] = (),
 ) -> tuple[tuple[TableValueColumnCorrection, ...], tuple[PdfValueColumnUnresolved, ...]]:
     """只为独立行列与可见实物吻合的现有 blocker 提供核定记录。"""
     grid = result.grid
@@ -483,6 +508,16 @@ def match_pdf_value_columns(
     unsupported = any(_intersects(table_bbox, area) for area in observation.unsupported_regions)
     geometry = _Geometry(observation, table_bbox)
     header = None if unsupported else _header(source_rows, geometry)
+    table_edge = None
+    if header is None and not unsupported and layout_bbox is not None:
+        edge = find_pdf_table_edge(observation, table_bbox, layout_bbox, protected_regions)
+        if edge is not None:
+            corrected_geometry = _Geometry(observation, edge.corrected_bbox)
+            corrected_header = _header(source_rows, corrected_geometry)
+            if corrected_header is not None:
+                table_edge = _edge_for_header(edge, corrected_header)
+                if table_edge is not None:
+                    geometry, header = corrected_geometry, corrected_header
     bands = _data_bands(header, geometry) if header is not None else ()
     proposals = []
     for cell, covered, finding_id in candidates:
@@ -490,7 +525,7 @@ def match_pdf_value_columns(
             proposal = "unsupported_pdf_geometry" if unsupported else "header_ambiguous"
         else:
             proposal = _correction(cell, covered, active_rows[cell.row], header, geometry, bands,
-                                   layout_sha256, observation.extractor_version)
+                                   layout_sha256, observation.extractor_version, table_bbox, table_edge)
         proposals.append((cell, finding_id, proposal))
 
     values = Counter(item.pdf_binding.value_bbox for _, _, item in proposals

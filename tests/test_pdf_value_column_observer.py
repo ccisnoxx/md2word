@@ -13,6 +13,7 @@ from app.services.document_ir.pdf_value_column_observer import (
     _read_poppler,
     observe_pdf_value_column_page,
 )
+from app.services.document_ir.pdf_value_column_table_edge import find_pdf_table_edge
 
 
 def make_pdf(content: bytes, *, width: int = 200, height: int = 200, page_extra: bytes = b"") -> bytes:
@@ -90,6 +91,27 @@ class PdfValueColumnObserverTests(unittest.TestCase):
         page = self.observe(_TEXT + b"\n0 g 110 20 m 110 30 130 40 140 40 c 120 45 l h f")
         self.assertEqual(len(page.words[0].glyphs), 2)
         self.assertEqual(page.unsupported_regions, ((110, 155, 140, 180),))
+
+    def test_adjacent_stroke_with_axis_outside_the_added_strip_can_still_block_it(self):
+        borders = (_TEXT + b"\n0 G 0.2 w 150 40 m 150 130 l S "
+                   + b"20 40 m 150 40 l 20 70 m 150 70 l "
+                   + b"20 100 m 150 100 l 20 130 m 150 130 l S")
+        original = (20.0, 70.0, 149.5, 160.0)
+        page = self.observe(borders + b"\n0.1 w 150.25 53 m 150.25 106 l S")
+        self.assertIsNotNone(find_pdf_table_edge(page, original, original, ()))
+
+        page = self.observe(borders + b"\n1 w 150.25 53 m 150.25 106 l S")
+        stroke = next(mark for mark in page.stroke_footprints if mark.segment[0] == 150.25)
+        self.assertFalse(stroke.horizontal)
+        self.assertGreater(stroke.segment[0], 150.0)
+        self.assertLess(stroke.bbox[0], 150.0)
+        self.assertIsNone(find_pdf_table_edge(page, original, original, ()))
+
+    def test_dark_rectangle_is_available_to_detect_adjacent_paint(self):
+        page = self.observe(_TEXT + b"\n0.2 g 110 20 30 20 re f")
+        self.assertEqual(page.opaque_fill_regions, ((110, 160, 140, 180),))
+        self.assertEqual(page.rectangles, ())
+        self.assertEqual(page.unsupported_regions, ())
 
     def test_actualtext_cannot_substitute_the_literal_painted_in_the_page(self):
         page = self.observe(b"/Span << /ActualText (45) >> BDC " + _TEXT + b" EMC")
