@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/index.md","reason":"后端和 Word 专项规范入口"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"实际 Word、运行依赖和质量门禁回归"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"锁序、回滚与真实引擎验收"}
+{"file":".trellis/tasks/11-15-table-value-pdf-binding-rollout/research/worker-and-rollout.md","reason":"容器实测、范围外对照和兼容回退"}
+{"file":".trellis/tasks/11-15-table-value-pdf-binding-rollout/research/mineru-provenance.md","reason":"同源正负对照和实物放行范围"}
+{"file":".trellis/tasks/11-15-table-value-pdf-binding-rollout/research/mysql-concurrency.md","reason":"提交后独立连接读回、账本和审计"}
+{"file":".trellis/tasks/11-15-table-value-pdf-binding-rollout/research/approval-window.md","reason":"审批最后重核屏障和正式发布门禁"}
