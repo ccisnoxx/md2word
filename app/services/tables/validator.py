@@ -42,6 +42,17 @@ _RANGE = re.compile(r"\s*[+-]?[0-9]+(?:\.[0-9]+)?\s*[-–—~～]\s*[+-]?[0-9]+(
 _ID_HEADERS = frozenset({"id", "serial number", "serial no", "serial no.", "序号", "序列号", "编号"})
 _VALUE_HEADERS = frozenset({"min", "min.", "minimum", "typ", "typ.", "typical", "max", "max.", "maximum",
                             "最小", "最小值", "典型", "典型值", "最大", "最大值"})
+# 参数值列标签按去尾点后的规范形式比较，同义写法（min/min./minimum）只算同一类。
+_PARAMETER_VALUE_LABELS = {
+    "min": "min", "minimum": "min", "最小": "min", "最小值": "min",
+    "typ": "typ", "typical": "typ", "典型": "typ", "典型值": "typ",
+    "max": "max", "maximum": "max", "最大": "max", "最大值": "max",
+    "nom": "nom", "nominal": "nom", "low": "low", "high": "high",
+}
+# 单个参数值：可带比较符、正负号与紧随单位；区间（"to"、"2–5"）和说明文字不匹配。
+_SINGLE_VALUE = re.compile(r"[<>≤≥]?\s*[±+\-−–]?\s*[0-9]+(?:\.[0-9]+)?(?:\s*[A-Za-zµμΩ°%/√·]+)?")
+# 显式标注 REF/BSC 的尺寸本身声明为跨上下限的共享参考值，跨列合法。
+_REFERENCE_VALUE = re.compile(r"(?:REF|BSC)$", re.IGNORECASE)
 _UNIT_HEADERS = frozenset({"unit", "units", "单位"})
 _SYMBOL_HEADERS = frozenset({"symbol", "symbols", "符号", "信号"})
 
@@ -319,6 +330,45 @@ class _TableValidator:
                         else:
                             self.emit("table_abnormal_long_number", "long_decimal", identity, **location)
 
+    def value_column_spans(self) -> None:
+        """单个参数值跨多个并列数值列时报出；不读 PDF，只证明结构上存在歧义。
+
+        MinerU 常以 <td> 输出表头，因此不依赖 is_header，而是把同行出现至少两类
+        MIN/TYP/MAX 等标签（各占单列）的行视为数值列标签行。按全局行序扫描，
+        续表重复表头会刷新列集合；首个标签行之前的行不检查。
+        无 TYP/NOM 列时恰跨一对 MIN–MAX 的值多为 REF/BSC 共享值，降为 warning 变体。
+        """
+        rows: dict[int, list[TableCell]] = defaultdict(list)
+        for cell in self.cells:
+            rows[cell.row].append(cell)
+        value_columns: dict[int, str] = {}
+        for row in sorted(rows):
+            labels = {}
+            for cell in rows[row]:
+                label = _PARAMETER_VALUE_LABELS.get(" ".join(_cell_text(cell).lower().split()).rstrip("."))
+                if label is not None and cell.colspan == 1:
+                    labels[cell.column] = label
+            if len(set(labels.values())) >= 2:
+                value_columns = labels
+                continue
+            if len(value_columns) < 2:
+                continue
+            for cell in rows[row]:
+                if cell.is_header or cell.colspan < 2:
+                    continue
+                covered = [value_columns[column] for column in range(cell.column, cell.column + cell.colspan)
+                           if column in value_columns]
+                text = _cell_text(cell)
+                if (len(covered) < 2 or not cell.runs or any(run.type != "text" for run in cell.runs) or
+                        not _SINGLE_VALUE.fullmatch(text) or _REFERENCE_VALUE.search(text)):
+                    continue
+                shared = (covered in (["min", "max"], ["low", "high"]) and
+                          not {"typ", "nom"} & set(value_columns.values()))
+                self.emit("table_value_column_span_ambiguous.shared_limits" if shared
+                          else "table_value_column_span_ambiguous",
+                          "shared_limit_value" if shared else "value_column_span", cell.source_fragment_id,
+                          cell=cell, end_column=cell.column + cell.colspan, expected=1, actual=len(covered))
+
     def continuations(self) -> None:
         all_fragments = {item.fragment_id: item for item in (*self.fragments, *self.related)}
         emitted_pairs = set()
@@ -350,6 +400,7 @@ class _TableValidator:
     def validate(self) -> TableValidationReport:
         self.structures()
         self.contents()
+        self.value_column_spans()
         self.continuations()
         return make_table_report(table_id=self.result.grid.table_id,
                                  source_content_sha256=self.result.grid.source_content_sha256,

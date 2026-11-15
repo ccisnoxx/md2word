@@ -33,6 +33,9 @@ RULE_DEFAULTS: dict[str, Severity] = {
     "table_cross_page_inconsistent.header_mismatch": "warning", "table_continuation_uncertain": "warning",
     "table_span_invalid": "warning", "table_html_removed_unsafe": "warning",
     "table_formula_unresolved": "warning", "table_nested_script": "warning",
+    # 启发式：单个参数值跨多个并列数值列会改变参数含义，默认阻断但允许策略显式降级。
+    # 无 TYP/NOM 时恰跨 MIN–MAX 一对常是 REF/BSC 等共享值（封装尺寸表），仅提示复核。
+    "table_value_column_span_ambiguous": "blocker", "table_value_column_span_ambiguous.shared_limits": "warning",
 }
 HARD_BLOCKERS = frozenset({"table_html_missing", "table_html_empty", "table_html_no_rows", "table_zero_columns",
                            "table_span_collision", "table_span_out_of_bounds"})
@@ -43,7 +46,8 @@ Reason = Literal[
     "row_underfill", "severe_underfill", "repeated_units", "compressed_value_columns", "glued_units",
     "long_decimal", "column_mismatch", "header_mismatch", "missing_geometry", "geometry_mismatch",
     "page_not_adjacent", "page_body_boundary", "insufficient_evidence", "unreliable_columns",
-    "invalid_span", "unsafe_removed", "formula_unresolved", "nested_script",
+    "invalid_span", "unsafe_removed", "formula_unresolved", "nested_script", "value_column_span",
+    "shared_limit_value",
 ]
 RULE_REASONS = {
     "table_html_missing": {"missing"}, "table_html_empty": {"empty"}, "table_html_no_rows": {"no_rows"},
@@ -59,6 +63,8 @@ RULE_REASONS = {
                                       "page_body_boundary", "insufficient_evidence", "unreliable_columns"},
     "table_span_invalid": {"invalid_span"}, "table_html_removed_unsafe": {"unsafe_removed"},
     "table_formula_unresolved": {"formula_unresolved"}, "table_nested_script": {"nested_script"},
+    "table_value_column_span_ambiguous": {"value_column_span"},
+    "table_value_column_span_ambiguous.shared_limits": {"shared_limit_value"},
 }
 
 
@@ -471,6 +477,12 @@ class TableValidationReport(_QualityModel):
                     cell.source_row_index + cell.rowspan <= fragment.row_count):
                 _invalid()
             if evidence.rule_id == "table_span_invalid" and evidence.attribute is None:
+                _invalid()
+            # expected 固定为 1 个数值列；actual 是该单元格列区间覆盖的数值列数。
+            if evidence.rule_id.startswith("table_value_column_span_ambiguous") and (
+                    cell is None or cell.is_header or
+                    (evidence.column, evidence.end_column) != (cell.column, cell.column + cell.colspan) or
+                    evidence.expected != 1 or evidence.actual is None or not 2 <= evidence.actual <= cell.colspan):
                 _invalid()
             if ((evidence.rule_id == "table_html_missing" and fragment.html_state != "missing") or
                     (evidence.rule_id == "table_html_empty" and

@@ -376,6 +376,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 预期输出：受支持 HTML 生成原生可编辑 Word table，以 gridSpan/vMerge 保留合并结构，合并单元格内容由 owner 写入一次；规模超过旧展开阈值不会自动改为复制内容的规则网格。
 - 冲突/例外：`_render_table`、`_render_standard_html_table`、`_render_expanded_table` 保留旧写法的兼容与历史验证，不是当前正式计划的 owner；旧展开产物继续按原 occurrence 投影认证。无效 HTML 和缺少占位来源继续按各自输入合同失败关闭，不能为测试继续执行而放宽。
 - 禁止：把表格截图作为默认输出；为某一列数复制新 renderer；以旧 runtime writer 的测试声称正式输出已覆盖。
+- 参数值列跨列：span 保真只证明 Word 忠实于来源 HTML，不证明参数值仍在正确的 MIN/TYP/MAX 列。`app/services/tables/validator.py::_TableValidator.value_column_spans` 以同行至少两类数值列标签（不依赖 `<th>`）识别标签行，单个数值单元格覆盖其中 ≥2 列时报 `table_value_column_span_ambiguous`（blocker，可经 `TableValidationPolicy` 显式降级）；无 TYP/NOM 时恰跨 MIN–MAX 一对报 `.shared_limits` 变体（warning）；REF/BSC 标注值、区间与说明文字不报。该规则不读 PDF、不修 Grid，只阻止未经修正的样本作为普通通过件。验证：`tests.test_table_value_column_span`（含 gs-008 片段）。
 - 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_styles_later_th_cells_as_table_headers`；`tests.test_formula_rendering` 的 native 大表与 `tests.test_formula_rendering_compatibility` 的独立旧展开回归分别保护合并 owner 和历史重复 occurrence。
 - 样本证据：OPA228 P6/P7 manifest 包含表格焦点但当前 Golden 未实际转换；CM4112 表格为 external negative evidence。
 - 来源/取代：commit `32edca58` 正式 renderer 收敛；保留共享 parser，取代旧 writer 权威性。
