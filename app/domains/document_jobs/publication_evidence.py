@@ -1,8 +1,9 @@
 """发布的锁外认证闭包；复用复核、表格和预览 owner，不重跑生产者。"""
 from __future__ import annotations
 
-from dataclasses import dataclass
+import base64
 import hashlib
+from dataclasses import dataclass
 
 from app.domains.document_jobs.preview_evidence import read_current_preview_evidence
 from app.domains.document_jobs.publication import (
@@ -14,6 +15,8 @@ from app.domains.document_jobs.table_evidence import verify_report
 from app.domains.files.models import DocumentFileRecord
 from app.domains.jobs.models import JobResourceSnapshot
 from app.domains.resources.models import utc_now
+from app.domains.templates.layout_config_schema import TemplateConfigPackage
+from app.domains.templates.package_validator import external_logo_field
 from app.domains.translation.modes import spec_for_document_job_mode
 
 
@@ -79,6 +82,11 @@ def prepare_publication_evidence(job, *, file_repository, file_service, job_repo
     provenance_file, provenance = read_private_provenance(provenance_id, job,
         file_repository=file_repository, file_service=file_service)
     files[provenance_file.id] = provenance_file
+    if provenance.get("result_sha256") != result.checksum_sha256:
+        raise PublicationConflict("publication_snapshot_mismatch")
+    if (provenance.get("schema_version") == "publication-render/v1" and provenance.get("status") == "unavailable"
+            and provenance.get("reason_code") == "legacy_internal_only"):
+        raise PublicationConflict("legacy_internal_only")
     if provenance.get("status") == "mismatch":
         raise PublicationConflict("publication_snapshot_mismatch")
     if provenance.get("status") != "complete" or provenance.get("schema_version") != "publication-render/v1":
@@ -86,7 +94,6 @@ def prepare_publication_evidence(job, *, file_repository, file_service, job_repo
     plan_identity = preview.render_plan.resource_identity.model_dump(mode="json")
     if (provenance.get("document_ir_file_id") != job.document_ir_file_id
             or provenance.get("document_ir_sha256") != files[job.document_ir_file_id].checksum_sha256
-            or provenance.get("result_sha256") != result.checksum_sha256
             or provenance.get("resource_identity") != plan_identity
             or provenance.get("declared_resource_identity") != plan_identity
             or not isinstance(provenance.get("renderer"), dict)
@@ -103,6 +110,18 @@ def prepare_publication_evidence(job, *, file_repository, file_service, job_repo
             or result.metadata.get("template_version_id") != job.template_version_id
             or job.request_snapshot.get("mode") != job.mode):
         raise PublicationConflict("publication_snapshot_mismatch")
+    try:
+        encoded_layout = provenance["resources"]["template_config"]
+        layout_content = base64.b64decode(encoded_layout, validate=True)
+        layout = TemplateConfigPackage.load_content(layout_content)
+        external_logo = external_logo_field(layout, active_only=True)
+    except (KeyError, TypeError, ValueError):
+        raise PublicationConflict("publication_snapshot_mismatch") from None
+    conformance = job.prepared_result.file.metadata.get("template_conformance")
+    if conformance is not None and conformance["layout_config_sha256"] != hashlib.sha256(layout_content).hexdigest():
+        raise PublicationConflict("publication_snapshot_mismatch")
+    if external_logo is not None or plan_identity["logo_sha256"] is not None:
+        raise PublicationConflict("legacy_internal_only")
     spec = spec_for_document_job_mode(job.mode)
     translation = {"status": "not_applicable"}
     if spec.is_translation:

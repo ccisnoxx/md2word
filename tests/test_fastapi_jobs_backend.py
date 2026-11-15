@@ -7114,6 +7114,44 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(admin_token_payload["role"], "admin")
         self.assertTrue(admin_token_payload["readiness"]["en2zh_available"])
 
+    def test_document_job_config_summary_excludes_internal_only_template_versions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            reader = runtime.template_read_service
+            template_id = reader.get_default_template_id()
+            content = runtime.settings.default_template_path.read_bytes()
+            publish_template_resource_version(
+                runtime, template_id=template_id, version="1", content=content, make_default=True,
+            )
+            publish_template_resource_version(
+                runtime, template_id=template_id, version="41", content=content, make_default=True,
+            )
+            repository = runtime.resource_version_service.repository
+            record = repository.get_resource_version("template", template_id, "41")
+            payload = dict(record.payload, layout_config_path=None, layout_config_sha256=None)
+            repository.save_resource_version(record.model_copy(update={
+                "payload": payload,
+                "snapshot_hash": resource_payload_hash(payload),
+            }))
+
+            with TestClient(create_app(runtime)) as client:
+                response = client.get(
+                    "/api/v1/document-jobs/config-summary", headers=build_auth_header(client),
+                )
+
+            self.assertEqual(response.status_code, 200, response.json())
+            summary = response.json()
+            self.assertIsNone(summary["defaults"]["template"])
+            self.assertIn("template_default_unavailable:legacy_internal_only", summary["readiness"]["warnings"])
+            labels = {item["label"] for item in summary["options"]["templates"]}
+            self.assertNotIn(f"{template_id}@41", labels)
+            self.assertIn(f"{template_id}@1", labels)
+            self.assertEqual(repository.get_default_resource_version("template", template_id).version, "41")
+
     def test_document_job_operator_can_bind_explicit_create_resource_versions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_mysql_test_runtime(
@@ -11108,10 +11146,31 @@ class FastAPIJobsBackendTests(TestCase):
                 templates_manifest_path=str(manifest_path),
             )
             app = create_app(runtime)
+            layout = temp_root / "managed-layout.yaml"
+            layout.write_text("schema_version: template-config/v1\n", encoding="utf-8")
             with TestClient(app) as client:
+                missing_layout = client.post(
+                    "/api/v1/templates",
+                    data={"template_id": "unbound", "name": "缺少版式"},
+                    files={"template": ("unbound.docx", v1_content)},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(missing_layout.status_code, 422)
+                self.assertIn("layout_config_path", str(missing_layout.json()["detail"]))
+                self.assertFalse((runtime.settings.templates_storage_dir / "unbound").exists())
+                legacy_layout = repo_root / "resources/template_configs/datasheet_template.yaml"
+                external_logo = client.post(
+                    "/api/v1/templates",
+                    data={"template_id": "external_logo", "name": "外部 Logo", "layout_config_path": str(legacy_layout)},
+                    files={"template": ("logo.docx", v1_content)},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(external_logo.status_code, 400, external_logo.text)
+                self.assertEqual(external_logo.json()["error"]["reason_code"], "template_external_logo_forbidden")
+                self.assertFalse((runtime.settings.templates_storage_dir / "external_logo").exists())
                 bad_upload = client.post(
                     "/api/v1/templates",
-                    data={"template_id": "bad", "name": "无效模板"},
+                    data={"template_id": "bad", "name": "无效模板", "layout_config_path": str(layout)},
                     files={"template": ("bad.docx", b"invalid package")},
                     headers={"X-Admin-Token": "secret-admin"},
                 )
@@ -11127,6 +11186,7 @@ class FastAPIJobsBackendTests(TestCase):
                         "template_id": "managed",
                         "name": "Managed Template",
                         "description": "created by api",
+                        "layout_config_path": str(layout),
                     },
                     files={
                         "template": (
@@ -11217,6 +11277,8 @@ class FastAPIJobsBackendTests(TestCase):
                 templates_manifest_path=str(manifest_path),
             )
             app = create_app(runtime)
+            layout = temp_root / "managed-layout.yaml"
+            layout.write_text("schema_version: template-config/v1\n", encoding="utf-8")
             with TestClient(app) as client:
                 create_response = client.post(
                     "/api/v1/templates",
@@ -11225,6 +11287,7 @@ class FastAPIJobsBackendTests(TestCase):
                         "name": "Managed Template",
                         "description": "created by api",
                         "render_policy_json": '{"page_size": "A4"}',
+                        "layout_config_path": str(layout),
                     },
                     files={
                         "template": (
@@ -11437,10 +11500,12 @@ class FastAPIJobsBackendTests(TestCase):
             root = Path(temp_dir)
             seed = root / "seed.docx"
             seed.write_bytes(template_docx_content("初始模板"))
+            layout = root / "layout.yaml"
+            layout.write_text("schema_version: template-config/v1\n", encoding="utf-8")
             manifest = root / "templates.yaml"
             write_templates_manifest(manifest, [
                 {"id": template_id, "name": template_id, "enabled": True, "is_default_seed": is_seed,
-                 "template_path": str(seed), "version": 1}
+                 "template_path": str(seed), "layout_config_path": str(layout), "version": 1}
                 for template_id, is_seed in (("default", True), ("managed", False))
             ])
             runtime = build_mysql_test_runtime(
@@ -11469,7 +11534,7 @@ class FastAPIJobsBackendTests(TestCase):
                     self.assertEqual(response.status_code, 200, response.text)
                     self.assertTrue(response.json()["is_default"])
                     self.assertTrue(response.json()["is_current"])
-                    self.assertFalse(response.json()["layout_config"]["exists"])
+                    self.assertTrue(response.json()["layout_config"]["exists"])
                     self.assertEqual(repository.get_default_resource_version("template", "managed").version, str(version))
                     self.assertEqual(service.get_default_template_id(), "default")
                     job = client.post(
@@ -11482,6 +11547,26 @@ class FastAPIJobsBackendTests(TestCase):
                 selected = client.patch("/api/v1/templates/managed/default", headers=headers)
                 self.assertEqual(selected.status_code, 200, selected.text)
                 self.assertEqual(service.get_default_template_id(), "managed")
+                historical = repository.get_resource_version("template", "managed", str(draft.version))
+                unbound = {**historical.payload, "layout_config_path": None, "layout_config_sha256": None}
+                repository.save_resource_version(historical.model_copy(update={
+                    "payload": unbound, "snapshot_hash": resource_payload_hash(unbound),
+                }))
+                old_pointer = repository.get_default_resource_pointer("template", "managed")
+                rejected = client.post(
+                    f"/api/v1/templates/managed/versions/{draft.version}/set-default",
+                    json={"set_default_reason": "尝试切换无 YAML 历史版本"}, headers=headers,
+                )
+                self.assertEqual(rejected.status_code, 400, rejected.text)
+                self.assertEqual(rejected.json()["error"]["reason_code"], "legacy_internal_only")
+                self.assertEqual(repository.get_default_resource_pointer("template", "managed"), old_pointer)
+                repository.set_default_resource_version("template", "managed", historical.version)
+                selected = client.patch("/api/v1/templates/default/default", headers=headers)
+                self.assertEqual(selected.status_code, 200, selected.text)
+                rejected = client.patch("/api/v1/templates/managed/default", headers=headers)
+                self.assertEqual(rejected.status_code, 400, rejected.text)
+                self.assertEqual(rejected.json()["error"]["reason_code"], "legacy_internal_only")
+                self.assertEqual(service.get_default_template_id(), "default")
                 audits = [event.target_id for event in runtime.audit_event_repository.list_audit_events()
                           if event.action == "template.set_default"]
                 self.assertEqual(audits, [draft.template_version_id, "managed@1"])
@@ -11501,11 +11586,14 @@ class FastAPIJobsBackendTests(TestCase):
             verified = template_docx_content("发布版本的模板")
             replacement = template_docx_content("后续替换的模板")
             filename = "same-name.docx"
+            layout = temp_root / "draft-layout.yaml"
+            layout.write_text("schema_version: template-config/v1\n", encoding="utf-8")
 
             with TestClient(create_app(runtime)) as client:
                 created = client.post(
                     "/api/v1/templates/default/versions",
                     files={"template": (filename, verified)},
+                    data={"layout_config_path": str(layout)},
                     headers=headers,
                 )
                 self.assertEqual(created.status_code, 201)
@@ -11520,8 +11608,8 @@ class FastAPIJobsBackendTests(TestCase):
                 })
                 preflight = runtime.template_read_service.validate_registered_template_package
 
-                def validate_then_replace(record):
-                    preflight(record)
+                def validate_then_replace(record, **kwargs):
+                    preflight(record, **kwargs)
                     service.repository.save_resource_version(changed_draft)
 
                 with patch.object(

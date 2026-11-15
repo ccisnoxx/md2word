@@ -26,6 +26,7 @@
       >
         <template #actions>
           <el-tag v-if="template.is_default" type="success" effect="plain">当前默认模板</el-tag>
+          <el-tag v-if="template.legacy_internal_only" type="warning" effect="plain">仅供内部使用</el-tag>
         </template>
         <dl class="meta-list">
           <div><dt>模板 ID</dt><dd class="mono">{{ template.id }}</dd></div>
@@ -59,7 +60,7 @@
       <RoleGate>
         <WorkbenchPanelCard
           title="上传模板 draft"
-          subtitle="只上传 .docx。新版本需创建验证任务、发布并设为默认后才会影响后续 Word 生成。"
+          subtitle="上传 DOCX 并绑定布局 YAML。新版本验证、发布并设为默认后，才会用于默认生成。"
           card-class="upload-card"
         >
           <el-upload
@@ -76,6 +77,11 @@
               <div class="el-upload__tip">已选择：{{ draftFile?.name || "无" }}</div>
             </template>
           </el-upload>
+          <el-form label-position="top" class="form-gap">
+            <el-form-item label="布局 YAML 路径">
+              <el-input v-model="draftLayoutConfigPath" placeholder="填写服务端路径，留空沿用已有 YAML" />
+            </el-form-item>
+          </el-form>
           <el-input
             v-model="renderPolicyJson"
             class="form-gap"
@@ -101,6 +107,9 @@
         <el-table-column label="状态" width="130">
           <template #default="{ row }">
             <el-tag :type="versionTagType(row.status)" effect="plain">{{ row.status }}</el-tag>
+            <div v-if="row.legacy_internal_only">
+              <el-tag type="warning" size="small" effect="plain">仅供内部使用</el-tag>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="默认" width="90">
@@ -133,11 +142,18 @@
           <template #default="{ row }">
             <RoleGate>
               <div class="row-actions app-action-row">
-                <el-button link type="primary" @click="openValidationDialog(row)">创建验证任务</el-button>
-                <el-button link type="success" :disabled="row.status === 'published'" @click="openPublishDialog(row)">
+                <el-button link type="primary" :disabled="row.legacy_internal_only" @click="openValidationDialog(row)">
+                  创建验证任务
+                </el-button>
+                <el-button link type="success" :disabled="row.legacy_internal_only || row.status !== 'draft'" @click="openPublishDialog(row)">
                   发布
                 </el-button>
-                <el-button link type="warning" :disabled="row.is_default || row.status !== 'published'" @click="openDefaultDialog(row)">
+                <el-button
+                  link
+                  type="warning"
+                  :disabled="row.legacy_internal_only || row.is_default || row.status !== 'published'"
+                  @click="openDefaultDialog(row)"
+                >
                   设默认
                 </el-button>
                 <el-button link type="danger" :disabled="row.is_default || row.status === 'disabled'" @click="disableVersion(row)">
@@ -260,6 +276,7 @@ const loading = ref(false);
 const uploading = ref(false);
 const error = ref<ApiClientError | null>(null);
 const draftFile = ref<File | null>(null);
+const draftLayoutConfigPath = ref("");
 const renderPolicyJson = ref("{}");
 const uploadRef = ref<UploadInstance>();
 const validationUploadRef = ref<UploadInstance>();
@@ -353,11 +370,13 @@ async function uploadDraftVersion(): Promise<void> {
   try {
     await templatesApi.createVersion(props.templateId, {
       template: draftFile.value,
+      layout_config_path: draftLayoutConfigPath.value,
       render_policy_json: renderPolicyJson.value,
     });
     ElMessage.success("模板文档 draft version 已上传。");
     uploadRef.value?.clearFiles();
     draftFile.value = null;
+    draftLayoutConfigPath.value = "";
     await loadAll();
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -384,6 +403,9 @@ async function downloadTemplate(): Promise<void> {
 }
 
 function openValidationDialog(version: TemplateVersionResponse): void {
+  if (version.legacy_internal_only) {
+    return;
+  }
   validationDialog.version = version;
   validationDialog.file = null;
   validationDialog.mode = "direct_pdf_to_word";

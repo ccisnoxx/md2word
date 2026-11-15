@@ -23,6 +23,8 @@ from app.domains.resources.integrity import content_sha256, resource_payload_sha
 from app.domains.resources.models import ResolvedResourceVersion, ResourceVersionRecord, ResourceVersionStatus, utc_now
 from app.domains.resources.repository import ResourceDefaultCommitUnknownError
 from app.domains.templates.layout_config_schema import (
+    TemplateConfigPackage,
+    TemplateLayoutValidationError,
     apply_layout_changes,
     editor_field_schema,
     load_layout_config_yaml,
@@ -39,9 +41,14 @@ from app.domains.templates.models import (
     validate_template_id,
 )
 from app.domains.templates.package_validator import (
+    LogoPolicy,
     TemplatePackageFingerprint,
     TemplatePackageValidationError,
+    bundled_seed_logo_policy,
+    external_logo_field,
     read_template_resource,
+    require_template_yaml_binding,
+    validate_template_logo,
     validate_template_package,
     validate_template_package_content,
 )
@@ -72,6 +79,8 @@ class TemplateVersionSelection:
     template_path: Path
     layout_config_path: Path | None
     render_policy: dict[str, Any]
+    resource_binding: ResolvedResourceVersion | None = None
+    layout_config_sha256: str | None = None
 
 
 class TemplateLayoutConfigConflict(RuntimeError):
@@ -150,8 +159,18 @@ class TemplateReadService:
             layout_path = self._resolve_manifest_path(template.layout_config_path) if template.layout_config_path else None
             if not template_path.exists() or (layout_path is not None and not layout_path.exists()):
                 raise FileNotFoundError(f"模板 seed 资源不存在: {template.id}@{version}")
+            resolved_template_path = template_path.resolve()
+            managed_version_dir = (self.settings.templates_storage_dir / template.id / f"v{version}").resolve()
+            is_bundled_seed = (
+                template.is_default_seed
+                and resolved_template_path.is_relative_to(bundled_templates_dir)
+                and not resolved_template_path.is_relative_to(managed_version_dir)
+            )
             if record is None:
-                fingerprint = validate_template_package(template_path=template_path, layout_config_path=layout_path)
+                fingerprint = validate_template_package(
+                    template_path=template_path, layout_config_path=layout_path, require_layout=True,
+                    logo_policy=bundled_seed_logo_policy(template.id, template.version) if is_bundled_seed else "forbid",
+                )
                 payload = self._build_template_version_payload(
                     template=template,
                     version=template.version,
@@ -174,14 +193,6 @@ class TemplateReadService:
                 ), True))
                 continue
 
-            resolved_template_path = template_path.resolve()
-            managed_version_dir = (self.settings.templates_storage_dir / template.id / f"v{version}").resolve()
-            is_bundled_seed = (
-                template.is_default_seed
-                and resolved_template_path.is_relative_to(bundled_templates_dir)
-                # 上传目录即使位于 bundled 根目录内，其中的 draft 也不是 seed。
-                and not resolved_template_path.is_relative_to(managed_version_dir)
-            )
             if seed is not None:
                 self.validate_bundled_seed_identity(record, seed)
             elif is_bundled_seed:
@@ -199,6 +210,9 @@ class TemplateReadService:
                     or service.repository.get_default_resource_version("template", template.id) is not None
                 ):
                     continue
+                if not create and record.status == ResourceVersionStatus.PUBLISHED:
+                    if not self._can_initialize_template_default(record):
+                        continue
                 catalog.bootstrap_seed(TemplateCatalogItem.model_validate(template.model_dump()), record)
                 continue
             if create:
@@ -206,6 +220,7 @@ class TemplateReadService:
             if (
                 record.status == ResourceVersionStatus.PUBLISHED
                 and service.repository.get_default_resource_version("template", record.resource_id) is None
+                and (create or self._can_initialize_template_default(record))
             ):
                 service.repository.set_default_resource_version("template", record.resource_id, record.version)
         if catalog is not None and seed is not None and initialize_global:
@@ -215,8 +230,17 @@ class TemplateReadService:
             default = service.repository.get_default_resource_version("template", seed.item.id)
             if default is not None and default.status == ResourceVersionStatus.PUBLISHED:
                 self._default_version_number(default, require_canonical=True)
-                self.validate_registered_template_package(default)
-                catalog.initialize_default_template(seed.item.id, default.version)
+                if self._can_initialize_template_default(default):
+                    catalog.initialize_default_template(seed.item.id, default.version)
+
+    def _can_initialize_template_default(self, record: ResourceVersionRecord) -> bool:
+        try:
+            self.validate_registered_template_package(record, logo_policy="inactive_only")
+        except TemplatePackageValidationError as exc:
+            if exc.code == "legacy_internal_only":
+                return False
+            raise
+        return True
 
     def validate_bundled_seed_identity(self, record: ResourceVersionRecord, seed: BundledTemplateSeed) -> None:
         """校验数据库已有版本可与内置 seed 共存，迁移和启动使用相同约束。"""
@@ -284,8 +308,9 @@ class TemplateReadService:
                 else None
             ),
         )
+        layout_path = self._template_version_layout_config_path(template, active_payload)
         layout_asset = self._build_asset(
-            path=self._template_version_layout_config_path(template, active_payload),
+            path=layout_path,
             label="页面布局 YAML",
             download_url=None,
         )
@@ -303,6 +328,7 @@ class TemplateReadService:
             name=name,
             description=template.description,
             version=active_version,
+            legacy_internal_only=self._legacy_internal_only(active_record, layout_path),
             is_default=template.id == current_default_id,
             downloadable=downloadable and template_asset.exists,
             download_url=template_asset.download_url,
@@ -332,7 +358,10 @@ class TemplateReadService:
         normalized_layout_config_path = self._normalize_optional_text(layout_config_path)
         normalized_render_policy = render_policy or {}
         normalized_name = self._normalize_required_text(name, "name")
-        fingerprint = self._preflight_template_package(source_path, normalized_layout_config_path)
+        fingerprint = self._preflight_template_package(
+            source_path, normalized_layout_config_path, require_layout=True,
+            logo_policy="forbid" if self.resource_version_service is None else "allow",
+        )
         stored_path = self._store_versioned_template_file(
             template_id=normalized_id,
             version=1,
@@ -409,7 +438,10 @@ class TemplateReadService:
         """上传替换文件，MySQL 模式下登记为新的草稿版本。"""
 
         template = self._require_template_item(template_id)
-        fingerprint = self._preflight_template_package(source_path, template.layout_config_path)
+        fingerprint = self._preflight_template_package(
+            source_path, template.layout_config_path, require_layout=True,
+            logo_policy="forbid" if self.resource_version_service is None else "allow",
+        )
         next_version = self._next_template_version(template)
         stored_path = self._store_versioned_template_file(
             template_id=template.id,
@@ -451,7 +483,7 @@ class TemplateReadService:
             else template.layout_config_path
         )
         normalized_render_policy = render_policy if render_policy is not None else template.render_policy
-        fingerprint = self._preflight_template_package(source_path, normalized_layout_config_path)
+        fingerprint = self._preflight_template_package(source_path, normalized_layout_config_path, require_layout=True)
         next_version = self._next_template_version(template)
         stored_path = self._store_versioned_template_file(
             template_id=template.id,
@@ -499,8 +531,8 @@ class TemplateReadService:
         normalized_verification_job_id = self._normalize_required_text(verification_job_id, "verification_job_id")
         normalized_verification_note = self._normalize_required_text(verification_note, "verification_note")
         normalized_publish_reason = self._normalize_required_text(publish_reason, "publish_reason")
+        self.validate_registered_template_package(draft_record, logo_policy="forbid")
         self._validate_verification_job(draft_record, normalized_verification_job_id)
-        self.validate_registered_template_package(draft_record)
         now = utc_now()
         payload = {
             **(draft_record.payload or {}),
@@ -850,6 +882,8 @@ class TemplateReadService:
         if base_record is None and (isinstance(template, TemplateCatalogItem) or base_version != template.version):
             raise FileNotFoundError(f"模板版本不存在: {template.id}@{base_version}")
         base_payload = base_record.payload if base_record is not None else None
+        if base_record is not None:
+            require_template_yaml_binding(base_payload or {})
         source_template_path = self._template_version_path(template, base_version, base_payload)
         if source_template_path is None or not source_template_path.exists():
             raise FileNotFoundError(f"模板文件不存在: {template.id}@{base_version}")
@@ -868,6 +902,13 @@ class TemplateReadService:
         if expected_base_layout_hash is not None:
             self._require_resource_hash(actual_hash, expected_base_layout_hash, kind="layout_config")
         validated_config = apply_layout_changes(load_layout_config_yaml(source_layout_content), changes)
+        draft_package = validate_layout_config(validated_config)
+        if external_logo_field(draft_package, active_only=True) is None:
+            # 只清理候选草稿中不会使用的继承路径，保持历史文件及哈希。
+            validated_config["header"].pop("logo_path", None)
+            for override in validated_config.get("language_overrides", {}).values():
+                if "header" in override:
+                    override["header"].pop("logo_path", None)
         layout_content = yaml.safe_dump(validated_config, allow_unicode=True, sort_keys=False).encode("utf-8")
         template_content = read_template_resource(source_template_path, kind="docx")
         expected_base_docx_hash = self._payload_text(base_payload, "docx_sha256")
@@ -876,6 +917,7 @@ class TemplateReadService:
         fingerprint = validate_template_package_content(
             template_content=template_content,
             layout_config_content=layout_content,
+            require_layout=True,
         )
         next_version = self._next_template_version(template)
         template_path, layout_path = self._stage_template_layout_version(
@@ -958,11 +1000,12 @@ class TemplateReadService:
             if default is None or default.status != ResourceVersionStatus.PUBLISHED:
                 raise ValueError(f"模板缺少已发布的默认版本: {template.id}")
             self._default_version_number(default, require_canonical=True)
-            self.validate_registered_template_package(default)
+            self.validate_registered_template_package(default, logo_policy="inactive_only")
             self.catalog_repository.set_default_template(template.id, default.version)
             return
         if not self._template_is_available(template_id):
             raise FileNotFoundError(f"模板不存在或未启用: {template_id}")
+        self.resolve_template_version(template_id, for_new_binding=True)
         self._write_state(TemplateState(default_template_id=template_id))
 
     def resolve_job_template_path(self, template_id: str | None) -> Path:
@@ -1006,8 +1049,9 @@ class TemplateReadService:
         template_version_id: str | None,
         *,
         allow_draft: bool = False,
+        for_new_binding: bool = False,
     ) -> TemplateVersionSelection:
-        """按调用意图解析 published 生产版本或 admin 验证 draft。"""
+        """解析既有任务的模板，或核验新任务可用的 published 版本与 admin 草稿。"""
 
         template_id, version = self._parse_template_version_id(template_version_id)
         if template_id is None:
@@ -1023,19 +1067,46 @@ class TemplateReadService:
             if record.status not in {ResourceVersionStatus.PUBLISHED, ResourceVersionStatus.DRAFT}:
                 raise ValueError(f"模板版本状态不可用于生成: {template.id}@{selected_version} status={record.status.value}")
         payload = record.payload if record is not None else None
+        if for_new_binding and record is not None:
+            payload = self._require_registered_template_payload(record)
+            require_template_yaml_binding(payload)
         template_path = self._template_version_path(template, selected_version, payload)
         if template_path is None or not template_path.is_file():
             raise FileNotFoundError(f"模板版本文件不存在: {template.id}@{selected_version}")
         layout_config_path = self._template_version_layout_config_path(template, payload)
-        if layout_config_path is not None:
-            if not layout_config_path.exists() or not layout_config_path.is_file():
-                raise FileNotFoundError(f"模板版式配置不存在: {template.id}@{selected_version}")
+        layout_config_sha256 = None
+        if layout_config_path is not None and not layout_config_path.is_file():
+            raise FileNotFoundError(f"模板版式配置不存在: {template.id}@{selected_version}")
+        if for_new_binding:
+            if layout_config_path is None:
+                require_template_yaml_binding({})
+            assert layout_config_path is not None
+            layout_content = read_template_resource(layout_config_path, kind="layout_config")
+            layout_config_sha256 = content_sha256(layout_content)
+            if record is not None:
+                self._require_resource_hash(
+                    layout_config_sha256, (payload or {}).get("layout_config_sha256"), kind="layout_config",
+                )
+            try:
+                package = TemplateConfigPackage.load_content(layout_content)
+            except TemplateLayoutValidationError as exc:
+                raise TemplatePackageValidationError("版式配置未通过校验。", path=exc.path, code=exc.code) from None
+            if record is None or record.status == ResourceVersionStatus.PUBLISHED:
+                validate_template_logo(package, logo_policy="inactive_only")
+        elif layout_config_path is not None:
             expected_hash = self._payload_text(payload, "layout_config_sha256")
             if expected_hash is not None and expected_hash != self._sha256_prefixed(layout_config_path):
                 raise ValueError(f"模板版式配置 hash 不匹配: {template.id}@{selected_version}")
         render_policy = self._payload_dict(payload, "render_policy")
         if render_policy is None:
             render_policy = template.render_policy
+        resource_binding = None
+        if for_new_binding and record is not None:
+            resource_binding = ResolvedResourceVersion(
+                resource_type="template", resource_id=record.resource_id, version=record.version,
+                status="draft" if record.status == ResourceVersionStatus.DRAFT else "published",
+                snapshot_hash=record.snapshot_hash, payload_ref=record.payload_ref,
+            )
         return TemplateVersionSelection(
             template_id=template.id,
             version=selected_version,
@@ -1043,6 +1114,8 @@ class TemplateReadService:
             template_path=template_path,
             layout_config_path=layout_config_path,
             render_policy=render_policy,
+            resource_binding=resource_binding,
+            layout_config_sha256=layout_config_sha256,
         )
 
     @staticmethod
@@ -1245,7 +1318,9 @@ class TemplateReadService:
         }
 
     def _preflight_template_package(
-        self, template_path: Path, layout_config_path: str | None,
+        self, template_path: Path, layout_config_path: str | None, *,
+        require_layout: bool = False, logo_policy: LogoPolicy = "allow",
+        expected_payload: dict[str, Any] | None = None,
     ) -> TemplatePackageFingerprint:
         try:
             layout_path = self._resolve_manifest_path(layout_config_path) if layout_config_path else None
@@ -1255,19 +1330,45 @@ class TemplateReadService:
                 path="layout_config",
                 code="template_layout_config_unavailable",
             ) from None
-        return validate_template_package(
-            template_path=template_path,
-            layout_config_path=layout_path,
+        template_content = read_template_resource(template_path, kind="docx")
+        layout_content = read_template_resource(layout_path, kind="layout_config") if layout_path is not None else None
+        if expected_payload is not None:
+            self._require_resource_hash(content_sha256(template_content), expected_payload.get("docx_sha256"), kind="docx")
+            self._require_resource_hash(
+                content_sha256(layout_content) if layout_content is not None else None,
+                expected_payload.get("layout_config_sha256"), kind="layout_config",
+            )
+        return validate_template_package_content(
+            template_content=template_content,
+            layout_config_content=layout_content,
+            layout_config_directory=layout_path.parent if layout_path is not None else None,
+            require_layout=require_layout,
+            logo_policy=logo_policy,
         )
 
-    def validate_registered_template_package(self, record: ResourceVersionRecord) -> None:
+    def validate_registered_template_package(
+        self, record: ResourceVersionRecord, *, logo_policy: LogoPolicy = "allow",
+    ) -> None:
         """核对登记身份、模板包结构和实际资源哈希。"""
 
+        payload = self._require_registered_template_payload(record)
+        if logo_policy != "allow":
+            require_template_yaml_binding(payload)
+        try:
+            template_path = self._resolve_manifest_path(payload["docx_path"])
+        except (OSError, RuntimeError):
+            raise TemplatePackageValidationError(
+                "模板 DOCX 路径不可解析。", path="docx", code="template_docx_unavailable",
+            ) from None
+        self._preflight_template_package(
+            template_path, payload.get("layout_config_path"), logo_policy=logo_policy, expected_payload=payload,
+        )
+
+    def _require_registered_template_payload(self, record: ResourceVersionRecord) -> dict[str, Any]:
         payload = record.payload or {}
-        docx_path = self._payload_text(payload, "docx_path")
         layout_path = payload.get("layout_config_path")
         if (
-            docx_path is None
+            self._payload_text(payload, "docx_path") is None
             or (layout_path is not None and (not isinstance(layout_path, str) or not layout_path))
             or payload.get("template_id") != record.resource_id
             or str(payload.get("version")) != record.version
@@ -1278,17 +1379,7 @@ class TemplateReadService:
                 path="template_version",
                 code="template_resource_payload_invalid",
             )
-        try:
-            template_path = self._resolve_manifest_path(docx_path)
-        except (OSError, RuntimeError):
-            raise TemplatePackageValidationError(
-                "模板 DOCX 路径不可解析。", path="docx", code="template_docx_unavailable",
-            ) from None
-        fingerprint = self._preflight_template_package(template_path, layout_path)
-        self._require_resource_hash(fingerprint.docx_sha256, payload.get("docx_sha256"), kind="docx")
-        self._require_resource_hash(
-            fingerprint.layout_config_sha256, payload.get("layout_config_sha256"), kind="layout_config",
-        )
+        return payload
 
     @staticmethod
     def _require_resource_hash(actual: str | None, expected: Any, *, kind: str) -> None:
@@ -1316,18 +1407,8 @@ class TemplateReadService:
     ) -> TemplateVersionResponse:
         """预检登记文件并在指针事务开始前准备响应元数据。"""
 
-        self.validate_registered_template_package(record)
+        self.validate_registered_template_package(record, logo_policy="inactive_only")
         payload = record.payload or {}
-        if (
-            isinstance(template, TemplateManifestItem)
-            and "layout_config_path" not in payload
-            and template.layout_config_path
-        ):
-            raise TemplatePackageValidationError(
-                "模板资源版本未登记实际使用的版式配置。",
-                path="layout_config",
-                code="template_resource_payload_invalid",
-            )
 
         template_path = self._template_version_path(template, version, payload)
         try:
@@ -1377,11 +1458,13 @@ class TemplateReadService:
         render_policy = self._payload_dict(payload, "render_policy")
         if render_policy is None:
             render_policy = template.render_policy
+        layout_path = self._template_version_layout_config_path(template, payload)
         return TemplateVersionResponse(
             template_id=template.id,
             template_version_id=self.build_template_version_id(template.id, version),
             version=version,
             status=status,
+            legacy_internal_only=self._legacy_internal_only(record, layout_path),
             is_current=version == current_version,
             is_default=is_default,
             snapshot_hash=record.snapshot_hash if record is not None else None,
@@ -1395,11 +1478,31 @@ class TemplateReadService:
             published_at=self._payload_datetime(payload, "published_at"),
             template=self._build_asset(path=template_path, label="Word 模板", download_url=None),
             layout_config=self._build_asset(
-                path=self._template_version_layout_config_path(template, payload),
+                path=layout_path,
                 label="页面布局 YAML",
                 download_url=None,
             ),
         )
+
+    def _legacy_internal_only(self, record: ResourceVersionRecord | None, layout_path: Path | None) -> bool:
+        """仅投影可确定的历史限制，损坏实物由已有资产及准入错误报告。"""
+
+        try:
+            payload = self._require_registered_template_payload(record) if record is not None else {}
+            if record is not None:
+                require_template_yaml_binding(payload)
+                if record.status == ResourceVersionStatus.DRAFT:
+                    return False
+            if layout_path is None:
+                return record is None
+            content = read_template_resource(layout_path, kind="layout_config")
+            if record is not None and content_sha256(content) != payload["layout_config_sha256"]:
+                return False
+            return external_logo_field(TemplateConfigPackage.load_content(content), active_only=True) is not None
+        except TemplatePackageValidationError as exc:
+            return exc.code == "legacy_internal_only"
+        except TemplateLayoutValidationError:
+            return False
 
     def _manifest_version_status(self, template: TemplateManifestItem, version: int) -> str:
         return "disabled" if version in template.disabled_versions else "published"

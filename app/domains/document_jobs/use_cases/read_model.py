@@ -10,7 +10,7 @@ from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.new_generation import NewGenerationConflict, new_generation_eligibility_reason
 from app.domains.document_jobs.preview_evidence import is_preview_storage_error
-from app.domains.document_jobs.publication import PublicationConflict
+from app.domains.document_jobs.publication import LEGACY_INTERNAL_ONLY_MESSAGE, PublicationConflict
 from app.domains.document_jobs.publication_evidence import prepare_publication_evidence
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.document_jobs.review import effective_review_job
@@ -31,7 +31,10 @@ from app.domains.document_jobs.workflow import (
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileReaderProtocol, DocumentFileRepositoryProtocol
 from app.domains.jobs.models import JobResourceSnapshot
-from app.domains.resources.models import utc_now
+from app.domains.jobs.paths import build_job_paths
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
+from app.domains.resources.models import ResolvedResourceVersion, utc_now
+from app.domains.templates.package_validator import TemplatePackageValidationError
 from app.domains.translation.modes import (
     is_translation_document_job_mode,
     translation_mode_for_document_job_mode,
@@ -51,6 +54,7 @@ class DocumentJobReadModel:
         job_resource_snapshot_service: Any | None,
         file_upload_service: Any | None,
         access: DocumentJobAccess,
+        template_read_service: Any | None,
     ) -> None:
         self.settings = settings
         self.job_repository = job_repository
@@ -58,6 +62,31 @@ class DocumentJobReadModel:
         self.job_resource_snapshot_service = job_resource_snapshot_service
         self.file_upload_service = file_upload_service
         self.access = access
+        self.template_read_service = template_read_service
+
+    def legacy_template_binding(self, job: DocumentJobRecord) -> bool:
+        """识别原版本已确认的内部使用限制；实物不可用仍由原证据检查处理。"""
+
+        resources = job.request_snapshot.get("resources")
+        if resources is None and self.template_read_service is not None:
+            if job.request_snapshot.get("template_layout_config_sha256") is not None:
+                return False
+            try:
+                self.template_read_service.resolve_template_version(job.template_version_id, for_new_binding=True)
+            except TemplatePackageValidationError as error:
+                return error.code == "legacy_internal_only"
+            except (OSError, ValueError):
+                return False
+        elif isinstance(resources, dict) and self.job_resource_snapshot_service is not None:
+            try:
+                binding = ResolvedResourceVersion.model_validate(resources.get("template"))
+                if f"{binding.resource_id}@{binding.version}" == job.template_version_id:
+                    return self.job_resource_snapshot_service.template_binding_is_legacy_internal_only(
+                        binding, build_job_paths(self.settings.data_path, job.id),
+                    )
+            except (JobResourceSnapshotError, OSError, ValueError):
+                return False
+        return False
 
     def new_generation_source_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
         """动作与命令共用同一 metadata 准入，物理认证仍由命令执行。"""
@@ -126,8 +155,12 @@ class DocumentJobReadModel:
         # 异常列表复用本次分类的主件观察，避免分页后换件或到期使条目与统计分离。
         job, download = (observed_result_view if observed_result_view is not None else
             self.build_result_read_view(job, observed_result=observed_result, as_of=as_of))
+        legacy_internal_only = (
+            check_publication_evidence and download.enabled and job.delivery_status != "published"
+            and self.legacy_template_binding(job)
+        )
         publish, checks = self.build_publish_action(job, user=user, download=download,
-            check_publication_evidence=check_publication_evidence)
+            check_publication_evidence=check_publication_evidence, legacy_internal_only=legacy_internal_only)
         actions = {
             "download": download,
             "retry": self.build_retry_action(job),
@@ -137,7 +170,7 @@ class DocumentJobReadModel:
             "clone": self.available_action(self.clone_disabled_reason(job, user=user)),
             "delete": self.available_action(self.delete_disabled_reason(job, user=user)),
             "publish": publish,
-            "new_generation": self.build_new_generation_action(job, user=user),
+            "new_generation": self.build_new_generation_action(job, user=user, legacy_internal_only=legacy_internal_only),
         }
         if actions["publish"].enabled and job.delivery_status != "published":
             job = job.model_copy(update={"delivery_status": "ready_to_publish"})
@@ -154,10 +187,14 @@ class DocumentJobReadModel:
         reason = self.retry_disabled_reason(job)
         return self.available_action(reason, retryable=reason is None)
 
-    def build_new_generation_action(self, job: DocumentJobRecord, *, user: AuthenticatedUser):
+    def build_new_generation_action(
+        self, job: DocumentJobRecord, *, user: AuthenticatedUser, legacy_internal_only: bool,
+    ):
         """后端给出可执行资格；POST 仍独立认证实物并在接受锁内重核。"""
         reason = ("admin_required" if user.role != "admin" or {"admin_token", "jobs_token"}.intersection(user.token_scopes)
             else new_generation_eligibility_reason(job, max_retries=self.settings.p0_document_job_max_retries))
+        if reason is None and legacy_internal_only:
+            reason = "legacy_internal_only"
         if reason is None:
             try:
                 self.new_generation_resource_snapshot(job)
@@ -171,6 +208,7 @@ class DocumentJobReadModel:
             except NewGenerationConflict as error:
                 reason = error.reason_code
         messages = {"admin_required": "只有内部 Admin 用户 JWT 可以开始新代。",
+            "legacy_internal_only": LEGACY_INTERNAL_ONLY_MESSAGE,
             "new_generation_state_invalid": "只有未发布、未归档删除的成功任务可以开始新代。",
             "new_generation_budget_exhausted": "任务的共享重试预算已用尽。",
             "new_generation_resources_unavailable": "原绑定资源快照不可用。",
@@ -262,6 +300,7 @@ class DocumentJobReadModel:
     def build_publish_action(self, job: DocumentJobRecord, *, user: AuthenticatedUser,
         download: DocumentJobAvailableActionResponse,
         check_publication_evidence: bool = True,
+        legacy_internal_only: bool = False,
     ) -> tuple[DocumentJobAvailableActionResponse, list[dict[str, Any]]]:
         """核心资格保持原语义；未执行的实物/预览/快照组合检查不能冒充通过。"""
         reasons = []
@@ -276,6 +315,8 @@ class DocumentJobReadModel:
         check("result_download", download.enabled, download.disabled_reason_code or "download_unavailable",
             download.disabled_reason or "结果不可下载。")
         check("admin_role", user.role == "admin", "admin_required", "只有 Admin 可以发布文档。")
+        if legacy_internal_only:
+            check("template_binding", False, "legacy_internal_only", LEGACY_INTERNAL_ONLY_MESSAGE)
         check("quality", job.quality_status in {"passed", "warning"}, "quality_status_" + job.quality_status,
             "质量阻塞，不能发布。" if job.quality_status == "blocked" else "尚无质量结论，不能发布。")
         review_messages = {"unreviewed": "文档尚未复核。", "needs_fix": "文档复核要求修正。", "blocked": "文档复核已阻断。"}

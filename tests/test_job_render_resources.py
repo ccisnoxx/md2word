@@ -24,10 +24,17 @@ from app.domains.resources.models import ResourceVersionRecord, ResourceVersionS
 from app.domains.resources.service import ResourceVersionService
 from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
 from app.domains.term_rules.yaml_codec import TermRuleYamlCodec
+from app.services.renderer.word_renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
 from tests import test_document_job_execution_stages as stages
 from tests import test_fastapi_jobs_backend as fixtures
+from tests.document_job_use_case_support import replace_dependency
 from tests.test_resource_versioning import _MemoryResourceVersionRepository
-from tests.test_template_package_contract import bundled_template_paths
+from tests.test_template_layout_config_schema import (
+    PUBLISHED_V1_PATH,
+    PUBLISHED_V1_SHA256,
+    PUBLISHED_V2_SHA256,
+)
+from tests.test_template_package_contract import bundled_template_paths, mixed_section_document
 
 
 def _register(service, resource_type, resource_id, version, payload, *, status=ResourceVersionStatus.PUBLISHED):
@@ -41,8 +48,8 @@ def _register_template(service, version, docx, layout, *, status=ResourceVersion
     return _register(service, "template", "default", version, {
         "docx_path": str(docx),
         "docx_sha256": content_sha256(docx.read_bytes()),
-        "layout_config_path": str(layout),
-        "layout_config_sha256": content_sha256(layout.read_bytes()),
+        "layout_config_path": str(layout) if layout is not None else None,
+        "layout_config_sha256": content_sha256(layout.read_bytes()) if layout is not None else None,
     }, status=status)
 
 
@@ -188,6 +195,7 @@ class JobRenderResourceExecutionTests(TestCase):
 
     def _bind_resources(
         self, runtime, execution, job, *, status=ResourceVersionStatus.PUBLISHED, configure_layout=None,
+        without_layout=False,
     ):
         docx, layout = _copy_bundled_inputs(runtime.settings.data_path)
         if configure_layout is not None:
@@ -195,7 +203,7 @@ class JobRenderResourceExecutionTests(TestCase):
         template_id, version = job.template_version_id.split("@")
         self.assertEqual(template_id, "default")
         service = ResourceVersionService(_MemoryResourceVersionRepository())
-        _register_template(service, version, docx, layout, status=status)
+        _register_template(service, version, docx, None if without_layout else layout, status=status)
         _register_rules(service, "1", "VONE")
         snapshot = JobResourceSnapshot(
             template=service.resolve_version("template", "default", version, allow_draft=status == ResourceVersionStatus.DRAFT),
@@ -325,6 +333,84 @@ class JobRenderResourceExecutionTests(TestCase):
             evidence = json.loads(runtime.file_upload_service.read_file_content(provenance_file))
             self.assertEqual(evidence["status"], "unavailable")
             self.assertNotIn("resources", evidence)
+
+    def test_bundled_versions_keep_original_yaml_and_embedded_logo(self):
+        template, layout_v2 = bundled_template_paths()
+        source = Document(template)
+        expected_logo = {
+            part.blob for part in source.sections[-1].header.part.related_parts.values()
+            if part.content_type.startswith("image/")
+        }
+        self.assertTrue(expected_logo)
+        renderer = DocumentIRWordRenderer()
+        for layout, digest in ((PUBLISHED_V1_PATH, PUBLISHED_V1_SHA256), (layout_v2, PUBLISHED_V2_SHA256)):
+            with self.subTest(layout=layout.name), patch.object(
+                renderer, "_resolve_asset_path", side_effect=AssertionError("关闭页眉覆盖时不可访问外部路径"),
+            ):
+                expected_digest = f"sha256:{digest}"
+                self.assertEqual(content_sha256(layout.read_bytes()), expected_digest)
+                result = renderer.render_to_result(
+                    mixed_section_document(), template_path=template, config_path=layout, image_loader=lambda _: None,
+                    options=DocumentIRRenderOptions(expected_layout_config_sha256=expected_digest),
+                )
+                word = Document(BytesIO(result.content))
+                self.assertIsNone(result.plan.resource_identity.logo_sha256)
+                for section in word.sections:
+                    self.assertEqual({
+                        part.blob for part in section.header.part.related_parts.values()
+                        if part.content_type.startswith("image/")
+                    }, expected_logo)
+
+    def test_local_binding_rejects_yaml_change_in_bytes_read_by_renderer(self):
+        template, layout = bundled_template_paths()
+        with TemporaryDirectory() as directory:
+            local_layout = Path(directory) / "layout.yaml"
+            original = layout.read_bytes()
+            local_layout.write_bytes(original + b"\n# modified\n")
+            renderer = DocumentIRWordRenderer()
+            with patch.object(renderer, "load_template_resources") as loader:
+                with self.assertRaisesRegex(RuntimeError, "template_layout_config_hash_mismatch"):
+                    renderer.render_to_result(
+                        mixed_section_document(), template_path=template,
+                        config_path=local_layout, image_loader=lambda _: None,
+                        options=DocumentIRRenderOptions(expected_layout_config_sha256=content_sha256(original)),
+                    )
+            loader.assert_not_called()
+
+    def test_bound_legacy_no_yaml_keeps_internal_docx_download(self):
+        with self._runtime() as (runtime, execution, _provider, client, headers):
+            job = self._pause_after_ir(runtime, execution, client, headers)
+            job, _docx, _layout = self._bind_resources(runtime, execution, job, without_layout=True)
+            service = execution.rendering.job_resource_snapshot_service
+            replace_dependency(runtime.document_job_use_cases, "job_resource_snapshot_service", service)
+            snapshot = JobResourceSnapshot.model_validate(job.request_snapshot["resources"])
+            materialized = service.materialize_render_resources(
+                snapshot, build_job_paths(runtime.settings.data_path, job.id),
+            )
+            self.assertTrue(materialized.legacy_internal_only)
+            self.assertFalse(materialized.publishable)
+            finished = execution.execute_job(job.id)
+            self.assertEqual(finished.status, "succeeded", finished.error_message)
+            files = runtime.document_file_repository
+            word = files.get_document_file(finished.result_file_id)
+            provenance_file = files.get_document_file(word.metadata["publication_provenance_file_id"])
+            evidence = json.loads(runtime.file_upload_service.read_file_content(provenance_file))
+            self.assertEqual((evidence["status"], evidence["reason_code"]), ("unavailable", "legacy_internal_only"))
+            runtime.file_upload_service.resolve_file_object_path(provenance_file).unlink()
+
+            base_url = f"/api/v1/document-jobs/{job.id}"
+            admin_headers = fixtures.build_auth_header(client, "admin", "admin-pass")
+            detail = client.get(base_url, headers=admin_headers)
+            self.assertEqual(detail.status_code, 200, detail.text)
+            actions = detail.json()["available_actions"]
+            self.assertEqual(actions["publish"]["disabled_reason_code"], "legacy_internal_only")
+            self.assertEqual(actions["new_generation"]["disabled_reason_code"], "legacy_internal_only")
+            grant = client.get(f"{base_url}/download-url", headers=headers)
+            self.assertEqual(grant.status_code, 200, grant.text)
+            self.assertEqual(grant.json()["classification"], "internal_only")
+            content = client.get(grant.json()["download_url"])
+            self.assertEqual(content.status_code, 200)
+            self.assertEqual(content.content, runtime.file_upload_service.read_file_content(word))
 
     def test_historical_without_snapshot_uses_existing_template_and_global_rules(self):
         with self._runtime() as (runtime, execution, _provider, client, headers):

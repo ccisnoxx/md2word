@@ -967,15 +967,8 @@
             "type": "boolean"
           },
           "layout_config_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Layout Config Path"
+            "title": "Layout Config Path",
+            "type": "string"
           },
           "name": {
             "title": "Name",
@@ -999,6 +992,7 @@
         "required": [
           "template_id",
           "name",
+          "layout_config_path",
           "template"
         ],
         "title": "Body_create_template_api_v1_templates_post",
@@ -17025,6 +17019,11 @@
           "layout_config": {
             "$ref": "#/components/schemas/TemplateAssetResponse"
           },
+          "legacy_internal_only": {
+            "default": false,
+            "title": "Legacy Internal Only",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -17218,6 +17217,11 @@
           "layout_config": {
             "$ref": "#/components/schemas/TemplateAssetResponse"
           },
+          "legacy_internal_only": {
+            "default": false,
+            "title": "Legacy Internal Only",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -17407,6 +17411,11 @@
                 "type": "null"
               }
             ]
+          },
+          "legacy_internal_only": {
+            "default": false,
+            "title": "Legacy Internal Only",
+            "type": "boolean"
           },
           "publish_reason": {
             "anyOf": [

@@ -17,7 +17,9 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Twips
 
 from app.conversion.docx_rules.terminology import TerminologyReplacer
+from app.domains.resources.integrity import content_sha256
 from app.services.failure_context import FAILURE_CONTEXT_ATTRIBUTE, attach_failure_context
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
 from app.services.document_ir.table_annotations import table_placeholder_text
 from app.services.renderer.formula_renderer import WordFormulaRendererMixin
@@ -52,6 +54,7 @@ class DocumentIRRenderOptions:
     template_version_id: str | None = None
     resource_inputs: RenderResourceInputs | None = field(default=None, repr=False)
     layout_asset_dir: Path | None = None
+    expected_layout_config_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,12 +121,17 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
         verified_inputs = options.resource_inputs if options is not None else None
         if verified_inputs is None:
             config_content = config_path.read_bytes() if config_path is not None else None
+            expected_config = options.expected_layout_config_sha256 if options is not None else None
+            if expected_config is not None and (config_content is None or content_sha256(config_content) != expected_config):
+                raise DocumentIntegrityError(
+                    "DocumentIR→DOCX", {"blocking_quality_flags": ["template_layout_config_hash_mismatch"]},
+                )
             template_content = template_path.read_bytes() if template_path is not None else None
         else:
             config_content = verified_inputs.template_config
             template_content = verified_inputs.template_docx
         template_config, logo_path = self.load_template_resources(document_ir, config_path, options, content=config_content)
-        logo_content = logo_path.read_bytes() if template_config.header.enabled and logo_path is not None and logo_path.exists() else None
+        logo_content = logo_path.read_bytes() if logo_path is not None and logo_path.exists() else None
         resources = normalized_resource_identity(template_content=template_content, config=template_config,
             logo_content=logo_content, document_language=options.document_language if options and options.document_language else document_ir.metadata.document_language)
         prepared = prepare_render(document_ir, template_config, resources)
@@ -345,6 +353,8 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
         """加载版式配置，并从原版式目录解析相对页眉 Logo 路径。"""
 
         template_config = self._load_template_config(document_ir, config_path, options, content=content)
+        if not template_config.header.enabled:
+            return template_config, None
         asset_dir = options.layout_asset_dir if options is not None else None
         logo_path = self._resolve_asset_path(
             template_config.header.logo_path, asset_dir or (config_path.parent if config_path is not None else None),

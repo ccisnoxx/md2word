@@ -19,6 +19,8 @@
 - direct 使用模板、MinerU、符号与排版规则，不调用翻译术语服务、Profile payload/Prompt 解析、Provider 或翻译批次服务。符号规则 `term_rule_set` 不属于翻译术语。
 - direct 的新请求不接受非空 `term_version_id`、`translation_term_set_id/version`、`translation_profile_id/version`。校验必须在翻译加载与 mutation 前，但仍保留权限/状态检查优先级。
 - 历史 direct 快照可读；默认 retry、keep-source clone 的惰性字段不重新加载或回写清理，源任务与审计保留。
+- 新建和 clone 在写任务和投递前检查最终绑定的模板版本。缺 YAML 或会读取外部页眉 Logo 的历史绑定为 `legacy_internal_only`。保留源快照的 clone 仍创建新任务，必须认证原绑定并通过新任务准入。版本化入口的默认资源失败不得降级为无快照任务。
+- 旧任务的同一代恢复及重试沿用历史绑定。普通 DOCX 下载保持 `internal_only`。任务详情、开始新代和正式发布共享内部专用原因，发布同时复核旧的冻结来源。已有正式发布记录及最终件保留其原有冻结证据。
 - direct UI 隐藏翻译资源、Prompt/模型、Provider/AI 调试区，折叠快照也使用只读投影。不能改响应原对象或用隐藏代替后端授权。
 - 克隆追溯中的 `clone.source_term_version_id` 也属于翻译字段，direct 展示副本仅移除该字段，保留来源任务、模板和策略；翻译任务仍完整展示。
 - 只过滤已知翻译资源 warning；未知 warning、P0 blockers、模板/符号规则错误保留。翻译方向缺资源继续禁用。

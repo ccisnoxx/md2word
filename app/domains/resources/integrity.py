@@ -14,7 +14,8 @@ RENDER_RESOURCE_ERROR_CODES = frozenset({
     "resource_snapshot_hash_mismatch", "resource_snapshot_payload_hash_mismatch",
     "resource_snapshot_payload_missing", "resource_snapshot_template_version_mismatch",
     "resource_snapshot_file_unavailable", "resource_snapshot_materialization_failed",
-    "template_docx_hash_mismatch", "template_layout_config_hash_mismatch", "term_rule_hash_mismatch",
+    "template_docx_hash_mismatch", "template_layout_config_hash_mismatch", "template_layout_config_invalid",
+    "term_rule_hash_mismatch",
     "term_rule_payload_invalid",
 })
 

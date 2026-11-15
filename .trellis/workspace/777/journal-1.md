@@ -1941,3 +1941,24 @@ PR #67 已合入 main（合并提交 c2e93202）。旧图片报告可认证原�
 ### Next Steps
 
 - 8.1 温度范围译词继续单列待复核，记录随子任务归档。
+
+
+## Session 59: 模板 YAML 绑定与正式页眉约束
+
+**Date**: 2026-11-16
+**Task**: 模板 YAML 绑定与正式页眉约束
+**Branch**: `main`
+
+### Summary
+
+新模板版本及新任务要求有效 YAML，正式发布排除外部页眉 Logo。保留历史任务恢复、内部下载及两份内置 YAML 原哈希。复用已完成的验收：后端定向 101 项、前端单测 6 项、Chrome smoke 3 项及构建通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7b64dd3` | (see git log) |
+
+### Status
+
+[OK] **Completed**

@@ -12,7 +12,9 @@ from app.domains.document_jobs.use_cases.access import DocumentJobAccess
 from app.domains.files.models import DocumentFileRecord
 from app.domains.jobs.models import ConversionOptions
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
-from app.domains.resources.models import ResolvedResourceVersion, ResourceVersionStatus
+from app.domains.resources.models import ResolvedResourceVersion
+from app.domains.templates.package_validator import TemplatePackageValidationError
+from app.domains.templates.read_service import TemplateVersionSelection
 from app.domains.translation.modes import (
     TranslationMode,
     document_job_mode_for_translation_mode,
@@ -58,8 +60,9 @@ class DocumentJobRequestSnapshots:
         translation_profile_id: str | None = None,
         translation_profile_version: str | None = None,
         resource_snapshot: dict | None = None,
+        template_layout_config_sha256: str | None = None,
     ) -> dict:
-        return {
+        snapshot = {
             "source_file": {
                 "id": source_file.id,
                 "object_key": source_file.object_key,
@@ -88,6 +91,10 @@ class DocumentJobRequestSnapshots:
             "word_preview": self.settings.word_preview_policy().model_dump(mode="json"),
             "page_quality": self.settings.page_quality_policy().model_dump(mode="json"),
         }
+        if resource_snapshot is None and template_layout_config_sha256 is not None:
+            # 本地模板只有清单路径，Worker 仍需认证提交时通过准入的同一份 YAML。
+            snapshot["template_layout_config_sha256"] = template_layout_config_sha256
+        return snapshot
 
     def resolve_clone_config(
         self,
@@ -110,7 +117,8 @@ class DocumentJobRequestSnapshots:
         reason: str | None,
     ) -> dict[str, Any]:
         if config_strategy == "keep_source_snapshot":
-            source_resources = self._authorize_cloned_template(source_job, user=user)
+            template = self.resolve_new_template(source_job.template_version_id, allow_draft=user.role == "admin")
+            source_resources = self._authorize_cloned_template(source_job, template)
             source_assets = self.read_snapshot_record(source_job.request_snapshot, "term_assets")
             source_profile = self.read_snapshot_record(source_job.request_snapshot, "translation_profile")
             resolved_debug = self.resolve_debug_full_text_enabled(
@@ -121,7 +129,7 @@ class DocumentJobRequestSnapshots:
                 source_file,
                 mode=source_job.mode,
                 document_language=document_language,
-                template_version_id=source_job.template_version_id,
+                template_version_id=template.template_version_id,
                 term_version_id=source_job.term_version_id,
                 debug_full_text_enabled=resolved_debug,
                 term_rule_set_id=self.read_snapshot_string(source_assets, "term_rule_set_id"),
@@ -131,6 +139,7 @@ class DocumentJobRequestSnapshots:
                 translation_profile_id=self.read_snapshot_string(source_profile, "translation_profile_id"),
                 translation_profile_version=self.read_snapshot_string(source_profile, "translation_profile_version"),
                 resource_snapshot=source_resources,
+                template_layout_config_sha256=template.layout_config_sha256,
             )
             if "word_preview" in source_job.request_snapshot:
                 request_snapshot["word_preview"] = source_job.request_snapshot["word_preview"]
@@ -142,7 +151,7 @@ class DocumentJobRequestSnapshots:
                 request_snapshot.pop("page_quality", None)
             request_snapshot["clone"] = self.build_clone_snapshot(source_job, config_strategy, reason)
             return {
-                "template_version_id": source_job.template_version_id,
+                "template_version_id": template.template_version_id,
                 "term_version_id": source_job.term_version_id,
                 "debug_full_text_enabled": resolved_debug,
                 "request_snapshot": request_snapshot,
@@ -156,7 +165,8 @@ class DocumentJobRequestSnapshots:
         selected_translation_term_version = translation_term_version if config_strategy == "select_published_versions" else None
         selected_translation_profile_id = translation_profile_id if config_strategy == "select_published_versions" else None
         selected_translation_profile_version = translation_profile_version if config_strategy == "select_published_versions" else None
-        resolved_template_version_id = self.resolve_template_version_id(selected_template_version_id)
+        template = self.resolve_new_template(selected_template_version_id)
+        resolved_template_version_id = template.template_version_id
         resolved_term_version_id = self.resolve_term_version_id(
             source_job.mode,
             self.legacy_translation_term_version_id(
@@ -179,12 +189,14 @@ class DocumentJobRequestSnapshots:
             translation_term_version=selected_translation_term_version,
             translation_profile_id=selected_translation_profile_id,
             translation_profile_version=selected_translation_profile_version,
+            template_layout_config_sha256=template.layout_config_sha256,
             resource_snapshot=self.build_resource_snapshot(
                 job_id=new_job_id,
                 mode=source_job.mode,
                 document_language=document_language,
                 template_version_id=resolved_template_version_id,
                 template_selection_explicit=bool(self.access.normalize_optional_text(selected_template_version_id)),
+                new_template_binding=template.resource_binding,
                 term_rule_set_id=selected_term_rule_set_id,
                 term_rule_set_version=selected_term_rule_set_version,
                 translation_term_set_id=selected_translation_term_set_id,
@@ -202,20 +214,24 @@ class DocumentJobRequestSnapshots:
         }
 
     def _authorize_cloned_template(
-        self, source_job: DocumentJobRecord, *, user: AuthenticatedUser,
+        self, source_job: DocumentJobRecord, template: TemplateVersionSelection,
     ) -> dict[str, Any] | None:
         """克隆创建新任务，复用来源绑定前检查当前准入和原快照身份。"""
 
         resources = source_job.request_snapshot.get("resources")
-        if resources is None and (
-            self.template_read_service is None or self.template_read_service.catalog_repository is None
-        ):
-            return None
-        resolved_version_id = self.resolve_template_version_id(
-            source_job.template_version_id, allow_draft=user.role == "admin",
-        )
         if resources is None:
-            return None
+            if template.resource_binding is None:
+                source_hash = source_job.request_snapshot.get("template_layout_config_sha256")
+                if source_hash is not None and source_hash != template.layout_config_sha256:
+                    raise ApplicationError(
+                        "conflict", "源任务绑定的模板版式已变化，请选择可用模板版本重新发起任务。",
+                        reason_code="template_layout_config_hash_mismatch",
+                    )
+                return None
+            raise ApplicationError(
+                "conflict", "源任务没有可继承的模板快照，请选择可用模板版本重新发起任务。",
+                reason_code="legacy_internal_only",
+            )
         try:
             if not isinstance(resources, dict):
                 raise ValueError("资源快照必须是对象。")
@@ -223,24 +239,34 @@ class DocumentJobRequestSnapshots:
         except ValueError:
             raise ApplicationError("resource_snapshot_error", "任务模板资源快照格式非法。", category="conflict") from None
         if (
-            source_job.template_version_id != resolved_version_id
-            or resolved_version_id != f"{binding.resource_id}@{binding.version}"
+            source_job.template_version_id != template.template_version_id
+            or template.template_version_id != f"{binding.resource_id}@{binding.version}"
         ):
             raise ApplicationError(
                 "resource_snapshot_template_version_mismatch", "任务模板版本与绑定资源不一致。", category="conflict",
             )
+        self._authenticate_new_template_binding(binding, expected=template.resource_binding)
+        return resources
+
+    def _authenticate_new_template_binding(
+        self, binding: ResolvedResourceVersion, *, expected: ResolvedResourceVersion | None,
+    ) -> None:
+        """持久化前重核所绑定的记录仍与通过 YAML 准入的记录一致。"""
+
         service = self.job_resource_snapshot_service
-        if service is None:
+        if service is None or expected is None:
             raise ApplicationError(
-                "resource_snapshot_unavailable", "当前无法认证任务资源快照。", category="service_unavailable",
+                "resource_snapshot_unavailable", "当前无法认证任务模板资源快照。", category="service_unavailable",
             )
         try:
             record = service.authenticate_render_binding(binding, "template")
         except JobResourceSnapshotError as exc:
             raise ApplicationError(exc.code, exc.message, category=exc.category) from exc
-        if record.status == ResourceVersionStatus.DRAFT and user.role != "admin":
-            raise ApplicationError("invalid_request", "普通任务不能使用 draft 模板版本。")
-        return resources
+        if record.snapshot_hash != expected.snapshot_hash or record.status.value != expected.status:
+            raise ApplicationError(
+                "conflict", "模板版本在任务准入期间发生变化，请重新选择模板。",
+                reason_code="resource_snapshot_template_changed",
+            )
 
     def build_clone_snapshot(self, source_job: DocumentJobRecord, config_strategy: str, reason: str | None) -> dict[str, Any]:
         return {
@@ -339,10 +365,16 @@ class DocumentJobRequestSnapshots:
         allow_draft_template: bool = False,
         template_selection_explicit: bool = False,
         bound_template: ResolvedResourceVersion | None = None,
+        new_template_binding: ResolvedResourceVersion | None = None,
     ) -> dict | None:
         if self.job_resource_snapshot_service is None:
+            if new_template_binding is not None:
+                raise ApplicationError(
+                    "resource_snapshot_unavailable", "当前无法为任务绑定模板资源快照。", category="service_unavailable",
+                )
             return None
-        has_explicit_selection = bound_template is not None or template_selection_explicit or any(
+        selected_binding = new_template_binding or bound_template
+        has_explicit_selection = selected_binding is not None or template_selection_explicit or any(
             self.access.normalize_optional_text(value)
             for value in (
                 term_rule_set_id,
@@ -373,7 +405,7 @@ class DocumentJobRequestSnapshots:
                 source_kind="source_pdf",
                 job_id=job_id,
                 allow_draft_template=allow_draft_template,
-                bound_template=bound_template,
+                bound_template=selected_binding,
             )
         except JobResourceSnapshotError as exc:
             if not has_explicit_selection:
@@ -381,7 +413,13 @@ class DocumentJobRequestSnapshots:
             # 保留 jobs 域的具体错误码；HTTP 状态由其语义类别经中央映射决定。
             raise ApplicationError(exc.code, exc.message, category=exc.category) from exc
         if snapshot is None:
+            if new_template_binding is not None:
+                raise ApplicationError(
+                    "resource_snapshot_unavailable", "当前无法为任务绑定模板资源快照。", category="service_unavailable",
+                )
             return None
+        if new_template_binding is not None:
+            self._authenticate_new_template_binding(new_template_binding, expected=new_template_binding)
         return snapshot.model_dump(mode="json")
 
     def ensure_resource_selection_allowed(
@@ -544,16 +582,31 @@ class DocumentJobRequestSnapshots:
         spec = spec_for_document_job_mode(mode)
         return f"{spec.language_pair}@{normalized_translation_term_version}"
 
-    def resolve_template_version_id(self, template_version_id: str | None, *, allow_draft: bool = False) -> str:
+    def resolve_new_template(
+        self, template_version_id: str | None, *, allow_draft: bool = False,
+    ) -> TemplateVersionSelection:
+        if self.template_read_service is None:
+            raise ApplicationError("service_unavailable", "当前无法解析任务模板版本。")
+        return self._resolve_template_version(template_version_id, allow_draft=allow_draft, for_new_binding=True)
+
+    def resolve_template_version_id(self, template_version_id: str | None) -> str:
         if self.template_read_service is None:
             return template_version_id or self.settings.default_template_id
+        return self._resolve_template_version(template_version_id).template_version_id
+
+    def _resolve_template_version(
+        self, template_version_id: str | None, *, allow_draft: bool = False, for_new_binding: bool = False,
+    ) -> TemplateVersionSelection:
         try:
             return self.template_read_service.resolve_template_version(
                 template_version_id,
                 allow_draft=allow_draft,
-            ).template_version_id
+                for_new_binding=for_new_binding,
+            )
         except FileNotFoundError as exc:
             raise ApplicationError("not_found", str(exc)) from exc
+        except TemplatePackageValidationError as exc:
+            raise ApplicationError("invalid_request", str(exc), reason_code=exc.code) from exc
         except ValueError as exc:
             raise ApplicationError("invalid_request", str(exc)) from exc
 

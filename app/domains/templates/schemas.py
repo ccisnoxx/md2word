@@ -24,6 +24,7 @@ class TemplateListItemResponse(BaseModel):
     description: str
     version: int
     is_default: bool
+    legacy_internal_only: bool = False
     downloadable: bool
     download_url: str | None = None
     template: TemplateAssetResponse
@@ -82,6 +83,7 @@ class TemplateVersionResponse(BaseModel):
     status: str = "published"
     is_current: bool
     is_default: bool = False
+    legacy_internal_only: bool = False
     snapshot_hash: str | None = None
     render_policy: dict[str, Any] = Field(default_factory=dict)
     verification_job_id: str | None = None
