@@ -112,6 +112,19 @@ def _read_poppler(
     return output
 
 
+def _matching_poppler_version(tool_paths: list[str], *, deadline: float | None) -> str:
+    versions = set()
+    for utility in tool_paths:
+        output = _read_poppler([utility, "-v"], max_bytes=4096, version=True, deadline=deadline)
+        match = re.match(rb"[\w]+\s+version\s+([\d.]+)(?:\r?\n| )", output)
+        if match is None:
+            raise PdfObservationUnavailable()
+        versions.add(match[1].decode("ascii"))
+    if len(versions) != 1:
+        raise PdfObservationUnavailable()
+    return next(iter(versions))
+
+
 def _number(value: str) -> float:
     result = float(value)
     if not math.isfinite(result):
@@ -582,7 +595,7 @@ def observe_pdf_value_column_page(
     """观察左上原点的轴向页面，未核实的图形保留其区域供上层拒绝。"""
     if type(page_index) is not int or page_index < 0:
         raise PdfObservationUnavailable("pdf_geometry_unverified")
-    tool_paths = [shutil.which(name) for name in ("pdfinfo", "pdftotext", "pdftocairo", "pdftohtml")]
+    tool_paths = [shutil.which(name) or "" for name in ("pdfinfo", "pdftotext", "pdftocairo", "pdftohtml")]
     if not all(tool_paths):
         raise PdfObservationUnavailable()
     source = str(pdf_path.resolve())
@@ -590,15 +603,7 @@ def observe_pdf_value_column_page(
     read = partial(_read_poppler, deadline=deadline)
     try:
         info_tool, text_tool, cairo_tool, html_tool = tool_paths
-        versions = []
-        for utility in tool_paths:
-            output = read([utility, "-v"], max_bytes=4096, version=True)
-            match = re.match(rb"[\w]+\s+version\s+([\d.]+)(?:\r?\n| )", output)
-            if match is None:
-                raise PdfObservationUnavailable()
-            versions.append(match[1].decode("ascii"))
-        if len(set(versions)) != 1:
-            raise PdfObservationUnavailable()
+        version = _matching_poppler_version(tool_paths, deadline=deadline)
         info = read([info_tool, *options, "-box", source], max_bytes=64 * 1024)
         width, height, count = _page_frame(info.decode(errors="replace"), page_index)
         frame = (0.0, 0.0, width, height)
@@ -608,7 +613,7 @@ def observe_pdf_value_column_page(
             html_tool, *options, "-xml", "-i", "-stdout", "-zoom", "1", "-noroundcoord", "-nomerge", source,
         ]))
         rendered_indexes = _rendered_word_indexes(
-            rendered_xml, words, frame=frame, page_index=page_index, version=versions[0],
+            rendered_xml, words, frame=frame, page_index=page_index, version=version,
         )
         svg = _read_xml(read([cairo_tool, *options, "-svg", source, "-"]))
         paint = _svg_paint(svg, frame)
@@ -617,7 +622,7 @@ def observe_pdf_value_column_page(
         _observation_timeout(deadline)
         return PdfValueColumnPage(
             width, height, count, observed_words, rectangles, horizontal, vertical,
-            f"poppler-value-geometry/v1:{versions[0]}", unsupported, unmapped,
+            f"poppler-value-geometry/v1:{version}", unsupported, unmapped,
         )
     except PdfObservationUnavailable:
         raise

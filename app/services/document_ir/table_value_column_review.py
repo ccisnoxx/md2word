@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 
 _Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+_ArtifactSha256 = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 _Index = Annotated[int, Field(ge=0)]
 _Point = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 _Interval = tuple[_Point, _Point]
@@ -86,6 +87,36 @@ class PdfValueColumnUnresolved(BaseModel):
     source_row_index: _Index
     source_cell_index: _Index
     reason: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
+
+
+class PdfValueColumnPageLineage(BaseModel):
+    """逐页比对只接受当前任务经服务端回显认证的原解析结果。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+    batch_id: str = Field(min_length=1)
+    data_id: str = Field(min_length=1)
+    parse_generation: _Index
+    raw_file_id: str = Field(min_length=1)
+    raw_sha256: _ArtifactSha256
+    source_pdf_sha256: _ArtifactSha256
+
+
+class PdfValueColumnPageEquivalence(BaseModel):
+    """冻结比对输入、版面和原解析代，供已认证 IR 的同包重放核对。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+    schema_version: Literal["pdf-value-column-page-equivalence/v1"] = "pdf-value-column-page-equivalence/v1"
+    lineage: PdfValueColumnPageLineage
+    returned_pdf_sha256: _ArtifactSha256
+    content_list_sha256: _ArtifactSha256
+    layout_sha256: _ArtifactSha256
+    observation_sha256: _ArtifactSha256
+    page_count: int = Field(gt=0)
+    poppler_version: str = Field(min_length=1, max_length=128)
+
+    @property
+    def source_pdf_sha256(self) -> str:
+        return self.lineage.source_pdf_sha256
 
 
 class TableValueColumnCorrection(BaseModel):

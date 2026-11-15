@@ -438,6 +438,7 @@ class DocumentJobSubmission:
             patch["mineru_batch_id"] = None
             patch["mineru_data_id"] = None
             patch["mineru_callback_seed"] = None
+            patch["mineru_upload_binding"] = None
         return patch
 
     def _retry_resume_state(self, job: DocumentJobRecord) -> tuple[str, str, int]:

@@ -402,8 +402,10 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 #### 线上原排版的同源取证与人工核定
 
 - Worker 在正式建 IR 时通过 `DOCUMENT_TABLE_VALUE_PDF_BINDING_ENABLED` 接入，默认关闭。新自动绑定和管理员新同包接纳还要求当前任务的 `(tenant_id, company_id)` 在服务端 `DOCUMENT_TABLE_VALUE_PDF_BINDING_COMPANY_ALLOWLIST` 中。名单为 JSON 数组，每项包含两个非空 ID，例如 `[["tenant_demo","company_demo"]]`。默认空名单。API 和所有 Worker 使用同一配置，资格取自已登记任务。使用当前归属、原解析批次、明确的 raw 文件指针、实读长度与摘要和包内原件核对同源。历史缺绑定或可选 PDF 来源不可用时保留原 blocker 与逐格原因。正式输入身份、字节完整性和必需裁图按原合同校验。单任务可选 Poppler 取证预算为最多 60 秒且不超过当次剩余执行时限的一半，同页复用已有观测。
+- 包内对应 PDF 指纹一致时沿用原判断。指纹不同时，线上逐页比对要求本次 PUT 字节与登记原件摘要及长度一致，并有实际 MinerU 完成结果回显的批次和 data ID、原解析代及原包身份。仅用本地补值或历史缺提交证明的包走原证据路径。回调不得把已提交的批次或 data ID 换成其他结果。异指纹比对使用匹配版本的 Poppler，在同一预算内核对整份文档的同序页框、完整词框及 96 与 144 DPI 渲染像素，并逐页核对唯一同文档 layout。工具错误、越界或不匹配时保留原 blocker。后续取证只读取已核实的实际上传 PDF。
 - `GET /api/v1/document-jobs/{job_id}/quality/tables` 从已认证的当前代 IR、报告和 Word 投影仍有效的 `unresolved_value_columns`。条目携带片段、finding、源页、表框、零基行格和固定原因。现有权限与报告快照控制可见范围。渲染降级的最终 IR 移除被删组的悬挂引用，原 IR 和整页质量 blocker 保留。
 - 内部 Admin 可为现有 `POST /api/v1/document-jobs/{job_id}/new-generation` 选择 `action=replay_table_value_columns` 并提交整批 `table_value_column_reviews`。普通请求保留原解析路径。同包动作在同源及当前报告已验证时原子冻结累计人工记录、文件身份、执行摘要和审计，从 `parsed` 重新构建 IR 与 Word。既有 UUID 幂等、代次与预算继续约束接纳。关闭开关或移除公司后停止新接纳，已接纳 UUID 保留对账回执，其执行继续使用冻结来源。
+- 逐页比对通过时，最终 IR 记录两份 PDF、所选 v2 与 layout、原包和原解析来源的绑定及页面观察摘要。管理员同包接纳从已认证 IR 复核这些描述，成功时冻结该证据。重放在复核完全相同的源与结果包后复用证据；人工请求只能提交逐格核定。已有逐页证据的重放记录要求兼容读写版本，功能停用仍用兼容镜像。
 - 基础质量保留原报告，只按实物认证解除逐格 blocker。完整报告中已认证修正且实际渲染的同一源表片段，其分栏候选提示保留为诊断，其他自由风险仍参与基础质量。带核定证据的正式结果在锁外重验独立报告、IR 与实际 Word。批准写入在现有 job 序列化点重核其当前登记和生命周期，依赖描述变化或失效返回 `review_result_integrity_conflict`。发布独立重验并在提交时核对依赖文件，审批与发布均继续执行当前主件和代次门禁。
 - 本地验收用真实 Poppler、正式 Worker 与生成的实际 Word。独立 LOW/HIGH 夹具同时覆盖业务阻断及同包新代批准发布。完整 `gs-008` 使用同源缓存做本地实物验收，生产回包和 Worker 环境另行验证。
 

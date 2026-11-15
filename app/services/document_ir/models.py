@@ -9,7 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from app.services.document_ir.artifact_validator import MinerUValidationReport
 from app.services.document_ir.table_header_review import TableHeaderReview
 from app.services.document_ir.table_placeholder import TablePlaceholderBinding
-from app.services.document_ir.table_value_column_review import PdfValueColumnUnresolved, TableValueColumnReview
+from app.services.document_ir.table_value_column_review import (
+    PdfValueColumnPageEquivalence, PdfValueColumnUnresolved, TableValueColumnReview,
+)
 
 
 DocumentIRBlockType = Literal["heading", "paragraph", "table", "image", "list", "formula"]
@@ -178,6 +180,9 @@ class DocumentIRMetadata(BaseModel):
     logical_table_group_counts: dict[str, int] = Field(default_factory=dict)
     pdf_value_column_unresolved: tuple[PdfValueColumnUnresolved, ...] = Field(
         default=(), exclude_if=lambda value: not value,
+    )
+    pdf_value_column_page_equivalence: PdfValueColumnPageEquivalence | None = Field(
+        default=None, exclude_if=lambda value: value is None,
     )
     table_references_version: Literal["table-reference/v1"] | None = None
     table_placeholders_version: Literal["table-placeholder/v1"] | None = None

@@ -4,21 +4,25 @@ from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from hashlib import sha256
 from io import BytesIO
+from os import getenv
 from pathlib import Path
 from shutil import which
 from tempfile import TemporaryDirectory
 from unittest import TestCase, skipUnless
 from unittest.mock import patch
 from uuid import uuid4
+from zipfile import ZipFile
 
 from docx import Document
 
 from app.domains.document_jobs.base_quality import current_base
 from app.domains.document_jobs.table_evidence import verify_report
+from app.services.document_ir.pdf_value_column_observer import observe_pdf_value_column_page
 from app.services.preview.models import PreviewPolicy
 from tests.document_job_list_query_v2_publication_fixtures import RecordingPreviewProvider, V2PublicationFixture
 from tests.document_job_use_case_support import replace_dependency
 from tests.test_fastapi_jobs_backend import TestClient, build_auth_header, create_app
+from tests.test_pdf_value_column_observer import make_pdf
 from tests.test_table_value_pdf_binding_poppler import _ruled_table_package
 
 
@@ -26,7 +30,8 @@ from tests.test_table_value_pdf_binding_poppler import _ruled_table_package
 class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
     @contextmanager
     def worker_case(self, package: bytes, pdf: bytes, *, filename: str = "source.pdf", kind: str = "file",
-                    companies: frozenset[tuple[str, str]] = frozenset({("tenant_default", "company_default")})):
+                    companies: frozenset[tuple[str, str]] = frozenset({("tenant_default", "company_default")}),
+                    echoed_data_id: bool = True, raw_metadata: dict | None = None):
         with TemporaryDirectory(prefix="online-table-value-") as directory:
             runtime = self._build_runtime(Path(directory), kind)
             runtime.settings.document_table_value_pdf_binding_enabled = True
@@ -39,16 +44,29 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
 
             def accept_upload(paths, **kwargs):
                 self.assertEqual(Path(paths[0]).read_bytes(), pdf)
-                mineru.query_data_id = kwargs["task_uuids"][0]
+                mineru.query_data_id = kwargs["task_uuids"][0] if echoed_data_id else None
                 return upload(paths, **kwargs)
+
+            def register_result(**kwargs):
+                if kwargs["file_type"] == "mineru_raw_result":
+                    kwargs["metadata"] = {**kwargs["metadata"], **raw_metadata}
+                return register(**kwargs)
 
             preview = execution.rendering.results.word_preview_service
             preview.provider = RecordingPreviewProvider()
             preview.audit_service = runtime.audit_service
             replace_dependency(runtime.document_job_use_cases, "audit_service", runtime.audit_service)
             replace_dependency(runtime.document_job_use_cases, "word_preview_service", preview)
-            with patch.object(mineru, "upload_files_batch", side_effect=accept_upload), TestClient(create_app(runtime)) as client:
+            register = runtime.file_upload_service.register_generated_content
+            registration = (patch.object(runtime.file_upload_service, "register_generated_content", side_effect=register_result)
+                            if raw_metadata is not None else nullcontext())
+            with (
+                patch.object(mineru, "upload_files_batch", side_effect=accept_upload),
+                registration,
+                TestClient(create_app(runtime)) as client,
+            ):
                 owner = build_auth_header(client)
+                admin = build_auth_header(client, username="admin", password="admin-pass")
                 source = self._upload_source_pdf(client, owner, filename=filename, pdf_content=pdf)
                 self.assertEqual(source["checksum_sha256"], "sha256:" + sha256(pdf).hexdigest())
                 # 仅暂停首次渲染以安装现有发布夹具的资源版本，正式 Worker 已完成解析和 IR 登记。
@@ -58,6 +76,9 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                     })
                 self.assertEqual(created.status_code, 201, created.text)
                 job = runtime.document_job_repository.get_document_job(created.json()["job_id"])
+                if job.status == "failed" and raw_metadata is not None:
+                    yield runtime, execution, job, client, owner, admin
+                    return
                 self.assertEqual((job.status, job.stage), ("running", "rendering"), job.error_message)
                 job = self.install_publication_resources(runtime, execution, job)
                 preview_policy = PreviewPolicy(backend="sandboxed", required=True, render_pages=True)
@@ -69,7 +90,6 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                 raw = runtime.document_file_repository.get_document_file(result.mineru_raw_result_file_id)
                 self.assertEqual(raw.checksum_sha256, "sha256:" + sha256(package).hexdigest())
                 self.assertEqual(runtime.file_upload_service.read_file_content(raw), package)
-                admin = build_auth_header(client, username="admin", password="admin-pass")
                 yield runtime, execution, result, client, owner, admin
 
     def read_verified_word(self, runtime, job):
@@ -124,8 +144,11 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
     def test_ruled_table_keeps_the_unresolved_cell_blocked_in_review_and_publication(self) -> None:
         with TemporaryDirectory() as directory:
             package, source = _ruled_table_package(Path(directory))
-            with self.worker_case(package.read_bytes(), source.read_bytes()) as (runtime, _, job, client, owner, admin):
+            with self.worker_case(package.read_bytes(), source.read_bytes(), echoed_data_id=False) as (
+                runtime, _, job, client, owner, admin,
+            ):
                 report, word = self.read_verified_word(runtime, job)
+                self.assertIsNone(report.document.metadata.pdf_value_column_page_equivalence)
                 self._check_ruled_word(report, word, last_row=[("48", 2), ("48", 2), ("ms", 1)])
                 quality = current_base(job)
                 self.assertEqual((quality.quality_status, quality.counts.blocker_count), ("blocked", 1))
@@ -157,6 +180,147 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                     self._certify_last_value(runtime, execution, first, client, owner, admin, pdf,
                                              disable_after_acceptance=kind == "sqlite")
 
+    @staticmethod
+    def _with_returned_pdf(package: bytes, pdf: bytes) -> bytes:
+        result = BytesIO()
+        with ZipFile(BytesIO(package)) as original, ZipFile(result, "w") as rewritten:
+            origin, = (entry for entry in original.namelist() if entry.endswith("_origin.pdf"))
+            for entry in original.namelist():
+                rewritten.writestr(entry, pdf if entry == origin else original.read(entry))
+        return result.getvalue()
+
+    def _assert_page_equivalent_replay(self, package: bytes, pdf: bytes) -> None:
+        # EOF 后的注释改变文件摘要，同时保持 PDF 的页面、词框及绘制内容。
+        returned = pdf + b"\n% processed PDF\n"
+        package = self._with_returned_pdf(package, returned)
+
+        def observe_upload(path, **kwargs):
+            self.assertEqual(path.read_bytes(), pdf)
+            return observe_pdf_value_column_page(path, **kwargs)
+
+        with (
+            patch("app.services.document_ir.pdf_value_column_observer.observe_pdf_value_column_page",
+                  side_effect=observe_upload) as observation,
+            self.worker_case(package, pdf, kind="sqlite") as (runtime, execution, first, client, owner, admin),
+        ):
+            report, _ = self.read_verified_word(runtime, first)
+            proof = report.document.metadata.pdf_value_column_page_equivalence
+            self.assertIsNotNone(proof)
+            upload_binding = first.mineru_upload_binding
+            self.assertIsNotNone(upload_binding)
+            self.assertEqual((upload_binding.source_file_id, upload_binding.source_pdf_sha256,
+                              upload_binding.parse_generation),
+                             (first.source_file_id, "sha256:" + sha256(pdf).hexdigest(), first.retry_count))
+            self.assertEqual(proof.source_pdf_sha256.removeprefix("sha256:"), sha256(pdf).hexdigest())
+            self.assertEqual(proof.returned_pdf_sha256.removeprefix("sha256:"), sha256(returned).hexdigest())
+            self.assertEqual(proof.lineage.raw_file_id, first.mineru_raw_result_file_id)
+            self.assertEqual(proof.lineage.raw_sha256.removeprefix("sha256:"), sha256(package).hexdigest())
+            self.assertEqual((proof.lineage.batch_id, proof.lineage.data_id, proof.lineage.parse_generation),
+                             (first.mineru_batch_id, first.mineru_data_id, first.retry_count))
+            self._certify_last_value(runtime, execution, first, client, owner, admin, pdf, disable_after_acceptance=True)
+            second = runtime.document_job_repository.get_document_job(first.id)
+            replayed_report, _ = self.read_verified_word(runtime, second)
+            self.assertEqual(second.mineru_upload_binding, upload_binding)
+            self.assertEqual(replayed_report.document.metadata.pdf_value_column_page_equivalence, proof)
+            self.assertGreaterEqual(observation.call_count, 2)
+
+    @skipUnless(which("pdftoppm"), "逐页比对需要 Poppler 栅格渲染")
+    def test_page_equivalent_package_replays_and_publishes_using_the_uploaded_pdf(self) -> None:
+        with TemporaryDirectory() as directory:
+            package, source = _ruled_table_package(Path(directory), manual_review_case=True)
+            self._assert_page_equivalent_replay(package.read_bytes(), source.read_bytes())
+
+    @skipUnless(which("pdftoppm") and getenv("MD2WORD_TABLE_VALUE_LOW_HIGH_DIR"), "需要隔离验收的嵌字体划线夹具")
+    def test_embedded_low_high_package_replays_with_different_origin_digest(self) -> None:
+        directory = Path(getenv("MD2WORD_TABLE_VALUE_LOW_HIGH_DIR"))
+        self._assert_page_equivalent_replay(
+            (directory / "qualification-embedded.zip").read_bytes(),
+            (directory / "qualification-embedded.pdf").read_bytes(),
+        )
+
+    @skipUnless(which("pdftoppm") and getenv("MD2WORD_TABLE_VALUE_P7_PDF") and getenv("MD2WORD_TABLE_VALUE_P7_ZIP"),
+                "需要隔离验收保留的真实 P7 提交及原包")
+    def test_retained_p7_real_package_keeps_unproven_columns_blocked_after_page_comparison(self) -> None:
+        source = Path(getenv("MD2WORD_TABLE_VALUE_P7_PDF")).read_bytes()
+        package = Path(getenv("MD2WORD_TABLE_VALUE_P7_ZIP")).read_bytes()
+        self.assertEqual(sha256(source).hexdigest(), "24f724cf0e795f6afeb6fec5c72ff8f144085c59d57fbf0a5c9efbf1808b1eb3")
+        self.assertEqual(sha256(package).hexdigest(), "5de05d59fdacea166361bde14625ff8045350b0aefc894a923ff181a030fe033")
+        with self.worker_case(package, source, filename="OPA228_P7.pdf") as (runtime, _, job, client, owner, admin):
+            report, word = self.read_verified_word(runtime, job)
+            self.assertIsNotNone(report.document.metadata.pdf_value_column_page_equivalence)
+            table, = report.envelope.report.tables
+            output, = table.outputs
+            rows = Document(BytesIO(word)).tables[output.actual.table_index].rows
+            header = [cell.text.strip() for cell in rows[0].cells]
+            # 新鲜回包的表框右侧切入 UNIT 表头，既有列核定必须保留歧义。
+            for value, columns in (("±5", (("MIN", 2), ("TYP", 2))), ("±100", (("MAX", 1),))):
+                occurrences = [(index, cell.grid_span) for row in rows[1:]
+                               for index, cell in enumerate(row.cells) if cell.text.strip() == value]
+                self.assertEqual(occurrences, [(header.index(column), span) for column, span in columns])
+            self.assertEqual(len(table.validation.findings), 18)
+            waiting = report.document.metadata.pdf_value_column_unresolved
+            self.assertFalse(table.value_column_corrections)
+            self.assertEqual({item.reason for item in waiting}, {"header_ambiguous"})
+            self.assertEqual({item.finding_id for item in waiting}, {item.finding_id for item in table.validation.findings})
+            self.check_blocked_delivery(client, owner, admin, job.id)
+
+    @skipUnless(which("pdftoppm"), "逐页比对需要 Poppler 栅格渲染")
+    def test_changed_page_value_or_table_line_remains_blocked(self) -> None:
+        with TemporaryDirectory() as directory:
+            package, source = _ruled_table_package(Path(directory))
+            pdf = source.read_bytes()
+            self.assertIn(b"(43)", pdf)
+            self.assertIn(b"50 390 m 450 390 l S", pdf)
+            for returned in (
+                make_pdf(b"BT /F1 10 Tf 20 140 Td (Other page) Tj ET", width=500, height=500),
+                pdf.replace(b"(43)", b"(44)", 1),
+                pdf.replace(b"50 390 m 450 390 l S", b"50 389 m 450 389 l S", 1),
+            ):
+                with self.subTest(returned_sha256=sha256(returned).hexdigest()), self.worker_case(
+                    self._with_returned_pdf(package.read_bytes(), returned), pdf,
+                ) as (runtime, _, job, client, owner, admin):
+                    self._assert_missing_page_proof(runtime, job, client, owner, admin, pdf)
+
+    def test_page_equivalence_requires_echoed_provider_identity(self) -> None:
+        with TemporaryDirectory() as directory:
+            package, source = _ruled_table_package(Path(directory))
+            pdf = source.read_bytes()
+            rewritten = self._with_returned_pdf(package.read_bytes(), pdf + b"\n% processed PDF\n")
+            with self.worker_case(rewritten, pdf, echoed_data_id=False) as (runtime, _, job, client, owner, admin):
+                self._assert_missing_page_proof(runtime, job, client, owner, admin, pdf)
+
+    def test_raw_archive_from_another_batch_cannot_reach_current_word(self) -> None:
+        with TemporaryDirectory() as directory:
+            package, source = _ruled_table_package(Path(directory))
+            pdf = source.read_bytes()
+            rewritten = self._with_returned_pdf(package.read_bytes(), pdf + b"\n% processed PDF\n")
+            with self.worker_case(rewritten, pdf, raw_metadata={"mineru_batch_id": "another-batch"}) as (
+                _, _, job, _, _, _,
+            ):
+                self.assertEqual((job.status, job.failed_stage, job.error_code),
+                                 ("failed", "ir_converting", "document_ir_failed"))
+                self.assertIn("内容完整性校验失败", job.error_message)
+                self.assertIsNone(job.document_ir_file_id)
+                self.assertIsNone(job.result_file_id)
+
+    def _assert_missing_page_proof(self, runtime, job, client, owner, admin, pdf: bytes) -> None:
+        report, _ = self.read_verified_word(runtime, job)
+        table, = report.envelope.report.tables
+        self.assertIsNone(report.document.metadata.pdf_value_column_page_equivalence)
+        self.assertFalse(table.value_column_corrections)
+        unresolved = report.document.metadata.pdf_value_column_unresolved
+        self.assertEqual(len(unresolved), 3)
+        self.assertEqual({item.reason for item in unresolved}, {"source_pair_unverified"})
+        self.assertEqual(current_base(job).counts.blocker_count, 3)
+        self.check_blocked_delivery(client, owner, admin, job.id)
+        waiting = next(item for item in unresolved if item.source_row_index == 3)
+        url = f"/api/v1/document-jobs/{job.id}"
+        payload = self._last_value_review_request(report, waiting, pdf, self.review_source(client, admin, url))
+        rejected = client.post(f"{url}/new-generation", headers=admin, json=payload)
+        self.assertEqual(rejected.status_code, 409, rejected.text)
+        self.assertEqual(rejected.json()["error"]["reason_code"], "table_value_column_source_unverified")
+        self.assertEqual(runtime.document_job_repository.get_document_job(job.id).retry_count, job.retry_count)
+
     def test_worker_keeps_original_spans_outside_test_company(self) -> None:
         with TemporaryDirectory() as directory:
             package, source = _ruled_table_package(Path(directory))
@@ -171,23 +335,16 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                 self.assertEqual(current_base(job).counts.blocker_count, 3)
                 self.check_blocked_delivery(client, owner, admin, job.id)
 
-    def _certify_last_value(self, runtime, execution, first, client, owner, admin, pdf: bytes, *,
-                            disable_after_acceptance: bool) -> None:
-        report, first_word = self.read_verified_word(runtime, first)
-        self._check_ruled_word(report, first_word, last_row=[("48", 2), ("48", 2), ("ms", 1)])
-        waiting, = report.document.metadata.pdf_value_column_unresolved
-        self.assertEqual(waiting.reason, "row_ambiguous")
-        self.check_blocked_delivery(client, owner, admin, first.id)
+    def _last_value_review_request(self, report, waiting, pdf: bytes, expected_source: dict) -> dict:
         table, = report.envelope.report.tables
         evidence, = (finding.evidence for finding in table.validation.findings if finding.finding_id == waiting.finding_id)
         raw_cell, = (cell for cell in table.validation.cells if cell.id == evidence.cell_id)
         group, = report.document.metadata.logical_table_groups
         fragment, = group.fragments
-        url = f"/api/v1/document-jobs/{first.id}"
-        payload = {
+        return {
             "request_id": str(uuid4()),
             "note": "源 PDF 最后一行的 48 ms 清楚位于 HIGH，条件文字为两行",
-            "expected_source": self.review_source(client, admin, url),
+            "expected_source": expected_source,
             "action": "replay_table_value_columns",
             "table_value_column_reviews": [{
                 "schema_version": "table-value-column-review/v1",
@@ -207,6 +364,17 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                 }],
             }],
         }
+
+    def _certify_last_value(self, runtime, execution, first, client, owner, admin, pdf: bytes, *,
+                            disable_after_acceptance: bool) -> None:
+        report, first_word = self.read_verified_word(runtime, first)
+        self._check_ruled_word(report, first_word, last_row=[("48", 2), ("48", 2), ("ms", 1)])
+        waiting, = report.document.metadata.pdf_value_column_unresolved
+        self.assertEqual(waiting.reason, "row_ambiguous")
+        self.check_blocked_delivery(client, owner, admin, first.id)
+        table, = report.envelope.report.tables
+        url = f"/api/v1/document-jobs/{first.id}"
+        payload = self._last_value_review_request(report, waiting, pdf, self.review_source(client, admin, url))
         denied = client.post(f"{url}/new-generation", headers=owner, json=payload)
         self.assertEqual(denied.status_code, 403, denied.text)
         companies = runtime.settings.document_table_value_pdf_binding_company_allowlist

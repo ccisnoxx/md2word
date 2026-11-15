@@ -13,7 +13,7 @@ from app.domains.document_jobs.base_quality import fresh_quality_summary
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.review import ReviewExpectedSource, digest, observed_review_source
 from app.domains.files.models import DocumentFileRecord
-from app.services.document_ir.table_value_column_review import TableValueColumnReview
+from app.services.document_ir.table_value_column_review import PdfValueColumnPageEquivalence, TableValueColumnReview
 
 GENERATION_REQUESTS_ENVELOPE = "_generation_requests_v1"
 _Checksum = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
@@ -50,6 +50,9 @@ class TableValueColumnReplay(BaseModel):
     raw_file_id: str = Field(min_length=1)
     raw_sha256: _Checksum
     reviews: tuple[TableValueColumnReview, ...] = Field(min_length=1)
+    page_equivalence: PdfValueColumnPageEquivalence | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
 
     @model_validator(mode="after")
     def _validate_manual_reviews(self) -> Self:
@@ -59,6 +62,13 @@ class TableValueColumnReplay(BaseModel):
                 or any(review.source_pdf_sha256 != source or any(c.pdf_binding is not None for c in review.corrections)
                        for review in self.reviews)):
             raise ValueError("同包重生成需要同一版本的逐表人工核定。")
+        proof = self.page_equivalence
+        if proof is not None and (
+            (proof.source_pdf_sha256, proof.lineage.raw_file_id, proof.lineage.raw_sha256)
+            != (self.source_file_sha256, self.raw_file_id, self.raw_sha256)
+            or proof.content_list_sha256 != "sha256:" + self.reviews[0].content_list_sha256
+        ):
+            raise ValueError("同包重生成的逐页证据与冻结来源不一致。")
         return self
 
 
@@ -233,6 +243,12 @@ def read_table_value_column_replay(
             or job.mineru_raw_result_file_id != intent.raw_file_id
             or digest(job.request_snapshot) != latest.acceptance.request_snapshot_sha256):
         raise NewGenerationConflict("new_generation_source_changed")
+    if intent.page_equivalence is not None and (
+        intent.page_equivalence.lineage.batch_id != job.mineru_batch_id
+        or intent.page_equivalence.lineage.data_id != job.mineru_data_id
+        or intent.page_equivalence.lineage.parse_generation > latest.acceptance.expected_source.generation
+    ):
+        raise NewGenerationConflict("new_generation_source_changed")
     return intent
 
 
@@ -268,6 +284,7 @@ def _validate_table_value_column_files(
 ) -> str:
     """锁内只复核字节认证时见到的版本描述和当前指针。"""
     from app.domains.document_jobs.table_evidence import validate_candidate_binding
+    from app.domains.document_jobs.table_value_column_sources import table_value_page_lineage
 
     replay = submission.table_value_column_replay
     result = current_files.get(job.result_file_id)
@@ -297,6 +314,10 @@ def _validate_table_value_column_files(
                 or (file.tenant_id, file.company_id, file.job_id, file.file_type, file.checksum_sha256)
                    != (job.tenant_id, job.company_id, job.id, role, checksum)):
             raise NewGenerationConflict("new_generation_source_changed")
+    if replay.page_equivalence is not None and table_value_page_lineage(
+        job, current_files[replay.raw_file_id], frozen=replay.page_equivalence.lineage,
+    ) is None:
+        raise NewGenerationConflict("new_generation_source_changed")
     return digest([source.model_dump(mode="json"),
                    *[snapshots[identity].model_dump(mode="json") for identity in sorted(snapshots)]])
 
@@ -329,7 +350,7 @@ def accept_new_generation(
     patch = dict(retry_count=generation, status="pending", stage="uploaded", progress=0,
         result_file_id=None, prepared_result=None, word_preview_state=None, mineru_raw_result_file_id=None,
         source_document_ir_file_id=None, document_ir_file_id=None, image_asset_file_ids=[],
-        mineru_batch_id=None, mineru_data_id=None, mineru_callback_seed=None, failed_stage=None,
+        mineru_batch_id=None, mineru_data_id=None, mineru_callback_seed=None, mineru_upload_binding=None, failed_stage=None,
         error_code=None, error_message=None, timeout_at=None, started_at=None, completed_at=None, canceled_at=None,
         quality_status="pending", quality_summary=fresh_quality_summary(generation), review_status="unreviewed",
         delivery_status="internal_draft", current_review_record_id=None, current_review_binding=None,
@@ -338,7 +359,8 @@ def accept_new_generation(
     if replay is not None:
         patch.update(status="running", stage="parsed", progress=30,
             mineru_raw_result_file_id=replay.raw_file_id,
-            mineru_batch_id=job.mineru_batch_id, mineru_data_id=job.mineru_data_id)
+            mineru_batch_id=job.mineru_batch_id, mineru_data_id=job.mineru_data_id,
+            mineru_upload_binding=job.mineru_upload_binding)
     updated = DocumentJobRecord.model_validate({**job.model_dump(mode="python"), **patch})
     receipt = NewGenerationAcceptance(request_id=submission.request_id, job_id=job.id,
         tenant_id=job.tenant_id, company_id=job.company_id, actor_id=submission.actor_id, note=submission.note,

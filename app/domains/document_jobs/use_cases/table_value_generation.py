@@ -8,7 +8,7 @@ from app.core.errors import ApplicationError
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.new_generation import NewGenerationConflict, TableValueColumnReplay
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
-from app.domains.document_jobs.table_value_column_sources import read_table_value_mineru_result
+from app.domains.document_jobs.table_value_column_sources import read_table_value_mineru_result, table_value_page_lineage
 from app.domains.document_jobs.table_evidence import VerifiedTableEvidence, verify_report
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
@@ -104,19 +104,25 @@ def prepare_table_value_column_replay(
     raw = file_repository.get_document_file(job.mineru_raw_result_file_id) if job.mineru_raw_result_file_id else None
     metadata = verified.document.metadata
     report = metadata.mineru_validation
+    page_equivalence = metadata.pdf_value_column_page_equivalence
     try:
         provenance = TableReferenceProvenance.model_validate(metadata.mineru_validation_input)
     except ValidationError:
         raise NewGenerationConflict("table_value_column_source_unverified") from None
     if (raw is None or report is None or provenance.mineru_raw_result_file_id != raw.id
             or provenance.mineru_raw_result_sha256 != raw.checksum_sha256 or provenance.retry_count > job.retry_count
+            or (page_equivalence is not None and page_equivalence.lineage.parse_generation > provenance.retry_count)
             or report.package_sha256 != raw.checksum_sha256.removeprefix("sha256:")
             or not source.content.startswith(b"%PDF-")):
         raise NewGenerationConflict("table_value_column_source_unverified")
     try:
         content, qualified = read_table_value_mineru_result(job, raw, job_repository=job_repository,
             file_repository=file_repository, file_service=file_service)
-        content_sha256 = verify_table_value_package_origin(content, source) if qualified else None
+        lineage = (table_value_page_lineage(job, raw, frozen=page_equivalence.lineage)
+                   if qualified and page_equivalence is not None else None)
+        content_sha256 = verify_table_value_package_origin(
+            content, source, page_lineage=lineage, frozen_page_equivalence=page_equivalence,
+        ) if qualified else None
     except (DocumentIntegrityError, MinerUPackageError, FileNotFoundError):
         raise NewGenerationConflict("table_value_column_source_unverified") from None
     if content_sha256 is None or content_sha256 != report.content_list_sha256:
@@ -124,5 +130,5 @@ def prepare_table_value_column_replay(
     cumulative = _verified_reviews(verified, submitted, pdf_sha256=source.checksum_sha256.removeprefix("sha256:"),
         content_list_sha256=content_sha256)
     replay = TableValueColumnReplay(source_file_id=source.file_id, source_file_sha256=source.checksum_sha256,
-        raw_file_id=raw.id, raw_sha256=raw.checksum_sha256, reviews=cumulative)
+        raw_file_id=raw.id, raw_sha256=raw.checksum_sha256, reviews=cumulative, page_equivalence=page_equivalence)
     return replay, (*verified.files, raw.model_copy(deep=True))

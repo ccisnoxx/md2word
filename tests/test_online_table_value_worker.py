@@ -9,9 +9,10 @@ from tempfile import TemporaryDirectory
 from time import monotonic
 from unittest import TestCase, mock
 
-from app.domains.document_jobs.models import DocumentJobRecord
+from app.domains.document_jobs.mineru_execution import MinerUExecution, _matches_mineru_result_identity
+from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobRecord
 from app.domains.document_jobs.render_placeholders import RenderPlaceholderSource
-from app.domains.document_jobs.table_value_column_sources import read_table_value_mineru_result
+from app.domains.document_jobs.table_value_column_sources import read_table_value_mineru_result, table_value_page_lineage
 from app.domains.files.models import DocumentFileRecord
 from app.domains.resources.models import utc_now
 from app.services.document_ir.integrity import DocumentIntegrityError
@@ -91,6 +92,70 @@ class OnlineMinerURawSourceTests(TestCase):
         with self.assertRaisesRegex(DocumentIntegrityError, "mineru_raw_result_binding_mismatch"):
             self.read()
         self.file_service.read_file_content.assert_called_once()
+
+    def test_page_comparison_requires_current_parse_or_frozen_replay_lineage(self):
+        source_job = self.job.model_copy(update={"retry_count": 0})
+        self.assertIsNone(table_value_page_lineage(source_job, self.raw))
+        verified = self.raw.model_copy(update={
+            "metadata": {**self.raw.metadata, "mineru_result_identity_verified": True,
+                         "mineru_uploaded_source_sha256": checksum(b"source PDF")},
+        })
+        lineage = table_value_page_lineage(source_job, verified)
+        self.assertIsNotNone(lineage)
+        self.assertEqual(lineage.parse_generation, source_job.retry_count)
+        self.assertIsNone(table_value_page_lineage(self.job, verified))
+        self.assertEqual(table_value_page_lineage(self.job, verified, frozen=lineage), lineage)
+        for field, replacement in (
+            ("mineru_data_id", "other-data"),
+            ("mineru_uploaded_source_sha256", checksum(b"another PDF")),
+        ):
+            with self.subTest(field=field):
+                other = verified.model_copy(update={"metadata": {**verified.metadata, field: replacement}})
+                self.assertIsNone(table_value_page_lineage(self.job, other, frozen=lineage))
+
+    def test_provider_must_echo_the_batch_and_one_completed_matching_result(self):
+        url = "https://mineru.net/result.zip"
+        completed = {"data_id": "data", "state": "done", "full_zip_url": url}
+        proof_inputs = {"batch_id": "batch", "data_id": "data", "full_zip_url": url}
+        self.assertTrue(_matches_mineru_result_identity(
+            {"batch_id": "batch", "extract_result": [completed]}, **proof_inputs,
+        ))
+        for payload in (
+            {"extract_result": [completed]},
+            {"batch_id": "old-batch", "extract_result": [completed]},
+            {"batch_id": "batch", "extract_result": [completed, completed]},
+            {"batch_id": "batch", "extract_result": [{**completed, "data_id": None}]},
+            {"batch_id": "batch", "extract_result": [{**completed, "state": "running"}]},
+            {"batch_id": "batch", "extract_result": [{**completed, "full_zip_url": "https://mineru.net/other.zip"}]},
+        ):
+            with self.subTest(payload=payload):
+                self.assertFalse(_matches_mineru_result_identity(payload, **proof_inputs))
+
+    def test_conflicting_callback_keeps_the_active_batch_and_data_for_polling(self):
+        job = self.job.model_copy(update={"stage": "parsing", "mineru_raw_result_file_id": None})
+        self.jobs.get_document_job.return_value = job
+        messages = mock.Mock()
+        client = mock.Mock()
+        execution = MinerUExecution(
+            settings=mock.Mock(stage_message_lease_seconds=60),
+            job_repository=self.jobs, file_repository=self.files, file_service=self.file_service,
+            lifecycle=mock.Mock(), callback_message_store=messages, mineru_config_resolver=mock.Mock(),
+            mineru_client_factory=client,
+        )
+        expected = {"batch_id": job.mineru_batch_id, "data_id": job.mineru_data_id}
+        for field in ("batch_id", "data_id"):
+            with self.subTest(field=field):
+                message = DocumentJobCallbackMessage(
+                    id="message", job_id=job.id, job_retry_count=job.retry_count, dedupe_key="delivery",
+                    payload={**expected, field: "old", "state": "done", "full_zip_url": "https://mineru.net/old.zip"},
+                )
+                messages.list_replayable_callback_messages.return_value = [message]
+                messages.mark_callback_message_running.return_value = message.model_copy(update={"status": "running"})
+                self.assertEqual(execution.process_replayable_callback_messages(job, trace_id=None), job)
+                self.assertEqual(messages.mark_callback_message_ignored.call_args.kwargs["error_code"],
+                                 "mineru_callback_identity_mismatch")
+        self.jobs.update_document_job_if_current.assert_not_called()
+        client.assert_not_called()
 
 
 class OnlineTableValueObservationTests(TestCase):

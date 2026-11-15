@@ -12,15 +12,17 @@ from typing import Any, TYPE_CHECKING
 from app.services.document_ir.integrity import is_visible_body_block
 from app.services.document_ir.layout_signals import (
     NORMALIZED_BBOX_MIN_VERSION, NORMALIZED_BBOX_SPACE, _parse_page_size, _parse_version, pdf_point_bbox,
+    read_same_document_layout,
 )
 from app.services.document_ir.mineru_package import (
     DEFAULT_POLICY, MinerUValidationPolicy, extract_zip, find_content_list, package_sha256,
 )
 from app.services.document_ir.models import DocumentIR, DocumentIRPage, TableFragment
-from app.services.document_ir.table_placeholder import PdfCropSource, TablePlaceholderError
+from app.services.document_ir.table_placeholder import PdfCropSource, TablePlaceholderError, checksum
 from app.services.document_ir.table_upstream_coverage import _match_table
 from app.services.document_ir.table_value_column_review import (
-    PdfValueColumnUnresolved, TableValueColumnReview, TableValueColumnReviewError,
+    PdfValueColumnPageEquivalence, PdfValueColumnPageLineage, PdfValueColumnUnresolved,
+    TableValueColumnReview, TableValueColumnReviewError,
     _validate_value_column_reviews, _verified_value_column_review_pdf, supports_value_column_review_grid,
 )
 from app.services.tables.grid_builder import build_table_grid
@@ -34,20 +36,73 @@ if TYPE_CHECKING:
 _Box = tuple[float, float, float, float]
 
 
-def _paired_origin(content_list_path: Path, source: PdfCropSource) -> bool:
-    """只相信实际选中 v2 同目录、同文档名的归档原件和逐字节摘要。"""
+def _package_origin(content_list_path: Path) -> Path | None:
+    """只选择实际选中 v2 同目录、同文档名的归档原件。"""
     if not content_list_path.name.endswith("content_list_v2.json"):
-        return False
+        return None
     origin_name = content_list_path.name.removesuffix("content_list_v2.json") + "origin.pdf"
-    origin = next((path for path in content_list_path.parent.iterdir()
-                   if path.name == origin_name and path.is_file()), None)
-    return origin is not None and package_sha256(origin) == source.checksum_sha256.removeprefix("sha256:")
+    return next((path for path in content_list_path.parent.iterdir()
+                 if path.name == origin_name and path.is_file()), None)
+
+
+def _verified_package_source(
+    content_list_path: Path, source: PdfCropSource, source_hash: str,
+    same_document_layout: tuple[Any, str] | None,
+    *,
+    page_lineage: PdfValueColumnPageLineage | None,
+    frozen_page_equivalence: PdfValueColumnPageEquivalence | None,
+    source_path: Path | None = None,
+    deadline: float | None = None,
+) -> bool | PdfValueColumnPageEquivalence:
+    origin = _package_origin(content_list_path)
+    if origin is None:
+        return False
+    returned_sha256 = "sha256:" + package_sha256(origin)
+    if returned_sha256.removeprefix("sha256:") == source.checksum_sha256.removeprefix("sha256:"):
+        return frozen_page_equivalence is None
+    if (page_lineage is None or same_document_layout is None
+            or page_lineage.source_pdf_sha256 != source.checksum_sha256):
+        return False
+    layout, layout_sha256 = same_document_layout
+    layout_pages = _layout_pages(layout)
+    if not layout_pages:
+        return False
+    binding = dict(
+        lineage=page_lineage, returned_pdf_sha256=returned_sha256,
+        content_list_sha256="sha256:" + source_hash, layout_sha256="sha256:" + layout_sha256,
+        page_count=len(layout_pages),
+    )
+    if frozen_page_equivalence is not None:
+        # 复用已经认证并冻结的页面事实，重读时逐一绑定实际原件、原包和选件版本。
+        return frozen_page_equivalence if all(
+            getattr(frozen_page_equivalence, key) == value for key, value in binding.items()
+        ) else False
+    if source_path is None or deadline is None:
+        return False
+
+    from app.services.document_ir.pdf_value_source_equivalence import compare_pdf_pages
+
+    source_path.write_bytes(source.content)
+    comparison = compare_pdf_pages(source_path, origin, deadline=deadline)
+    if comparison is None or comparison.page_sizes != tuple(
+        _parse_page_size(page.get("page_size")) for page in layout_pages
+    ):
+        return False
+    return PdfValueColumnPageEquivalence(
+        **binding, poppler_version=comparison.poppler_version, observation_sha256="sha256:" + comparison.observation_sha256,
+    )
 
 
 def verify_table_value_package_origin(
     content: bytes, source: PdfCropSource, *, policy: MinerUValidationPolicy = DEFAULT_POLICY,
+    page_lineage: PdfValueColumnPageLineage | None = None,
+    frozen_page_equivalence: PdfValueColumnPageEquivalence | None = None,
 ) -> str | None:
     """接纳人工重放时，按正式选包规则核对已核验的源 PDF 与选中的 v2 字节。"""
+    if frozen_page_equivalence is not None and (
+        page_lineage is None or checksum(content) != page_lineage.raw_sha256
+    ):
+        return None
     with TemporaryDirectory(prefix="table_value_review_source_") as directory:
         root = Path(directory)
         zip_path = root / "input.zip"
@@ -56,7 +111,14 @@ def verify_table_value_package_origin(
         package_root.mkdir()
         extract_zip(zip_path, package_root, policy=policy)
         content_list_path = find_content_list(package_root)
-        return package_sha256(content_list_path) if _paired_origin(content_list_path, source) else None
+        source_hash = package_sha256(content_list_path)
+        layout = (read_same_document_layout(content_list_path, policy=policy)
+                  if frozen_page_equivalence is not None else None)
+        paired = _verified_package_source(
+            content_list_path, source, source_hash, layout,
+            page_lineage=page_lineage, frozen_page_equivalence=frozen_page_equivalence,
+        )
+        return source_hash if paired else None
 
 
 def _layout_pages(payload: Any) -> list[dict[str, Any]]:
@@ -105,6 +167,8 @@ def _propose_reviews(
     *,
     source_pair_eligible: bool,
     observation_deadline: float | None,
+    page_lineage: PdfValueColumnPageLineage | None,
+    frozen_page_equivalence: PdfValueColumnPageEquivalence | None,
 ) -> tuple[tuple[TableValueColumnReview, ...], tuple[PdfValueColumnUnresolved, ...]]:
     from app.services.document_ir.pdf_value_column_binding import match_pdf_value_columns
     from app.services.document_ir.pdf_value_column_observer import (
@@ -113,22 +177,6 @@ def _propose_reviews(
 
     layout_payload, layout_sha256 = same_document_layout or (None, "")
     layout_pages = _layout_pages(layout_payload)
-    @cache
-    def paired_source() -> PdfCropSource | str:
-        if not source_pair_eligible:
-            return "source_pair_unverified"
-        try:
-            source = verified_source()
-        except TableValueColumnReviewError:
-            return "source_pair_unverified"
-        except TablePlaceholderError as error:
-            if error.code != "table_placeholder_source_unavailable":
-                raise
-            return "pdf_source_unavailable"
-        if not _paired_origin(content_list_path, source):
-            return "source_pair_unverified"
-        return source if layout_pages else "layout_unverified"
-
     def budget_exhausted() -> bool:
         return observation_deadline is not None and monotonic() >= observation_deadline
 
@@ -146,6 +194,35 @@ def _propose_reviews(
     with TemporaryDirectory(prefix="document_ir_pdf_value_") as directory:
         pdf_path = Path(directory) / "source.pdf"
         observation_options = {"deadline": observation_deadline} if observation_deadline is not None else {}
+
+        @cache
+        def paired_source() -> PdfCropSource | str:
+            if not source_pair_eligible:
+                return "source_pair_unverified"
+            try:
+                source = verified_source()
+            except TableValueColumnReviewError:
+                return "source_pair_unverified"
+            except TablePlaceholderError as error:
+                if error.code != "table_placeholder_source_unavailable":
+                    raise
+                return "pdf_source_unavailable"
+            try:
+                paired = _verified_package_source(
+                    content_list_path, source, source_hash, same_document_layout,
+                    page_lineage=page_lineage, frozen_page_equivalence=frozen_page_equivalence,
+                    source_path=pdf_path, deadline=observation_deadline,
+                )
+            except PdfObservationUnavailable as error:
+                return error.reason if error.reason == PDF_OBSERVATION_BUDGET_EXHAUSTED else "source_pair_unverified"
+            if not paired:
+                return "source_pair_unverified"
+            if isinstance(paired, PdfValueColumnPageEquivalence):
+                document.metadata.pdf_value_column_page_equivalence = paired
+            return source if layout_pages else "layout_unverified"
+
+        if frozen_page_equivalence is not None and isinstance(paired_source(), str):
+            raise TableValueColumnReviewError("source_binding")
 
         @cache
         def observe(page_index: int) -> PdfValueColumnPage | str:
@@ -244,6 +321,8 @@ def attach_automatic_table_value_column_reviews(
     same_document_layout: tuple[Any, str] | None,
     source_pair_eligible: bool = True,
     observation_deadline: float | None = None,
+    page_lineage: PdfValueColumnPageLineage | None = None,
+    frozen_page_equivalence: PdfValueColumnPageEquivalence | None = None,
 ) -> None:
     """先接纳人工版本，整批验证自动修正后再一次挂载两类记录。"""
     @cache
@@ -254,6 +333,7 @@ def attach_automatic_table_value_column_reviews(
     proposed, unresolved = _propose_reviews(
         document, source_hash, content_list_path, same_document_layout, verified_source, pending,
         source_pair_eligible=source_pair_eligible, observation_deadline=observation_deadline,
+        page_lineage=page_lineage, frozen_page_equivalence=frozen_page_equivalence,
     )
     if proposed:
         for pointer, (fragment, automatic) in _validate_value_column_reviews(

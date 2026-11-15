@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pydantic import ValidationError
+
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.files import FileUploadService
@@ -11,6 +13,11 @@ from app.domains.files.result_registration import file_lifecycle_unavailable
 from app.domains.resources.models import utc_now
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.table_placeholder import checksum
+from app.services.document_ir.table_value_column_review import PdfValueColumnPageLineage
+
+
+MINERU_RESULT_IDENTITY_VERIFIED = "mineru_result_identity_verified"
+MINERU_UPLOADED_SOURCE_SHA256 = "mineru_uploaded_source_sha256"
 
 
 def _input_failure(code: str) -> DocumentIntegrityError:
@@ -81,3 +88,33 @@ def read_table_value_mineru_result(
         and all(isinstance(registered, str) and bool(registered) and expected == registered
                 for expected, registered in source_binding)
     )
+
+
+def table_value_page_lineage(
+    job: DocumentJobRecord, raw_file: DocumentFileRecord, *, frozen: PdfValueColumnPageLineage | None = None,
+) -> PdfValueColumnPageLineage | None:
+    """原包通过实读校验后，只有独立回显和明确的原解析代才能授权逐页比对。"""
+    metadata = raw_file.metadata
+    generation = metadata.get("retry_count")
+    uploaded_sha256 = metadata.get(MINERU_UPLOADED_SOURCE_SHA256)
+    if (
+        metadata.get(MINERU_RESULT_IDENTITY_VERIFIED) is not True
+        or not isinstance(uploaded_sha256, str)
+        or raw_file.id != job.mineru_raw_result_file_id
+        or not raw_file.checksum_sha256
+        or not job.mineru_batch_id or not job.mineru_data_id
+        or (job.source_file_id, job.mineru_batch_id, job.mineru_data_id) != (
+            metadata.get("source_file_id"), metadata.get("mineru_batch_id"), metadata.get("mineru_data_id"))
+        or type(generation) is not int or not 0 <= generation <= job.retry_count
+        or (frozen is None and generation != job.retry_count)
+    ):
+        return None
+    try:
+        lineage = PdfValueColumnPageLineage(
+            batch_id=job.mineru_batch_id, data_id=job.mineru_data_id,
+            parse_generation=generation, raw_file_id=raw_file.id, raw_sha256=raw_file.checksum_sha256,
+            source_pdf_sha256=uploaded_sha256,
+        )
+    except ValidationError:
+        return None
+    return lineage if frozen is None or frozen == lineage else None

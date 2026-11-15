@@ -63,7 +63,10 @@ from app.services.document_ir.table_figure import (
     FIGURE_SECTION_ROLE, TABLE_FIGURE_FIELD, TableFigureBinding, caption_source_sha256, split_table_figure_caption,
 )
 from app.services.document_ir.table_header_review import TableHeaderReview, attach_table_header_reviews
-from app.services.document_ir.table_value_column_review import TableValueColumnReview, attach_table_value_column_reviews
+from app.services.document_ir.table_value_column_review import (
+    PdfValueColumnPageEquivalence, PdfValueColumnPageLineage, TableValueColumnReview, TableValueColumnReviewError,
+    attach_table_value_column_reviews,
+)
 from app.services.document_ir.table_reference_assets import RASTER_EXTENSIONS, TableReferenceAsset, attach_table_references
 from app.services.document_ir.table_placeholder import (
     PdfCropRequest, PdfCropSource, PdfPageRasterizer, PdfTableCropProvider, PlaceholderAsset, TablePlaceholderError, checksum,
@@ -132,10 +135,14 @@ class MinerUToDocumentIRService:
         auto_table_value_columns: bool = False,
         value_column_source_pair_eligible: bool = True,
         value_column_observation_deadline: float | None = None,
+        value_column_page_lineage: PdfValueColumnPageLineage | None = None,
+        value_column_frozen_page_equivalence: PdfValueColumnPageEquivalence | None = None,
     ) -> MinerUToDocumentIRResult:
         """读取 MinerU 结果 zip，生成 DocumentIR v2 和待登记图片资产。"""
 
         report = MinerUValidationReport(package_sha256=package_sha256(zip_path), policy_version=self.policy.version)
+        if value_column_page_lineage is not None and value_column_page_lineage.raw_sha256 != "sha256:" + report.package_sha256:
+            raise TableValueColumnReviewError("source_binding")
         validator = MinerUArtifactValidator(report, policy=self.policy)
         with tempfile.TemporaryDirectory(prefix="document_ir_mineru_") as temp_dir:
             package_root = Path(temp_dir).resolve()
@@ -167,6 +174,8 @@ class MinerUToDocumentIRService:
                     auto_table_value_columns=auto_table_value_columns,
                     value_column_source_pair_eligible=value_column_source_pair_eligible,
                     value_column_observation_deadline=value_column_observation_deadline,
+                    value_column_page_lineage=value_column_page_lineage,
+                    value_column_frozen_page_equivalence=value_column_frozen_page_equivalence,
                     same_document_layout=same_document_layout,
                 )
             except MinerUPackageError as error:
@@ -191,6 +200,8 @@ class MinerUToDocumentIRService:
         auto_table_value_columns: bool,
         value_column_source_pair_eligible: bool,
         value_column_observation_deadline: float | None,
+        value_column_page_lineage: PdfValueColumnPageLineage | None,
+        value_column_frozen_page_equivalence: PdfValueColumnPageEquivalence | None,
         same_document_layout: tuple[Any, str] | None,
     ) -> MinerUToDocumentIRResult:
         """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
@@ -430,6 +441,8 @@ class MinerUToDocumentIRService:
                 content_list_path=content_list_path, same_document_layout=same_document_layout,
                 source_pair_eligible=value_column_source_pair_eligible,
                 observation_deadline=value_column_observation_deadline,
+                page_lineage=value_column_page_lineage,
+                frozen_page_equivalence=value_column_frozen_page_equivalence,
             )
         elif table_value_column_reviews:
             attach_table_value_column_reviews(document, table_value_column_reviews, table_sources.checksum, source_loader)

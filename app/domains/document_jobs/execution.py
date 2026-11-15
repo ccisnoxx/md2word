@@ -26,6 +26,7 @@ from app.domains.document_jobs.render_execution import WordRenderExecution
 from app.domains.document_jobs.table_value_column_sources import (
     ensure_table_value_mineru_result_current,
     read_table_value_mineru_result,
+    table_value_page_lineage,
 )
 from app.domains.document_jobs.translation_execution import (
     DocumentTranslationBatchTaskQueueProtocol,
@@ -356,6 +357,12 @@ class DocumentJobExecutionService:
                         )
                     ):
                         raise TableValueColumnReviewError("source_binding")
+                    frozen_equivalence = replay.page_equivalence if replay is not None else None
+                    page_lineage = (table_value_page_lineage(
+                        job, raw_file, frozen=frozen_equivalence.lineage if frozen_equivalence is not None else None,
+                    ) if source_pair_eligible else None)
+                    if frozen_equivalence is not None and page_lineage is None:
+                        raise TableValueColumnReviewError("source_binding")
                     budget = _VALUE_COLUMN_OBSERVATION_SECONDS
                     if job.timeout_at is not None:
                         # 保留本代剩余时限的一半供正式渲染及登记使用。
@@ -366,6 +373,11 @@ class DocumentJobExecutionService:
                         "value_column_source_pair_eligible": source_pair_eligible,
                         "value_column_observation_deadline": monotonic() + budget,
                     }
+                    if page_lineage is not None:
+                        value_column_options.update(
+                            value_column_page_lineage=page_lineage,
+                            value_column_frozen_page_equivalence=frozen_equivalence,
+                        )
                 else:
                     raw_bytes = self.file_service.read_file_content(raw_file)
                     value_column_options = {}

@@ -6,7 +6,7 @@ from datetime import datetime
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, JsonValue, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictInt, model_validator
 
 from app.domains.files.models import DocumentFileRecord
 from app.domains.document_jobs.preview_state import WordPreviewState
@@ -122,6 +122,15 @@ class DocumentJobPreparedResult(BaseModel):
         return self
 
 
+class DocumentJobMinerUUpload(BaseModel):
+    """实际送出的 PDF 字节绑定随本次批次一起持久化。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+    source_file_id: str = Field(min_length=1)
+    source_pdf_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    parse_generation: int = Field(ge=0)
+
+
 class DocumentJobRecord(BaseModel):
     """一次 PDF 到 Word 业务任务；P0 先只作为 metadata 权威记录。"""
 
@@ -148,6 +157,7 @@ class DocumentJobRecord(BaseModel):
     debug_full_text_enabled: bool = False
     mineru_batch_id: str | None = None
     mineru_data_id: str | None = None
+    mineru_upload_binding: DocumentJobMinerUUpload | None = None
     mineru_callback_seed: str | None = None
     failed_stage: DocumentJobStage | None = None
     error_code: str | None = None
