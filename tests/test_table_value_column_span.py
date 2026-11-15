@@ -55,6 +55,7 @@ class TableValueColumnSpanTests(unittest.TestCase):
                 "<tr><td>e</td><td colspan='3'>0.50BSC</td></tr>"
                 "<tr><td>b1</td><td colspan='3'>0.23 REF</td></tr>"
                 "<tr><td>TA</td><td colspan='3'>-40 to 125</td></tr>"
+                "<tr><td>Range</td><td colspan='3'>2.1e-6 to 3e-6</td></tr>"
                 "<tr><td>Note</td><td colspan='3'>See Figure 5</td></tr>")
         self.assertEqual(self.findings(rows)[1], [])
 
@@ -63,13 +64,32 @@ class TableValueColumnSpanTests(unittest.TestCase):
                 "<tr><td>Name</td><td>MIN</td><td>MAX</td></tr>")
         self.assertEqual(self.findings(rows)[1], [])
 
-    def test_shared_min_max_value_without_typ_is_warning(self) -> None:
+    def test_unmarked_value_spanning_two_limit_columns_is_blocked(self) -> None:
+        for lower, upper in (("Min", "Max"), ("LOW", "HIGH")):
+            with self.subTest(lower=lower, upper=upper):
+                rows = (f"<tr><td>Symbol</td><td>{lower}</td><td>{upper}</td></tr>"
+                        "<tr><td>L</td><td>0.260</td><td>0.460</td></tr>"
+                        "<tr><td>L1</td><td colspan='2'>0.525</td></tr>")
+                _, findings = self.findings(rows)
+                self.assertEqual([(item.evidence.rule_id, item.flag.severity) for item in findings],
+                                 [(_CODE, "blocker")])
+
+    def test_reference_value_requires_complete_marker(self) -> None:
         rows = ("<tr><td>Symbol</td><td>Min</td><td>Max</td></tr>"
-                "<tr><td>L</td><td>0.260</td><td>0.460</td></tr>"
-                "<tr><td>L1</td><td colspan='2'>0.525</td></tr>")
+                "<tr><td>Voltage</td><td colspan='2'>1.2 VREF</td></tr>")
         _, findings = self.findings(rows)
         self.assertEqual([(item.evidence.rule_id, item.flag.severity) for item in findings],
-                         [(_CODE + ".shared_limits", "warning")])
+                         [(_CODE, "blocker")])
+
+    def test_scientific_notation_value_spanning_value_columns_is_blocked(self) -> None:
+        rows = ("<tr><td>Symbol</td><td>MIN</td><td>TYP</td><td>MAX</td></tr>"
+                "<tr><td>Leakage</td><td></td><td colspan='2'>2.1e-6</td></tr>"
+                "<tr><td>Current</td><td colspan='2'>1E+3 µA</td><td></td></tr>"
+                "<tr><td>Offset</td><td colspan='3'>−4.5e−2 V</td></tr>"
+                "<tr><td>Single</td><td></td><td>3e-6</td><td></td></tr>")
+        _, findings = self.findings(rows)
+        self.assertEqual([(item.evidence.row, item.flag.severity) for item in findings],
+                         [(1, "blocker"), (2, "blocker"), (3, "blocker")])
 
     def test_policy_can_downgrade_blocker(self) -> None:
         policy = TableValidationPolicy(rule_severities={_CODE: "warning"})

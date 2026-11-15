@@ -34,8 +34,9 @@ RULE_DEFAULTS: dict[str, Severity] = {
     "table_span_invalid": "warning", "table_html_removed_unsafe": "warning",
     "table_formula_unresolved": "warning", "table_nested_script": "warning",
     # 启发式：单个参数值跨多个并列数值列会改变参数含义，默认阻断但允许策略显式降级。
-    # 无 TYP/NOM 时恰跨 MIN–MAX 一对常是 REF/BSC 等共享值（封装尺寸表），仅提示复核。
-    "table_value_column_span_ambiguous": "blocker", "table_value_column_span_ambiguous.shared_limits": "warning",
+    "table_value_column_span_ambiguous": "blocker",
+    # 历史报告仍按原严重度校验 shared_limits 变体。
+    "table_value_column_span_ambiguous.shared_limits": "warning",
 }
 HARD_BLOCKERS = frozenset({"table_html_missing", "table_html_empty", "table_html_no_rows", "table_zero_columns",
                            "table_span_collision", "table_span_out_of_bounds"})

@@ -49,10 +49,11 @@ _PARAMETER_VALUE_LABELS = {
     "max": "max", "maximum": "max", "最大": "max", "最大值": "max",
     "nom": "nom", "nominal": "nom", "low": "low", "high": "high",
 }
-# 单个参数值：可带比较符、正负号与紧随单位；区间（"to"、"2–5"）和说明文字不匹配。
-_SINGLE_VALUE = re.compile(r"[<>≤≥]?\s*[±+\-−–]?\s*[0-9]+(?:\.[0-9]+)?(?:\s*[A-Za-zµμΩ°%/√·]+)?")
-# 显式标注 REF/BSC 的尺寸本身声明为跨上下限的共享参考值，跨列合法。
-_REFERENCE_VALUE = re.compile(r"(?:REF|BSC)$", re.IGNORECASE)
+# 单个参数值可带比较符、正负号、科学计数法指数和单位。
+_SINGLE_VALUE = re.compile(
+    r"[<>≤≥]?\s*[±+\-−–]?\s*[0-9]+(?:\.[0-9]+)?"
+    r"(?:[eE][+\-−]?[0-9]+)?(?:\s*(?P<suffix>[A-Za-zµμΩ°%/√·]+))?"
+)
 _UNIT_HEADERS = frozenset({"unit", "units", "单位"})
 _SYMBOL_HEADERS = frozenset({"symbol", "symbols", "符号", "信号"})
 
@@ -331,17 +332,16 @@ class _TableValidator:
                             self.emit("table_abnormal_long_number", "long_decimal", identity, **location)
 
     def value_column_spans(self) -> None:
-        """单个参数值跨多个并列数值列时报出；不读 PDF，只证明结构上存在歧义。
+        """根据 Grid 标记单个参数值跨多个并列数值列的结构歧义。
 
-        MinerU 常以 <td> 输出表头，因此不依赖 is_header，而是把同行出现至少两类
-        MIN/TYP/MAX 等标签（各占单列）的行视为数值列标签行。按全局行序扫描，
-        续表重复表头会刷新列集合；首个标签行之前的行不检查。
-        无 TYP/NOM 列时恰跨一对 MIN–MAX 的值多为 REF/BSC 共享值，降为 warning 变体。
+        MinerU 常以 <td> 输出表头，同行至少两类单列标签可建立数值列集合。
+        续表重复表头时按全局行序更新列集合。
+        REF/BSC 例外要求整个后缀为参考标记。
         """
         rows: dict[int, list[TableCell]] = defaultdict(list)
         for cell in self.cells:
             rows[cell.row].append(cell)
-        value_columns: dict[int, str] = {}
+        value_columns: set[int] = set()
         for row in sorted(rows):
             labels = {}
             for cell in rows[row]:
@@ -349,25 +349,22 @@ class _TableValidator:
                 if label is not None and cell.colspan == 1:
                     labels[cell.column] = label
             if len(set(labels.values())) >= 2:
-                value_columns = labels
+                value_columns = set(labels)
                 continue
-            if len(value_columns) < 2:
+            if not value_columns:
                 continue
             for cell in rows[row]:
                 if cell.is_header or cell.colspan < 2:
                     continue
-                covered = [value_columns[column] for column in range(cell.column, cell.column + cell.colspan)
-                           if column in value_columns]
-                text = _cell_text(cell)
-                if (len(covered) < 2 or not cell.runs or any(run.type != "text" for run in cell.runs) or
-                        not _SINGLE_VALUE.fullmatch(text) or _REFERENCE_VALUE.search(text)):
+                end_column = cell.column + cell.colspan
+                covered_count = sum(column in value_columns for column in range(cell.column, end_column))
+                if covered_count < 2 or not cell.runs or any(run.type != "text" for run in cell.runs):
                     continue
-                shared = (covered in (["min", "max"], ["low", "high"]) and
-                          not {"typ", "nom"} & set(value_columns.values()))
-                self.emit("table_value_column_span_ambiguous.shared_limits" if shared
-                          else "table_value_column_span_ambiguous",
-                          "shared_limit_value" if shared else "value_column_span", cell.source_fragment_id,
-                          cell=cell, end_column=cell.column + cell.colspan, expected=1, actual=len(covered))
+                value = _SINGLE_VALUE.fullmatch(_cell_text(cell))
+                if value is None or (value["suffix"] or "").upper() in {"REF", "BSC"}:
+                    continue
+                self.emit("table_value_column_span_ambiguous", "value_column_span", cell.source_fragment_id,
+                          cell=cell, end_column=end_column, expected=1, actual=covered_count)
 
     def continuations(self) -> None:
         all_fragments = {item.fragment_id: item for item in (*self.fragments, *self.related)}
