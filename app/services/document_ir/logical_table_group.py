@@ -420,6 +420,7 @@ def source_table_body_order(document: DocumentIR) -> tuple[tuple[str, int | None
 
 def validate_logical_table_groups(document: DocumentIR) -> None:
     """构建与 JSON 重读共用结构对账；不从译文重新推导来源事实。"""
+    from app.services.document_ir.integrity import is_visible_body_block
     from app.services.document_ir.table_upstream_coverage import (
         count_upstream_coverage_candidates, validate_upstream_table_coverage,
     )
@@ -448,6 +449,12 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
     }
     if len(reviewed_pdf_digests) > 1:
         _fail("header_review_pdf_fingerprint")
+    value_review_pdf_digests = {
+        fragment.value_column_review.source_pdf_sha256 for fragment in fragments
+        if fragment.value_column_review is not None
+    }
+    if len(reviewed_pdf_digests | value_review_pdf_digests) > 1:
+        _fail("value_column_review_pdf_fingerprint")
     indices = [fragment.source_span.source_index for fragment in fragments]
     if len(set(indices)) != len(indices):
         _fail("duplicate_source_index")
@@ -527,6 +534,10 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
             owner = blocks.get(fragment.render_owner_block_id)
             if owner is None:
                 _fail("render_owner")
+            if fragment.value_column_review is not None:
+                fragment.value_column_review.verify_fragment(fragment, report.content_list_sha256)
+                if len(group.fragments) != 1 or not is_visible_body_block(owner):
+                    _fail("value_column_review_shape")
             if fragment.block_id:
                 if fragment.block_id != owner.id or owner.metadata.get("mineru_source") != span.model_dump(exclude={"bbox"}):
                     _fail("block_source")

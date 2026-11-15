@@ -63,6 +63,7 @@ from app.services.document_ir.table_figure import (
     FIGURE_SECTION_ROLE, TABLE_FIGURE_FIELD, TableFigureBinding, caption_source_sha256, split_table_figure_caption,
 )
 from app.services.document_ir.table_header_review import TableHeaderReview, attach_table_header_reviews
+from app.services.document_ir.table_value_column_review import TableValueColumnReview, attach_table_value_column_reviews
 from app.services.document_ir.table_reference_assets import RASTER_EXTENSIONS, TableReferenceAsset, attach_table_references
 from app.services.document_ir.table_placeholder import (
     PdfCropRequest, PdfCropSource, PdfPageRasterizer, PdfTableCropProvider, PlaceholderAsset, TablePlaceholderError, checksum,
@@ -127,6 +128,7 @@ class MinerUToDocumentIRService:
         document_language: str,
         placeholder_source_loader: Callable[[], PdfCropSource] | None = None,
         table_header_reviews: tuple[TableHeaderReview, ...] = (),
+        table_value_column_reviews: tuple[TableValueColumnReview, ...] = (),
     ) -> MinerUToDocumentIRResult:
         """读取 MinerU 结果 zip，生成 DocumentIR v2 和待登记图片资产。"""
 
@@ -158,6 +160,7 @@ class MinerUToDocumentIRService:
                     table_references=validated.table_references,
                     placeholder_source_loader=placeholder_source_loader,
                     table_header_reviews=table_header_reviews,
+                    table_value_column_reviews=table_value_column_reviews,
                     same_document_layout=same_document_layout,
                 )
             except MinerUPackageError as error:
@@ -178,6 +181,7 @@ class MinerUToDocumentIRService:
         table_references: dict[str, ValidatedTableReference],
         placeholder_source_loader: Callable[[], PdfCropSource] | None,
         table_header_reviews: tuple[TableHeaderReview, ...],
+        table_value_column_reviews: tuple[TableValueColumnReview, ...],
         same_document_layout: tuple[Any, str] | None,
     ) -> MinerUToDocumentIRResult:
         """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
@@ -409,6 +413,8 @@ class MinerUToDocumentIRService:
             attach_table_header_reviews(document, table_header_reviews, table_sources.checksum, source_loader)
         if same_document_layout is not None and content_list_path.name.endswith("content_list_v2.json"):
             attach_upstream_table_coverage(document, *same_document_layout)
+        if table_value_column_reviews:
+            attach_table_value_column_reviews(document, table_value_column_reviews, table_sources.checksum, source_loader)
         reference_assets = attach_table_references(document, table_references)
         try:
             placeholder_assets = prepare_placeholders(document, table_references,

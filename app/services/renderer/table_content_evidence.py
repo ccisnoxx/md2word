@@ -15,9 +15,10 @@ from app.services.renderer.logical_table_plan import (
 from app.services.renderer.table_renderer import iter_grid_rows
 from app.services.tables.evidence import (
     EvidenceFlag, FragmentOutput, NativeOutput, PlaceholderEvidence, ReferenceEvidence, TableEvidence,
-    TableEvidenceError, WordTableObservation, aggregate_table_evidence, flags_status, source_grid_summary,
+    TableEvidenceError, ValueColumnCorrectionEvidence, WordTableObservation, aggregate_table_evidence, flags_status,
+    source_grid_summary, table_validator_flags,
 )
-from app.services.tables.models import canonical_sha256
+from app.services.tables.models import canonical_sha256, make_cell_id
 from app.services.tables.validator import validate_document_tables
 from app.services.document_ir.table_reference_assets import decode_table_references
 from app.services.document_ir.table_placeholder import decode_placeholders
@@ -140,6 +141,8 @@ def _table_rendering_evidence(
             })
             if fragment.upstream_covered_rows is not None:
                 fragments[-1]["upstream_covered_rows"] = list(fragment.upstream_covered_rows)
+            if source.value_column_review is not None:
+                fragments[-1]["value_column_review_sha256"] = source.value_column_review.review_sha256
         tables.append({
             "output_table_key": unit.key, "output_table_index": table_index,
             "logical_group_id": unit.logical_group_id,
@@ -177,7 +180,30 @@ def _table_rendering_evidence(
     return result, list(dict.fromkeys(flags))
 
 
-def _build_table_evidence(document: DocumentIR, content: bytes, evidence: dict):
+def _value_column_corrections(plan: LogicalTableRenderPlan) -> dict[str, list[ValueColumnCorrectionEvidence]]:
+    """将已通过实物认证的渲染计划定位为逐格交付证据。"""
+    result: dict[str, list[ValueColumnCorrectionEvidence]] = {}
+    for unit in plan.units:
+        for fragment in unit.fragments:
+            source = fragment.source
+            review = source.value_column_review
+            if review is None:
+                continue
+            review_sha256 = review.review_sha256
+            applied = result.setdefault(unit.logical_group_id, [])
+            for correction, finding_id in zip(review.corrections, fragment.value_column_finding_ids, strict=True):
+                applied.append(ValueColumnCorrectionEvidence(
+                    review_sha256=review_sha256,
+                    source_cell_id=make_cell_id(source.fragment_id, correction.source_row_index, correction.source_cell_index),
+                    finding_id=finding_id, original_column_range=list(correction.original_column_range),
+                    target_column=correction.target_column, output_table_key=unit.key,
+                    output_row=fragment.output_start + correction.source_row_index - fragment.removed_header_rows,
+                ))
+    return result
+
+
+def _build_table_evidence(document: DocumentIR, content: bytes, evidence: dict, *,
+                          certified_plan: LogicalTableRenderPlan | None = None):
     """唯一编排点连接来源、当前渲染视图和实际 OOXML；纯层不感知 IR 或 renderer。"""
     source = validate_document_tables(document)
     references = {item.fragment.fragment_id: item for item in decode_table_references(document)}
@@ -185,12 +211,14 @@ def _build_table_evidence(document: DocumentIR, content: bytes, evidence: dict):
     proof = evidence.get("table_placeholder_rendering")
     blocks = {block.id: block for block in document.blocks}
     observations = evidence["docx_quality"]["table_observations"]
+    corrected = _value_column_corrections(certified_plan) if certified_plan is not None else {}
     tables = []
     for group, validation in zip(document.metadata.logical_table_groups, source.reports, strict=True):
-        refs, flags, outputs, placeholders = [], [], [], []
-        for finding in validation.findings:
-            flags.append(EvidenceFlag(producer="table_validator", code=finding.flag.code, severity=finding.flag.severity,
-                                      identity=finding.finding_id, fragment_id=finding.flag.fragment_id))
+        corrections = corrected.get(group.logical_group_id)
+        if corrections is None and any(fragment.value_column_review is not None for fragment in group.fragments):
+            raise TableEvidenceError("table_evidence_integrity")
+        refs, outputs, placeholders = [], [], []
+        flags = table_validator_flags(validation, resolved={item.finding_id for item in corrections or ()})
         for fragment in group.fragments:
             reference = references.get(fragment.fragment_id)
             asset = reference.asset if reference else None
@@ -234,7 +262,8 @@ def _build_table_evidence(document: DocumentIR, content: bytes, evidence: dict):
             raise TableEvidenceError("table_evidence_integrity")
         tables.append(TableEvidence(table_id=group.logical_group_id, logical_group_id=group.logical_group_id,
             member_block_ids=members, anchor_block_id=members[0], source_grid=source_grid_summary(validation), validation=validation,
-            references=refs, outputs=outputs, placeholders=placeholders, render_state=state, flags=flags, status=flags_status(flags)))
+            references=refs, outputs=outputs, placeholders=placeholders, render_state=state, flags=flags,
+            status=flags_status(flags), value_column_corrections=corrections))
     return aggregate_table_evidence(source, ir_model_sha256=canonical_sha256(document.model_dump(mode="json")),
         docx_sha256=hashlib.sha256(content).hexdigest(), tables=tables,
         reference_available=document.metadata.table_references_version is not None,

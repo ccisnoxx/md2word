@@ -385,6 +385,11 @@ def verify_native_content(document, content: bytes, table_plan, formula_report, 
         for fragment in unit.fragments:
             if fragment.render is None:
                 continue
+            released = defaultdict(set)
+            if (review := fragment.source.value_column_review) is not None:
+                for correction in review.corrections:
+                    empty_columns = set(range(*correction.original_column_range)) - {correction.target_column}
+                    released[correction.source_row_index].update(empty_columns)
             for source_row, owners in iter_grid_rows(fragment.render.grid, block_index=fragment.block_index):
                 if source_row < fragment.removed_header_rows:
                     continue
@@ -412,6 +417,9 @@ def verify_native_content(document, content: bytes, table_plan, formula_report, 
                     if semantic_projection(paragraphs[0], include_fields=True) != expected:
                         raise content_failure("ir_render_evidence:target_mismatch")
                 for column, cell in logical.items():
+                    if column in released.get(source_row, ()) and any(
+                            node.tag not in {qn("w:tcPr"), qn("w:p")} for node in cell):
+                        raise content_failure("ir_render_evidence:target_mismatch")
                     if column not in used and any(semantic_projection(paragraph, include_fields=True)
                                                  for paragraph in cell.findall(qn("w:p"))):
                         raise content_failure("ir_render_evidence:target_mismatch")
@@ -473,7 +481,8 @@ def build_v2_content_evidence(document, content, layout, *, coverage, formula_re
         evidence["blocking_quality_flags"] = list(dict.fromkeys([*evidence["blocking_quality_flags"], *flags]))
         if not evidence["blocking_quality_flags"]:
             verify_native_content(document, content, tables, formula_report, image_report, validated)
-            evidence["table_evidence"] = _build_table_evidence(document, content, evidence).model_dump(mode="json", warnings=False)
+            evidence["table_evidence"] = _build_table_evidence(
+                document, content, evidence, certified_plan=tables).model_dump(mode="json", warnings=False)
         return evidence
     except DocumentIntegrityError:
         raise

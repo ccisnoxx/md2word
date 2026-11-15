@@ -376,11 +376,20 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 预期输出：受支持 HTML 生成原生可编辑 Word table，以 gridSpan/vMerge 保留合并结构，合并单元格内容由 owner 写入一次；规模超过旧展开阈值不会自动改为复制内容的规则网格。
 - 冲突/例外：`_render_table`、`_render_standard_html_table`、`_render_expanded_table` 保留旧写法的兼容与历史验证，不是当前正式计划的 owner；旧展开产物继续按原 occurrence 投影认证。无效 HTML 和缺少占位来源继续按各自输入合同失败关闭，不能为测试继续执行而放宽。
 - 禁止：把表格截图作为默认输出；为某一列数复制新 renderer；以旧 runtime writer 的测试声称正式输出已覆盖。
-- 参数值列跨列的 owner 是 `app/services/tables/validator.py::_TableValidator.value_column_spans`。同行至少两类单列标签可建立数值列集合，支持来源以 `<td>` 表示标签。普通文本单值（含 `e`/`E` 指数）覆盖 ≥2 个独立数值列时触发 `table_value_column_span_ambiguous`，默认 blocker。MIN–MAX 和 LOW–HIGH 同样适用。整个后缀为 `REF` 或 `BSC` 的参考值、区间及说明文字排除在此规则之外。历史 `.shared_limits` 报告按原合同重读。
-- 跨列检测给出 HTML Grid 的结构歧义。正式渲染保留源 span 并生成 DOCX，检测的 blocker 进入本代基础质量，审核与发布按对应的质量阻断原因拒绝。验收见 `tests.test_table_value_column_span` 和 `tests.test_table_value_column_span_delivery`。
+- 参数值列跨列的 owner 是 `app/services/tables/validator.py::iter_parameter_value_column_spans`。同行至少两类单列标签可建立数值列集合，支持来源以 `<td>` 表示标签。普通文本单值（含 `e`/`E` 指数）覆盖 ≥2 个独立数值列时触发 `table_value_column_span_ambiguous`，默认 blocker。MIN–MAX 和 LOW–HIGH 同样适用。整个后缀为 `REF` 或 `BSC` 的参考值、区间及说明文字排除在此规则之外。历史 `.shared_limits` 报告按原合同重读。
+- 跨列检测给出 HTML Grid 的结构歧义。无人工核定时，正式渲染保留源 span 并生成 DOCX，检测的 blocker 进入本代基础质量，审核与发布按对应的质量阻断原因拒绝。验收见 `tests.test_table_value_column_span` 和 `tests.test_table_value_column_span_delivery`。
 - 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_styles_later_th_cells_as_table_headers`；`tests.test_formula_rendering` 的 native 大表与 `tests.test_formula_rendering_compatibility` 的独立旧展开回归分别保护合并 owner 和历史重复 occurrence。
 - 样本证据：OPA228 P6/P7 manifest 包含表格焦点但当前 Golden 未实际转换；CM4112 表格为 external negative evidence。
 - 来源/取代：commit `32edca58` 正式 renderer 收敛；保留共享 parser，取代旧 writer 权威性。
+
+#### 参数值列的同源人工修正
+
+- 适用于本地正式原排版转换中的单片原生表和 `rowspan=1` 的跨列数值格。将值移到原范围内经人工核定的单列。
+- 本地入口为 `scripts/dev/run_local_mineru_conversion.py` 的 `--table-value-column-reviews <JSON>` 和 `--source-pdf <PDF>`。转换入口 `MinerUToDocumentIRService.convert_zip(..., table_value_column_reviews=...)` 校验 `TableValueColumnReview` 数组，合同版本为 `table-value-column-review/v1`。
+- 每条记录绑定实际 PDF 与选用的 MinerU 内容列表 SHA-256、源页、JSON Pointer、原 HTML 和 normalizer 版本。源行/源格序号、原格哈希、原列区间、目标零基列号及标题须匹配同一份源 Grid。整批通过后才将可选的 `value_column_review` 写进 IR。来源不匹配、定位冲突或未支持形状以 `table_value_column_review_invalid` 和固定原因拒绝，发生在本次结果写入前。
+- `build_content_table_plan` 应用同一份核定记录，把核定指纹纳入渲染输入，保持原 HTML、源 Grid、源报告、未命中位置和其他内容。只有正式实物认证通过后才附加 `table_evidence.tables[].value_column_corrections`。已证明修正对应的 finding 退出交付 flags，原始发现继续留在 `validation`。重读基于本次 IR 与实际 DOCX 重建证据。
+- 例 `gs-008` 源行 2、3 的 `±5`、`±100` 分别只占 TYP、MAX，`±75`、空出的值列与单位纵向合并由 Word 实物核对。完整样本原报告有 23 项，已核定两项后本地质量结果仍为 `blocked`，余 21 项。旧记录遇 PDF 或内容列表指纹变化、原格或目标列不符时整批失败。带校核的旧渲染证据及真实错列的输出拒绝认证。
+- 无校核输入沿用原序列化和证据路径。验证入口为 `tests.test_table_value_column_review` 和 `tests.test_table_value_column_review_delivery`，前者覆盖来源和原格拒绝，后者覆盖 Word 列位置、交付证据和重读。
 
 ### TABLE-002 表题、条件正文、表体和表注顺序
 

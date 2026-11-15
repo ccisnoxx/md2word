@@ -299,6 +299,11 @@ def formula_source_inventory(document_ir: DocumentIR, *, _literal_identifiers: s
     return sources
 
 
+def _has_value_column_reviews(document_ir: DocumentIR) -> bool:
+    return any(fragment.value_column_review is not None
+               for group in document_ir.metadata.logical_table_groups for fragment in group.fragments)
+
+
 def build_renderer_evidence(document_ir: DocumentIR, word_content: bytes, layout_plan: LayoutPlan | None = None,
                             *, render_result: WordRenderResult | None = None, formula_report: dict[str, Any] | None = None,
                             image_layout_report: dict[str, Any] | None = None,
@@ -335,7 +340,7 @@ def build_renderer_evidence(document_ir: DocumentIR, word_content: bytes, layout
             formula_report=formula_report, image_report=image_layout_report,
             expected_template_version_id=expected_template_version_id, expected_generation_policy=expected_generation_policy)
     else:
-        if formula_source_coverage is not _UNSET:
+        if formula_source_coverage is not _UNSET or _has_value_column_reviews(document_ir):
             raise content_failure()
         evidence = build_renderer_aggregate_evidence(document_ir, word_content, layout_plan,
             formula_report=formula_report, image_layout_report=image_layout_report,
@@ -408,7 +413,7 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
     from app.services.renderer.content_contract import CONTENT_VERSION, content_failure
     from app.services.renderer import image_evidence
     v2 = "renderer_content_contract_version" in metadata
-    if not v2 and "formula_source_coverage" in metadata:
+    if not v2 and ("formula_source_coverage" in metadata or _has_value_column_reviews(document_ir)):
         raise content_failure()
     if v2:
         if metadata["renderer_content_contract_version"] != CONTENT_VERSION:

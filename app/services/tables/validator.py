@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 import re
 from typing import get_args
@@ -134,6 +134,71 @@ def _cell_text(cell: TableCell) -> str:
     return "".join(run.source for run in cell.runs).strip()
 
 
+def _finding_details(
+    fragment: TableFragmentReference,
+    policy: TableValidationPolicy,
+    rule_id: str,
+    reason: str,
+    *,
+    cell: TableCell | None = None,
+    **location,
+) -> tuple[TableQualityFlag, TableFindingEvidence]:
+    if cell is not None:
+        location = {"cell_id": cell.id, "source_row_index": cell.source_row_index,
+                    "source_cell_index": cell.source_cell_index, "row": cell.row, "column": cell.column, **location}
+    evidence = TableFindingEvidence(
+        rule_id=rule_id, reason=reason, fragment_id=fragment.fragment_id,
+        source_index=fragment.source_index, json_pointer=fragment.json_pointer,
+        page_index=fragment.page_index, bbox=fragment.bbox, **location,
+    )
+    flag = TableQualityFlag(code=RULE_CODES[rule_id], severity=policy.severity_for(rule_id),
+                            fragment_id=fragment.fragment_id, cell_id=evidence.cell_id, run_id=evidence.run_id)
+    return flag, evidence
+
+
+def iter_parameter_value_column_spans(
+    result: TableBuildResult,
+    policy: TableValidationPolicy,
+    *,
+    by_fragment: Mapping[str, TableFragmentReference] | None = None,
+) -> Iterator[tuple[TableQualityFlag, TableFindingEvidence, dict[int, str]]]:
+    """同时给出原始跨列问题及其实际覆盖的数值列，供人工校核核对。"""
+    if by_fragment is None:
+        by_fragment = {fragment.fragment_id: fragment for fragment in _fragment_references(result)}
+    rows: dict[int, list[TableCell]] = defaultdict(list)
+    for cell in result.grid.cells:
+        rows[cell.row].append(cell)
+    value_columns: dict[int, str] = {}
+    for row in sorted(rows):
+        labels = {}
+        for cell in rows[row]:
+            label = _PARAMETER_VALUE_LABELS.get(" ".join(_cell_text(cell).lower().split()).rstrip("."))
+            if label is not None and cell.colspan == 1:
+                labels[cell.column] = label
+        # MinerU 常用 td 写表头，同一行至少两类单列标签才更新后续数据行的数值列。
+        if len(set(labels.values())) >= 2:
+            value_columns = labels
+            continue
+        if not value_columns:
+            continue
+        for cell in rows[row]:
+            if cell.is_header or cell.colspan < 2:
+                continue
+            end_column = cell.column + cell.colspan
+            covered = {column: value_columns[column] for column in range(cell.column, end_column)
+                       if column in value_columns}
+            if len(covered) < 2 or not cell.runs or any(run.type != "text" for run in cell.runs):
+                continue
+            value = _SINGLE_VALUE.fullmatch(_cell_text(cell))
+            if value is None or (value["suffix"] or "").upper() in {"REF", "BSC"}:
+                continue
+            flag, evidence = _finding_details(
+                by_fragment[cell.source_fragment_id], policy, "table_value_column_span_ambiguous",
+                "value_column_span", cell=cell, end_column=end_column, expected=1, actual=len(covered),
+            )
+            yield flag, evidence, covered
+
+
 def _unit_count(token: str) -> int:
     """完整合法 token 优先；最长 token 贪心扫描，不分配随组合数增长的路径。"""
     if token in _UNITS:
@@ -195,17 +260,10 @@ class _TableValidator:
                     self.row_widths[(fragment.fragment_id, diagnostic.source_row_index)] = diagnostic.column
 
     def emit(self, rule_id: str, reason: str, fragment_id: str, *, cell: TableCell | None = None, **location) -> None:
-        fragment = self.by_fragment[fragment_id]
-        if cell is not None:
-            location = {"cell_id": cell.id, "source_row_index": cell.source_row_index,
-                        "source_cell_index": cell.source_cell_index, "row": cell.row, "column": cell.column, **location}
-        evidence = TableFindingEvidence(
-            rule_id=rule_id, reason=reason, fragment_id=fragment_id,
-            source_index=fragment.source_index, json_pointer=fragment.json_pointer,
-            page_index=fragment.page_index, bbox=fragment.bbox, **location,
-        )
-        flag = TableQualityFlag(code=RULE_CODES[rule_id], severity=self.policy.severity_for(rule_id),
-                                fragment_id=fragment_id, cell_id=evidence.cell_id, run_id=evidence.run_id)
+        flag, evidence = _finding_details(self.by_fragment[fragment_id], self.policy, rule_id, reason, cell=cell, **location)
+        self._record_finding(flag, evidence)
+
+    def _record_finding(self, flag: TableQualityFlag, evidence: TableFindingEvidence) -> None:
         identity = make_finding_id(self.result.grid.table_id, flag, evidence)
         # 重投不扣额度；在分配新的 finding 和序列化报告之前使用文档剩余额度。
         if identity not in self.findings and len(self.findings) >= self.finding_budget:
@@ -332,39 +390,8 @@ class _TableValidator:
                             self.emit("table_abnormal_long_number", "long_decimal", identity, **location)
 
     def value_column_spans(self) -> None:
-        """根据 Grid 标记单个参数值跨多个并列数值列的结构歧义。
-
-        MinerU 常以 <td> 输出表头，同行至少两类单列标签可建立数值列集合。
-        续表重复表头时按全局行序更新列集合。
-        REF/BSC 例外要求整个后缀为参考标记。
-        """
-        rows: dict[int, list[TableCell]] = defaultdict(list)
-        for cell in self.cells:
-            rows[cell.row].append(cell)
-        value_columns: set[int] = set()
-        for row in sorted(rows):
-            labels = {}
-            for cell in rows[row]:
-                label = _PARAMETER_VALUE_LABELS.get(" ".join(_cell_text(cell).lower().split()).rstrip("."))
-                if label is not None and cell.colspan == 1:
-                    labels[cell.column] = label
-            if len(set(labels.values())) >= 2:
-                value_columns = set(labels)
-                continue
-            if not value_columns:
-                continue
-            for cell in rows[row]:
-                if cell.is_header or cell.colspan < 2:
-                    continue
-                end_column = cell.column + cell.colspan
-                covered_count = sum(column in value_columns for column in range(cell.column, end_column))
-                if covered_count < 2 or not cell.runs or any(run.type != "text" for run in cell.runs):
-                    continue
-                value = _SINGLE_VALUE.fullmatch(_cell_text(cell))
-                if value is None or (value["suffix"] or "").upper() in {"REF", "BSC"}:
-                    continue
-                self.emit("table_value_column_span_ambiguous", "value_column_span", cell.source_fragment_id,
-                          cell=cell, end_column=end_column, expected=1, actual=covered_count)
+        for flag, evidence, _ in iter_parameter_value_column_spans(self.result, self.policy, by_fragment=self.by_fragment):
+            self._record_finding(flag, evidence)
 
     def continuations(self) -> None:
         all_fragments = {item.fragment_id: item for item in (*self.fragments, *self.related)}

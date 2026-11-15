@@ -23,6 +23,7 @@ from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset
 from app.services.document_ir.table_header_review import TableHeaderReview
 from app.services.document_ir.table_placeholder import PdfCropSource
+from app.services.document_ir.table_value_column_review import TableValueColumnReview, TableValueColumnReviewError
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
 from app.services.renderer.block_evidence import WordRenderResult
 from app.services.renderer.render_evidence import build_renderer_evidence
@@ -59,6 +60,7 @@ class FormalMinerUConversionRequest:
     source_file_id: str = LOCAL_SOURCE_FILE_ID
     placeholder_source: PdfCropSource | None = field(default=None, repr=False)
     table_header_reviews: tuple[TableHeaderReview, ...] = ()
+    table_value_column_reviews: tuple[TableValueColumnReview, ...] = ()
 
 
 def parse_table_header_reviews(content: bytes) -> tuple[TableHeaderReview, ...]:
@@ -67,6 +69,17 @@ def parse_table_header_reviews(content: bytes) -> tuple[TableHeaderReview, ...]:
         return TypeAdapter(tuple[TableHeaderReview, ...]).validate_json(content)
     except ValidationError as error:
         raise ValueError("表头校核文件应为符合合同的 JSON 数组。") from error
+
+
+def parse_table_value_column_reviews(content: bytes) -> tuple[TableValueColumnReview, ...]:
+    """解析显式选用的核定记录，来源及修正范围由转换器校验。"""
+    try:
+        reviews = TypeAdapter(tuple[TableValueColumnReview, ...]).validate_json(content)
+    except ValidationError:
+        raise TableValueColumnReviewError("invalid_input") from None
+    if not reviews:
+        raise TableValueColumnReviewError("invalid_input")
+    return reviews
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +183,7 @@ def run_conversion(
     job_id: str | None = None,
     placeholder_source: PdfCropSource | None = None,
     table_header_reviews: tuple[TableHeaderReview, ...] = (),
+    table_value_column_reviews: tuple[TableValueColumnReview, ...] = (),
     **_ignored: Any,
 ) -> FormalMinerUConversionResult:
     """以兼容参数形状调用正式 DocumentIR renderer 的本地入口。"""
@@ -206,6 +220,7 @@ def run_conversion(
         job_id=str(job_id or LOCAL_JOB_ID),
         placeholder_source=placeholder_source,
         table_header_reviews=table_header_reviews,
+        table_value_column_reviews=table_value_column_reviews,
     )
     return convert_formal_mineru_package(request)
 
@@ -213,6 +228,8 @@ def run_conversion(
 def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> FormalMinerUConversionResult:
     """使用 document_jobs 同一组核心服务转换本地 MinerU 结果包。"""
 
+    if request.table_value_column_reviews and is_translation_mode(request.translation_mode):
+        raise TableValueColumnReviewError("unsupported_translation_mode")
     _validate_request_paths(request)
     request.output_path.parent.mkdir(parents=True, exist_ok=True)
     _mkdir_parent(request.translation_request_output)
@@ -231,6 +248,7 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
             document_language=request.document_language,
             placeholder_source_loader=(lambda: source) if source is not None else None,
             table_header_reviews=request.table_header_reviews,
+            table_value_column_reviews=request.table_value_column_reviews,
         )
         source_document_ir = result.document
         document_ir = _translate_if_needed(source_document_ir, request)
