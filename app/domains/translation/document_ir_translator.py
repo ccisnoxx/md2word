@@ -6,14 +6,17 @@ import hashlib
 import re
 import time
 from dataclasses import dataclass, field, replace
-from typing import Protocol
+from typing import Literal, Protocol
 
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString
 
 from app.conversion.docx_rules.formula import scan_math_spans
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
+from app.services.document_ir.table_annotations import freeze_table_annotation_sources
 from app.domains.translation.models import (
+    TRANSLATION_ANNOTATION_FIELDS,
+    TableTranslationContext,
     TermVersionSnapshot,
     TranslationPromptSnapshot,
     TranslationTermEntry,
@@ -21,7 +24,7 @@ from app.domains.translation.models import (
     TranslationProviderRequest,
     TranslationProviderResult,
     TranslationTextItem,
-    TranslationTableContext,
+    annotation_item_id,
     normalize_translation_source_term,
 )
 from app.domains.translation.provider import TranslationProvider, TranslationProviderResponseError
@@ -86,7 +89,7 @@ class DocumentIRTranslationTarget:
 
     item_id: str
     block_id: str
-    field: str
+    field: Literal["text", "list_items", "html", "captions", "footnotes"]
     index: int | None = None
     page_number: int | None = None
     order: int = 0
@@ -160,6 +163,11 @@ class DocumentIRTranslationService:
         """返回翻译后的 DocumentIR 副本；blocks/assets 数量和顺序保持不变。"""
 
         translated = document_ir.model_copy(deep=True)
+        if translated.metadata.translation_item_scope is None:
+            translated.metadata.translation_item_scope = "annotations-v1"
+            freeze_table_annotation_sources(translated)
+            # 同步翻译也固定抽取范围，且不会改写输入对象。
+            document_ir = translated
         try:
             targets, items, batches = self.build_translation_plan(
                 document_ir,
@@ -339,7 +347,7 @@ class DocumentIRTranslationService:
 
     def _build_table_contexts(
         self, document_ir: DocumentIR, items: tuple[TranslationTextItem, ...],
-    ) -> dict[str, TranslationTableContext]:
+    ) -> dict[str, TableTranslationContext]:
         if not self.table_context_enabled:
             return {}
         try:
@@ -350,9 +358,9 @@ class DocumentIRTranslationService:
             ) from None
 
     def _prepare_request_content(
-        self, source_items: tuple[TranslationTextItem, ...], raw_contexts: dict[str, TranslationTableContext],
+        self, source_items: tuple[TranslationTextItem, ...], raw_contexts: dict[str, TableTranslationContext],
         *, max_chars: int,
-    ) -> tuple[EncodedTokenBatch, tuple[TranslationTableContext, ...]]:
+    ) -> tuple[EncodedTokenBatch, tuple[TableTranslationContext, ...]]:
         """计划和调用共享编码与预算，完整性证据始终只描述原正文集合。"""
         encoded = self.validator.prepare(source_items, max_chars=max_chars)
         self._validate_formula_protection(source_items, encoded)
@@ -374,7 +382,7 @@ class DocumentIRTranslationService:
         formula_count = 0
         unprotected_count = 0
         for item in source_items:
-            for span in scan_math_spans(item.text):
+            for span in scan_math_spans(item.text, standalone_footnote_markers=True):
                 formula_count += 1
                 if not any(
                     token.item_id == item.id
@@ -558,13 +566,26 @@ class DocumentIRTranslationService:
         """纯提取稳定单元；类调用与原实例调用共享同一排序及校验。"""
         targets: list[DocumentIRTranslationTarget] = []
         items: list[TranslationTextItem] = []
+        include_annotations = document_ir.metadata.translation_item_scope == "annotations-v1"
         for block in sorted(document_ir.blocks, key=lambda item: item.order):
             if block.metadata.get("synthetic"):
                 # 整页降级的提示与页面图像不是源文本：提示保持中文，不送翻译、不进复核单元。
                 continue
-            cls._append_block_text(block, targets, items)
+            if not include_annotations or block.caption_text_alias_index is None:
+                cls._append_block_text(block, targets, items)
             cls._append_list_items(block, targets, items)
             cls._append_table_text_nodes(block, targets, items)
+            if include_annotations and block.type in {"image", "table"}:
+                for annotation_field in TRANSLATION_ANNOTATION_FIELDS:
+                    for index, value in enumerate(getattr(block, annotation_field)):
+                        if not cls._has_text(value):
+                            continue
+                        item_id = annotation_item_id(block.id, annotation_field, index)
+                        targets.append(DocumentIRTranslationTarget(
+                            item_id=item_id, block_id=block.id, field=annotation_field, index=index,
+                            page_number=cls._block_page_number(block), order=block.order,
+                        ))
+                        items.append(TranslationTextItem(id=item_id, text=value.strip()))
         return targets, items
 
     @classmethod
@@ -661,7 +682,7 @@ class DocumentIRTranslationService:
         unprotected_count = len(semantic_spans)
         for nodes in groups.values():
             text = "".join(str(node) for node in nodes)
-            spans = scan_math_spans(text)
+            spans = scan_math_spans(text, standalone_footnote_markers=True)
             formula_count += len(spans)
             positions = []
             cursor = 0
@@ -696,10 +717,16 @@ class DocumentIRTranslationService:
                 block.list_items[target.index] = translated_text
             elif target.field == "html" and target.index is not None:
                 html_replacements.setdefault(block.id, {})[target.index] = translated_text
+            elif target.field in {"captions", "footnotes"} and target.index is not None:
+                getattr(block, target.field)[target.index] = translated_text
+                if target.field == "captions" and target.index == block.caption_text_alias_index:
+                    block.text = translated_text
 
         for block_id, replacements_by_index in html_replacements.items():
             block = blocks_by_id[block_id]
             block.html = self._replace_html_text_nodes(block.html or "", replacements_by_index)
+        if document_ir.metadata.translation_item_scope == "annotations-v1":
+            document_ir.metadata.translation_items_applied = True
 
     @staticmethod
     def _block_page_number(block: DocumentIRBlock) -> int | None:

@@ -317,6 +317,7 @@ class DocumentJobExecutionService:
                     source_file_id=job.source_file_id,
                     document_language=job.document_language,
                     placeholder_source_loader=lambda: self.rendering.placeholders.load_source(job),
+                    translation_item_scope="annotations-v1" if is_translation_document_job_mode(job.mode) else None,
                 )
             except (MinerUArtifactValidationError, DocumentIntegrityError, TablePlaceholderError) as error:
                 error.mineru_validation_input = validation_input

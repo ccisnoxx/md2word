@@ -169,6 +169,26 @@ class TableContextTests(unittest.TestCase):
             translated = self.service.translate(doc, term_version=None)
         self.assertEqual(BeautifulSoup(translated.blocks[0].html, "html.parser").caption.get_text(), "标题")
 
+    def test_scoped_table_captions_and_notes_use_table_identity_without_cell_coordinates(self):
+        doc = document('<table><tr><th>Parameter</th></tr><tr><td>Typical</td></tr></table>')
+        doc.blocks[0].footnotes = ["", "Supply 5 V"]
+        doc.blocks[0].captions = ["Table 1. Limits"]
+        self.assertEqual([item.id for item in self.prepare(doc).source_items], ["table.html.0000", "table.html.0001"])
+        doc.metadata.translation_item_scope = "annotations-v1"
+        prepared = self.prepare(doc)
+        payloads = {item["id"]: item.get("context") for item in json.loads(self.serializer._user_prompt(prepared.request))["items"]}
+        self.assertEqual(payloads["table.html.0001"]["row"], 1)
+        self.assertEqual(payloads["table.captions.0000"], {
+            "kind": "table_annotation", "table_block_id": "table", "annotation_field": "captions", "annotation_index": 0,
+        })
+        self.assertEqual(payloads["table.footnotes.0001"], {
+            "kind": "table_annotation", "table_block_id": "table", "annotation_field": "footnotes", "annotation_index": 1,
+        })
+        self.assertNotIn("table.footnotes.0000", payloads)
+        only_note = self.prepare(doc, items=[prepared.source_items[-1]]).request
+        self.assertEqual(only_note.table_contexts[0].to_payload(), payloads["table.footnotes.0001"])
+        self.assertNotIn("5 V", only_note.items[0].text)
+
     def test_row_headers_are_not_inherited_as_column_headers(self):
         doc = document('<table><tr><th scope="col">Parameter</th><th scope="col">Value</th></tr>'
                        '<tr><th scope="row">First</th><td>High</td></tr>'

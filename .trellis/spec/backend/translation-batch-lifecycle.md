@@ -42,6 +42,7 @@ validate_translation_batch_tree(
 ## 3. 数据与状态合同
 
 - expected plans 在锁外由已验证的不可变 source/config 计算，包含确定性根身份、代次、源件、语言/术语绑定、有序 item 分区及规划预算。不能从现存根列表反推期望集合。
+- 翻译源 IR 的 `metadata.translation_item_scope` 固定整个源件的抽取范围。缺省沿旧集合，`annotations-v1` 增加题注脚注。首次登记范围后，安装、领取、拆分、fan-in、同源重试和审核都从同一源件取范围。现存批次缺少新范围的预期项仍按树校验或 fan-in 错误收口。[注释翻译与证据合同](./translation-integrity-validator.md#题注脚注的翻译与审核)
 - 完整根集合是安装单位。已有 ID 不得通过 create/upsert 重置 status、attempt、lease、result 或累计调用账本；已 split 的根仍保留原计划身份。非空残缺集合失败，不补根后继续。
 - split 必须有两个确定性孩子，parent/root/source/config/generation 一致，按顺序无重叠、无缺项地覆盖父 items。split 父不是有效叶子，只有权威零单元计划可走空成功。
 - enqueue、claim、success/failure/split 和 lease 回收在同 job 序列化点核对当前代、完整树及已持久化停止结论。不能只看父 job 仍为 running；停止后不再新领取或晋升在途结果。

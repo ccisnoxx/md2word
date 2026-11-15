@@ -169,7 +169,8 @@ class WordNativeTableRendererMixin:
             text = getattr(block, item.field)[item.item_index].strip()
             paragraph = document.add_paragraph()
             self._set_formula_source(document, block.id, f"{item.field}/{item.item_index}")
-            style = config.table_note if item.role == "note" else getattr(config, table_annotation_style(text))
+            style = (config.table_note if item.role == "note" else
+                     getattr(config, table_annotation_style(text, is_context=item.role == "context")))
             if item.role != "note":
                 paragraph.paragraph_format.keep_with_next = True
                 if page_break_before and not annotations:

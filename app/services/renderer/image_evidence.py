@@ -7,6 +7,8 @@ import io
 import math
 import re
 import zipfile
+from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import PurePosixPath
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -16,9 +18,10 @@ from docx.oxml.ns import qn
 from docx.shared import Twips
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
 
-from app.conversion.docx_rules.formula import canonical_sha256, output_sha256, sha256_text
+from app.conversion.docx_rules.formula import canonical_sha256, output_sha256, replay_formula_output, sha256_text
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.document_ir.models import DocumentIR
+from app.services.document_ir.table_annotations import annotation_items, read_table_annotation_source
 from app.services.renderer.layout_plan import IMAGE_GROUP_VERSION, IMAGE_GROUP_THRESHOLDS, build_image_plan, build_layout_plan, image_annotations
 from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
 from app.services.renderer.formula_renderer import WordFormulaRendererMixin
@@ -60,14 +63,23 @@ def caption_bookmark_inventory(document_ir: DocumentIR, *, table_contracts=None,
     from collections import Counter
     text_renderer = _AnnotationTextRenderer()
     keys = []
+    preserve_positions = document_ir.metadata.translation_item_scope is not None
     members = {identity for unit in table_contracts or [] for identity in unit.member_block_ids}
     selected = {(item.block_id, item.item_index) for unit in table_contracts or [] for item in unit.annotations
                 if item.field == "captions" and item.disposition == "rendered"
+                and (not preserve_positions or item.role == "caption")
                 and (primary_table_block_ids is None or unit.anchor_block_id in primary_table_block_ids)}
     for block in document_ir.blocks:
-        captions = [text for index, text in enumerate(block.captions)
-                    if block.id not in members or (block.id, index) in selected]
-        values = image_annotations(block) if block.type == "image" else tuple(("", t) for t in dict.fromkeys(t.strip() for t in captions) if t) if block.type == "table" else ()
+        if block.type == "image":
+            values = image_annotations(block, preserve_positions=preserve_positions)
+        elif block.type == "table":
+            contexts = read_table_annotation_source(block).context_indices if preserve_positions else ()
+            captions = [text if index not in contexts and (
+                        block.id not in members or (block.id, index) in selected) else ""
+                        for index, text in enumerate(block.captions)]
+            values = (("", text) for text in annotation_items(captions, preserve_positions=preserve_positions).values())
+        else:
+            continue
         for _, text in values:
             parsed = text_renderer._parse_caption_text(text)
             if parsed:
@@ -145,14 +157,27 @@ def annotation_projection(paragraph: Any) -> str:
     return output_sha256(nodes)
 
 
-def expected_annotation(text: str, inputs: dict, bookmarks: dict) -> str:
-    """仅由源字符串和冻结语义生成预期，不读取最终 DOCX。"""
+def expected_annotation(text: str, inputs: dict, bookmarks: dict, *, formula_entries: Iterable[dict] | None = None) -> str:
+    """用源文和冻结语义重绘；已认证的公式模式用于读取旧题注。"""
     renderer = _AnnotationTextRenderer()
     paragraph = Document().add_paragraph()
     style = TemplateParagraphStyleConfig.model_validate(inputs["caption_style"])
     rules = TerminologyReplacer.from_frozen_rules(inputs["format_rules"]["rules"])
+    pending = iter(formula_entries or ())
+    if formula_entries is not None:
+        def replay(span):
+            entry = next(pending, None)
+            if entry is None:
+                raise _ImageEvidenceError("图片布局证据无效：注释公式覆盖")
+            source = entry["source"]
+            _check(source["source_sha256"] == sha256_text(span.source) and source["boundary"] == span.boundary,
+                   "注释公式来源或次序")
+            return replay_formula_output(span, entry["mode"], entry["reason"])
+
+        paragraph.part._md2word_formula_replay = replay
     if not renderer._fill_caption_paragraph(paragraph, text, style, terminology=rules, caption_bookmarks=bookmarks):
         renderer._fill_paragraph(paragraph, text, style, terminology=rules, reference_bookmarks=bookmarks)
+    _check(next(pending, None) is None, "注释公式覆盖")
     return annotation_projection(paragraph._p)
 
 
@@ -199,14 +224,16 @@ def _actual_section(body: Any, child: Any) -> Any:
 
 def verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, *, expected_template_version_id: str | None = None,
                         expected_generation_policy: str | None = None, _legacy_ir_identity: bool = False,
-                        _table_contracts=None, _placeholder_ownership=None, _table_primary_block_ids=None) -> dict:
+                        _table_contracts=None, _placeholder_ownership=None, _table_primary_block_ids=None,
+                        _verified_formula_report: dict | None = None) -> dict:
     """源计划、冻结输入、实际包三方核验；失败不得降级为历史报告。"""
     try:
         return _verify_image_report(document_ir, content, report, expected_template_version_id=expected_template_version_id,
                                     expected_generation_policy=expected_generation_policy,
                                     legacy_ir_identity=_legacy_ir_identity, table_contracts=_table_contracts,
                                     placeholder_ownership=_placeholder_ownership,
-                                    table_primary_block_ids=_table_primary_block_ids)
+                                    table_primary_block_ids=_table_primary_block_ids,
+                                    verified_formula_report=_verified_formula_report)
     except _ImageEvidenceError:
         raise
     except (ValueError, KeyError, TypeError, IndexError, AttributeError, OverflowError, re.error, zipfile.BadZipFile,
@@ -217,7 +244,7 @@ def verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, *
 
 def _verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, *, expected_template_version_id: str | None,
                          expected_generation_policy: str | None, legacy_ir_identity: bool = False, table_contracts=None,
-                         placeholder_ownership=None, table_primary_block_ids=None) -> dict:
+                         placeholder_ownership=None, table_primary_block_ids=None, verified_formula_report: dict | None = None) -> dict:
     _check(isinstance(report, dict) and report["schema_version"] == IMAGE_REPORT_VERSION, "报告版本")
     _check(report["rule_version"] == IMAGE_GROUP_VERSION and report["thresholds"] == IMAGE_GROUP_THRESHOLDS, "归组规则")
     from app.services.renderer.render_plan import legacy_document_ir_payload
@@ -269,6 +296,11 @@ def _verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, 
     legacy_layout = build_layout_plan(document_ir).mode == "legacy_v1_fallback"
     bookmarks = caption_bookmark_inventory(document_ir, table_contracts=table_contracts,
         primary_table_block_ids=table_primary_block_ids)
+    formula_by_annotation: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    if verified_formula_report is not None:
+        for entry in verified_formula_report["entries"]:
+            source = entry["source"]
+            formula_by_annotation[source["block_id"], source["field"]].append(entry)
     with zipfile.ZipFile(io.BytesIO(content)) as package:
         root = ET.fromstring(package.read("word/document.xml"))
         styles = ET.fromstring(package.read("word/styles.xml"))
@@ -397,7 +429,7 @@ def _verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, 
                 available = slots[index]["inner_width"] if slots else single_image_width(block, pages[decision.page_index].width if not legacy_layout and decision.page_index in pages else None, image_geometry)
                 expected_size = image_dimensions(decoded.px_width, decoded.px_height, available, image_available_height(block, image_geometry))
                 _check(actual_size == expected_size == (image["width"], image["height"]), "图片显示尺寸或比例")
-                annotations = image_annotations(block)
+                annotations = image_annotations(block, preserve_positions=document_ir.metadata.translation_item_scope is not None)
                 _check(len(image["annotations"]) == len(annotations), "注释覆盖")
                 paragraphs = list(container)
                 start_index = paragraphs.index(paragraph)
@@ -410,7 +442,13 @@ def _verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, 
                     actual = paragraphs[start_index + annotation_index + 1]
                     _check(actual.tag == qn("w:p") and matches[0] in list(actual), "注释次序或 cell 绑定")
                     _verify_anchor(root, actual, matches[0])
-                    expected_hash = expected_annotation(text, inputs, bookmarks)
+                    formula_entries = None
+                    if verified_formula_report is not None:
+                        formula_entries = formula_by_annotation[block.id, field]
+                        names = [node.get(qn("w:name")) for node in actual.iter(qn("w:bookmarkStart"))
+                                 if node.get(qn("w:name"), "").startswith("md2w_formula_")]
+                        _check(names == [entry["anchor"] for entry in formula_entries], "注释公式锚点")
+                    expected_hash = expected_annotation(text, inputs, bookmarks, formula_entries=formula_entries)
                     _check(annotation["expected_output_sha256"] == expected_hash == annotation_projection(actual), "注释内容或字段投影")
                     _check(_keep_next(actual) == (annotation_index < len(annotations) - 1), "注释 keep 链")
                     if table is None:

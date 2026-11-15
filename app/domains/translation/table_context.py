@@ -8,7 +8,14 @@ from dataclasses import replace
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
-from app.domains.translation.models import TranslationTableContext, TranslationTextItem
+from app.domains.translation.models import (
+    TRANSLATION_ANNOTATION_FIELDS,
+    TableTranslationContext,
+    TranslationTableAnnotationContext,
+    TranslationTableContext,
+    TranslationTextItem,
+    annotation_item_id,
+)
 from app.domains.translation.protected_tokens import EncodedTokenBatch, encode
 from app.services.document_ir.logical_table_group import validate_logical_table_groups
 from app.services.document_ir.models import DocumentIR
@@ -27,7 +34,7 @@ class TableContextMappingError(ValueError):
         super().__init__("表格上下文无法与原始单元格可靠对应。")
 
 
-def context_char_count(context: TranslationTableContext) -> int:
+def context_char_count(context: TableTranslationContext) -> int:
     """预算计入独立 context JSON 值的字符，包括字段、坐标和 JSON 空白。"""
     return len(json.dumps(context.to_payload(), ensure_ascii=False, indent=2))
 
@@ -49,18 +56,33 @@ def _context_cell_text(cell: Tag) -> str:
 class TableContextBuilder:
     """保留原非空节点索引，只投影明确表头与同行覆盖格，不推测语义分组。"""
 
-    def build(self, document_ir: DocumentIR, items: tuple[TranslationTextItem, ...]) -> dict[str, TranslationTableContext]:
+    def build(self, document_ir: DocumentIR, items: tuple[TranslationTextItem, ...]) -> dict[str, TableTranslationContext]:
         requested = {item.id for item in items}
-        contexts: dict[str, TranslationTableContext] = {}
+        contexts: dict[str, TableTranslationContext] = {}
+        groups = document_ir.metadata.logical_table_groups
+        include_annotations = document_ir.metadata.translation_item_scope == "annotations-v1"
+        group_by_block = {
+            fragment.block_id: group.logical_group_id
+            for group in groups for fragment in group.fragments if fragment.block_id is not None
+        } if include_annotations else {}
         reviews = {fragment.block_id: fragment.header_review
-                   for group in document_ir.metadata.logical_table_groups for fragment in group.fragments
+                   for group in groups for fragment in group.fragments
                    if fragment.header_review is not None}
-        if reviews:
+        if reviews or group_by_block:
             validate_logical_table_groups(document_ir)
         for block_index, block in enumerate(document_ir.blocks):
-            if block.type != "table" or not block.html or not any(
-                item_id.startswith(f"{block.id}.html.") for item_id in requested
-            ):
+            if block.type != "table":
+                continue
+            if include_annotations:
+                for annotation_field in TRANSLATION_ANNOTATION_FIELDS:
+                    for index, value in enumerate(getattr(block, annotation_field)):
+                        item_id = annotation_item_id(block.id, annotation_field, index)
+                        if item_id in requested and value.strip():
+                            contexts[item_id] = TranslationTableAnnotationContext(
+                                item_id=item_id, table_block_id=block.id, logical_group_id=group_by_block.get(block.id),
+                                annotation_field=annotation_field, annotation_index=index,
+                            )
+            if not block.html or not any(item_id.startswith(f"{block.id}.html.") for item_id in requested):
                 continue
             soup = BeautifulSoup(block.html, "html.parser")
             # caption 等非单元格正文仍走旧翻译路径；临时网格只读取格内内容。
@@ -128,19 +150,23 @@ class TableContextBuilder:
         return contexts
 
     def encode_and_select(
-        self, raw: dict[str, TranslationTableContext], encoded: EncodedTokenBatch, *, max_chars: int,
-    ) -> tuple[TranslationTableContext, ...]:
+        self, raw: dict[str, TableTranslationContext], encoded: EncodedTokenBatch, *, max_chars: int,
+    ) -> tuple[TableTranslationContext, ...]:
         """先保护全部技术文字，再按每项剩余空间选择完整段；不截断任何占位符。"""
         selected = [raw[item.id] for item in encoded.items if item.id in raw]
         # dummy 只占用正文命名空间，既不发给 Provider，也不进入正文 ledger。
         fields = [TranslationTextItem("reserved", encoded.namespace)]
         for context in selected:
-            for text in (*context.header_path, *context.row_parameters):
-                fields.append(TranslationTextItem(str(len(fields)), text))
+            if isinstance(context, TranslationTableContext):
+                for text in (*context.header_path, *context.row_parameters):
+                    fields.append(TranslationTextItem(str(len(fields)), text))
         protected = iter(encode(tuple(fields)).items[1:])
         body_lengths = {item.id: len(item.text) for item in encoded.items}
-        result = []
+        result: list[TableTranslationContext] = []
         for context in selected:
+            if isinstance(context, TranslationTableAnnotationContext):
+                result.append(context)
+                continue
             headers = tuple(next(protected).text for _ in context.header_path)
             parameters = tuple(next(protected).text for _ in context.row_parameters)
             limit = min(MAX_TABLE_CONTEXT_CHARS, max_chars - body_lengths[context.item_id])

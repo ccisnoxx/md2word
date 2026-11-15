@@ -24,7 +24,8 @@
     "10-12-con-101-product-mode-ui-copy",
     "10-21-tr-402-protected-token-codec",
     "10-21-tr-403-translation-integrity-validator",
-    "11-11-datasheet-quality-baseline-contracts"
+    "11-11-datasheet-quality-baseline-contracts",
+    "11-15-datasheet-annotation-translation-superscript"
   ],
   "parent": null,
   "relatedFiles": [],

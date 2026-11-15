@@ -94,6 +94,8 @@ def validate_table_figure_bindings(document: DocumentIR) -> set[str]:
             sections.setdefault(block.metadata.get("source_block_id"), []).append(block)
     if not figures and not sections:
         return set()
+    translated = (document.metadata.translation_item_scope == "annotations-v1"
+                  and document.metadata.translation_items_applied is True)
     if report is None or not (report.content_list_path or "").endswith("content_list_v2.json"):
         raise ValueError("MinerU 图表来源绑定无效。")
     checked_sources = {check.json_pointer: check for check in report.table_checks}
@@ -121,7 +123,8 @@ def validate_table_figure_bindings(document: DocumentIR) -> set[str]:
         headings = sections.pop(block.id, [])
         if (split is None or caption_source_sha256(originals[0]["value"]) != proof.caption_source_sha256
                 or len(split[0]) != proof.caption_index or len(headings) != proof.caption_index
-                or block.captions != [split[1]]
+                or len(block.captions) != 1 or not block.captions[0].strip()
+                or (not translated and block.captions[0] != split[1])
                 or any(heading.type != "heading" or heading.page_index != block.page_index or not (heading.text or "").strip()
                        for heading in headings)):
             raise ValueError("MinerU 图表题注绑定无效。")

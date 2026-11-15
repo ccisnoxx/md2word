@@ -35,7 +35,7 @@ from app.domains.document_jobs.workflow import reduce_translation_generation
 from app.domains.resources.models import utc_now
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
 from app.domains.translation.integrity import items_sha256
-from app.domains.translation.models import TranslationTextItem
+from app.domains.translation.models import TRANSLATION_ANNOTATION_FIELDS, TranslationTextItem, annotation_item_id
 from app.domains.translation.modes import is_translation_document_job_mode, spec_for_document_job_mode
 from app.services.document_ir.layout_signals import pdf_point_bbox
 from app.services.document_ir.models import DocumentIR
@@ -245,6 +245,14 @@ def _translation(read):
         return _component("not_applicable")
     if read.source_ir is None:
         return _component("unavailable", "source_content_unavailable")
+    scope = read.source_ir.metadata.translation_item_scope
+    if read.source_ir.metadata.translation_items_applied is not None:
+        raise _conflict()
+    if read.final_ir is not None:
+        final_metadata = read.final_ir.metadata
+        if scope != final_metadata.translation_item_scope or (
+                scope is not None and final_metadata.translation_items_applied is not True):
+            raise _conflict()
     read.source_units = _units(read.source_ir)
     read.target_units = _units(read.final_ir)
     if read.final_ir is not None:
@@ -252,6 +260,13 @@ def _translation(read):
         if set(read.source_units) != set(read.target_units) or any(
                 read.source_units[key][0] != read.target_units[key][0] for key in read.source_units):
             raise _conflict()
+        if scope is not None:
+            source_aliases = {block.id: block.caption_text_alias_index for block in read.source_ir.blocks
+                              if block.caption_text_alias_index is not None}
+            final_aliases = {block.id: block.caption_text_alias_index for block in read.final_ir.blocks
+                             if block.caption_text_alias_index is not None}
+            if source_aliases != final_aliases:
+                raise _conflict()
     source_record = read.observe(read.job.source_document_ir_file_id)
     role = source_record.metadata.get("translation") if source_record else None
     if role is not None and (not isinstance(role, dict) or role.get("role") != "source" or role.get("applied") is not False):
@@ -368,12 +383,12 @@ def _log_evidence(read, batch, record, payload, source_file):
             # 提取器的文本用于展示会 strip；持久 hash 必须沿原 field/index 取实际回填值。
             if target.field == "text":
                 text = block.text
-            elif target.field == "list_items":
-                text = block.list_items[target.index]
-            else:
+            elif target.field == "html":
                 if block.id not in html_nodes:
                     html_nodes[block.id] = [str(node) for node in BeautifulSoup(block.html, "html.parser").find_all(string=True) if str(node).strip()]
                 text = html_nodes[block.id][target.index]
+            else:
+                text = getattr(block, target.field)[target.index]
             target_items.append(TranslationTextItem(id=item_id, text=text))
         if integrity.get("restored_sha256") != items_sha256(tuple(target_items)):
             raise _conflict()
@@ -563,19 +578,22 @@ def _parts(read, block):
         current = next((item for item in document.blocks if item.id == block.id), None)
         if current is None:
             continue
-        if current.text:
+        units = read.source_units if side == "source" else read.target_units
+        has_caption_alias = document.metadata.translation_item_scope is not None and current.caption_text_alias_index is not None
+        if current.text and not has_caption_alias:
             unit = f"{block.id}.text"
-            yield from _text_parts("text", side, "text", current.text, unit_id=unit if unit in read.source_units else None)
+            yield from _text_parts("text", side, "text", current.text, unit_id=unit if unit in units else None)
         for index, text in enumerate(current.list_items or []):
             unit = f"{block.id}.list_items.{index:04d}"
-            yield from _text_parts("list_item", side, "list_items", text, index=index, unit_id=unit if unit in read.source_units else None)
-        for field_name, kind in (("captions", "caption"), ("footnotes", "footnote")):
+            yield from _text_parts("list_item", side, "list_items", text, index=index, unit_id=unit if unit in units else None)
+        for field_name in TRANSLATION_ANNOTATION_FIELDS:
+            kind = "caption" if field_name == "captions" else "footnote"
             for index, text in enumerate(getattr(current, field_name)):
-                yield from _text_parts(kind, side, field_name, text, index=index)
+                unit = annotation_item_id(block.id, field_name, index)
+                yield from _text_parts(kind, side, field_name, text, index=index, unit_id=unit if unit in units else None)
         if current.latex:
             yield from _text_parts("latex", side, "latex", current.latex)
         if current.html:
-            units = read.source_units if side == "source" else read.target_units
             table_units = [(target, text) for target, text in units.values() if target.block_id == block.id and target.field == "html"]
             if table_units:
                 for target, text in table_units:
@@ -598,9 +616,14 @@ def _parts(read, block):
     for term in read.terms:
         if read.source_units[term.unit_id][0].block_id == block.id:
             yield Part(kind="term", side="shared", field="glossary_trace", unit_id=term.unit_id, term=term)
-    for batch_id, item_ids, evidence in read.batch_evidence:
-        if any(read.source_units[item_id][0].block_id == block.id for item_id in item_ids):
+    for _, item_ids, evidence in read.batch_evidence:
+        block_item_ids = sorted(item_id for item_id in item_ids if read.source_units[item_id][0].block_id == block.id)
+        if block_item_ids:
             yield Part(kind="batch", side="shared", field="integrity", batch=evidence)
+        # 同块的注释可能分在不同批次；附上该注释的稳定 ID 供逐项核对。
+        for item_id in block_item_ids:
+            if read.source_units[item_id][0].field in TRANSLATION_ANNOTATION_FIELDS:
+                yield Part(kind="batch", side="shared", field="integrity", unit_id=item_id, batch=evidence)
     for table in read.tables:
         if block.id in table.member_block_ids:
             yield Part(kind="table", side="shared", field="table", table=table)

@@ -16,6 +16,7 @@ from unittest.mock import patch
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
 from app.domains.translation.models import TranslationProviderResult, TranslationTextItem
+from app.domains.translation.provider import TranslationProviderResponseError
 from app.services.document_ir.models import DocumentIR
 from tests.test_fastapi_jobs_backend import build_test_runtime
 
@@ -42,7 +43,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         self.root = Path(self.temp.name)
         self.counter = 0
 
-    def make_case(self, *, defer_planning=False, source_blocks=None):
+    def make_case(self, *, defer_planning=False, source_blocks=None, annotation_scope=None):
         self.counter += 1
         runtime = build_test_runtime(self.root / str(self.counter), jobs_artifact_storage_backend="local_object")
         execution = runtime.document_job_execution_service
@@ -71,6 +72,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         zip_path.write_bytes(buffer.getvalue())
         document = execution.document_ir_service.convert_zip(
             zip_path, job_id=job.id, source_file_id=job.source_file_id, document_language="en",
+            translation_item_scope=annotation_scope,
         ).document
         planning = (
             patch.object(execution.translation_batches.installer, "install_and_enqueue", side_effect=lambda job, document, **kwargs: job)
@@ -116,6 +118,91 @@ class TranslationIntegrityExecutionTests(TestCase):
         logs = self.files(runtime, "ai_call_log")
         self.assertEqual(len(logs), 1)
         self.assertEqual(self.payload(runtime, logs[0])["integrity"], result["integrity"])
+
+    def test_legacy_source_reuses_installed_results_and_keeps_original_retry_plan(self):
+        runtime, execution, provider, job, batch, source, _raw = self.make_case(source_blocks=[{
+            "type": "table", "page_idx": 0, "table_caption": "Table 1. Ratings",
+            "table_body": "<table><tr><td>Voltage</td></tr></table>", "table_footnote": "(1) Supply 5 V",
+        }])
+        source_record = runtime.document_file_repository.get_document_file(job.source_document_ir_file_id)
+        source_bytes = runtime.file_upload_service.read_file_content(source_record)
+        self.assertNotIn(b"translation_item_scope", source_bytes)
+        self.assertEqual(batch.item_ids, ["block_0001.text", "block_0001.html.0000"])
+        succeeded = self.persist_batch(runtime, execution, batch)
+        self.assertEqual(succeeded.status, "succeeded")
+        with patch.object(execution.rendering, "render_and_save_word", side_effect=lambda job, **kwargs: job):
+            execution.translation_batches.finalize_generation(job.id, generation=0, trace_id=None)
+        self.assertEqual(len(provider.requests), 1)
+        current = runtime.document_job_repository.get_document_job(job.id)
+        target = self.payload(runtime, runtime.document_file_repository.get_document_file(current.document_ir_file_id))
+        self.assertEqual(target["blocks"][0]["text"], "译文：Table 1. Ratings")
+        self.assertEqual(target["blocks"][0]["captions"], source.blocks[0].captions)
+        self.assertEqual(target["blocks"][0]["footnotes"], source.blocks[0].footnotes)
+        self.assertNotIn("translation_items_applied", target["metadata"])
+        next_job = current.model_copy(update={"retry_count": 1})
+        reopened = execution.translation_batches.planner.read_source(next_job, next_job.source_document_ir_file_id)[1]
+        next_plan, = execution.translation_batches.planner.build_expected_plans(next_job, reopened)
+        self.assertEqual(next_plan.item_ids, tuple(batch.item_ids))
+        self.assertEqual(runtime.file_upload_service.read_file_content(source_record), source_bytes)
+
+    def test_scoped_annotations_split_and_reassemble_in_original_positions(self):
+        runtime, execution, provider, job, batch, _source, _raw = self.make_case(
+            annotation_scope="annotations-v1", source_blocks=[{
+                "type": "table", "page_idx": 0, "table_caption": "Table 1. Ratings",
+                "table_body": "<table><tr><td>Voltage</td></tr></table>",
+                "table_footnote": ["(1) Supply 5 V", "(2) Keep 25°C"],
+            }],
+        )
+        self.assertEqual(batch.item_ids, [
+            "block_0001.html.0000", "block_0001.captions.0000", "block_0001.footnotes.0000", "block_0001.footnotes.0001",
+        ])
+
+        def truncate_root(request, items):
+            if request.batch_id == batch.id:
+                raise TranslationProviderResponseError("测试截断", suspected_truncation=True)
+            return items
+
+        provider.transform = truncate_root
+        split = execution.translation_batches.execute_translation_batch(batch.id)
+        self.assertEqual(split.status, "split")
+        leaves = sorted(
+            [child for child in runtime.document_job_translation_batch_repository.list_translation_batches(job.id)
+             if child.parent_batch_id == batch.id], key=lambda child: child.id,
+        )
+        self.assertEqual([item_id for child in leaves for item_id in child.item_ids], batch.item_ids)
+        with patch.object(execution.rendering, "render_and_save_word", side_effect=lambda job, **kwargs: job):
+            for child in leaves:
+                self.assertEqual(execution.translation_batches.execute_translation_batch(child.id).status, "succeeded")
+        current = runtime.document_job_repository.get_document_job(job.id)
+        target_file = runtime.document_file_repository.get_document_file(current.document_ir_file_id)
+        target = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(target_file))
+        self.assertTrue(target.metadata.translation_items_applied)
+        self.assertEqual(target.blocks[0].text, target.blocks[0].captions[0])
+        self.assertEqual(target.blocks[0].footnotes, ["译文：(1) Supply 5 V", "译文：(2) Keep 25°C"])
+
+    def test_scoped_annotation_missing_or_changed_token_never_applies_partial_replacements(self):
+        cases = {
+            "translation_integrity_item_missing": lambda _request, items: items[:-1],
+            "translation_integrity_placeholder_missing": lambda _request, items: (
+                *items[:-1], TranslationTextItem(id=items[-1].id, text="译文：没有源技术信息"),
+            ),
+        }
+        for code, transform in cases.items():
+            with self.subTest(code=code):
+                runtime, execution, provider, job, batch, _source, _raw = self.make_case(
+                    annotation_scope="annotations-v1", source_blocks=[{
+                        "type": "table", "page_idx": 0, "table_caption": "Table 1. Ratings",
+                        "table_body": "<table><tr><td>Voltage</td></tr></table>",
+                        "table_footnote": "(1) Supply 5 V",
+                    }],
+                )
+                self.assertEqual(batch.item_ids[-1], "block_0001.footnotes.0000")
+                provider.transform = transform
+                failed = execution.translation_batches.execute_translation_batch(batch.id)
+                self.assertEqual(failed.error_code, code)
+                self.assertEqual(self.files(runtime, "translation_batch_result"), [])
+                self.assertEqual(self.files(runtime, "generated_word"), [])
+                self.assertIsNone(runtime.document_job_repository.get_document_job(job.id).document_ir_file_id)
 
     def test_bad_second_item_is_atomic_and_preserves_specific_retryable_codes(self):
         cases = {

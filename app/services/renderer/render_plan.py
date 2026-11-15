@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from app.conversion.docx_rules.formula import content_math_spans
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
+from app.services.document_ir.table_annotations import annotation_items, read_table_annotation_source
 from app.services.document_ir.table_figure import FIGURE_SECTION_ROLE
 from app.services.renderer.layout_plan import (
     LayoutPage, LayoutPlan, LayoutRegion, build_image_plan, complete_two_column_tails, image_annotations, is_exclusive_degraded_block, is_exclusive_page, split_two_col_blocks,
@@ -359,6 +360,7 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
     if len(ids) != len(set(ids)) or any(not value for value in ids):
         raise ValueError("ir_render_evidence:block_coverage_mismatch")
     config = effective_config
+    scoped_annotations = document_ir.metadata.translation_item_scope is not None
     if table_strategies is None:
         from app.services.renderer.table_renderer import prepare_table_input
         prepared = {block.id: prepare_table_input(block, effective_config) for block in document_ir.blocks if block.type == "table"}
@@ -504,9 +506,13 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
                     decision.mode = {"standard": "native_table", "expanded": "table_expanded", "fallback": "table_fallback"}[strategy]
                     decision.style_group, decision.named_style = "table_content", config.table_style.style_name
                     from app.services.renderer.table_renderer import table_annotation_style, table_config_for_columns
-                    captions = list(dict.fromkeys(text.strip() for text in block.captions if text.strip()))
-                    decision.annotation_styles = [table_annotation_style(text) for text in captions]
-                    decision.annotation_styles.extend("table_note" for text in dict.fromkeys(text.strip() for text in block.footnotes if text.strip()))
+                    contexts = read_table_annotation_source(block).context_indices if scoped_annotations else None
+                    captions = annotation_items(block.captions, preserve_positions=scoped_annotations)
+                    decision.annotation_styles = [
+                        table_annotation_style(text, is_context=index in contexts if contexts is not None else None)
+                        for index, text in captions.items()]
+                    decision.annotation_styles.extend(
+                        "table_note" for _ in annotation_items(block.footnotes, preserve_positions=scoped_annotations))
                     model = (table_models or {}).get(block.id)
                     if model is not None:
                         decision.table_policy = {"row_count": len(model.rows), "column_count": model.max_columns,
@@ -516,7 +522,7 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
                 elif block.type == "image":
                     decision.mode, decision.image_strategy = "native_image", "bbox_relative"
                     decision.style_group = "caption"
-                    decision.annotation_styles = ["caption"] * len(image_annotations(block))
+                    decision.annotation_styles = ["caption"] * len(image_annotations(block, preserve_positions=scoped_annotations))
                     decision.image_policy = {"width_strategy": "bbox_relative_with_column_cap", "source_page_width": page.width,
                         "bbox": source_image_position(block)["bbox"], "annotation_count": len(decision.annotation_styles),
                         "generation_policy": IMAGE_GENERATION_POLICY, "span_id": spans[block.id].id, "planned_mode": spans[block.id].mode}
@@ -547,7 +553,7 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
                 block = blocks_by_id[block_id]
                 decision = decisions[block_id]
                 decision.mode, decision.image_strategy, decision.style_group = "native_image", "bbox_relative", "caption"
-                decision.annotation_styles = ["caption"] * len(image_annotations(block))
+                decision.annotation_styles = ["caption"] * len(image_annotations(block, preserve_positions=scoped_annotations))
                 decision.image_policy = {**first.image_policy, "bbox": source_image_position(block)["bbox"],
                     "annotation_count": len(decision.annotation_styles)}
                 decision.reason_codes = list(first.reason_codes)

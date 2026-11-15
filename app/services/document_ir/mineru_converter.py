@@ -48,6 +48,7 @@ from app.services.document_ir.mineru_package import (
     package_sha256, read_json_payload,
 )
 from app.services.document_ir.models import (
+    AnnotationTranslationScope,
     DocumentIR,
     DocumentIRAsset,
     DocumentIRBlock,
@@ -58,7 +59,7 @@ from app.services.document_ir.models import (
 from app.services.document_ir.page_degradation import (
     PAGE_RASTER_SOURCE_PATH, PageDegradationPolicy, degradation_closure, replace_degraded_pages,
 )
-from app.services.document_ir.table_annotations import split_table_annotation_texts
+from app.services.document_ir.table_annotations import freeze_table_annotation_sources, split_table_annotation_texts
 from app.services.document_ir.table_figure import (
     FIGURE_SECTION_ROLE, TABLE_FIGURE_FIELD, TableFigureBinding, caption_source_sha256, split_table_figure_caption,
 )
@@ -127,6 +128,7 @@ class MinerUToDocumentIRService:
         document_language: str,
         placeholder_source_loader: Callable[[], PdfCropSource] | None = None,
         table_header_reviews: tuple[TableHeaderReview, ...] = (),
+        translation_item_scope: AnnotationTranslationScope | None = None,
     ) -> MinerUToDocumentIRResult:
         """读取 MinerU 结果 zip，生成 DocumentIR v2 和待登记图片资产。"""
 
@@ -159,6 +161,7 @@ class MinerUToDocumentIRService:
                     placeholder_source_loader=placeholder_source_loader,
                     table_header_reviews=table_header_reviews,
                     same_document_layout=same_document_layout,
+                    translation_item_scope=translation_item_scope,
                 )
             except MinerUPackageError as error:
                 validator.add_package_error(error)
@@ -179,10 +182,12 @@ class MinerUToDocumentIRService:
         placeholder_source_loader: Callable[[], PdfCropSource] | None,
         table_header_reviews: tuple[TableHeaderReview, ...],
         same_document_layout: tuple[Any, str] | None,
+        translation_item_scope: AnnotationTranslationScope | None,
     ) -> MinerUToDocumentIRResult:
         """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
         validation_report = validator.report
         blocks: list[DocumentIRBlock] = []
+        caption_alias_indices: dict[str, int] = {}
         image_assets: list[MinerUImageAsset] = []
         ir_assets: list[DocumentIRAsset] = []
         quality_flags: list[str] = []
@@ -355,10 +360,12 @@ class MinerUToDocumentIRService:
                         metadata=context_metadata,
                     )
                 )
-            text = self._text_for_block(
+            text, caption_alias_index = self._text_for_block(
                 raw_block, block_type, captions=captions,
                 preserve_line_breaks=block_type == "paragraph" and block_role == "body",
             )
+            if translation_item_scope is not None and caption_alias_index is not None:
+                caption_alias_indices[block_id] = caption_alias_index
             blocks.append(
                 DocumentIRBlock(
                     id=block_id,
@@ -416,6 +423,13 @@ class MinerUToDocumentIRService:
         except TablePlaceholderError as error:
             error.mineru_validation_report = validation_report
             raise
+        if translation_item_scope is not None:
+            # 布局筛选完成后，只登记有效的注释源位置和派生关系。
+            document.metadata.translation_item_scope = translation_item_scope
+            for block in document.blocks:
+                if block.id in caption_alias_indices:
+                    block.metadata["caption_text_alias_index"] = caption_alias_indices[block.id]
+            freeze_table_annotation_sources(document)
         document = DocumentIR.model_validate_json(document.model_dump_json())
         evidence = build_source_integrity(document)
         evidence["mineru_validation"] = validation_report.model_dump(mode="json")
@@ -572,7 +586,8 @@ class MinerUToDocumentIRService:
         *,
         captions: list[str] | None = None,
         preserve_line_breaks: bool = False,
-    ) -> str | None:
+    ) -> tuple[str | None, int | None]:
+        """返回块正文及正文确实从题注派生时使用的原始下标。"""
         if block_type == "table":
             text = self._first_text_from_keys(raw_block, ("text",))
             if not select_mineru_table_html(raw_block):
@@ -590,16 +605,17 @@ class MinerUToDocumentIRService:
                     contexts.append(self._raw_text(raw_block) or "")
                 contexts = [item for item in self._unique_texts(contexts) if item not in excluded]
                 if contexts:
-                    return "\n".join(contexts)
-            return captions[0] if captions else text
+                    return "\n".join(contexts), None
+            return (captions[0], 0) if captions else (text, None)
         if block_type == "image":
-            return captions[0] if captions else self._first_text_from_keys(raw_block, ("text",))
+            return (captions[0], 0) if captions else (self._first_text_from_keys(raw_block, ("text",)), None)
         if block_type == "formula":
-            return self._formula_text(raw_block)
+            return self._formula_text(raw_block), None
         if block_type == "list":
             items = (mineru_list_items(raw_block) or None)
-            return "\n".join(items) if items else self._raw_text(raw_block)
-        return self._raw_text(raw_block, preserve_line_breaks=preserve_line_breaks) or self._first_text_from_keys(raw_block, ("caption",))
+            return ("\n".join(items) if items else self._raw_text(raw_block)), None
+        text = self._raw_text(raw_block, preserve_line_breaks=preserve_line_breaks) or self._first_text_from_keys(raw_block, ("caption",))
+        return text, None
 
     def _formula_text(self, raw_block: dict[str, Any]) -> str | None:
         content = raw_block.get("content")

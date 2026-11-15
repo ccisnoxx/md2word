@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"以实际改动选择最小有效检查并记录证据边界"}
+{"file":".trellis/spec/backend/translation-batch-lifecycle.md","reason":"复核旧根树、新作用域及重试和拆分的一致性"}
+{"file":".trellis/spec/backend/translation-integrity-validator.md","reason":"复核审计摘要、技术信息保真与错绑失败"}
+{"file":".trellis/spec/backend/document-job-mode-contract.md","reason":"复核 direct 和四个翻译方向的资源与交付语义"}
+{"file":".trellis/tasks/11-11-datasheet-quality-baseline-contracts/issues.md","reason":"对照 RS2G04 第 6 页原有缺陷、表头基线和待人工复核范围"}

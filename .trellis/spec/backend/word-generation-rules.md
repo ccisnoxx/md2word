@@ -386,6 +386,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：table captions、condition/context-like annotation、table HTML 和 footnotes。
 - 正式 owner：`app/services/document_ir/table_annotations.py::split_table_annotation_texts`、`::is_table_context_annotation`；`app/services/renderer/table_renderer.py::_render_table_captions`、`::_render_table_notes`。
 - 预期输出：真表题在表格前，条件/测试环境文字降为普通 context paragraph 并在表格前，表注在表格后；context 不生成 SEQ 题注。
+- `annotations-v1` 译后 IR 依据源字段和下标保留注释归属。独立注释即使译文相同也各自输出。续表注释需要已验证的源代表且译后仍满足续表兼容条件。已确认的 `text` 题注别名沿同一题注显示。原范围继续按其历史投影认证。
 - 冲突/例外：页顶表格组的分页挂在首个真实 caption/context；复合编号题注按 FIELD-002 处理。
 - 禁止：把测试条件当作表题；把表注放到表格前；为修分页拆散 caption/table/note 内容组。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_demotes_table_condition_caption_to_context_paragraph`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_renders_context_like_table_caption_as_body_text`。
@@ -507,6 +508,8 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 有限字面量与函数：既有数学边界内，`\,` 生成 U+2009 薄空格，`\_` 生成 U+005F 字面下划线而非下标；`\ln/\log/\exp/\sin/\cos/\tan` 输出有限函数名并复用现有 p 样式。不将它们加入普通文本命令表或裸数学扫描；默认样式、显式 b/i、text 空格和脚本原子保持。
 - 已观察语法：数学边界内的 `\_`、`\%` 保留字面下划线和百分号，`\eta` 写入希腊字母 η；不因此扩大保守裸数学扫描器的命令集或改变历史 occurrence 身份。
 - 冲突/例外：不是完整 TeX 引擎；matrix/cases/align、自定义宏等安全降级，不新增 TeX/AI/图片服务。不能只用零残留证明数学语义正确。
+- 闭合的无基底纯脚注标记（如 `$^{(1)(2)}$`）用 `semantic_runs` 输出原生 Word 上标，保留括号编号及组间空白。含基底的一般数学表达式继续使用 OMML。输出证据校验 `w:vertAlign`、文字和原位置。
+- 若旧公式扫描把空白分隔的前一词收进同一来源范围，新输出依次写普通文字和上标 run，认证仍使用原范围及原字节摘要。旧图注、表题、表注按已校验的出现位置重放当时的 OMML 或保真降级。报告核验仍包括来源、锚点、顺序和实物输出。
 - 禁止：全局删反斜杠/dollar/空格；将含分式整段自然语言转为数学；公式编号静默丢失；建立第二套解析器。
 - 自动验证：`tests.test_formula_literal_support` 的精确字符/六函数、正式三入口、样式与边界直接回归；既有入口为 `tests.test_formula_rendering`、现有 renderer 公式矩阵、`tests.test_formula_translation_boundary` 合成 MinerU→IR→fake translation→原生表格 DOCX。
 - 样本证据：committed 精确结构单测与合成链路；external 样本/Word 签字按任务记录分层，不冒用历史验收。

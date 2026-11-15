@@ -29,6 +29,7 @@ from app.domains.document_jobs.use_cases.review_writer import DocumentReviewWrit
 from app.domains.files.models import DocumentFileRecord, DocumentFileType
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.resources.models import utc_now
+from app.domains.translation.models import TRANSLATION_ANNOTATION_FIELDS, annotation_item_id
 from app.domains.translation.modes import is_translation_document_job_mode
 from app.services.auth.models import AuthenticatedUser
 from app.services.document_ir.models import DocumentIR
@@ -68,9 +69,18 @@ class DocumentJobTranslationQa:
         files = self.access.list_files_for_job(job)
         ai_log_files = self._uploaded_files_by_type(files, "ai_call_log")
         debug_archive_files = self._uploaded_files_by_type(files, "ai_debug_archive")
-        ai_calls, term_traces = self._read_ai_call_log_summaries(ai_log_files)
-        source_texts, ai_translation_texts, source_reason = self._read_debug_archive_texts(debug_archive_files)
         document_ir_file = self._select_document_ir_file(job, files)
+        document_ir = self._read_document_ir(document_ir_file) if document_ir_file is not None else None
+        comparison_files = debug_archive_files
+        accepted_log_ids = None
+        if document_ir_file is not None and document_ir is not None and document_ir.metadata.translation_items_applied is True:
+            # 迟到的 attempt 也会留下诊断档案。对照只取最终 IR 采用的结果。
+            binding = self._read_record(document_ir_file.metadata.get("translation")) or {}
+            accepted_archive_ids = self._read_list(binding.get("debug_archive_file_ids"))
+            comparison_files = [file for file in debug_archive_files if file.id in accepted_archive_ids]
+            accepted_log_ids = self._read_list(binding.get("ai_call_log_file_ids"))
+        ai_calls, term_traces = self._read_ai_call_log_summaries(ai_log_files, accepted_log_ids=accepted_log_ids)
+        source_texts, ai_translation_texts, source_reason = self._read_debug_archive_texts(comparison_files)
         artifacts = self._build_translation_qa_artifacts(
             document_ir_file=document_ir_file,
             ai_log_files=ai_log_files,
@@ -87,7 +97,6 @@ class DocumentJobTranslationQa:
                 source_reason=source_reason,
             )
 
-        document_ir = self._read_document_ir(document_ir_file)
         if document_ir is None:
             return self._build_unavailable_translation_qa(
                 job,
@@ -236,6 +245,8 @@ class DocumentJobTranslationQa:
     def _read_ai_call_log_summaries(
         self,
         files: list[DocumentFileRecord],
+        *,
+        accepted_log_ids: list[Any] | None,
     ) -> tuple[list[DocumentJobTranslationQaAiCallResponse], list[DocumentJobTranslationQaTermTraceResponse]]:
         ai_calls: list[DocumentJobTranslationQaAiCallResponse] = []
         term_traces: list[DocumentJobTranslationQaTermTraceResponse] = []
@@ -265,6 +276,8 @@ class DocumentJobTranslationQa:
                     error_message=self._read_string(error.get("message") if error else None),
                 )
             )
+            if accepted_log_ids is not None and file.id not in accepted_log_ids:
+                continue
             for raw_trace in self._read_list(payload.get("glossary_trace")):
                 trace = self._read_record(raw_trace)
                 if trace is None:
@@ -341,8 +354,10 @@ class DocumentJobTranslationQa:
         ai_translation_texts: dict[str, str],
     ) -> list[DocumentJobTranslationQaSegmentResponse]:
         segments: list[DocumentJobTranslationQaSegmentResponse] = []
+        include_annotations = document_ir.metadata.translation_item_scope is not None
         for block in sorted(document_ir.blocks, key=lambda item: item.order):
-            if self.access.normalize_optional_text(block.text):
+            has_caption_alias = include_annotations and block.caption_text_alias_index is not None
+            if self.access.normalize_optional_text(block.text) and not has_caption_alias:
                 item_id = f"{block.id}.text"
                 segments.append(
                     self._build_translation_qa_segment(
@@ -394,6 +409,25 @@ class DocumentJobTranslationQa:
                         ai_translation_texts=ai_translation_texts,
                     )
                 )
+            if include_annotations and block.type in {"table", "image"} and not block.metadata.get("synthetic"):
+                for field in TRANSLATION_ANNOTATION_FIELDS:
+                    for index, text in enumerate(getattr(block, field)):
+                        if not self.access.normalize_optional_text(text):
+                            continue
+                        segments.append(
+                            self._build_translation_qa_segment(
+                                item_id=annotation_item_id(block.id, field, index),
+                                block_id=block.id,
+                                page_index=block.page_index,
+                                order=block.order,
+                                block_type=block.type,
+                                field=field,
+                                index=index,
+                                final_text=text,
+                                source_texts=source_texts,
+                                ai_translation_texts=ai_translation_texts,
+                            )
+                        )
         return segments
 
     def _build_translation_qa_segment(

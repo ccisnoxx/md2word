@@ -32,18 +32,19 @@ class ImageSpan:
         return "ig_" + hashlib.sha256(value.encode()).hexdigest()[:24]
 
 
-def image_annotations(block: DocumentIRBlock) -> tuple[tuple[str, str], ...]:
-    """沿用图片注释合并去重合同，同时保留首个原始字段来源。"""
+def image_annotations(block: DocumentIRBlock, *, preserve_positions: bool = False) -> tuple[tuple[str, str], ...]:
+    """新翻译按原位置呈现，历史渲染仍按第一个同文注释定位。"""
 
     values = [(f"captions/{i}", text) for i, text in enumerate(block.captions)]
-    if isinstance(block.metadata.get("caption"), str):
+    if isinstance(block.metadata.get("caption"), str) and (
+            not preserve_positions or not any(text.strip() for text in block.captions)):
         values.append(("metadata/caption", block.metadata["caption"]))
     values.extend((f"footnotes/{i}", text) for i, text in enumerate(block.footnotes))
     seen: set[str] = set()
     result: list[tuple[str, str]] = []
     for field_name, value in values:
         text = value.strip()
-        if text and text not in seen:
+        if text and (preserve_positions or text not in seen):
             result.append((field_name, text))
             seen.add(text)
     return tuple(result)

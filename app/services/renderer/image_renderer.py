@@ -119,7 +119,7 @@ class WordImageRendererMixin:
     def _write_image(self, root: Any, container: Any, block: DocumentIRBlock, content: bytes | None,
                      decoded: Any, available_width: int, available_height: int,
                      config: TemplateConfigPackage, context: Any, entry: dict) -> None:
-        annotations = image_annotations(block)
+        annotations = image_annotations(block, preserve_positions=context.preserve_annotation_positions)
         paragraph = container.add_paragraph() if container is root else container.paragraphs[0]
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         paragraph.paragraph_format.left_indent = Twips(0)
