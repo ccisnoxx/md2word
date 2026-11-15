@@ -321,7 +321,9 @@ class DocumentJobExecutionService:
         direct = not is_translation_document_job_mode(job.mode)
         replay = (self.job_repository.get_document_job_table_value_column_replay(job.id, job.retry_count)
                   if direct and job.retry_count else None)
-        bind_values = direct and (self.settings.document_table_value_pdf_binding_enabled or replay is not None)
+        bind_values = direct and (
+            replay is not None or self.settings.allows_table_value_pdf_binding(job.tenant_id, job.company_id)
+        )
         raw_file = self._get_mineru_raw_result_file(job)
 
         def load_source():

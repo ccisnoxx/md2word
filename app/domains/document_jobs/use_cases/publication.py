@@ -170,7 +170,7 @@ class DocumentJobPublication:
                     raise NewGenerationConflict("new_generation_request_conflict")
                 return self._new_generation_response(acceptance, current, replayed=True), False
             if table_value_column_reviews is not None:
-                if not self.settings.document_table_value_pdf_binding_enabled:
+                if not self.settings.allows_table_value_pdf_binding(job.tenant_id, job.company_id):
                     raise NewGenerationConflict("table_value_column_review_disabled")
                 if translation_mode_for_document_job_mode(job.mode) != "direct":
                     raise NewGenerationConflict("table_value_column_review_mode_unsupported")

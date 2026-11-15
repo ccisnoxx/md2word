@@ -5,7 +5,10 @@ from copy import deepcopy
 from unittest import TestCase
 from unittest.mock import patch
 
+from app.domains.document_jobs.base_quality import current_base
 from app.domains.document_jobs.use_cases import review_writer
+from app.domains.resources.models import utc_now
+from app.infrastructure.persistence.sqlite import document_jobs as sqlite_jobs
 from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.table_value_column_review import (
     PdfValueColumnUnresolved, TableValueColumnCorrection, TableValueColumnReview,
@@ -158,6 +161,68 @@ class OnlineTableValueQualityTests(V2PublicationFixture, TestCase):
             self.assertEqual(rejected.status_code, 409, rejected.text)
             self.assertEqual(rejected.json()["error"]["reason_code"], "review_result_integrity_conflict")
             self.assertIsNone(runtime.document_job_repository.get_document_job(job.id).current_review_record_id)
+
+    def test_approval_rejects_evidence_reserved_after_final_recheck(self):
+        for kind, file_role in (("file", "report"), ("sqlite", "ir")):
+            with self.subTest(kind=kind, file_role=file_role), self.runtime(
+                source_package=_gs008_package(_GS008_ROWS), kind=kind,
+            ) as (runtime, execution, _, job, _, client, headers):
+                self._install_review(runtime, execution, job, repair_count=2)
+                result = execution.execute_job(job.id)
+                self.assertEqual(result.status, "succeeded", result.error_message)
+                self.assertIn(current_base(result).quality_status, {"passed", "warning"})
+                repository = runtime.document_job_repository
+                submit = repository.update_document_job_review_if_current
+                word = runtime.document_file_repository.get_document_file(result.result_file_id)
+
+                def reserve_then_submit(job_id, **kwargs):
+                    file_id = (
+                        word.metadata["table_evidence_report"]["report_file_id"] if file_role == "report"
+                        else result.document_ir_file_id
+                    )
+                    runtime.document_file_repository.reserve_document_file_deletion(
+                        file_id, claim_id="approval-race", now=utc_now(),
+                    )
+                    return submit(job_id, **kwargs)
+
+                with patch.object(repository, "update_document_job_review_if_current", side_effect=reserve_then_submit):
+                    rejected = self._approve(client, headers, job.id)
+
+                self.assertEqual(rejected.status_code, 409, rejected.text)
+                self.assertEqual(rejected.json()["error"]["reason_code"], "review_result_integrity_conflict")
+                current = repository.get_document_job(job.id)
+                self.assertIsNone(current.current_review_record_id)
+                self.assertEqual(current.review_sequence, result.review_sequence)
+                self.assertEqual(repository.list_document_job_reviews(job.id), [])
+
+    def test_approval_checks_ir_expiry_at_locked_observation_time(self):
+        with self.runtime(source_package=_gs008_package(_GS008_ROWS), kind="sqlite") as (
+            runtime, execution, _, job, _, client, headers,
+        ):
+            self._install_review(runtime, execution, job, repair_count=2)
+            result = execution.execute_job(job.id)
+            self.assertEqual(result.status, "succeeded", result.error_message)
+            repository = runtime.document_job_repository
+            ir = runtime.document_file_repository.get_document_file(result.document_ir_file_id)
+            read_locked_files = repository._read_file_records
+            observed_time = utc_now()
+
+            def read_after_wait(connection, file_ids):
+                # 不改登记，只让等待跨过 IR 保留期限。
+                nonlocal observed_time
+                records = read_locked_files(connection, file_ids)
+                observed_time = ir.expires_at
+                return records
+
+            with (
+                patch.object(repository, "_read_file_records", side_effect=read_after_wait),
+                patch.object(sqlite_jobs, "utc_now", side_effect=lambda: observed_time),
+            ):
+                rejected = self._approve(client, headers, job.id)
+            self.assertEqual(rejected.status_code, 409, rejected.text)
+            self.assertEqual(rejected.json()["error"]["reason_code"], "review_result_integrity_conflict")
+            self.assertEqual(repository.list_document_job_reviews(job.id), [])
+            self.assertEqual(runtime.document_file_repository.get_document_file(ir.id), ir)
 
     def test_removed_correction_marker_cannot_bypass_receipt_guard(self):
         with self.runtime(source_package=_gs008_package(_GS008_ROWS)) as (

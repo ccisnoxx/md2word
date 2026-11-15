@@ -25,10 +25,12 @@ from tests.test_table_value_pdf_binding_poppler import _ruled_table_package
 @skipUnless(all(which(tool) for tool in ("pdfinfo", "pdftotext", "pdftocairo", "pdftohtml")), "需要实际 Poppler")
 class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
     @contextmanager
-    def worker_case(self, package: bytes, pdf: bytes, *, filename: str = "source.pdf", kind: str = "file"):
+    def worker_case(self, package: bytes, pdf: bytes, *, filename: str = "source.pdf", kind: str = "file",
+                    companies: frozenset[tuple[str, str]] = frozenset({("tenant_default", "company_default")})):
         with TemporaryDirectory(prefix="online-table-value-") as directory:
             runtime = self._build_runtime(Path(directory), kind)
             runtime.settings.document_table_value_pdf_binding_enabled = True
+            runtime.settings.document_table_value_pdf_binding_company_allowlist = companies
             runtime.settings.document_publication_enabled = True
             execution = runtime.document_job_execution_service
             mineru = execution.fake_mineru_client
@@ -155,6 +157,20 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                     self._certify_last_value(runtime, execution, first, client, owner, admin, pdf,
                                              disable_after_acceptance=kind == "sqlite")
 
+    def test_worker_keeps_original_spans_outside_test_company(self) -> None:
+        with TemporaryDirectory() as directory:
+            package, source = _ruled_table_package(Path(directory))
+            companies = frozenset({("other_tenant", "company_default")})
+            with self.worker_case(package.read_bytes(), source.read_bytes(), companies=companies) as (
+                runtime, _, job, client, owner, admin,
+            ):
+                report, _ = self.read_verified_word(runtime, job)
+                table, = report.envelope.report.tables
+                self.assertFalse(table.value_column_corrections)
+                self.assertFalse(report.document.metadata.pdf_value_column_unresolved)
+                self.assertEqual(current_base(job).counts.blocker_count, 3)
+                self.check_blocked_delivery(client, owner, admin, job.id)
+
     def _certify_last_value(self, runtime, execution, first, client, owner, admin, pdf: bytes, *,
                             disable_after_acceptance: bool) -> None:
         report, first_word = self.read_verified_word(runtime, first)
@@ -193,6 +209,12 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
         }
         denied = client.post(f"{url}/new-generation", headers=owner, json=payload)
         self.assertEqual(denied.status_code, 403, denied.text)
+        companies = runtime.settings.document_table_value_pdf_binding_company_allowlist
+        runtime.settings.document_table_value_pdf_binding_company_allowlist = frozenset()
+        outside_pilot = client.post(f"{url}/new-generation", headers=admin, json=payload)
+        self.assertEqual(outside_pilot.status_code, 409, outside_pilot.text)
+        self.assertEqual(outside_pilot.json()["error"]["reason_code"], "table_value_column_review_disabled")
+        runtime.settings.document_table_value_pdf_binding_company_allowlist = companies
         stale = deepcopy(payload)
         stale["table_value_column_reviews"][0]["source_pdf_sha256"] = "0" * 64
         rejected = client.post(f"{url}/new-generation", headers=admin, json=stale)
@@ -210,6 +232,7 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
             queued = runtime.document_job_repository.get_document_job(first.id)
             self.assertEqual((queued.status, queued.stage), ("running", "parsed"))
             runtime.settings.document_table_value_pdf_binding_enabled = False
+            runtime.settings.document_table_value_pdf_binding_company_allowlist = frozenset()
             execution.execute_job(first.id)
         second = runtime.document_job_repository.get_document_job(first.id)
         self.assertEqual((second.status, second.stage), ("succeeded", "completed"), second.error_message)

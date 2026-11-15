@@ -15,6 +15,7 @@ from app.domains.document_jobs.quality_state import effective_quality_status
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
 from app.domains.document_jobs.review import (
     ReviewBinding,
+    ReviewEvidenceSnapshot,
     ReviewExpectedSource,
     ReviewIssueType,
     ReviewStatus,
@@ -25,7 +26,7 @@ from app.domains.document_jobs.review import (
     receipt_matches_file,
 )
 from app.domains.document_jobs.table_evidence import (
-    has_value_column_corrections, recheck_verified_report, verify_report,
+    has_value_column_corrections, verify_report,
 )
 from app.domains.document_jobs.use_cases.access import DocumentJobAccess
 from app.domains.document_jobs.use_cases.common import ReviewCommit
@@ -156,12 +157,11 @@ class DocumentReviewWriter:
         submission = ReviewSubmission(record_id=f"review_{uuid4().hex}", status=review_status, issue_type=issue_type,
             note=self.access.normalize_optional_text(note), reviewed_by=user.id, reviewed_at=now, reviewer_role=user.role,
             binding=binding, expected_source=expected_source)
+        evidence_snapshot = ReviewEvidenceSnapshot(job=verified.job, files=verified.files) if verified is not None else None
         try:
-            if verified is not None:
-                recheck_verified_report(verified, file_repository=self.file_repository, job_repository=self.job_repository)
-            updated = self.job_repository.update_document_job_review_if_current(job.id, submission=submission)
-        except TableEvidenceError:
-            raise conflict("复核期间参数值列证据已变化，请重新读取。", "review_result_integrity_conflict") from None
+            updated = self.job_repository.update_document_job_review_if_current(
+                job.id, submission=submission, evidence_snapshot=evidence_snapshot,
+            )
         except ReviewSubmissionConflict as exc:
             raise conflict("复核提交条件已变化，请重新读取。", exc.reason_code) from None
         if updated is None:

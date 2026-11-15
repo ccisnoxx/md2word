@@ -16,7 +16,7 @@ from app.domains.document_jobs.new_generation import (
 )
 from app.domains.document_jobs.publication import PublicationRecord, PublicationSubmission, commit_publication
 from app.domains.document_jobs.review import (
-    ReviewRecord, ReviewSubmission, submit_review,
+    ReviewEvidenceSnapshot, ReviewRecord, ReviewSubmission, submit_review,
 )
 from app.domains.document_jobs.list_query import (
     DocumentJobListQuery, DocumentJobListResult, DocumentJobListProjectionUnstable,
@@ -211,11 +211,16 @@ class MysqlDocumentJobRepository:
                 self._write_job(connection, updated)
             return updated
 
-    def update_document_job_review_if_current(self, job_id: str, *, submission: ReviewSubmission) -> DocumentJobRecord | None:
+    def update_document_job_review_if_current(
+        self, job_id: str, *, submission: ReviewSubmission, evidence_snapshot: ReviewEvidenceSnapshot | None = None,
+    ) -> DocumentJobRecord | None:
         with self._locked_job(job_id) as (connection, existing):
+            current = self._lock_file_records(connection, evidence_snapshot.file_ids) if evidence_snapshot is not None else []
             prior = self._review_by_id(connection, job_id, submission.record_id)
             updated, record = submit_review(existing, submission, prior)
             if record is not None:
+                if evidence_snapshot is not None:
+                    evidence_snapshot.require_current(existing, current, now=utc_now())
                 self._insert_review(connection, record)
                 self._write_job(connection, updated)
             return updated
@@ -322,15 +327,20 @@ class MysqlDocumentJobRepository:
                 rows = cursor.fetchall()
         return any(file_id in json.loads(row["protected_file_ids"]) for row in rows)
 
+    def _lock_file_records(self, connection: Any, file_ids: Sequence[str]) -> list[DocumentFileRecord]:
+        records = []
+        with connection.cursor() as cursor:
+            for file_id in file_ids:
+                cursor.execute("SELECT payload FROM document_files WHERE file_id = %s FOR UPDATE", (file_id,))
+                row = cursor.fetchone()
+                if row is not None:
+                    records.append(DocumentFileRecord.model_validate_json(row["payload"]))
+        return records
+
     def publish_document_job(self, job_id: str, *, submission: PublicationSubmission) -> tuple[PublicationRecord, bool]:
         with self._locked_job(job_id) as (connection, job):
+            current_files = self._lock_file_records(connection, sorted({file.id for file in submission.files}))
             with connection.cursor() as cursor:
-                current_files = []
-                for file_id in sorted({file.id for file in submission.files}):
-                    cursor.execute("SELECT payload FROM document_files WHERE file_id = %s FOR UPDATE", (file_id,))
-                    row = cursor.fetchone()
-                    if row is not None:
-                        current_files.append(DocumentFileRecord.model_validate_json(row["payload"]))
                 # 首个一致读发生在全部文件锁之后，等待发布者提交后不会沿用旧 RR 快照。
                 cursor.execute("SELECT payload FROM document_job_publications")
                 prior = [PublicationRecord.model_validate_json(row["payload"]) for row in cursor.fetchall()]

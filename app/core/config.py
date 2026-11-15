@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
-from pydantic import Field
+from typing import Annotated, Literal
+from pydantic import Field, StringConstraints
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.domains.templates.manifest import (
@@ -19,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 NON_PRODUCTION_ENVS = {"dev", "local", "test"}
+_TableValueScopeId = Annotated[str, StringConstraints(pattern=r"^\S+$")]
 
 
 class Settings(BaseSettings):
@@ -73,6 +74,9 @@ class Settings(BaseSettings):
     render_degradation_max_attempts: int = Field(default=5, ge=0, le=20)
     document_jobs_worker_backend: Literal["disabled", "celery", "eager"] = "disabled"
     document_table_value_pdf_binding_enabled: bool = False
+    document_table_value_pdf_binding_company_allowlist: frozenset[
+        tuple[_TableValueScopeId, _TableValueScopeId]
+    ] = frozenset()
     document_publication_enabled: bool = False
     word_preview_backend: Literal["disabled", "sandboxed"] = "disabled"
     word_preview_required: bool = False
@@ -163,6 +167,13 @@ class Settings(BaseSettings):
     term_rules_seed_path: str = "resources/term_rules/term_rules.v2.yaml"
     term_rules_store_path: str = "var/config/term_rules_store.json"
     term_rules_runtime_yaml_path: str = "var/config/runtime_subscripts_dictionary.yaml"
+
+    def allows_table_value_pdf_binding(self, tenant_id: str, company_id: str) -> bool:
+        """使用任务的持久化归属限定自动绑定和新同包核定。"""
+        return (
+            self.document_table_value_pdf_binding_enabled
+            and (tenant_id, company_id) in self.document_table_value_pdf_binding_company_allowlist
+        )
 
     def word_preview_policy(self):
         """只把非敏感策略固化进新任务；部署路径及 launcher 指纹不进入快照。"""

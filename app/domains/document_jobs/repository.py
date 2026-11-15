@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from app.domains.document_jobs.review import ReviewSubmission, ReviewRecord
+from app.domains.document_jobs.review import ReviewEvidenceSnapshot, ReviewSubmission, ReviewRecord
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from app.domains.files.models import DocumentFileRecord
@@ -240,7 +240,7 @@ class DocumentJobRepositoryProtocol(Protocol):
         page_quality_contribution: dict | None = None,
     ) -> DocumentJobRecord | None: ...
     def update_document_job_review_if_current(
-        self, job_id: str, *, submission: ReviewSubmission,
+        self, job_id: str, *, submission: ReviewSubmission, evidence_snapshot: ReviewEvidenceSnapshot | None = None,
     ) -> DocumentJobRecord | None: ...
 
     def backfill_document_job_state_if_missing(self, job_id: str) -> bool:
