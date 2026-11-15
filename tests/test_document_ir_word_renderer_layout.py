@@ -1674,6 +1674,53 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual(xml.count("<w:numPr>"), 1)
         self.assertIn('<w:updateFields w:val="true"', self._settings_xml(content))
 
+    def _toc_then_revision_history_document(self) -> DocumentIR:
+        return DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_toc_region", source_file_id="file_toc_region", document_language="en"),
+            blocks=[
+                DocumentIRBlock(id="block_toc_title", type="heading", order=0, level=1, text="Table of Contents"),
+                DocumentIRBlock(id="block_toc_list", type="list", order=1,
+                                list_items=["1 Features .... 1", "4 Revision History .... 2"]),
+                DocumentIRBlock(id="block_history", type="heading", order=2, level=1, text="4 Revision History"),
+                DocumentIRBlock(id="block_history_list", type="list", order=3, list_items=[
+                    "• Added CDM in ESD Ratings . 5",
+                    "• Changed format of thermal information tables for better clarity.. 6",
+                ]),
+            ],
+        )
+
+    def test_toc_like_items_after_body_heading_stay_visible(self) -> None:
+        # gs-004：修订历史条目带点引导符和页码，曾被并入唯一 TOC 字段而从正文消失。
+        document = self._toc_then_revision_history_document()
+        result = DocumentIRWordRenderer().render_to_result(
+            document, template_path=None, config_path=None, image_loader=lambda _asset: None)
+        texts = [paragraph.text for paragraph in Document(io.BytesIO(result.content)).paragraphs]
+        xml = self._document_xml(result.content)
+
+        self.assertEqual(xml.count(" TOC \\o"), 1)
+        self.assertNotIn("1 Features", xml)
+        self.assertIn("Added CDM in ESD Ratings . 5", texts)
+        self.assertIn("Changed format of thermal information tables for better clarity.. 6", texts)
+        modes = {decision.block_id: [policy.mode for policy in decision.text_policies] for decision in result.plan.decisions}
+        self.assertEqual(modes["block_toc_list"], ["toc", "coalesced"])
+        self.assertEqual(modes["block_history_list"], ["bullet", "bullet"])
+
+    def test_generation_rejects_toc_policy_outside_toc_region(self) -> None:
+        from app.services.renderer.render_evidence_validation import _ensure_toc_policies_inside_region
+
+        document = self._toc_then_revision_history_document()
+        plan = DocumentIRWordRenderer().render_to_result(
+            document, template_path=None, config_path=None, image_loader=lambda _asset: None).plan
+        tampered = plan.model_copy(deep=True)
+        decision = next(item for item in tampered.decisions if item.block_id == "block_history_list")
+        decision.text_policies[1].mode = "coalesced"
+
+        _ensure_toc_policies_inside_region(document, plan)
+        with self.assertRaises(DocumentIntegrityError) as caught:
+            _ensure_toc_policies_inside_region(document, tampered)
+        self.assertEqual(caught.exception.evidence["blocking_quality_flags"],
+                         ["ir_docx_integrity:toc_coalesced_outside_region"])
+
     def test_toc_formula_keeps_source_title_outside_the_native_field(self) -> None:
         from app.conversion.docx_rules.formula import sha256_text
 

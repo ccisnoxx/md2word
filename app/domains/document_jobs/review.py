@@ -91,6 +91,7 @@ _SAFE_FLAGS = frozenset({
     "docx_image_only_suspected", "formula_text_fallback", "image_group_uncertain",
     "caption_binding_uncertain", "empty_content_list",
     "source_ir_integrity:block_count_mismatch", "source_ir_integrity:type_count_mismatch",
+    "source_ir_integrity:list_item_count_mismatch", "ir_docx_integrity:toc_coalesced_outside_region",
     "ir_layout_integrity:missing_blocks", "ir_layout_integrity:duplicate_blocks",
     "ir_docx_integrity:image_asset_missing", "ir_docx_integrity:inline_shape_count_mismatch",
     "ir_docx_integrity:table_count_mismatch", "ir_docx_integrity:heading_count_mismatch",

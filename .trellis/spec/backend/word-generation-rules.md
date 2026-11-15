@@ -107,6 +107,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 预期输出：保留 inline equation 数学边界；多行列表拆成独立 item，未标记续行仍保留在同一 item；目录样式文本仅在足够高比例点线项时拆分；脚注按明确连续信号合并。`paragraph` 且 `role=body` 的正文按权威 text/runs 保留显式换行和连续空行，仍保持 paragraph 类型；数学源串内部的空白与 CRLF 原样保留，普通文本行尾 CRLF 归一为 LF。
 - 页级脚注：MinerU v2 `page_footnote.content.page_footnote_content` 使用正文 runs 的校验与解析，按原页位置作为 body paragraph 一次写入。源类型、源指针、页号及 bbox 保留。空 runs、错误容器、非法 typed run 及无法消费的语义旁支仍失败关闭。页级脚注与页脚或表注分别消费。回归见 `tests.test_mineru_artifact_validator` 的页级脚注用例。
 - 正文行结构 owner：`mineru_converter._text_for_block` 只对上述正文调用 `_raw_text(..., preserve_line_breaks=True)`；共享 `mineru_content.clean_text`、`clean_markdown_document`、`mineru_raw_text_preserving_lines` 的保留参数默认关闭，标题、页眉页脚、题注与表注不因此改变清洗语义。Word writer 的 `_apply_document_settings` 在正文存在显式换行时，为新件设置 `w:compat/w:doNotExpandShiftReturn=true`，使两端对齐段落的手动换行行不被拉满词距；保留其他兼容节点和原模板字节，不修改 normal alignment。该行为依据 [OOXML 官方定义](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.donotexpandshiftreturn?view=openxml-3.0.1)，仍需以真客户端验证显示。
+- 列表项账本：`mineru_content.py::mineru_list_item_ledger` 在转换时为每个主列表块写入 `metadata["list_item_ledger"]`（`list-item-ledger/v1`：`selected_field`、`mode`、`source_item_count`、`empty_item_count`、`item_count`）。`v2_items` 与纯字符串 legacy 项必须满足 `source_item_count = item_count + empty_item_count`，否则构建 IR 前报 `source_ir_integrity:list_item_count_mismatch`；legacy dict 展开项和按行拆分文本的源计数记为 `null`。`integrity.py::build_source_integrity` 在转换出口和渲染元数据（翻译之后）对账：任一主列表块带账本时，全部主列表块都必须带账本且 `len(list_items) == item_count`。账本放在块 metadata，不进 `DocumentIRMetadata`，以免改变历史 render-plan/v2 的 IR 身份；无账本的历史 IR 跳过对账，`source_integrity` 不新增 `list_item_ledger` 键。回归见 `tests.test_document_ir_layout_contract.test_list_item_ledger_blocks_item_count_drift` 与 `tests.test_mineru_artifact_validator` 的 `test_v2_list_ledger_accounts_for_empty_items`、`test_list_consumer_dropping_non_empty_item_fails_closed`。
 - 冲突/例外：普通多行正文不拆列表；单行负温度或减号文本不得当作列表。
 - 禁止：对所有换行统一空格化；只保留列表第一行；在普通正文全局执行无差别或破坏性的 TeX 清理。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_structures_v2_multiline_lists_and_preserves_math_sources`、`.test_convert_zip_accepts_nested_v2_pages_and_rich_content_fields`；`tests.test_parameter_paragraph_line_breaks` 覆盖字符串/runs 的 17 个实际 DOCX 换行、组间空行、4 个原生公式、普通正文与负温度不误分列表、权威空 runs 缺正文仍失败、兼容节点唯一性/顺序及模板字节保持。历史件恢复继续使用冻结计划与实际字节，不重算新 settings 策略。
@@ -451,11 +452,13 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 状态：`enforced-tested`
 - 输入信号：目录标题和可识别的目录项。含公式策略要求来源条目通过既有 TOC 识别且含 `content_math_spans`。
 - 正式 owner：`app/services/renderer/render_plan.py::build_render_plan` 冻结代表和文本策略，`app/services/renderer/text_renderer.py::_fill_toc_entry_paragraph` 及 `word_renderer.py::_render_block` 按计划输出。
-- 预期输出：写入一个原生 `TOC` complex field 并应用配置的 TOC styles。普通目录项共享实际字段。含公式的目录标题另写独立可编辑段，移除点引导符与旧页码，保留原始数学字符串和源公式书签。首条含公式时字段和公式分别占段，普通项仍绑定字段段。
+- 目录区域：`render_plan.py::toc_region_block_ids` 按写入顺序确定全文唯一的目录区域，从首个含目录标题或目录项的正文块开始，到其后首个非目录正文标题为止（不含）。页眉、页脚、页码及表格、分栏操作不改变状态。区域外调用 `select_text_policy(allow_toc=False)`，带点引导符和页码的正文（如修订历史）按原文作为列表项或段落输出。
+- 预期输出：写入一个原生 `TOC` complex field 并应用配置的 TOC styles。区域内普通目录项共享实际字段。含公式的目录标题另写独立可编辑段，移除点引导符与旧页码，保留原始数学字符串和源公式书签。首条含公式时字段和公式分别占段，普通项仍绑定字段段。
 - 版本与对账：新策略使用 `render-plan/v2` 和 `word-renderer-policy/v3`，普通目录沿用原计划身份。持久化证据核对字段指令、begin/separate/end、源公式字段和书签、目录别名目标。表格上下文保持正文。需要估算目录字段页面位置时使用已认证的物理字段路径。
 - 更新边界：`updateFields` 请求客户端刷新。LibreOffice 完整刷新会重建目录缓存，并可能重写数学排版属性。带公式的源标题位于独立段落，刷新后可继续从原书签定位。Word/WPS 客户端的刷新验收单独记录。
-- 禁止：整页逐行静态点线目录与原生 TOC 重复输出。一个 entry 一个 TOC 字段。用字段缓存或同一字段段落保留必须跨刷新追溯的来源公式。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests` 的普通目录、配置样式、含公式目录、表格上下文及归并预览映射用例。
+- 生成期门禁：`render_evidence_validation.py::validate_render_result` 独立重算目录区域；区域外出现 `toc_title`/`toc`/`coalesced`/`toc_formula`/`toc_formula_first` 时报 `ir_docx_integrity:toc_coalesced_outside_region` 并阻断。持久化读取不加此检查，历史产物不重新判定；不新增 policy 版本，持久化计划逐项记录 mode。
+- 禁止：把目录区域外的正文并入 TOC 字段。整页逐行静态点线目录与原生 TOC 重复输出。一个 entry 一个 TOC 字段。用字段缓存或同一字段段落保留必须跨刷新追溯的来源公式。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests` 的普通目录、配置样式、含公式目录、表格上下文、归并预览映射、正文标题后目录样式条目保持可见（`test_toc_like_items_after_body_heading_stay_visible`）及区域外目录策略阻断（`test_generation_rejects_toc_policy_outside_toc_region`）用例。
 - 样本证据：[SN74AC244 原生目录公式验证](../../tasks/11-11-datasheet-quality-baseline-contracts/toc-formula-verification.md)。
 - 来源/取代：commit `5d4a02d7` 建立原生字段行为。本轮把含公式条目保留在字段更新范围之外。
 

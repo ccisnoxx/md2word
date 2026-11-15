@@ -6,6 +6,7 @@ from collections import Counter
 from collections.abc import Mapping
 from typing import Any
 
+from app.conversion.docx_rules.mineru_content import LIST_ITEM_LEDGER_VERSION
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
 
 
@@ -140,8 +141,12 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
         ):
             flags.append(f"source_ir_integrity:payload_missing:{source_type}")
 
+    ledger_summary = _list_item_ledger_summary(main_blocks)
+    if ledger_summary is not None and ledger_summary["mismatch_block_ids"]:
+        flags.append("source_ir_integrity:list_item_count_mismatch")
+
     unique_flags = list(dict.fromkeys(flags))
-    return {
+    evidence = {
         "expected_source_block_count": expected_total,
         "ir_main_block_count": accounted_count,
         "degraded_source_block_count": degraded_count,
@@ -152,6 +157,35 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
         "expected_source_type_counts": expected_types,
         "ir_source_type_counts": dict(sorted(actual_types.items())),
         "blocking_quality_flags": unique_flags,
+    }
+    # 历史 IR 无账本时不新增键，持久化证据重算后须与原存储结构逐字节一致。
+    if ledger_summary is not None:
+        evidence["list_item_ledger"] = ledger_summary
+    return evidence
+
+
+def _list_item_ledger_summary(main_blocks: list[DocumentIRBlock]) -> dict[str, Any] | None:
+    """对账转换时冻结的列表项数；只输出块 ID 与计数，不含正文。
+
+    任一主列表块带账本即视为新产物，此时所有主列表块都必须带账本且项数一致；
+    全部缺失视为历史 IR，返回 None 跳过。翻译按下标原位替换，项数应保持不变。
+    """
+
+    list_blocks = [block for block in main_blocks if block.type == "list"]
+    ledgers = {block.id: block.metadata.get("list_item_ledger") for block in list_blocks}
+    if not any(isinstance(ledger, dict) for ledger in ledgers.values()):
+        return None
+    mismatched = []
+    for block in list_blocks:
+        ledger = ledgers[block.id]
+        if (not isinstance(ledger, dict) or ledger.get("version") != LIST_ITEM_LEDGER_VERSION
+                or type(ledger.get("item_count")) is not int or ledger["item_count"] != len(block.list_items or [])):
+            mismatched.append(block.id)
+    return {
+        "version": LIST_ITEM_LEDGER_VERSION,
+        "block_count": len(list_blocks),
+        "item_count": sum(len(block.list_items or []) for block in list_blocks),
+        "mismatch_block_ids": mismatched,
     }
 
 

@@ -745,6 +745,34 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
         self.assertEqual(issue.code, "mineru_block_payload_invalid")
         self.assertEqual(issue.field, "/0/0/content/list_items/1/item_content")
 
+    def test_v2_list_ledger_accounts_for_empty_items(self):
+        result = self.convert([[{"type": "list", "content": {"list_items": [
+            {"item_content": [{"type": "text", "content": "First"}]},
+            {"item_content": [{"type": "text", "content": "  "}]},
+        ]}}]])
+        block = next(block for block in result.document.blocks if block.type == "list")
+        self.assertEqual(block.list_items, ["First"])
+        self.assertEqual(block.metadata["list_item_ledger"], {
+            "version": "list-item-ledger/v1", "selected_field": "content/list_items", "mode": "v2_items",
+            "source_item_count": 2, "empty_item_count": 1, "item_count": 1})
+
+    def test_list_consumer_dropping_non_empty_item_fails_closed(self):
+        from unittest import mock
+        from app.conversion.docx_rules import mineru_content
+        from app.services.document_ir.integrity import DocumentIntegrityError
+
+        original = mineru_content.mineru_list_items
+        payload = [[{"type": "list", "content": {"list_items": [
+            {"item_content": [{"type": "text", "content": "First"}]},
+            {"item_content": [{"type": "text", "content": "Second"}]},
+        ]}}]]
+        # 模拟消费函数回归：非空项被静默丢弃，账本平衡式必须在构建 IR 前失败关闭。
+        with mock.patch.object(mineru_content, "mineru_list_items", lambda block: original(block)[:1]):
+            with self.assertRaises(DocumentIntegrityError) as caught:
+                self.convert(payload)
+        self.assertEqual(caught.exception.evidence["blocking_quality_flags"],
+                         ["source_ir_integrity:list_item_count_mismatch"])
+
     def test_empty_authoritative_rich_runs_do_not_consume_sibling_description(self):
         for source_type in ("paragraph", "custom"):
             with self.subTest(source_type=source_type):
