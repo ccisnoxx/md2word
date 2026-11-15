@@ -6,6 +6,7 @@ from typing import Any, Literal
 from app.domains.document_jobs.base_quality import current_base, derive_base_quality, fresh_quality_summary
 from app.domains.document_jobs.delivery_state import delivery_state_patch
 from app.domains.document_jobs.models import DocumentJobPreparedResult, DocumentJobRecord
+from app.domains.document_jobs.new_generation import NewGenerationConflict, read_table_value_column_replay
 from app.domains.files.models import DocumentFileRecord
 from app.domains.resources.models import utc_now
 from app.services.renderer.docx_quality import validate_formula_report
@@ -164,12 +165,19 @@ def patched_job(job: DocumentJobRecord, patch: dict[str, Any], *, preview_contri
     return updated
 
 
-def retry_job(job: DocumentJobRecord, *, expected_retry_count: int, max_retries: int, **patch: Any) -> DocumentJobRecord | None:
+def retry_job(job: DocumentJobRecord, *, expected_retry_count: int, max_retries: int,
+    generation_payload: dict[str, Any], **patch: Any,
+) -> DocumentJobRecord | None:
     if (job.status != "failed" or job.retry_count != expected_retry_count or job.retry_count >= max_retries
             or job.archived_at is not None or job.deleted_at is not None):
         return None
     if patch.get("retry_count") != expected_retry_count + 1 or patch.get("status") not in {"pending", "queued", "running"}:
         raise ValueError("重试必须原子进入下一代的可执行状态。")
     updated = patched_job(job, {**patch, "prepared_result": None})
+    try:
+        read_table_value_column_replay(generation_payload, job=updated, generation=updated.retry_count)
+    except NewGenerationConflict:
+        # 核定意图与其版本同代验收；改包或改资源的普通重试仍留在原失败代。
+        return None
     # failed retry 的胜出换代与 fresh marker 同次持久化；普通 patch/backfill 不走此入口。
     return updated.model_copy(update={"quality_summary": fresh_quality_summary(updated.retry_count)})

@@ -8,7 +8,7 @@ from app.domains.document_jobs.review import ReviewSubmission, ReviewRecord
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from app.domains.files.models import DocumentFileRecord
-from app.domains.document_jobs.new_generation import NewGenerationAcceptance, NewGenerationSubmission
+from app.domains.document_jobs.new_generation import NewGenerationAcceptance, NewGenerationSubmission, TableValueColumnReplay
 from app.domains.document_jobs.publication import PublicationRecord, PublicationSubmission
 from app.domains.document_jobs.preview_state import PreviewArtifactObservation, PreviewClaim, PreviewClaimRequest
 
@@ -187,6 +187,9 @@ class DocumentJobRepositoryProtocol(Protocol):
     def get_document_job_generation_request(
         self, job_id: str, *, request_id: str, actor_id: str,
     ) -> tuple[NewGenerationAcceptance, DocumentJobRecord] | None: ...
+    def get_document_job_table_value_column_replay(
+        self, job_id: str, generation: int,
+    ) -> TableValueColumnReplay | None: ...
 
     def update_document_job_lifecycle_if_current(
         self, job_id: str, *, expected_retry_count: int, action: Literal["archive", "delete"],

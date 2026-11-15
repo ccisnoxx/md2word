@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from functools import partial
 import math
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ import re
 import shutil
 import subprocess
 from threading import Timer
+from time import monotonic
 from xml.etree import ElementTree
 
 Box = tuple[float, float, float, float]
@@ -24,6 +26,7 @@ _MAX_WORDS = 4096
 _TIMEOUT_SECONDS = 15
 _COORDINATE_TOLERANCE = 0.02
 _INK_TOLERANCE = 0.35
+PDF_OBSERVATION_BUDGET_EXHAUSTED = "pdf_observation_budget_exhausted"
 
 
 class PdfObservationUnavailable(ValueError):
@@ -60,8 +63,20 @@ _AXIS_TRANSFORM = re.compile(r"matrix\((-?1),\s*0,\s*0,\s*(-?1),\s*([+\-.\deE]+)
 _CLIP_REF = re.compile(r"url\(#([\w-]+)\)")
 
 
-def _read_poppler(args: list[str], *, max_bytes: int = _MAX_OUTPUT_BYTES, version: bool = False) -> bytes:
+def _observation_timeout(deadline: float | None) -> float:
+    if deadline is None:
+        return _TIMEOUT_SECONDS
+    remaining = deadline - monotonic()
+    if remaining <= 0:
+        raise PdfObservationUnavailable(PDF_OBSERVATION_BUDGET_EXHAUSTED)
+    return min(_TIMEOUT_SECONDS, remaining)
+
+
+def _read_poppler(
+    args: list[str], *, max_bytes: int = _MAX_OUTPUT_BYTES, version: bool = False, deadline: float | None = None,
+) -> bytes:
     # 版本从 stderr 读取，XML 从 stdout 读取。读取在子进程退出前就受字节和时间上限约束。
+    _observation_timeout(deadline)
     try:
         with subprocess.Popen(
             args, stdin=subprocess.DEVNULL,
@@ -71,18 +86,28 @@ def _read_poppler(args: list[str], *, max_bytes: int = _MAX_OUTPUT_BYTES, versio
         ) as process:
             stream = process.stderr if version else process.stdout
             assert stream is not None
-            timer = Timer(_TIMEOUT_SECONDS, process.kill)
+            try:
+                timeout = _observation_timeout(deadline)
+            except PdfObservationUnavailable:
+                process.kill()
+                raise
+            timer = Timer(timeout, process.kill)
             timer.start()
             try:
                 output = stream.read(max_bytes + 1)
                 if len(output) > max_bytes:
                     process.kill()
                     raise PdfObservationUnavailable()
-                if process.wait() != 0 or not output:
+                return_code = process.wait()
+                _observation_timeout(deadline)
+                if return_code != 0 or not output:
                     raise PdfObservationUnavailable()
             finally:
                 timer.cancel()
+                if process.poll() is None:
+                    process.kill()
     except OSError as exc:
+        _observation_timeout(deadline)
         raise PdfObservationUnavailable() from exc
     return output
 
@@ -551,7 +576,9 @@ def _geometry(
     return tuple(rectangles), tuple(horizontal), tuple(vertical), tuple(unsupported)
 
 
-def observe_pdf_value_column_page(pdf_path: Path, *, page_index: int) -> PdfValueColumnPage:
+def observe_pdf_value_column_page(
+    pdf_path: Path, *, page_index: int, deadline: float | None = None,
+) -> PdfValueColumnPage:
     """观察左上原点的轴向页面，未核实的图形保留其区域供上层拒绝。"""
     if type(page_index) is not int or page_index < 0:
         raise PdfObservationUnavailable("pdf_geometry_unverified")
@@ -560,32 +587,34 @@ def observe_pdf_value_column_page(pdf_path: Path, *, page_index: int) -> PdfValu
         raise PdfObservationUnavailable()
     source = str(pdf_path.resolve())
     options = ["-f", str(page_index + 1), "-l", str(page_index + 1)]
+    read = partial(_read_poppler, deadline=deadline)
     try:
         info_tool, text_tool, cairo_tool, html_tool = tool_paths
         versions = []
         for utility in tool_paths:
-            output = _read_poppler([utility, "-v"], max_bytes=4096, version=True)
+            output = read([utility, "-v"], max_bytes=4096, version=True)
             match = re.match(rb"[\w]+\s+version\s+([\d.]+)(?:\r?\n| )", output)
             if match is None:
                 raise PdfObservationUnavailable()
             versions.append(match[1].decode("ascii"))
         if len(set(versions)) != 1:
             raise PdfObservationUnavailable()
-        info = _read_poppler([info_tool, *options, "-box", source], max_bytes=64 * 1024)
+        info = read([info_tool, *options, "-box", source], max_bytes=64 * 1024)
         width, height, count = _page_frame(info.decode(errors="replace"), page_index)
         frame = (0.0, 0.0, width, height)
-        xhtml = _read_xml(_read_poppler([text_tool, *options, "-bbox-layout", source, "-"]))
+        xhtml = _read_xml(read([text_tool, *options, "-bbox-layout", source, "-"]))
         words = _word_boxes(xhtml, frame)
-        rendered_xml = _read_xml(_read_poppler([
+        rendered_xml = _read_xml(read([
             html_tool, *options, "-xml", "-i", "-stdout", "-zoom", "1", "-noroundcoord", "-nomerge", source,
         ]))
         rendered_indexes = _rendered_word_indexes(
             rendered_xml, words, frame=frame, page_index=page_index, version=versions[0],
         )
-        svg = _read_xml(_read_poppler([cairo_tool, *options, "-svg", source, "-"]))
+        svg = _read_xml(read([cairo_tool, *options, "-svg", source, "-"]))
         paint = _svg_paint(svg, frame)
         rectangles, horizontal, vertical, unsupported = _geometry(paint)
         observed_words, unmapped = _observe_words(words, paint, rendered_indexes)
+        _observation_timeout(deadline)
         return PdfValueColumnPage(
             width, height, count, observed_words, rectangles, horizontal, vertical,
             f"poppler-value-geometry/v1:{versions[0]}", unsupported, unmapped,

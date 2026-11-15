@@ -139,6 +139,9 @@ def drop_degraded_table_groups(document: DocumentIR, removed_ids: set[str]) -> N
     fragment_ids = {fragment.fragment_id for group in dropped for fragment in group.fragments}
     metadata.logical_table_groups = [group for group in metadata.logical_table_groups if group not in dropped]
     metadata.logical_table_group_counts = _counts(metadata.logical_table_groups)
+    metadata.pdf_value_column_unresolved = tuple(
+        issue for issue in metadata.pdf_value_column_unresolved if issue.fragment_id not in fragment_ids
+    )
     removed_bindings = [item for item in metadata.table_placeholders if item.fragment_id in fragment_ids]
     metadata.table_placeholders = [item for item in metadata.table_placeholders if item.fragment_id not in fragment_ids]
     if not metadata.table_placeholders:

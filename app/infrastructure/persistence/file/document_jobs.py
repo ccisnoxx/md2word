@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 from app.domains.document_jobs.new_generation import (
     GENERATION_REQUESTS_ENVELOPE, NewGenerationAcceptance, NewGenerationSubmission, NewGenerationLedgerEntry,
+    TableValueColumnReplay, new_generation_file_ids, read_table_value_column_replay,
     NewGenerationCommitUnknownError, accept_new_generation, decode_generation_requests,
     ensure_generation_ledger_not_patched, read_generation_request, replay_generation_request,
 )
@@ -174,8 +175,9 @@ class FileDocumentJobRepository:
         self, job_id: str, *, expected_retry_count: int, max_retries: int, **patch: Any,
     ) -> DocumentJobRecord | None:
         ensure_generation_ledger_not_patched(patch)
-        with self._locked_job(job_id) as (connection, existing):
-            updated = retry_job(existing, expected_retry_count=expected_retry_count, max_retries=max_retries, **patch)
+        with self._locked_payload(job_id) as (connection, payload):
+            updated = retry_job(DocumentJobRecord.model_validate(payload), expected_retry_count=expected_retry_count,
+                                max_retries=max_retries, generation_payload=payload, **patch)
             if updated is not None:
                 self._write_job(connection, updated)
             return updated
@@ -259,6 +261,13 @@ class FileDocumentJobRepository:
             result = (entry.acceptance, DocumentJobRecord.model_validate(payload)) if entry is not None else None
         return result
 
+    def get_document_job_table_value_column_replay(
+        self, job_id: str, generation: int,
+    ) -> TableValueColumnReplay | None:
+        with self._locked_payload(job_id) as (_, payload):
+            return read_table_value_column_replay(payload, job=DocumentJobRecord.model_validate(payload),
+                                                  generation=generation)
+
     def accept_document_job_new_generation(
         self, job_id: str, *, submission: NewGenerationSubmission, max_retries: int,
     ) -> tuple[NewGenerationAcceptance, DocumentJobRecord, bool]:
@@ -272,7 +281,7 @@ class FileDocumentJobRepository:
                 return prior.acceptance, job, True
             with ExitStack() as locks:
                 current_files = {}
-                for file_id in sorted({job.source_file_id, *([job.result_file_id] if job.result_file_id else [])}):
+                for file_id in new_generation_file_ids(job, submission):
                     locks.enter_context(record_lock(self.backend.document_files_dir / f"{file_id}.lock"))
                     file = files.get_document_file(file_id)
                     if file is not None:

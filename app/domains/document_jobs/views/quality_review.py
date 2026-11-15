@@ -244,6 +244,25 @@ class DocumentQualityTableFlagResponse(QualityReviewModel):
     fragment_id: QualityId | None
 
 
+class DocumentQualityUnresolvedValueColumnResponse(QualityReviewModel):
+    """当前代中仍需人工核定的零基源格定位。"""
+
+    finding_id: QualityId
+    fragment_id: QualityId
+    source_page_index: QualityCount | None
+    bbox: tuple[float, float, float, float] | None
+    source_row_index: QualityCount
+    source_cell_index: QualityCount
+    reason_code: Literal[
+        "source_pair_unverified", "layout_unverified", "table_layout_unverified", "table_region_ambiguous",
+        "unsupported_table_shape", "unsupported_cell_shape", "unsupported_pdf_geometry",
+        "pdf_source_unavailable", "pdf_geometry_unverified", "pdf_text_unavailable",
+        "pdf_observation_unavailable", "pdf_observation_budget_exhausted",
+        "header_ambiguous", "row_ambiguous", "column_ambiguous", "value_ambiguous",
+        "value_visibility_unverified", "span_contains_other_content", "unit_mismatch", "competing_pdf_binding",
+    ]
+
+
 class DocumentQualityTableItemResponse(QualityReviewModel):
     table_id: QualityId
     logical_group_id: QualityId
@@ -258,6 +277,8 @@ class DocumentQualityTableItemResponse(QualityReviewModel):
     flags: list[DocumentQualityTableFlagResponse]
     unknown_flag_count: QualityCount
     status: DocumentJobQualityStatus
+    unresolved_value_columns: list[DocumentQualityUnresolvedValueColumnResponse] | None = Field(
+        default=None, exclude_if=lambda value: value is None)
 
 
 class DocumentQualityTableReportResponse(QualityReviewModel):

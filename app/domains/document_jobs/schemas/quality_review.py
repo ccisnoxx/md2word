@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field, JsonValue, field_validator
+from pydantic import BaseModel, Field, JsonValue, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from app.domains.document_jobs.models import (
     DocumentJobDeliveryStatus,
@@ -19,6 +20,7 @@ from app.domains.document_jobs.views.quality_review import (
     QualityIssue,
     QualityReviewModel,
 )
+from app.services.document_ir.table_value_column_review import TableValueColumnCorrection, TableValueColumnReview
 
 
 class ReviewExpectedSourceRequest(QualityReviewModel):
@@ -30,12 +32,40 @@ class ReviewExpectedSourceRequest(QualityReviewModel):
     receipt_sha256: QualityChecksum | None
 
 
+class ManualTableValueColumnCorrectionRequest(TableValueColumnCorrection):
+    """HTTP 数组可进入领域 tuple，自动出处不属于人工输入。"""
+
+    original_column_range: tuple[QualityCount, QualityCount] = Field(strict=False)
+    pdf_binding: SkipJsonSchema[None] = Field(default=None, exclude=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_pdf_binding(cls, value):
+        if isinstance(value, dict) and "pdf_binding" in value:
+            raise ValueError("人工核定不能提交自动出处。")
+        return value
+
+
+class ManualTableValueColumnReviewRequest(TableValueColumnReview):
+    corrections: tuple[ManualTableValueColumnCorrectionRequest, ...] = Field(min_length=1, strict=False)
+
+
 class DocumentJobNewGenerationRequest(QualityReviewModel):
     """固定原模式与快照的新代命令，不接受配置或状态覆盖。"""
 
     request_id: str = Field(description="客户端生成并保留的 UUID；接受前归一为规范格式。")
     note: str
     expected_source: ReviewExpectedSourceRequest
+    action: Literal["replay_table_value_columns"] | None = Field(
+        default=None, description="核定型请求显式选择从当前同源 MinerU 存档生成新一代。")
+    table_value_column_reviews: tuple[ManualTableValueColumnReviewRequest, ...] | None = Field(
+        default=None, min_length=1, strict=False, description="同包核定动作所需的整批人工原格记录。")
+
+    @model_validator(mode="after")
+    def _validate_action(self) -> Self:
+        if (self.action is None) != (self.table_value_column_reviews is None):
+            raise ValueError("同包核定动作与人工核定批次必须同时提供。")
+        return self
 
     @field_validator("request_id")
     @classmethod

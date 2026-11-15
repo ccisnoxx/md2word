@@ -6,15 +6,18 @@ from collections.abc import Callable
 from functools import cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import monotonic
 from typing import Any, TYPE_CHECKING
 
 from app.services.document_ir.integrity import is_visible_body_block
 from app.services.document_ir.layout_signals import (
     NORMALIZED_BBOX_MIN_VERSION, NORMALIZED_BBOX_SPACE, _parse_page_size, _parse_version, pdf_point_bbox,
 )
-from app.services.document_ir.mineru_package import package_sha256
+from app.services.document_ir.mineru_package import (
+    DEFAULT_POLICY, MinerUValidationPolicy, extract_zip, find_content_list, package_sha256,
+)
 from app.services.document_ir.models import DocumentIR, DocumentIRPage, TableFragment
-from app.services.document_ir.table_placeholder import PdfCropSource
+from app.services.document_ir.table_placeholder import PdfCropSource, TablePlaceholderError
 from app.services.document_ir.table_upstream_coverage import _match_table
 from app.services.document_ir.table_value_column_review import (
     PdfValueColumnUnresolved, TableValueColumnReview, TableValueColumnReviewError,
@@ -39,6 +42,21 @@ def _paired_origin(content_list_path: Path, source: PdfCropSource) -> bool:
     origin = next((path for path in content_list_path.parent.iterdir()
                    if path.name == origin_name and path.is_file()), None)
     return origin is not None and package_sha256(origin) == source.checksum_sha256.removeprefix("sha256:")
+
+
+def verify_table_value_package_origin(
+    content: bytes, source: PdfCropSource, *, policy: MinerUValidationPolicy = DEFAULT_POLICY,
+) -> str | None:
+    """接纳人工重放时，按正式选包规则核对已核验的源 PDF 与选中的 v2 字节。"""
+    with TemporaryDirectory(prefix="table_value_review_source_") as directory:
+        root = Path(directory)
+        zip_path = root / "input.zip"
+        zip_path.write_bytes(content)
+        package_root = root / "package"
+        package_root.mkdir()
+        extract_zip(zip_path, package_root, policy=policy)
+        content_list_path = find_content_list(package_root)
+        return package_sha256(content_list_path) if _paired_origin(content_list_path, source) else None
 
 
 def _layout_pages(payload: Any) -> list[dict[str, Any]]:
@@ -82,22 +100,37 @@ def _propose_reviews(
     source_hash: str,
     content_list_path: Path,
     same_document_layout: tuple[Any, str] | None,
-    source: PdfCropSource | None,
+    verified_source: Callable[[], PdfCropSource],
     manual: dict[str, tuple[TableFragment, TableValueColumnReview]],
+    *,
+    source_pair_eligible: bool,
+    observation_deadline: float | None,
 ) -> tuple[tuple[TableValueColumnReview, ...], tuple[PdfValueColumnUnresolved, ...]]:
     from app.services.document_ir.pdf_value_column_binding import match_pdf_value_columns
     from app.services.document_ir.pdf_value_column_observer import (
-        PdfObservationUnavailable, observe_pdf_value_column_page,
+        PDF_OBSERVATION_BUDGET_EXHAUSTED, PdfObservationUnavailable, observe_pdf_value_column_page,
     )
 
     layout_payload, layout_sha256 = same_document_layout or (None, "")
     layout_pages = _layout_pages(layout_payload)
-    if source is None or not _paired_origin(content_list_path, source):
-        document_reason = "source_pair_unverified"
-    elif not layout_pages:
-        document_reason = "layout_unverified"
-    else:
-        document_reason = None
+    @cache
+    def paired_source() -> PdfCropSource | str:
+        if not source_pair_eligible:
+            return "source_pair_unverified"
+        try:
+            source = verified_source()
+        except TableValueColumnReviewError:
+            return "source_pair_unverified"
+        except TablePlaceholderError as error:
+            if error.code != "table_placeholder_source_unavailable":
+                raise
+            return "pdf_source_unavailable"
+        if not _paired_origin(content_list_path, source):
+            return "source_pair_unverified"
+        return source if layout_pages else "layout_unverified"
+
+    def budget_exhausted() -> bool:
+        return observation_deadline is not None and monotonic() >= observation_deadline
 
     pages = {page.index: page for page in document.pages}
     tables_by_page: dict[int, list[TableFragment]] = defaultdict(list)
@@ -112,15 +145,19 @@ def _propose_reviews(
     unresolved: list[PdfValueColumnUnresolved] = []
     with TemporaryDirectory(prefix="document_ir_pdf_value_") as directory:
         pdf_path = Path(directory) / "source.pdf"
+        observation_options = {"deadline": observation_deadline} if observation_deadline is not None else {}
 
         @cache
         def observe(page_index: int) -> PdfValueColumnPage | str:
+            if budget_exhausted():
+                return PDF_OBSERVATION_BUDGET_EXHAUSTED
             if not pdf_path.is_file():
                 # Poppler 读取已核验的不可变字节快照，不重新打开调用方原路径。
-                assert source is not None
+                source = paired_source()
+                assert isinstance(source, PdfCropSource)
                 pdf_path.write_bytes(source.content)
             try:
-                observed = observe_pdf_value_column_page(pdf_path, page_index=page_index)
+                observed = observe_pdf_value_column_page(pdf_path, page_index=page_index, **observation_options)
             except PdfObservationUnavailable as error:
                 return error.reason
             if (observed.page_count != len(layout_pages)
@@ -149,8 +186,10 @@ def _propose_reviews(
             if (len(group.fragments) != 1 or fragment.block_id not in visible
                     or not supports_value_column_review_grid(result)):
                 reason = "unsupported_table_shape"
-            elif document_reason is not None:
-                reason = document_reason
+            elif budget_exhausted():
+                reason = PDF_OBSERVATION_BUDGET_EXHAUSTED
+            elif isinstance(source := paired_source(), str):
+                reason = source
             else:
                 page_index = span.page_index
                 if page_index is None or page_index >= len(layout_pages):
@@ -162,23 +201,26 @@ def _propose_reviews(
                     if isinstance(observation, str):
                         reason = observation
                     else:
-                        assert source is not None and not isinstance(box, str)
+                        assert not isinstance(box, str)
                         corrections, undecided = match_pdf_value_columns(
                             result, observation, box, layout_sha256=layout_sha256, skip_cells=skip,
                         )
-                        unresolved.extend(undecided)
-                        if corrections:
-                            proposed.append(TableValueColumnReview(
-                                schema_version="table-value-column-review/v1",
-                                source_pdf_sha256=source.checksum_sha256.removeprefix("sha256:"),
-                                content_list_sha256=source_hash,
-                                page_index=page_index,
-                                json_pointer=span.json_pointer,
-                                raw_html_sha256=fragment.raw_html_sha256,
-                                normalizer_version=result.normalizer_version,
-                                corrections=corrections,
-                            ))
-                        continue
+                        if budget_exhausted():
+                            reason = PDF_OBSERVATION_BUDGET_EXHAUSTED
+                        else:
+                            unresolved.extend(undecided)
+                            if corrections:
+                                proposed.append(TableValueColumnReview(
+                                    schema_version="table-value-column-review/v1",
+                                    source_pdf_sha256=source.checksum_sha256.removeprefix("sha256:"),
+                                    content_list_sha256=source_hash,
+                                    page_index=page_index,
+                                    json_pointer=span.json_pointer,
+                                    raw_html_sha256=fragment.raw_html_sha256,
+                                    normalizer_version=result.normalizer_version,
+                                    corrections=corrections,
+                                ))
+                            continue
             unresolved.extend(
                 PdfValueColumnUnresolved(
                     fragment_id=evidence.fragment_id,
@@ -200,22 +242,22 @@ def attach_automatic_table_value_column_reviews(
     *,
     content_list_path: Path,
     same_document_layout: tuple[Any, str] | None,
+    source_pair_eligible: bool = True,
+    observation_deadline: float | None = None,
 ) -> None:
     """先接纳人工版本，整批验证自动修正后再一次挂载两类记录。"""
-    try:
-        source = _verified_value_column_review_pdf(document, source_loader)
-    except TableValueColumnReviewError:
-        if reviews:
-            raise
-        source = None
-    pending = _validate_value_column_reviews(document, reviews, source_hash, source) if source is not None and reviews else {}
+    @cache
+    def verified_source() -> PdfCropSource:
+        return _verified_value_column_review_pdf(document, source_loader)
+
+    pending = _validate_value_column_reviews(document, reviews, source_hash, verified_source()) if reviews else {}
     proposed, unresolved = _propose_reviews(
-        document, source_hash, content_list_path, same_document_layout, source, pending,
+        document, source_hash, content_list_path, same_document_layout, verified_source, pending,
+        source_pair_eligible=source_pair_eligible, observation_deadline=observation_deadline,
     )
     if proposed:
-        assert source is not None
         for pointer, (fragment, automatic) in _validate_value_column_reviews(
-            document, proposed, source_hash, source, pdf_generated=True,
+            document, proposed, source_hash, verified_source(), pdf_generated=True,
         ).items():
             if pointer not in pending:
                 pending[pointer] = (fragment, automatic)

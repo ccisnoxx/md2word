@@ -16,20 +16,24 @@ from scripts.dev import formal_mineru_conversion, run_local_mineru_conversion
 from tests.test_pdf_value_column_observer import make_pdf
 
 
-def _ruled_table_package(root: Path) -> tuple[Path, Path]:
-    """源 PDF 的黑色竖线明确分列，第三个数值词框压在 LOW/HIGH 的分界上。"""
+def _ruled_table_package(root: Path, *, manual_review_case: bool = False) -> tuple[Path, Path]:
+    """默认第三个值压列界。人工核定场景的列明确，但独立条件跨两行。"""
     column_edges = (50, 140, 200, 280, 380, 450)
     row_edges = (430, 390, 350, 310, 270)
     drawing = ["0 G 0.35 w 1 J"]
     drawing.extend(f"{x} 270 m {x} 430 l S" for x in column_edges)
     drawing.extend(f"50 {y} m 450 {y} l S" for y in row_edges)
+    last_condition = "on standby" if manual_review_case else "idle"
     for y, words in (
         (406, ((60, "Parameter"), (147, "Mode"), (209, "LOW"), (289, "HIGH"), (390, "UNIT"))),
         (366, ((60, "Reset dwell"), (147, "active"), (320, "7.2e-4"), (390, "s"))),
         (326, ((60, "Cool-down"), (147, "inactive"), (222, "43"), (390, "ms"))),
-        (286, ((60, "Lockout"), (147, "idle"), (275, "48"), (390, "ms"))),
+        (286, ((60, "Lockout"), (147, "on" if manual_review_case else "idle"),
+               (320 if manual_review_case else 275, "48"), (390, "ms"))),
     ):
         drawing.extend(f"BT /F1 10 Tf {x} {y} Td ({word}) Tj ET" for x, word in words)
+    if manual_review_case:
+        drawing.append("BT /F1 10 Tf 147 276 Td (standby) Tj ET")
     content = make_pdf(("\n".join(drawing) + "\n").encode("ascii"), width=500, height=500)
     pdf_path = root / "qualification-profile.pdf"
     pdf_path.write_bytes(content)
@@ -38,7 +42,7 @@ def _ruled_table_package(root: Path) -> tuple[Path, Path]:
         "<table><tr><th>Parameter</th><th>Mode</th><th>LOW</th><th>HIGH</th><th>UNIT</th></tr>"
         '<tr><td>Reset dwell</td><td>active</td><td colspan="2">7.2e-4</td><td>s</td></tr>'
         '<tr><td>Cool-down</td><td>inactive</td><td colspan="2">43</td><td>ms</td></tr>'
-        '<tr><td>Lockout</td><td>idle</td><td colspan="2">48</td><td>ms</td></tr></table>'
+        f'<tr><td>Lockout</td><td>{last_condition}</td><td colspan="2">48</td><td>ms</td></tr></table>'
     )
     block = {
         "type": "table", "bbox": [100, 140, 900, 460],

@@ -384,7 +384,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 #### 参数值列的同源人工修正
 
-- 适用于本地正式原排版转换中的单片原生表和 `rowspan=1` 的跨列数值格。将值移到原范围内经人工核定的单列。
+- 适用于正式原排版转换中的单片原生表和 `rowspan=1` 的跨列数值格。将值移到原范围内经人工核定的单列。
 - 本地入口为 `scripts/dev/run_local_mineru_conversion.py` 的 `--table-value-column-reviews <JSON>` 和 `--source-pdf <PDF>`。转换入口 `MinerUToDocumentIRService.convert_zip(..., table_value_column_reviews=...)` 校验 `TableValueColumnReview` 数组，合同版本为 `table-value-column-review/v1`。
 - 每条记录绑定实际 PDF 与选用的 MinerU 内容列表 SHA-256、源页、JSON Pointer、原 HTML 和 normalizer 版本。源行/源格序号、原格哈希、原列区间、目标零基列号及标题须匹配同一份源 Grid。整批通过后才将可选的 `value_column_review` 写进 IR。来源不匹配、定位冲突或未支持形状以 `table_value_column_review_invalid` 和固定原因拒绝，发生在本次结果写入前。
 - `build_content_table_plan` 应用同一份核定记录，把核定指纹纳入渲染输入，保持原 HTML、源 Grid、源报告、未命中位置和其他内容。只有正式实物认证通过后才附加 `table_evidence.tables[].value_column_corrections`。已证明修正对应的 finding 退出交付 flags，原始发现继续留在 `validation`。重读基于本次 IR 与实际 DOCX 重建证据。
@@ -398,6 +398,14 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 自动核定把可复核坐标记录为逐格内部 `pdf_binding`，其指纹随核定纳入正式渲染输入。复用人工修正的源 Grid、原发现和实际 DOCX 认证。只有实际 Word 与修正计划一致时才生成带 `pdf_binding_sha256` 的交付修正证据，解除对应原 blocker。重读从当前 IR 与实际 Word 重建证据。人工 JSON 入口拒绝自动出处字段。
 - 文字归属以可信原件的 PDF 字体字符映射为前提。Poppler 的字形取证核实绘制及位置。若 PDF 内部字体映射误标字形对应的字符，现有文字工具可能给出相同的误读，仍需比对实际字形外观。
 - 自动验证覆盖独立 LOW/HIGH 实物 PDF、同名异源、可见性及归属冲突、Word 错列和来源证据篡改。完整 `gs-008` 仅用于本地同源回放。
+
+#### 线上原排版的同源取证与人工核定
+
+- Worker 在正式建 IR 时通过 `DOCUMENT_TABLE_VALUE_PDF_BINDING_ENABLED` 接入，默认关闭。使用当前任务归属、原解析批次、明确的 raw 文件指针、实读长度与摘要和包内原件核对同源。历史缺绑定或可选 PDF 来源不可用时保留原 blocker 与逐格原因。正式输入身份、字节完整性和必需裁图按原合同校验。单任务可选 Poppler 取证预算为最多 60 秒且不超过当次剩余执行时限的一半，同页复用已有观测。
+- `GET /api/v1/document-jobs/{job_id}/quality/tables` 从已认证的当前代 IR、报告和 Word 投影仍有效的 `unresolved_value_columns`。条目携带片段、finding、源页、表框、零基行格和固定原因。现有权限与报告快照控制可见范围。渲染降级的最终 IR 移除被删组的悬挂引用，原 IR 和整页质量 blocker 保留。
+- 内部 Admin 可为现有 `POST /api/v1/document-jobs/{job_id}/new-generation` 选择 `action=replay_table_value_columns` 并提交整批 `table_value_column_reviews`。普通请求保留原解析路径。同包动作在同源及当前报告已验证时原子冻结累计人工记录、文件身份、执行摘要和审计，从 `parsed` 重新构建 IR 与 Word。既有 UUID 幂等、代次与预算继续约束接纳。显式开关关闭后，已接纳动作仍按冻结来源继续执行。
+- 基础质量保留原报告，只按实物认证解除逐格 blocker。完整报告中已认证修正且实际渲染的同一源表片段，其分栏候选提示保留为诊断，其他自由风险仍参与基础质量。带核定证据的正式结果在批准前重验独立报告、IR 与实际 Word。审批与发布继续执行当前主件和代次门禁。
+- 本地验收用真实 Poppler、正式 Worker 与生成的实际 Word。独立 LOW/HIGH 夹具同时覆盖业务阻断及同包新代批准发布。完整 `gs-008` 使用同源缓存做本地实物验收，生产回包和 Worker 环境另行验证。
 
 ### TABLE-002 表题、条件正文、表体和表注顺序
 

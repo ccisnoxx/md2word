@@ -24,6 +24,9 @@ from app.domains.document_jobs.review import (
     receipt_identity,
     receipt_matches_file,
 )
+from app.domains.document_jobs.table_evidence import (
+    has_value_column_corrections, recheck_verified_report, verify_report,
+)
 from app.domains.document_jobs.use_cases.access import DocumentJobAccess
 from app.domains.document_jobs.use_cases.common import ReviewCommit
 from app.domains.document_jobs.use_cases.events import DocumentJobEventWriter
@@ -33,6 +36,7 @@ from app.domains.resources.models import utc_now
 from app.domains.translation.modes import is_translation_document_job_mode
 from app.services.auth.models import AuthenticatedUser
 from app.services.renderer.render_event_summary import is_valid_table_rendering_evidence
+from app.services.tables.evidence import TableEvidenceError
 
 
 class DocumentReviewWriter:
@@ -64,7 +68,7 @@ class DocumentReviewWriter:
 
         if job.deleted_at is not None or job.delivery_status == "published":
             raise conflict("已删除或已发布任务不能修改复核。", "review_state_conflict")
-        result_file, actual_hash = None, None
+        result_file, actual_hash, verified = None, None, None
         if expected_source is not None:
             result_file = self.access.review_api_file(job, conflict_reason="review_result_integrity_conflict")
             if observed_review_source(job, result_file) != expected_source:
@@ -100,20 +104,36 @@ class DocumentReviewWriter:
             if expected_source is not None and self.file_upload_service is None:
                 raise ApplicationError("service_unavailable", "复核文件存储暂不可用。", reason_code="quality_storage_unavailable")
             self.access.ensure_file_reader_available()
-            try:
-                content = self.file_upload_service.read_file_content(result_file)
-            except FileNotFoundError as exc:
-                raise conflict("当前主 DOCX 不可用，不能批准复核。", "review_result_unavailable") from exc
-            except Exception as exc:
-                from app.domains.document_jobs.preview_evidence import is_preview_storage_error
-                if expected_source is not None and is_preview_storage_error(exc):
+            receipt = job.prepared_result
+            if has_value_column_corrections(result_file.metadata) or (
+                receipt is not None and has_value_column_corrections(receipt.file.metadata)
+            ):
+                try:
+                    verified = verify_report(job, result_file, file_repository=self.file_repository,
+                        file_service=self.file_upload_service, job_repository=self.job_repository)
+                except FileNotFoundError:
+                    raise conflict("参数值列修正的实物证据不可用，不能批准复核。", "review_result_unavailable") from None
+                except TableEvidenceError:
+                    raise conflict("参数值列修正的实物证据无效，不能批准复核。", "review_result_integrity_conflict") from None
+                except RuntimeError:
                     raise ApplicationError("service_unavailable", "复核文件存储暂不可用。", reason_code="quality_storage_unavailable") from None
-                raise
-            actual_hash = f"sha256:{hashlib.sha256(content).hexdigest()}"
-            if (len(content) != result_file.size_bytes or
-                (result_file.checksum_sha256 is not None and result_file.checksum_sha256 != actual_hash)
-                or (job.prepared_result is not None and not receipt_matches_file(result_file, job.prepared_result))):
-                raise conflict("当前主 DOCX 与登记或选定凭据的完整性描述不一致。", "review_result_integrity_conflict")
+                if verified is None or not any(table.value_column_corrections for table in verified.envelope.report.tables):
+                    raise conflict("参数值列修正缺少独立实物证据，不能批准复核。", "review_result_integrity_conflict")
+                actual_hash = f"sha256:{verified.envelope.report.docx_sha256}"
+            else:
+                try:
+                    content = self.file_upload_service.read_file_content(result_file)
+                except FileNotFoundError as exc:
+                    raise conflict("当前主 DOCX 不可用，不能批准复核。", "review_result_unavailable") from exc
+                except Exception as exc:
+                    if expected_source is not None and is_preview_storage_error(exc):
+                        raise ApplicationError("service_unavailable", "复核文件存储暂不可用。", reason_code="quality_storage_unavailable") from None
+                    raise
+                actual_hash = f"sha256:{hashlib.sha256(content).hexdigest()}"
+                if (len(content) != result_file.size_bytes or
+                    (result_file.checksum_sha256 is not None and result_file.checksum_sha256 != actual_hash)
+                    or (receipt is not None and not receipt_matches_file(result_file, receipt))):
+                    raise conflict("当前主 DOCX 与登记或选定凭据的完整性描述不一致。", "review_result_integrity_conflict")
             latest = self.file_repository.get_document_file(result_file.id)
             if (latest is None or latest.review_source_revision != result_file.review_source_revision
                     or review_source_descriptor(latest) != review_source_descriptor(result_file)):
@@ -137,7 +157,11 @@ class DocumentReviewWriter:
             note=self.access.normalize_optional_text(note), reviewed_by=user.id, reviewed_at=now, reviewer_role=user.role,
             binding=binding, expected_source=expected_source)
         try:
+            if verified is not None:
+                recheck_verified_report(verified, file_repository=self.file_repository, job_repository=self.job_repository)
             updated = self.job_repository.update_document_job_review_if_current(job.id, submission=submission)
+        except TableEvidenceError:
+            raise conflict("复核期间参数值列证据已变化，请重新读取。", "review_result_integrity_conflict") from None
         except ReviewSubmissionConflict as exc:
             raise conflict("复核提交条件已变化，请重新读取。", exc.reason_code) from None
         if updated is None:

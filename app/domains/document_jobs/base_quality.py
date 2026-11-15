@@ -196,6 +196,7 @@ def derive_base_quality(job: Any) -> dict | None:
             or image_summary.get("schema_version") != "image-layout/v1"):
         complete = False
     table = read_table_evidence(metadata["table_evidence"]) if "table_evidence" in metadata else None
+    compared_layout_hints: set[str] = set()
     if table is None:
         complete = False
     else:
@@ -203,8 +204,23 @@ def derive_base_quality(job: Any) -> dict | None:
         blockers += table.counts.blocker_count
         warnings += table.counts.warning_count
         codes.update(flag.code for item in table.tables for flag in item.flags)
+        if complete:
+            # 只核销已逐格认证的原生表片段的分栏位置提示，报告中仍保留诊断。
+            for item in table.tables:
+                if not item.value_column_corrections:
+                    continue
+                for output in item.outputs:
+                    for fragment in output.fragments:
+                        if fragment.value_column_review_sha256 is not None:
+                            block_id = fragment.block_id
+                            compared_layout_hints.update((
+                                f"layout_wide_table:{block_id}",
+                                f"layout_two_column_candidate:{block_id}:left",
+                                f"layout_two_column_candidate:{block_id}:right",
+                            ))
     # 自由 flags 没有原 typed 分级；即使看起来像 info，也不能据名称忽略。
-    risk_flags = [flag for key in ("quality_flags", "layout_quality_flags") for flag in metadata.get(key, [])]
+    risk_flags = [*metadata.get("quality_flags", []),
+                  *(flag for flag in metadata.get("layout_quality_flags", []) if flag not in compared_layout_hints)]
     unknown_count = sum(flag != "formula_text_fallback" for flag in risk_flags)
     complete = complete and not unknown_count
     status = "blocked" if blockers else "pending" if not complete else "warning" if warnings else "passed"

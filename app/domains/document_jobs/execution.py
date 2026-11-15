@@ -9,6 +9,7 @@ import tempfile
 import zipfile
 from datetime import timedelta
 from pathlib import Path
+from time import monotonic
 from typing import Any, Callable, Protocol
 from uuid import uuid4
 
@@ -22,6 +23,10 @@ from app.domains.document_jobs.execution_support import (
 from app.domains.document_jobs.preview import DocumentJobPreviewService
 from app.domains.document_jobs.mineru_execution import MinerUExecution
 from app.domains.document_jobs.render_execution import WordRenderExecution
+from app.domains.document_jobs.table_value_column_sources import (
+    ensure_table_value_mineru_result_current,
+    read_table_value_mineru_result,
+)
 from app.domains.document_jobs.translation_execution import (
     DocumentTranslationBatchTaskQueueProtocol,
     TranslationBatchExecution,
@@ -35,6 +40,7 @@ from app.services.document_ir.table_reference_assets import (
     RASTER_EXTENSIONS, TABLE_REFERENCE_ROLE, decode_table_references,
 )
 from app.services.document_ir.table_placeholder import TablePlaceholderError, decode_placeholders
+from app.services.document_ir.table_value_column_review import TableValueColumnReviewError
 from app.domains.files import FileUploadService
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
@@ -51,6 +57,9 @@ from app.services.renderer import DocumentIRWordRenderer
 from app.domains.translation.audit import TranslationAuditService
 from app.domains.translation.modes import is_translation_document_job_mode
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
+
+
+_VALUE_COLUMN_OBSERVATION_SECONDS = 60.0
 
 
 class DocumentJobTaskQueueProtocol(Protocol):
@@ -260,6 +269,13 @@ class DocumentJobExecutionService:
         trace_id: str | None,
     ) -> DocumentJobRecord:
         now = utc_now()
+        # 同包新代直接进入 parsed，此处补齐原解析入口原本会建立的时限。
+        timing = {}
+        if job.timeout_at is None:
+            started_at = job.started_at or now
+            timing = {"started_at": started_at, "timeout_at": started_at + timedelta(
+                seconds=self.settings.p0_document_job_timeout_seconds,
+            )}
         converting = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"running"},
@@ -269,6 +285,7 @@ class DocumentJobExecutionService:
             stage="ir_converting",
             progress=max(job.progress, 40),
             updated_at=now,
+            **timing,
         )
         if converting is None:
             return self.job_repository.get_document_job(job.id) or job
@@ -301,24 +318,71 @@ class DocumentJobExecutionService:
         if is_translation_document_job_mode(job.mode) and job.source_document_ir_file_id:
             return self.translation_batches.start_generation(job, trace_id=trace_id)
 
+        direct = not is_translation_document_job_mode(job.mode)
+        replay = (self.job_repository.get_document_job_table_value_column_replay(job.id, job.retry_count)
+                  if direct and job.retry_count else None)
+        bind_values = direct and (self.settings.document_table_value_pdf_binding_enabled or replay is not None)
         raw_file = self._get_mineru_raw_result_file(job)
+
+        def load_source():
+            if bind_values:
+                source = self.rendering.placeholders.load_source(job, strict_identity=True)
+            else:
+                source = self.rendering.placeholders.load_source(job)
+            if replay is not None and (source.file_id, source.checksum_sha256) != (
+                replay.source_file_id, replay.source_file_sha256,
+            ):
+                raise TableValueColumnReviewError("source_binding")
+            return source
+
         with tempfile.TemporaryDirectory(prefix="document_job_ir_") as temp_dir:
-            raw_zip_path = Path(temp_dir) / raw_file.original_filename
-            raw_zip_path.write_bytes(self.file_service.read_file_content(raw_file))
+            raw_zip_path = Path(temp_dir) / "mineru_raw_result.zip"
             validation_input = {
                 "mineru_raw_result_file_id": raw_file.id,
                 "mineru_raw_result_sha256": raw_file.checksum_sha256,
                 "retry_count": job.retry_count,
             }
             try:
+                if bind_values:
+                    raw_bytes, source_pair_eligible = read_table_value_mineru_result(
+                        job, raw_file, job_repository=self.job_repository,
+                        file_repository=self.file_repository, file_service=self.file_service,
+                    )
+                    if replay is not None and (
+                        not source_pair_eligible or (raw_file.id, raw_file.checksum_sha256) != (
+                            replay.raw_file_id, replay.raw_sha256,
+                        )
+                    ):
+                        raise TableValueColumnReviewError("source_binding")
+                    budget = _VALUE_COLUMN_OBSERVATION_SECONDS
+                    if job.timeout_at is not None:
+                        # 保留本代剩余时限的一半供正式渲染及登记使用。
+                        budget = min(budget, max(0, (job.timeout_at - utc_now()).total_seconds() / 2))
+                    value_column_options = {
+                        "auto_table_value_columns": True,
+                        "table_value_column_reviews": replay.reviews if replay is not None else (),
+                        "value_column_source_pair_eligible": source_pair_eligible,
+                        "value_column_observation_deadline": monotonic() + budget,
+                    }
+                else:
+                    raw_bytes = self.file_service.read_file_content(raw_file)
+                    value_column_options = {}
+                raw_zip_path.write_bytes(raw_bytes)
+                del raw_bytes
                 result = self.document_ir_service.convert_zip(
                     raw_zip_path,
                     job_id=job.id,
                     source_file_id=job.source_file_id,
                     document_language=job.document_language,
-                    placeholder_source_loader=lambda: self.rendering.placeholders.load_source(job),
+                    placeholder_source_loader=load_source,
+                    **value_column_options,
                 )
-            except (MinerUArtifactValidationError, DocumentIntegrityError, TablePlaceholderError) as error:
+                if bind_values:
+                    ensure_table_value_mineru_result_current(
+                        job, raw_file, job_repository=self.job_repository, file_repository=self.file_repository,
+                    )
+            except (MinerUArtifactValidationError, DocumentIntegrityError, TablePlaceholderError,
+                    TableValueColumnReviewError) as error:
                 error.mineru_validation_input = validation_input
                 return self.lifecycle.fail_stage_attempt(job, error, trace_id=trace_id)
             result.document.metadata.mineru_validation_input = validation_input

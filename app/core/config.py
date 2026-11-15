@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     # 每轮都要完整重渲染，上限防止耗尽 Worker 时限；0 表示关闭渲染阶段降级。
     render_degradation_max_attempts: int = Field(default=5, ge=0, le=20)
     document_jobs_worker_backend: Literal["disabled", "celery", "eager"] = "disabled"
+    document_table_value_pdf_binding_enabled: bool = False
     document_publication_enabled: bool = False
     word_preview_backend: Literal["disabled", "sandboxed"] = "disabled"
     word_preview_required: bool = False

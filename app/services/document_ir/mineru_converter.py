@@ -130,6 +130,8 @@ class MinerUToDocumentIRService:
         table_header_reviews: tuple[TableHeaderReview, ...] = (),
         table_value_column_reviews: tuple[TableValueColumnReview, ...] = (),
         auto_table_value_columns: bool = False,
+        value_column_source_pair_eligible: bool = True,
+        value_column_observation_deadline: float | None = None,
     ) -> MinerUToDocumentIRResult:
         """读取 MinerU 结果 zip，生成 DocumentIR v2 和待登记图片资产。"""
 
@@ -163,6 +165,8 @@ class MinerUToDocumentIRService:
                     table_header_reviews=table_header_reviews,
                     table_value_column_reviews=table_value_column_reviews,
                     auto_table_value_columns=auto_table_value_columns,
+                    value_column_source_pair_eligible=value_column_source_pair_eligible,
+                    value_column_observation_deadline=value_column_observation_deadline,
                     same_document_layout=same_document_layout,
                 )
             except MinerUPackageError as error:
@@ -185,6 +189,8 @@ class MinerUToDocumentIRService:
         table_header_reviews: tuple[TableHeaderReview, ...],
         table_value_column_reviews: tuple[TableValueColumnReview, ...],
         auto_table_value_columns: bool,
+        value_column_source_pair_eligible: bool,
+        value_column_observation_deadline: float | None,
         same_document_layout: tuple[Any, str] | None,
     ) -> MinerUToDocumentIRResult:
         """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
@@ -422,6 +428,8 @@ class MinerUToDocumentIRService:
             attach_automatic_table_value_column_reviews(
                 document, table_value_column_reviews, table_sources.checksum, source_loader,
                 content_list_path=content_list_path, same_document_layout=same_document_layout,
+                source_pair_eligible=value_column_source_pair_eligible,
+                observation_deadline=value_column_observation_deadline,
             )
         elif table_value_column_reviews:
             attach_table_value_column_reviews(document, table_value_column_reviews, table_sources.checksum, source_loader)
