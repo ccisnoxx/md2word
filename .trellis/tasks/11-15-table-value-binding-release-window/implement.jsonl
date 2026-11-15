@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "后端规范入口，按执行清单定向读取 Word 规则"}
+{"file": ".trellis/spec/backend/runtime-configuration.md", "reason": "MinerU 账号绑定与配置来源"}
+{"file": "docs/deploy/hostdzire-dmit-md2word.md", "reason": "生产分层编排、制品切换及回退"}
+{"file": ".trellis/tasks/archive/2026-11/11-15-table-value-pdf-binding-rollout/validation-live-mineru-and-worker.md", "reason": "真实托管、生产只读基线及待验收缺口"}
+{"file": "docs/deploy/online-first-validation-workflow.md", "reason": "获准生产窗口的运行验收入口"}
