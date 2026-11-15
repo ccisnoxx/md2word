@@ -14,7 +14,7 @@
 | 真实新回包 P7 | 14 项 `row_ambiguous`，对应生成件审批及发布均 409。 |
 | 真实 LOW/HIGH | Word 已正确分列，7 个词框坐标存在最大 0.000001 pt 差异，严格逐页比对未通过。 |
 
-新回包按当次实际发现与证据重新对账。上述结论随各自生成件保留。[第五阶段收口](../archive/2026-11/11-15-table-value-pdf-binding-rollout/validation.md#第五阶段收口) · [真实托管与生产只读证据](../archive/2026-11/11-15-table-value-pdf-binding-rollout/validation-live-mineru-and-worker.md)
+新回包按当次实际发现与证据重新对账。上述结论随各自生成件保留。[第五阶段收口](../11-15-table-value-pdf-binding-rollout/validation.md#第五阶段收口) · [真实托管与生产只读证据](../11-15-table-value-pdf-binding-rollout/validation-live-mineru-and-worker.md)
 
 ## 范围与授权
 

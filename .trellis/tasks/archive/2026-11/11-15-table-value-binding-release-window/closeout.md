@@ -8,4 +8,4 @@
 | 隔离名单内外 | 同一 P7 原件、留存真实回包和候选镜像走正式 Worker。名单内仅解除经实际 Word 认证的 5 处，13 处仍阻断。名单外零修正，18 处全部保留。 [隔离名单对照](validation-isolated-allowlist.md) |
 | 隔离关闸回滚 | 同一镜像恢复关闸和空名单，原名单公司新任务零修正、18 处全保留。旧件的原包、IR、报告与 Word 摘要及认证、阻断状态保持。四个隔离对照的审批和发布均因质量阻断返回 409。 [隔离关闸回滚](validation-isolated-allowlist.md#关闸回滚) |
 
-生产灰度留到单独授权的变更窗口。生产总开关保持 `false`，白名单为空。第五阶段两个 P7 生成件的 13/14 处审批发布阻断，以及 LOW/HIGH 未通过严格逐页比对的结论继续保留。 [第五阶段收口](../archive/2026-11/11-15-table-value-pdf-binding-rollout/validation.md#第五阶段收口)
+生产灰度留到单独授权的变更窗口。生产总开关保持 `false`，白名单为空。第五阶段两个 P7 生成件的 13/14 处审批发布阻断，以及 LOW/HIGH 未通过严格逐页比对的结论继续保留。 [第五阶段收口](../11-15-table-value-pdf-binding-rollout/validation.md#第五阶段收口)
