@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"核对直接受影响的服务、资源哈希和发布证据"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"核对前置拒绝、事务语义及副作用"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"核对 API 错误包络与历史分类"}
+{"file":".trellis/spec/frontend/index.md","reason":"核对模板版本状态与动作可用性由后端拥有"}

@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/index.md","reason":"加载模板、任务和持久化的适用规范"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"沿用结构化字段错误、冲突和稳定原因码"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"保留版本 CAS、默认切换和审计事务的边界"}
+{"file":".trellis/spec/frontend/index.md","reason":"保持模板管理和任务动作消费后端的合同"}
+{"file":".trellis/spec/frontend/schema-driven-template-style-editor.md","reason":"保留候选草稿、只读 Logo 字段和并发校验"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"从资源版本经任务快照到 API 和界面复用同一准入规则"}
