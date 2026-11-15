@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.services.document_ir.integrity import DocumentIntegrityError, is_visible_body_block
 from app.services.document_ir.models import DocumentIR
+from app.services.document_ir.table_annotations import annotation_items, table_placeholder_text
 from app.services.renderer.layout_plan import image_annotations
 from app.services.renderer.render_event_summary import (
     RENDER_EVIDENCE_CODES,
@@ -93,7 +94,7 @@ def _ensure_toc_policies_inside_region(document_ir: DocumentIR, plan: RenderPlan
             "blocking_quality_flags": ["ir_docx_integrity:toc_coalesced_outside_region"]})
 
 
-def _validate_persisted_image_targets(index, records, blocks, image_ids) -> None:
+def _validate_persisted_image_targets(index, records, blocks, image_ids, *, preserve_positions: bool) -> None:
     """原图片报告通过后，用其稳定 marker 容器核对逐图 target。"""
     from docx.oxml.ns import qn
     from app.services.renderer.image_evidence import image_anchor
@@ -104,7 +105,7 @@ def _validate_persisted_image_targets(index, records, blocks, image_ids) -> None
     for block_id in image_ids:
         record = records[block_id]
         expected = [(image_anchor(block_id), None)] + [(image_anchor(block_id, field), i)
-            for i, (field, _) in enumerate(image_annotations(blocks[block_id]))]
+            for i, (field, _) in enumerate(image_annotations(blocks[block_id], preserve_positions=preserve_positions))]
         if len(record.targets) != len(expected):
             raise ValueError("ir_render_evidence:target_mismatch")
         for target, (name, item_index) in zip(record.targets, expected, strict=True):
@@ -185,6 +186,7 @@ def _validate_render_evidence(document_ir: DocumentIR, word_content: bytes,
         records = {record.block_id: record for record in trace.block_render_map}
         decisions = {decision.block_id: decision for decision in plan.decisions}
         blocks = {block.id: block for block in document_ir.blocks}
+        preserve_positions = document_ir.metadata.translation_item_scope is not None
         owners = {}
         decoration_ops = {block_id: operation for operation in plan.operations if operation.kind == "decoration" for block_id in operation.block_ids}
         for record in trace.block_render_map:
@@ -221,15 +223,18 @@ def _validate_render_evidence(document_ir: DocumentIR, word_content: bytes,
                     if [(item.item_index, item.disposition, item.representative_block_id, item.representative_item_index) for item in record.items] != expected_items:
                         raise ValueError("ir_render_evidence:target_mismatch")
             elif decision.table_strategy is not None and record.block_id not in table_members:
-                caption_count = len(dict.fromkeys(text.strip() for text in block.captions if text.strip()))
-                note_count = len(dict.fromkeys(text.strip() for text in block.footnotes if text.strip()))
+                caption_count = len(annotation_items(block.captions, preserve_positions=preserve_positions))
+                note_count = len(annotation_items(block.footnotes, preserve_positions=preserve_positions))
                 roles = ["context" if style == "normal" else "caption" for style in decision.annotation_styles[:caption_count]]
-                roles += ["body" if decision.table_strategy == "fallback" else "table"] + ["note"] * note_count
+                has_alias = preserve_positions and block.caption_text_alias_index is not None
+                body_roles = ([] if has_alias else ["body"]) if decision.table_strategy == "fallback" else ["table"]
+                roles += body_roles + ["note"] * note_count
                 if v2:
                     from app.services.document_ir.table_placeholder import decode_placeholders
                     placeholders = [item for item in decode_placeholders(document_ir) if item.owner_block_id == block.id]
                     if placeholders:
-                        roles = roles[:caption_count] + (["body"] if block.text and block.text not in block.captions else [])
+                        text = table_placeholder_text(block, preserve_positions=preserve_positions)
+                        roles = roles[:caption_count] + (["body"] if text else [])
                         roles += ["image_fallback"] * len(placeholders) + ["note"] * note_count
                 if [target.role for target in own_targets] != roles:
                     raise ValueError("ir_render_evidence:target_mismatch")
@@ -348,7 +353,7 @@ def _validate_render_evidence(document_ir: DocumentIR, word_content: bytes,
                     raise ValueError("ir_render_evidence:target_mismatch")
         else:
             # 恢复沿 RND-503 已认证的原图/注释 marker 核对位置，不声称重新获得创建事实。
-            _validate_persisted_image_targets(index, records, blocks, image_ids)
+            _validate_persisted_image_targets(index, records, blocks, image_ids, preserve_positions=preserve_positions)
         # 实际输出顺序与计划一致，交换两个合法段落 locator 也不能通过。
         previous = None
         for operation in plan.operations:

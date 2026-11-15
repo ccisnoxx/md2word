@@ -43,6 +43,7 @@ class FakeTranslationProvider:
             "block_0003.text": "电气特性",
             "block_0003.html.0000": "参数",
             "block_0003.html.0001": "输入电压",
+            "block_0003.footnotes.0000": "所有值均为典型值。",
             "block_0004.list_items.0000": "低噪声",
             "block_0004.list_items.0001": "高压摆率",
             "block_0006.text": "图 1. 引脚图",
@@ -53,7 +54,11 @@ class FakeTranslationProvider:
                     id=item.id,
                     text=(
                         item.text.replace("Features", "特性") if item.id == "block_0001.text" else
-                        item.text.replace("Figure", "图").replace("Pin diagram", "引脚图") if item.id == "block_0006.text" else
+                        item.text.replace("Figure", "图").replace("Pin diagram", "引脚图") if item.id in (
+                            "block_0006.text", "block_0006.captions.0000"
+                        ) else
+                        item.text.replace("Table", "表").replace("Electrical Characteristics", "电气特性")
+                        if item.id == "block_0003.captions.0000" else
                         translations[item.id]
                     ),
                 )
@@ -228,8 +233,11 @@ class DocumentIRTranslationTests(unittest.TestCase):
         self.assertEqual([block.id for block in translated.blocks], [block.id for block in document.blocks])
         self.assertEqual([block.type for block in translated.blocks], [block.type for block in document.blocks])
         self.assertEqual([block.layout for block in translated.blocks], [block.layout for block in document.blocks])
-        self.assertEqual([block.captions for block in translated.blocks], [block.captions for block in document.blocks])
-        self.assertEqual([block.footnotes for block in translated.blocks], [block.footnotes for block in document.blocks])
+        self.assertEqual(translated.blocks[2].captions, ["表 1. 电气特性"])
+        self.assertEqual(translated.blocks[2].footnotes, ["所有值均为典型值。"])
+        self.assertEqual(translated.blocks[5].captions, ["图 1. 引脚图"])
+        self.assertEqual(document.blocks[2].captions, ["Table 1. Electrical Characteristics"])
+        self.assertEqual(document.blocks[2].footnotes, ["All values are typical."])
         self.assertEqual(translated.assets, document.assets)
         self.assertEqual(document.blocks[1].text, "The input offset voltage is low.")
         self.assertEqual(translated.metadata.document_language, "zh")
@@ -273,15 +281,62 @@ class DocumentIRTranslationTests(unittest.TestCase):
 
         translated = service.translate(document, term_version=terms, call_recorder=recorder)
 
-        self.assertEqual([len(request.items) for request in provider.requests], [3, 3, 2])
+        self.assertEqual([len(request.items) for request in provider.requests], [3, 3, 3, 2])
         self.assertEqual(recorder.success_requests, provider.requests)
         self.assertEqual(recorder.failure_requests, [])
-        self.assertEqual([request.items[0].id for request in provider.requests], ["block_0001.text", "block_0003.html.0000", "block_0004.list_items.0001"])
+        self.assertEqual([request.items[0].id for request in provider.requests], [
+            "block_0001.text", "block_0003.html.0000", "block_0003.footnotes.0000", "block_0006.text",
+        ])
         self.assertEqual([trace.batch_id for trace in provider.requests[0].term_traces], ["document_ir_provider_request_0001"])
-        self.assertEqual([trace.batch_id for trace in provider.requests[1].term_traces], ["document_ir_provider_request_0002"])
+        self.assertEqual([trace.batch_id for trace in provider.requests[2].term_traces], ["document_ir_provider_request_0003"])
         self.assertEqual(translated.blocks[0].text, "1 特性")
         self.assertEqual(translated.blocks[1].text, "输入失调电压很低。")
         self.assertEqual(translated.blocks[3].list_items, ["低噪声", "高压摆率"])
+
+    def test_annotation_source_positions_and_alias_survive_round_trip_and_apply(self) -> None:
+        document = self._make_document_ir()
+        document.metadata.translation_item_scope = "annotations-v1"
+        table, image = document.blocks[2], document.blocks[5]
+        table.text = table.captions[0]
+        table.metadata["caption_text_alias_index"] = 0
+        table.footnotes = ["Keep 10 V and $^{(1)(2)}$.", " ", "Keep 10 V and $^{(1)(2)}$."]
+        image.footnotes = ["Image note"]
+        document = DocumentIR.model_validate_json(document.model_dump_json())
+        source_bytes = document.model_dump_json()
+        provider = Mock()
+        provider.translate.side_effect = lambda request: TranslationProviderResult(tuple(
+            TranslationTextItem(item.id, "译文 " + item.text) for item in request.items
+        ))
+        service = DocumentIRTranslationService(provider)
+        translated = DocumentIR.model_validate_json(service.translate(document, term_version=None).model_dump_json())
+        item_ids = [item.id for item in provider.translate.call_args.args[0].items]
+        self.assertNotIn("block_0003.text", item_ids)
+        self.assertIn("block_0006.text", item_ids)
+        self.assertEqual(
+            [item_id for item_id in item_ids if ".captions." in item_id or ".footnotes." in item_id],
+            ["block_0003.captions.0000", "block_0003.footnotes.0000", "block_0003.footnotes.0002",
+             "block_0006.captions.0000", "block_0006.footnotes.0000"],
+        )
+        self.assertEqual(translated.blocks[2].text, translated.blocks[2].captions[0])
+        self.assertEqual(translated.blocks[2].footnotes, [
+            "译文 Keep 10 V and $^{(1)(2)}$.", " ", "译文 Keep 10 V and $^{(1)(2)}$.",
+        ])
+        self.assertEqual(translated.blocks[5].footnotes, ["译文 Image note"])
+        self.assertEqual(document.model_dump_json(), source_bytes)
+        self.assertIs(translated.metadata.translation_items_applied, True)
+
+    def test_annotation_scope_rejects_unknown_versions_and_non_boolean_applied_flag(self) -> None:
+        source = self._make_document_ir()
+        self.assertNotIn("translation_item_scope", source.model_dump()["metadata"])
+        for fields in (
+            {"translation_item_scope": "annotations-v2"},
+            {"translation_items_applied": True},
+            {"translation_item_scope": "annotations-v1", "translation_items_applied": 1},
+        ):
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                payload = source.model_dump()
+                payload["metadata"].update(fields)
+                DocumentIR.model_validate(payload)
 
     def test_document_ir_translation_plan_splits_by_page_window(self) -> None:
         provider = FakeTranslationProvider()

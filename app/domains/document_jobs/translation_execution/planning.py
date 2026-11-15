@@ -60,7 +60,8 @@ class TranslationPlanner:
         if not isinstance(translation, dict) or translation.get("role") != "source" or translation.get("applied") is not False:
             raise DocumentIRTranslationError("翻译 source IR 角色不一致。", code="translation_integrity_evidence_mismatch")
         document_ir = DocumentIR.model_validate_json(content)
-        if document_ir.metadata.job_id != job.id or document_ir.metadata.source_file_id != job.source_file_id:
+        if (document_ir.metadata.job_id != job.id or document_ir.metadata.source_file_id != job.source_file_id
+                or document_ir.metadata.translation_items_applied is not None):
             raise DocumentIRTranslationError("翻译 source IR 文档来源不一致。", code="translation_integrity_evidence_mismatch")
         return record, document_ir
 

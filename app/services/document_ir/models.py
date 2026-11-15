@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from app.services.document_ir.artifact_validator import MinerUValidationReport
 from app.services.document_ir.table_header_review import TableHeaderReview
@@ -16,6 +16,7 @@ DocumentIRAssetKind = Literal["image"]
 DocumentIRSchemaVersion = Literal["document-ir/v1", "document-ir/v2"]
 DocumentIRBlockRole = Literal["body", "page_header", "page_footer", "page_number"]
 DocumentIRColumnHint = Literal["left", "right", "wide"]
+AnnotationTranslationScope = Literal["annotations-v1"]
 
 
 class SourceSpan(BaseModel):
@@ -177,8 +178,19 @@ class DocumentIRMetadata(BaseModel):
     table_references_version: Literal["table-reference/v1"] | None = None
     table_placeholders_version: Literal["table-placeholder/v1"] | None = None
     table_placeholders: list[TablePlaceholderBinding] = Field(default_factory=list)
+    # 旧源件缺省即保留原批次抽取范围，不能从已存批次反推。
+    translation_item_scope: AnnotationTranslationScope | None = Field(default=None, exclude_if=lambda value: value is None)
+    translation_items_applied: Literal[True] | None = Field(default=None, exclude_if=lambda value: value is None)
     # 第三批 C1：整页降级记录（页码、原因、问题指针、移除的源块计数与指针、页面图像资产、源 PDF sha256）。
     degraded_pages: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("translation_items_applied", mode="before")
+    @classmethod
+    def _validate_translation_applied(cls, value: object) -> object:
+        # 该标记影响源件与目标件的校验路径，持久化整数不能被当作布尔值。
+        if value is not None and value is not True:
+            raise ValueError("译后注释标记必须为 true。")
+        return value
 
 
 class DocumentIRAsset(BaseModel):
@@ -232,6 +244,11 @@ class DocumentIRBlock(BaseModel):
     footnotes: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def caption_text_alias_index(self) -> int | None:
+        """返回转换器登记的派生题注位置，字段相等本身不构成来源证据。"""
+        return self.metadata.get("caption_text_alias_index")
+
 
 class DocumentIR(BaseModel):
     """DocumentIR 文档根对象；默认保持 v1，显式 schema_version 可启用 v2。"""
@@ -247,10 +264,21 @@ class DocumentIR(BaseModel):
     def _validate_logical_tables(self) -> DocumentIR:
         # 同一 owner 校验首次构建和 Artifact 重读，避免损坏新合同被静默接受。
         from app.services.document_ir.logical_table_group import validate_logical_table_groups
+        from app.services.document_ir.table_annotations import validate_table_annotation_sources
         from app.services.document_ir.table_figure import validate_table_figure_bindings
         from app.services.document_ir.table_reference_assets import decode_table_references
 
+        if self.metadata.translation_item_scope is None and self.metadata.translation_items_applied is not None:
+            raise ValueError("译后注释缺少翻译范围。")
+        for block in self.blocks:
+            if "caption_text_alias_index" in block.metadata:
+                index = block.caption_text_alias_index
+                if (self.metadata.translation_item_scope is None or block.type not in {"image", "table"}
+                        or type(index) is not int or not 0 <= index < len(block.captions)
+                        or not block.captions[index].strip() or block.text != block.captions[index]):
+                    raise ValueError("注释翻译的派生题注位置不一致。")
         validate_logical_table_groups(self)
+        validate_table_annotation_sources(self)
         validate_table_figure_bindings(self)
         decode_table_references(self)
         from app.services.document_ir.table_placeholder import decode_placeholders

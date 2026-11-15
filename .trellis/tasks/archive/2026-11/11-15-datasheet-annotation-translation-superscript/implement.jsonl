@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/index.md","reason":"读取当前后端任务、持久化与验证规范入口"}
+{"file":".trellis/spec/backend/translation-batch-lifecycle.md","reason":"沿用权威根计划、同代恢复、拆分和原子提交合同"}
+{"file":".trellis/spec/backend/translation-integrity-validator.md","reason":"沿用保护 Token、结果绑定、fan-in 和失败关闭合同"}
+{"file":".trellis/spec/backend/document-job-mode-contract.md","reason":"验证四方向入口和 direct 零翻译资源加载"}
+{"file":".trellis/tasks/11-11-datasheet-quality-baseline-contracts/extended-sample-manifest.json","reason":"定位经授权的 RS2G04 第 6 页输入和身份指纹"}

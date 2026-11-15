@@ -193,6 +193,47 @@ class FormulaParserTests(unittest.TestCase):
                 self.assertEqual(block.reason, "invalid_syntax")
                 self.assertEqual("".join(text_of(node) for node in block.elements), FORMULA_FALLBACK_NOTICE + source)
 
+    def test_only_plain_parenthesized_numeric_footnote_markers_use_native_superscript(self):
+        for source, visible in ((r"$^{(1)(2)}$", "(1)(2)"), (r"\(^{(12)  (03)}\)", "(12)  (03)")):
+            with self.subTest(source=source):
+                span, = scan_math_spans(source)
+                result = render_formula(span)
+                self.assertEqual(result.mode, "semantic_runs")
+                run, = result.elements
+                self.assertEqual(text_of(run), visible)
+                self.assertEqual(run.find("w:rPr/w:vertAlign", NS).get(f"{{{NS['w']}}}val"), "superscript")
+
+        source = r"$x^{(1)(2)}$"
+        span, = scan_math_spans(source)
+        self.assertEqual(render_formula(span).mode, "omml")
+        for source in (r"$^{(1)(2)}", r"$^{(1)(2)$", r"$^{(a)}$", r"$^{(１)}$", r"$^{2}$"):
+            with self.subTest(source=source):
+                span, = scan_math_spans(source)
+                result = render_formula(span)
+                self.assertEqual(result.mode, "text_fallback")
+                self.assertEqual("".join(text_of(node) for node in result.elements),
+                    FORMULA_FALLBACK_NOTICE + source)
+
+    def test_spaced_footnote_keeps_report_span_but_protects_only_the_number_in_translation(self):
+        source = "Keep 10 V and " + r"$^{(1)(2)}$" + "."
+        reported, = scan_math_spans(source)
+        protected, = scan_math_spans(source, standalone_footnote_markers=True)
+        self.assertEqual(reported.source, r"and $^{(1)(2)}$")
+        self.assertEqual(protected.source, r"$^{(1)(2)}$")
+        self.assertEqual(source[protected.start:protected.end], protected.source)
+        result = render_formula(reported)
+        self.assertEqual(result.mode, "semantic_runs")
+        before, marker = result.elements
+        self.assertEqual(text_of(before), "and ")
+        self.assertIsNone(before.find("w:rPr/w:vertAlign", NS))
+        self.assertEqual(text_of(marker), "(1)(2)")
+        self.assertEqual(marker.find("w:rPr/w:vertAlign", NS).get(f"{{{NS['w']}}}val"), "superscript")
+        for source in (r"T$^{2}$", r"T $^{2}$", r"T$^{(1)}$"):
+            with self.subTest(source=source):
+                spans = scan_math_spans(source)
+                self.assertEqual(scan_math_spans(source, standalone_footnote_markers=True), spans)
+                self.assertEqual(render_formula(spans[0]).mode, "omml")
+
     def test_bare_scripts_keep_the_complete_expression_and_command_scope(self):
         for source, text in (("V_{OUT}", "VOUT"), (r"R_{\theta JA}", "RθJA"), (r"x_{\text{A B}}", "xA B")):
             with self.subTest(source=source):
@@ -241,6 +282,51 @@ class FormulaParserTests(unittest.TestCase):
 
 
 class FormulaRenderEvidenceTests(unittest.TestCase):
+    def test_numbered_footnote_marker_retains_native_run_position_and_evidence(self):
+        source = r"$^{(1)(2)}$"
+        prefix, suffix = "适用温度：", "，使用说明见表注。"
+        ir = document(DocumentIRBlock(id="condition", type="paragraph", order=0,
+            text=prefix + source + suffix))
+        result = render(ir)
+        evidence = build_renderer_evidence(ir, result.content, render_result=result)
+        ensure_renderer_integrity(evidence)
+        self.assertEqual(evidence["formula_summary"]["semantic_count"], 1)
+        self.assertEqual(evidence["formula_summary"]["fallback_count"], 0)
+        self.assertNotIn("formula_text_fallback", evidence["quality_flags"])
+        self.assertEqual(evidence["docx_quality"]["latex_residue_count"], 0)
+
+        entry, = result.formula_report["entries"]
+        self.assertEqual(entry["source"], {
+            "block_id": "condition", "field": "text", "start": len(prefix),
+            "end": len(prefix) + len(source), "boundary": "dollar",
+            "source_sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
+        })
+        root = xml_of(result.content)
+        paragraph = root.find("w:body/w:p", NS)
+        before, marker, after = paragraph.findall("w:r", NS)
+        self.assertEqual([text_of(run) for run in (before, marker, after)], [prefix, "(1)(2)", suffix])
+        self.assertEqual(marker.find("w:rPr/w:vertAlign", NS).get(f"{{{NS['w']}}}val"), "superscript")
+        self.assertIsNone(paragraph.find("m:oMath", NS))
+        start = paragraph.find(f"w:bookmarkStart[@w:name='{entry['anchor']}']", NS)
+        self.assertIs(list(paragraph)[list(paragraph).index(start) + 1], marker)
+
+        def change_text(root):
+            next(node for node in root.findall(".//w:t", NS) if node.text == "(1)(2)").text = "(1)(3)"
+
+        def remove_superscript(root):
+            properties = root.find(".//w:rPr[w:vertAlign]", NS)
+            properties.remove(properties.find("w:vertAlign", NS))
+
+        def move_outside_anchor(root):
+            paragraph = root.find("w:body/w:p", NS)
+            marker = next(run for run in paragraph.findall("w:r", NS) if text_of(run) == "(1)(2)")
+            paragraph.remove(marker)
+            paragraph.append(marker)
+
+        for change in (change_text, remove_superscript, move_outside_anchor):
+            with self.subTest(change=change.__name__), self.assertRaises(ValueError):
+                analyze_docx_quality_bytes(changed_docx(result.content, change), formula_report=result.formula_report)
+
     def test_datasheet_literals_and_eta_bind_in_block_inline_and_table(self):
         expressions = (
             (r"I_{OUT}=0,V_{FB}=V_{REF}\times105\%", "IOUT=0,VFB=VREF×105%", {"sSub": 3}),

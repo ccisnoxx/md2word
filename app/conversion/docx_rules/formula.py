@@ -24,6 +24,9 @@ FORMULA_OUTPUT_VERSION = "formula-output/v1"
 FORMULA_FALLBACK_NOTICE = "【公式降级，需复核】"
 FORMULA_REASONS = frozenset({"unsupported_command", "invalid_syntax", "unsupported_structure", "unsafe_normalization"})
 EQ_MATH_OPEN_RE = re.compile(r"<eq(?:\s[^>]*)?>", re.IGNORECASE)
+_MATH_CLOSINGS = {"dollar": "$", "display_dollar": "$$", "paren": r"\)", "bracket": r"\]", "eq": "</eq>"}
+_FOOTNOTE_MARKER = re.compile(r"\^\{(\([0-9]+\)(?:[ \t\n]*\([0-9]+\))*)\}")
+_PLAIN_PREFIX = re.compile(r"[A-Za-z0-9]+[ \t\n]+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -265,9 +268,29 @@ def content_math_spans(text: str) -> tuple[MathSpan, ...]:
     return tuple(sorted(spans, key=lambda span: span.start))
 
 
-def scan_math_spans(text: str) -> tuple[MathSpan, ...]:
+def _spaced_footnote_marker(span: MathSpan) -> tuple[MathSpan, str] | None:
+    """识别历史 span 吸收的普通前缀，保留原 span 身份用于 Word 认证。"""
+    closing = _MATH_CLOSINGS.get(span.boundary)
+    prefix = _PLAIN_PREFIX.match(span.source)
+    if closing is None or prefix is None or "^{" not in span.expression or not span.source.lower().endswith(closing):
+        return None
+    source = span.source[prefix.end():]
+    spans = _scan_delimited_math_spans(source)
+    if len(spans) != 1 or spans[0].source != source or spans[0].boundary != span.boundary:
+        return None
+    match = _FOOTNOTE_MARKER.fullmatch(spans[0].expression.strip())
+    if match is None:
+        return None
+    return MathSpan(span.start + prefix.end(), span.end, source, spans[0].expression, span.boundary), match[1]
+
+
+def scan_math_spans(text: str, *, standalone_footnote_markers: bool = False) -> tuple[MathSpan, ...]:
     """翻译与渲染唯一共用的全部可识别数学边界。"""
-    return content_math_spans(text)
+    spans = content_math_spans(text)
+    if not standalone_footnote_markers:
+        return spans
+    # 翻译可独立保护明确分隔的脚注号，空格前的自然词仍交给译者。
+    return tuple(marker[0] if (marker := _spaced_footnote_marker(span)) else span for span in spans)
 
 
 def formula_block_span(text: str) -> MathSpan:
@@ -330,26 +353,44 @@ def _semantic_elements(source: str) -> tuple[Any, ...]:
     return tuple(result)
 
 
-def render_formula(span: MathSpan) -> FormulaRenderResult:
+def render_formula(span: MathSpan, *, _legacy_spaced_footnote: bool = False) -> FormulaRenderResult:
     if not span.expression.strip():
         raise ValueError("公式源内容为空")
     try:
         if span.boundary == "semantic" or (span.boundary == "semantic_script" and span.expression != span.source):
             return FormulaRenderResult("semantic_runs", _semantic_elements(span.expression))
-        closing = {"dollar": "$", "display_dollar": "$$", "paren": r"\)", "bracket": r"\]", "eq": "</eq>"}.get(span.boundary)
+        closing = _MATH_CLOSINGS.get(span.boundary)
         if closing is not None and not span.source.lower().endswith(closing):
             raise FormulaParseError("invalid_syntax")
         if span.boundary == "block":
             for inner in _scan_delimited_math_spans(span.source):
-                ending = {"dollar": "$", "display_dollar": "$$", "paren": r"\)", "bracket": r"\]", "eq": "</eq>"}.get(inner.boundary)
+                ending = _MATH_CLOSINGS.get(inner.boundary)
                 if ending is not None and not inner.source.lower().endswith(ending):
                     raise FormulaParseError("invalid_syntax")
         if re.search(r"</?[A-Za-z][^>]*>", span.expression):
             raise FormulaParseError("unsafe_normalization")
+        footnote = _FOOTNOTE_MARKER.fullmatch(span.expression.strip())
+        if footnote is not None:
+            return FormulaRenderResult("semantic_runs", (_word_run(footnote[1], superscript=True),))
+        if not _legacy_spaced_footnote and (spaced := _spaced_footnote_marker(span)) is not None:
+            marker, visible = spaced
+            prefix = span.source[:marker.start - span.start]
+            return FormulaRenderResult("semantic_runs", (_word_run(prefix), _word_run(visible, superscript=True)))
         math = _OmmlParser(span.expression).parse()
         return FormulaRenderResult("omml", (math,))
     except FormulaParseError as error:
-        return FormulaRenderResult("text_fallback", (_word_run(FORMULA_FALLBACK_NOTICE), _word_run(span.source)), error.reason)
+        return _formula_fallback(span, error.reason)
+
+
+def _formula_fallback(span: MathSpan, reason: str | None) -> FormulaRenderResult:
+    return FormulaRenderResult("text_fallback", (_word_run(FORMULA_FALLBACK_NOTICE), _word_run(span.source)), reason)
+
+
+def replay_formula_output(span: MathSpan, mode: str, reason: str | None) -> FormulaRenderResult:
+    """按已认证报告的模式重建预期输出，调用方先核对来源和实物锚点。"""
+    if mode == "text_fallback":
+        return _formula_fallback(span, reason)
+    return render_formula(span, _legacy_spaced_footnote=mode == "omml")
 
 
 def output_projection(elements: Any) -> list[Any]:

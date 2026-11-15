@@ -70,6 +70,46 @@ Provider JSON/传输/截断保留 `translation_provider_invalid_response/failed/
 
 正确：共享准备生成真实编码请求与内存 ledger，整批 Validator 成功后才使用恢复结果；落盘绑定权威来源，fan-in 从本地来源重新校验后一次回填。真实匹配隐私测试必须有实际命中、真实 context 保留，不以 mock 或零命中通过。
 
+## 题注脚注的翻译与审核
+
+### 1. 适用范围
+
+修改照片、图表和表格的注释抽取、翻译批次、表格上下文、译后 IR 或审核投影时适用。direct 不建立翻译范围，沿原资源与渲染合同。
+
+### 2. 接口
+
+- `DocumentIRMetadata.translation_item_scope` 的可选值为 `annotations-v1`。缺省字段省略并使用旧范围。转换器在正式翻译源件落盘前固定范围并记录题注别名、表格注释的源位置。
+- `DocumentIRTranslationService.extract_translation_items(ir)` 返回同序的 target 与 item。target 的 `field` 为 `text`、`list_items`、`html`、`captions`、`footnotes`。批次记录、结果和审计使用已有的有序 item ID。
+- 开启 `translation_table_context_enabled` 时，表级注释的 Provider `table_context` 包含 `kind=table_annotation`、`table_block_id`、`annotation_field`、`annotation_index`，以及可核验时的 `logical_group_id`。该分支没有行列、跨度和原文拷贝。单元格继续用既有上下文结构。
+
+### 3. 持久化与证据
+
+- 对非空数组项按原下标生成 `block_0017.captions.0000` 或 `block_0017.footnotes.0000`。跳过空位时保留后续下标。真实正文、列表、HTML 目标继续使用旧 ID 和顺序。
+- `caption_text_alias_index` 由转换器实际派生分支产生。该范围内的派生 `text` 使用同一题注译文。同文的独立段落仍有自己的目标。源 Artifact 保留原文和源关系。
+- Codec 和 Validator 核验整个批次，fan-in 按源范围核对预期集合。完成回填的目标声明 `translation_items_applied=true`。源 Artifact 读取拒绝目标声明。旧源件的批次、重试和审核继续沿旧范围。
+- 审核 `/review/blocks/{block_id}` 将注释原译文及匹配批次证据绑定到 `unit_id`。恢复摘要读取未裁剪的真实回填值。新范围的已完成目标在翻译 QA 中仅用该译后 IR 绑定的调试档案对照原译文，仅用已采用调用日志的术语证据。同代迟到的调用仍可在诊断列表查看。权限及脱敏沿用原合同。
+
+### 4. 错误矩阵
+
+| 条件 | 结果 |
+| --- | --- |
+| 冻结的根树与源范围不符 | `translation_batch_tree_invalid`，保留现有失败收口。 |
+| fan-in 缺少注释或有多余 item | `translation_fan_in_mismatch`，无法登记成功译后 IR。 |
+| 数字、单位或公式占位符丢失、交换或被修改 | 沿已有完整性专码拒绝，无法使用部分译文。 |
+| 源字节、范围、别名或审核证据错绑 | 沿输入和审核的既有完整性校验拒绝。 |
+
+### 5. 实例
+
+正常情况按 `block_0017.footnotes.0002` 回填原位置，即使第二项为空。无范围的历史批次可在当前执行器重建同一旧集合。新范围内的两个位置即使译成相同文本，仍保留独立的翻译项及显示身份。
+
+### 6. 定向回归
+
+`tests.test_document_ir_translation` 覆盖抽取和原位回填；`tests.test_document_job_execution_stages` 覆盖四语言和 direct 的正式应用入口及历史批次；`tests.test_translation_table_context` 核对表级和单元格上下文；`tests.test_document_job_review_blocks_api` 核对同源新旧范围、拆分批次和实际值摘要。
+
+### 7. 调用方要求
+
+恢复时先认证源指针、文件角色和字节，再从源 IR 取抽取范围。根据剩余批次 ID 反推范围会把漏项判为旧数据，破坏完整性验收。
+
 ## RND-502：公式翻译边界
 
 ### 1. 范围与触发
@@ -86,6 +126,7 @@ Provider JSON/传输/截断保留 `translation_provider_invalid_response/failed/
 - 表格 `<eq>` 整个数学子树不抽取为 Provider item，遍历仍为所有原非空 text node 递增 index，后续正文 ID/回填索引不漂移。不能因同格有公式而跳过相邻正文。
 - semantic sub/sup 的内层样式、换行、畸形修复及包裹数学的外层范围必须由完整共享 scanner 认领；不能只扫描内层显式公式而丢掉外层 script。无法完整保护时仍为调用前拒绝。
 - 其余共享扫描识别的数学必须被原 Codec 实际保护范围整体覆盖；检查 ledger 原始 span，不能用“没有检测到技术 Token”自证安全。跨节点或裸数学不能完整保护时在 Provider 前拒绝，不新增临时占位规则、不拆散公式。
+- 遇到明确空白之后的闭合纯脚注标记，例如 `and $^{(1)(2)}$`，翻译保护边界只覆盖分隔符内的标记，前方自然词正常送译。共享公式输出仍保留报告使用的历史源范围，重新渲染以原生 run 保留前方词和空白。
 - 调用前失败的 `formula_protection` 只含固定码及 `formula_count/unprotected_count`，`evidence=None`，不伪造 passed integrity/batch/AI 审计；execution 写既有 stage_failed 安全子对象。
 - 已安装根计划和同代批次来源不可覆盖；抽取集合变化与旧根树不匹配时保留既有 `translation_batch_tree_invalid` 失败关闭。部署/回退先排空相关在途任务或保留兼容执行器，新代按原授权流程重建；不回填历史目标 IR/DOCX。
 

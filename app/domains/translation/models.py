@@ -204,6 +204,15 @@ class TranslationTextItem:
     text: str = field(repr=False)
 
 
+TranslationAnnotationField = Literal["captions", "footnotes"]
+TRANSLATION_ANNOTATION_FIELDS: tuple[TranslationAnnotationField, ...] = ("captions", "footnotes")
+
+
+def annotation_item_id(block_id: str, field: TranslationAnnotationField, index: int) -> str:
+    """按源位置构造注释翻译、表格上下文和审核共用的单元身份。"""
+    return f"{block_id}.{field}.{index:04d}"
+
+
 @dataclass(frozen=True, slots=True)
 class TranslationTableContext:
     """输入专用的只读表格视图；文字须先经 Codec 编码，不参与输出或来源账本。"""
@@ -226,6 +235,31 @@ class TranslationTableContext:
 
 
 @dataclass(frozen=True, slots=True)
+class TranslationTableAnnotationContext:
+    """题注和脚注所属的原表，保持表级位置及原始数组下标。"""
+
+    item_id: str = field(repr=False)
+    table_block_id: str
+    annotation_field: TranslationAnnotationField
+    annotation_index: int
+    logical_group_id: str | None = None
+
+    def to_payload(self) -> dict[str, str | int]:
+        payload = {
+            "kind": "table_annotation",
+            "table_block_id": self.table_block_id,
+            "annotation_field": self.annotation_field,
+            "annotation_index": self.annotation_index,
+        }
+        if self.logical_group_id is not None:
+            payload["logical_group_id"] = self.logical_group_id
+        return payload
+
+
+TableTranslationContext = TranslationTableContext | TranslationTableAnnotationContext
+
+
+@dataclass(frozen=True, slots=True)
 class TranslationProviderRequest:
     """发送给 translation provider 的结构化请求，不包含密钥。"""
 
@@ -244,7 +278,7 @@ class TranslationProviderRequest:
     parent_batch_id: str | None = None
     page_start: int | None = None
     page_end: int | None = None
-    table_contexts: tuple[TranslationTableContext, ...] = field(default=(), repr=False)
+    table_contexts: tuple[TableTranslationContext, ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True, slots=True)

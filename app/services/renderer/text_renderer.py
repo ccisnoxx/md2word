@@ -18,7 +18,7 @@ from docx.shared import Pt, RGBColor
 from app.conversion.docx_rules.formula import MathSpan, scan_math_spans
 from app.conversion.docx_rules.run_fonts import apply_run_fonts
 from app.conversion.docx_rules.terminology import TerminologyReplacer
-from app.conversion.docx_rules.text_semantics import toc_entry_source_title
+from app.conversion.docx_rules.text_semantics import CAPTION_NUMBER_PATTERN, CAPTION_RE, toc_entry_source_title
 from app.services.renderer.semantic_text import (
     infer_list_item_level,
     is_toc_title_text,
@@ -30,13 +30,6 @@ from app.services.renderer.template_config import TemplateConfigPackage, Templat
 
 
 TOC_FIELD_INSTRUCTION = r' TOC \o "1-3" \h \z \u '
-CAPTION_NUMBER_PATTERN = r"(?P<number>\d+)(?![A-Za-z0-9]|[.．]\d|[-–—][A-Za-z0-9])"
-CAPTION_RE = re.compile(
-    r"^(?P<prefix>\s*)(?P<label>图|表|Figure|Table)(?P<spacing>\s*)"
-    + CAPTION_NUMBER_PATTERN
-    + r"(?P<tail>.*)$",
-    re.IGNORECASE,
-)
 REFERENCE_RE = re.compile(
     r"(?P<label>图|表|Figure|Table)(?P<spacing>\s*)" + CAPTION_NUMBER_PATTERN,
     re.IGNORECASE,

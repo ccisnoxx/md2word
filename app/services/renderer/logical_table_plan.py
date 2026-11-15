@@ -2,18 +2,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-import re
 from typing import Any
 
 from app.services.document_ir.integrity import is_visible_body_block
 from app.services.document_ir.logical_table_group import VERSION as LOGICAL_TABLE_GROUPS_VERSION
-from app.services.document_ir.logical_table_group import is_compound_table_continuation, validate_logical_table_groups
+from app.services.document_ir.logical_table_group import validate_logical_table_groups
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock, LogicalTableGroup, TableFragment
-from app.services.document_ir.table_annotations import is_table_context_annotation
+from app.services.document_ir.table_annotations import (
+    annotation_items, continuation_caption, is_table_context_annotation, read_table_annotation_source,
+)
 from app.services.document_ir.table_header_review import TableHeaderReview
 from app.services.renderer.layout_plan import LayoutPage, LayoutPlan, LayoutRegion, split_two_col_blocks
 from app.services.renderer.table_renderer import TableRenderError, iter_grid_rows
-from app.services.renderer.text_renderer import CAPTION_RE
 from app.services.tables.grid_builder import RenderTableBuildResult, build_render_table_grid
 from app.services.tables.html_normalizer import (
     MAX_CELLS, MAX_GRID_SLOTS, MAX_OCCUPANCY_CHECKS, MAX_RAW_HTML_BYTES, TableBuildError,
@@ -31,7 +31,6 @@ SAFE_COUNT_KEYS = (
     "source_table_block_count", "output_table_count", "consumed_block_count", "fragment_count",
     "empty_fragment_count", "missing_fragment_count",
 )
-_CONTINUED = re.compile(r"[（(]\s*(?:continued|续表?)\s*[）)]|\bcontinued\b|(?<![\u3400-\u9fff])续表?(?![\u3400-\u9fff])", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,24 +125,24 @@ def _header_signature(grid: TableGrid, count: int) -> list[Any] | None:
               for run in cell.runs]] for cell in grid.cells if cell.row < count]
 
 
-def _continuation_caption(text: str, primary: tuple[str, ...]) -> bool:
-    if text in primary:
-        return True
-    if is_table_context_annotation(text):
-        return False
-    if any(is_compound_table_continuation(caption, text) for caption in primary):
-        return True
-    match = CAPTION_RE.match(text)
-    if match is None or match.group("label").lower() not in {"table", "表"}:
-        return False
-    tail = _CONTINUED.sub("", match.group("tail")).strip(" .．:：-–—")
-    for caption in primary:
-        first = CAPTION_RE.match(caption)
-        if (first is not None and first.group("label").lower() in {"table", "表"}
-                and int(first.group("number")) == int(match.group("number"))
-                and (not tail or tail == first.group("tail").strip(" .．:：-–—"))):
-            return True
-    return False
+def _annotations_compatible(blocks: list[DocumentIRBlock], *, scoped: bool) -> bool:
+    if not scoped:
+        first_captions = _unique(blocks[0].captions)
+        final_notes = set(_unique(blocks[-1].footnotes))
+        return all(continuation_caption(caption, first_captions)
+                   for block in blocks[1:] for caption in _unique(block.captions)) and not any(
+                       set(_unique(block.footnotes)) - final_notes for block in blocks[:-1])
+    # 只有源位置已匹配且同一目标代表依然满足既有续表条件时，才能归并。
+    for field, owner, members in (("captions", blocks[0], blocks[1:]), ("footnotes", blocks[-1], blocks[:-1])):
+        representatives = annotation_items(getattr(owner, field), preserve_positions=True)
+        for block in members:
+            mapping = getattr(read_table_annotation_source(block), field)
+            for item, text in annotation_items(getattr(block, field), preserve_positions=True).items():
+                representative = representatives.get(mapping.get(str(item)))
+                if representative is None or (text != representative and (
+                        field != "captions" or not continuation_caption(text, (representative,)))):
+                    return False
+    return True
 
 
 def _layout_positions(layout: LayoutPlan) -> dict[int, tuple[int, tuple[Any, ...]]]:
@@ -224,6 +223,7 @@ def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan) ->
     from app.services.document_ir.table_placeholder import decode_placeholders
     placeholder_ids = {item.fragment_id for item in decode_placeholders(document)}
     indices = {block.id: index for index, block in enumerate(document.blocks)}
+    scoped = document.metadata.translation_item_scope is not None
     positions = _layout_positions(layout)
     units: list[TableRenderUnit] = []
     consumed: set[str] = set()
@@ -251,11 +251,7 @@ def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan) ->
                     list(range(locations[0][0], locations[0][0] + len(present))) or
                     len({current.grid.columns for _, _, current in present}) != 1):
                 layout_compatible = False
-            first_captions = _unique(document.blocks[present[0][1]].captions)
-            final_notes = set(_unique(document.blocks[present[-1][1]].footnotes))
-            if (any(not _continuation_caption(caption, first_captions) for _, index, _ in present[1:]
-                    for caption in _unique(document.blocks[index].captions)) or
-                    any(set(_unique(document.blocks[index].footnotes)) - final_notes for _, index, _ in present[:-1])):
+            if not _annotations_compatible([document.blocks[index] for _, index, _ in present], scoped=scoped):
                 layout_compatible = False
             if not layout_compatible:
                 compatible = False
@@ -365,37 +361,46 @@ def table_unit_contracts(document: DocumentIR, plan: LogicalTableRenderPlan):
     """逐源记录行与注释选择；复用原 header/续题裁决，不删除 consumed 成员。"""
     from app.services.renderer.render_plan import TableAnnotationPlan, TableFragmentPlan, TableUnitPlan
     result = []
+    scoped = document.metadata.translation_item_scope is not None
     for unit in plan.units:
         members = list(dict.fromkeys(fragment.source.render_owner_block_id for fragment in unit.fragments))
         anchor = document.blocks[unit.anchor_block_index]
         rendered_members = [document.blocks[fragment.block_index] for fragment in unit.fragments if fragment.render is not None]
         note_owner = rendered_members[-1]
         selected = {}
-        for field, owner, values in (("captions", anchor, unit.captions), ("footnotes", note_owner, unit.footnotes)):
-            for value in values:
-                index = next(i for i, text in enumerate(getattr(owner, field)) if text.strip() == value)
-                selected[field, value] = (owner.id, field, index)
+        if not scoped:
+            for field, owner, values in (("captions", anchor, unit.captions), ("footnotes", note_owner, unit.footnotes)):
+                for index, value in annotation_items(getattr(owner, field), preserve_positions=False).items():
+                    if value in values:
+                        selected[field, value] = (owner.id, field, index)
         annotations = []
         for block in document.blocks:
             if block.id not in members:
                 continue
+            source = read_table_annotation_source(block) if scoped else None
             for field in ("captions", "footnotes"):
                 for item_index, raw in enumerate(getattr(block, field)):
                     text = raw.strip()
                     if not text:
                         continue
-                    representative = selected.get((field, text))
-                    if representative is None and field == "captions" and _continuation_caption(text, unit.captions):
-                        candidates = [selected[field, value] for value in unit.captions
-                                      if _continuation_caption(text, (value,))]
-                        if len(candidates) != 1:
-                            raise ValueError("ir_render_evidence:target_mismatch")
-                        representative = candidates[0]
+                    if source is not None:
+                        owner = anchor if field == "captions" else note_owner
+                        index = item_index if owner is block else getattr(source, field).get(str(item_index))
+                        representative = (owner.id, field, index) if index is not None else None
+                        is_context = item_index in source.context_indices
+                    else:
+                        representative = selected.get((field, text))
+                        if representative is None and field == "captions":
+                            candidates = [selected[field, value] for value in unit.captions
+                                          if continuation_caption(text, (value,))]
+                            if len(candidates) == 1:
+                                representative = candidates[0]
+                        is_context = is_table_context_annotation(text)
                     if representative is None:
                         raise ValueError("ir_render_evidence:target_mismatch")
                     own = representative == (block.id, field, item_index)
                     annotations.append(TableAnnotationPlan(block_id=block.id, field=field, item_index=item_index,
-                        role="note" if field == "footnotes" else "context" if is_table_context_annotation(text) else "caption",
+                        role="note" if field == "footnotes" else "context" if is_context else "caption",
                         disposition="rendered" if own else "coalesced",
                         representative_block_id=None if own else representative[0],
                         representative_field=None if own else representative[1],

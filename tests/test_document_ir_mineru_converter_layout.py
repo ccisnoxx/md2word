@@ -19,6 +19,8 @@ from docx import Document
 from PIL import Image
 
 from app.conversion.docx_rules.mineru_content import find_final_promotional_page
+from app.domains.translation.document_ir_translator import DocumentIRTranslationService
+from app.domains.translation.models import TranslationProviderResult, TranslationTextItem
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir import MinerUToDocumentIRService, caption_reconciler
 from app.services.document_ir.artifact_validator import MinerUArtifactValidationError
@@ -37,6 +39,23 @@ from app.services.tables.grid_builder import build_table_grid
 
 # 使用可被真实图片解码器完整读取的中性PNG，保护输入资产校验。
 MINIMAL_PNG_BYTES = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x02\x00\x00\x00\x02\x08\x02\x00\x00\x00\xfd\xd4\x9as\x00\x00\x00\x13IDATx\x9cc\xfc\xff\xff?\x03\x03\x03\x13\x03\x18\x00\x00$\x06\x03\x01]\xa2N\x88\x00\x00\x00\x00IEND\xaeB`\x82'
+
+
+class _AnnotationTranslationProvider:
+    def __init__(self, words: dict[str, str], *, continuation: str | None = None) -> None:
+        self.words = words
+        self.continuation = continuation
+
+    def translate(self, request):
+        items = []
+        for item in request.items:
+            text = item.text
+            for source, target in self.words.items():
+                text = text.replace(source, target)
+            if self.continuation is not None and "（续表）" in text:
+                text = text.replace("引脚功能", self.continuation)
+            items.append(TranslationTextItem(id=item.id, text=text))
+        return TranslationProviderResult(items=tuple(items))
 
 
 class _RecordingTableCropProvider:
@@ -981,6 +1000,33 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                 ensure_renderer_integrity(evidence)
                 validate_persisted_renderer_content(document, rendered.content, evidence)
 
+                if continued:
+                    source = MinerUToDocumentIRService().convert_zip(
+                        path, job_id="compound-continuation", source_file_id="source", document_language="en",
+                        translation_item_scope="annotations-v1",
+                    ).document
+                    words = {"Table": "表", "Pin Functions": "引脚功能", "(continued)": "（续表）"}
+                    for continuation, expected_units in ((None, 1), ("不同的引脚说明", 2)):
+                        target = DocumentIRTranslationService(
+                            _AnnotationTranslationProvider(words, continuation=continuation),
+                        ).translate(source, term_version=None)
+                        target = DocumentIR.model_validate_json(target.model_dump_json())
+                        translated_render = DocumentIRWordRenderer().render_to_result(
+                            target, template_path=None, config_path=None, image_loader=lambda _asset: None,
+                        )
+                        self.assertEqual(len(translated_render.plan.table_units), expected_units)
+                        first_unit = translated_render.plan.table_units[0]
+                        if continuation is None:
+                            self.assertEqual([(item.disposition, item.representative_item_index)
+                                              for item in first_unit.annotations], [("rendered", None), ("coalesced", 0)])
+                        else:
+                            self.assertEqual([item.disposition for unit in translated_render.plan.table_units
+                                              for item in unit.annotations], ["rendered", "rendered"])
+                        translated_evidence = build_renderer_evidence(
+                            target, translated_render.content, render_result=translated_render,
+                        )
+                        validate_persisted_renderer_content(target, translated_render.content, translated_evidence)
+
     def test_v2_table_reclassifies_only_verified_same_block_figure(self) -> None:
         section = "3 Device Connections"
         title = "Figure 3-2. Package schematic"
@@ -1102,6 +1148,39 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                     corrupt = document.model_dump(mode="json")
                     corrupt["assets"][0]["checksum_sha256"] = "sha256:" + "0" * 64
                     with self.assertRaisesRegex(ValueError, "MinerU 图表来源绑定无效"):
+                        DocumentIR.model_validate(corrupt)
+
+                    translated_source = MinerUToDocumentIRService().convert_zip(
+                        archive_path, job_id="job_figure", source_file_id="file_figure", document_language="en",
+                        translation_item_scope="annotations-v1",
+                    ).document
+                    translated = DocumentIRTranslationService(
+                        _AnnotationTranslationProvider({"Figure": "图", "Package schematic": "封装原理图"}),
+                    ).translate(translated_source, term_version=None)
+                    translated = DocumentIR.model_validate_json(translated.model_dump_json())
+                    translated_figure = translated.blocks[1]
+                    self.assertEqual(translated_figure.captions, ["图 3-2. 封装原理图"])
+                    self.assertEqual(translated_figure.text, translated_figure.captions[0])
+                    self.assertEqual(translated_figure.metadata["mineru_table_figure"], binding)
+                    translated_render = DocumentIRWordRenderer().render_to_result(
+                        translated, template_path=None, config_path=None, image_loader=lambda asset: image_contents.get(asset.id),
+                    )
+                    translated_word = Document(io.BytesIO(translated_render.content))
+                    self.assertEqual([paragraph.text for paragraph in translated_word.paragraphs].count(
+                        translated_figure.captions[0]), 1)
+                    evidence = build_renderer_evidence(translated, translated_render.content, render_result=translated_render)
+                    ensure_renderer_integrity(evidence)
+                    validate_persisted_renderer_content(translated, translated_render.content, evidence)
+
+                    corrupt = translated.model_dump(mode="json")
+                    corrupt["metadata"].pop("translation_items_applied")
+                    with self.assertRaisesRegex(ValueError, "MinerU 图表题注绑定无效"):
+                        DocumentIR.model_validate(corrupt)
+                    corrupt = translated.model_dump(mode="json")
+                    corrupt["blocks"][1]["metadata"]["caption_reconciliation"]["originals"][0]["value"][-1]["content"] = (
+                        "Figure 3-2. Other schematic"
+                    )
+                    with self.assertRaisesRegex(ValueError, "MinerU 图表题注绑定无效"):
                         DocumentIR.model_validate(corrupt)
                     corrupt = document.model_dump(mode="json")
                     metadata = corrupt["blocks"][1]["metadata"]
@@ -1559,6 +1638,35 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, "table_placeholder_source_unavailable")
                 self.assertEqual(str(raised.exception), "表格占位处理失败：table_placeholder_source_unavailable。")
                 self.assertEqual(raised.exception.mineru_validation_report.normalization["merged_table_placeholder_count"], 1)
+
+    def test_translated_table_placeholder_preserves_independent_text_equal_to_caption(self) -> None:
+        for source_text, expected_count in ((None, 1), ("Package information", 2)):
+            with self.subTest(source_text=source_text), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "translated-placeholder.zip"
+                block = {"type": "table", "html": "", "img_path": "images/reference.png",
+                         "table_caption": ["Package limits"], "bbox": [72, 60, 520, 150], "page_idx": 0}
+                if source_text:
+                    block["text"] = source_text
+                self._write_zip(path, blocks=[block], v2_blocks=[block], layout=None,
+                                images={"images/reference.png": MINIMAL_PNG_BYTES})
+                result = MinerUToDocumentIRService().convert_zip(
+                    path, job_id="translated-placeholder", source_file_id="source", document_language="en",
+                    translation_item_scope="annotations-v1",
+                )
+                translated = DocumentIRTranslationService(
+                    _AnnotationTranslationProvider({"Package limits": "封装信息", "Package information": "封装信息"}),
+                ).translate(result.document, term_version=None)
+                translated = DocumentIR.model_validate_json(translated.model_dump_json())
+                assets = {asset.asset_id: asset.content for asset in result.table_reference_assets}
+                rendered = DocumentIRWordRenderer().render_to_result(
+                    translated, template_path=None, config_path=None, image_loader=lambda asset: assets.get(asset.id),
+                )
+                word = Document(io.BytesIO(rendered.content))
+                self.assertEqual([paragraph.text for paragraph in word.paragraphs].count("封装信息"), expected_count)
+                self.assertEqual(len(word.inline_shapes), 1)
+                evidence = build_renderer_evidence(translated, rendered.content, render_result=rendered)
+                ensure_renderer_integrity(evidence)
+                validate_persisted_renderer_content(translated, rendered.content, evidence)
 
     def test_convert_zip_keeps_missing_body_payload_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

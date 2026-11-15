@@ -19,6 +19,7 @@ from docx.shared import Cm, Twips
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.failure_context import FAILURE_CONTEXT_ATTRIBUTE, attach_failure_context
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
+from app.services.document_ir.table_annotations import table_placeholder_text
 from app.services.renderer.formula_renderer import WordFormulaRendererMixin
 from app.services.renderer.image_renderer import WordImageRendererMixin
 from app.services.renderer.list_numbering import WordListNumberingMixin
@@ -67,6 +68,7 @@ class _RenderContext:
     """单次渲染的字段目标、图片计划和报告，不写入可并发复用的实例。"""
 
     caption_bookmarks: dict[tuple[str, int], tuple[str, int]]
+    preserve_annotation_positions: bool = False
     collector: RenderCollector | None = None
     formula_sources: list[dict[str, Any]] = field(default_factory=list)
     formula_entries: list[dict[str, Any]] = field(default_factory=list)
@@ -303,6 +305,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
         return _RenderContext(caption_bookmarks=caption_bookmark_inventory(document_ir, table_contracts=contracts,
                 primary_table_block_ids={document_ir.blocks[unit.anchor_block_index].id
                                          for unit in table_plan.units if unit.is_group_primary}),
+            preserve_annotation_positions=document_ir.metadata.translation_item_scope is not None,
             formula_sources=[source.binding for source in formula_sources(document_ir, table_plan) if source.representative is None],
             placeholders=placeholders,
             image_bookmark_ids={f"reserved-placeholder:{index}": 2_000_000 + index for index in range(len(placeholders))})
@@ -439,20 +442,24 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
             if block.type == "list" and not texts:
                 collector.records[block.id].reason_code = "empty_list"
         elif decision.table_strategy is not None:
+            preserve_positions = render_context.preserve_annotation_positions
             placeholders = [item for item in render_context.placeholders if item.owner_block_id == block.id]
             if placeholders and not (block.html or "").strip():
                 collector.add(block.id, self._render_table_captions(document, block, template_config,
                     caption_bookmarks=render_context.caption_bookmarks, page_break_before=decision.page_break_before,
-                    style_groups=decision.annotation_styles))
-                if block.text and block.text not in block.captions:
+                    style_groups=decision.annotation_styles, preserve_positions=preserve_positions))
+                text = table_placeholder_text(block, preserve_positions=preserve_positions)
+                if text:
                     paragraph = document.add_paragraph()
                     self._set_formula_source(document, block.id, "text")
-                    self._fill_paragraph(paragraph, block.text, template_config.normal, terminology=template_config.terminology)
+                    self._fill_paragraph(paragraph, text, template_config.normal, terminology=template_config.terminology)
                     collector.add(block.id, [paragraph_target(paragraph)])
                 self._render_table_placeholders(document, {item.fragment_id for item in placeholders},
                     assets_by_id, image_loader, render_context, template_config)
-                collector.add(block.id, self._render_table_notes(document, block, template_config))
+                collector.add(block.id, self._render_table_notes(document, block, template_config,
+                    preserve_positions=preserve_positions))
                 return
             collector.add(block.id, self._render_table(document, block, template_config,
                 caption_bookmarks=render_context.caption_bookmarks, reference_bookmarks=render_context.caption_bookmarks,
-                page_break_before=decision.page_break_before, table_model=table_model, table_strategy=decision.table_strategy, annotation_styles=decision.annotation_styles))
+                page_break_before=decision.page_break_before, table_model=table_model, table_strategy=decision.table_strategy,
+                annotation_styles=decision.annotation_styles, preserve_positions=preserve_positions))

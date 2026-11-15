@@ -17,6 +17,8 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Emu
 
 from app.domains.templates.manifest import resolve_bundled_template_seed
+from app.domains.translation.document_ir_translator import DocumentIRTranslationService
+from app.domains.translation.models import TranslationProviderResult, TranslationTextItem
 from app.services.document_ir.models import (
     DocumentIR,
     DocumentIRAsset,
@@ -26,7 +28,7 @@ from app.services.document_ir.models import (
     DocumentIRPage,
 )
 from app.services.document_ir.integrity import DocumentIntegrityError
-from app.services.renderer.render_evidence import build_renderer_evidence
+from app.services.renderer.render_evidence import build_renderer_evidence, validate_persisted_renderer_content
 from app.services.renderer.render_evidence_validation import ensure_renderer_integrity, validate_persisted_render_evidence
 from app.services.renderer.docx_quality import analyze_docx_quality_bytes
 from app.services.renderer.layout_plan import build_layout_plan
@@ -497,6 +499,50 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertNotIn("Source note", cells[1].text)
         self.assertIn("Source note", xml)
         self.assertNotIn("<w:tabs>", xml)
+
+    def test_translated_annotations_keep_independent_positions_after_text_collisions(self) -> None:
+        """同一译文在不同的真实题注、脚注位置各有渲染和持久化证据。"""
+
+        class Provider:
+            def translate(self, request):
+                return TranslationProviderResult(items=tuple(
+                    TranslationTextItem(id=item.id, text=item.text.replace("Supply note", "相同表注")
+                                        .replace("Signal note", "相同表注").replace("Top legend", "相同图注")
+                                        .replace("Bottom legend", "相同图注").replace("At voltage", "在电压"))
+                    for item in request.items))
+
+        source = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="annotation-positions", source_file_id="source", document_language="en"),
+            pages=[DocumentIRPage(index=0, width=600, height=800)],
+            assets=[DocumentIRAsset(id="figure", kind="image", source_path="figure.png")],
+            blocks=[
+                DocumentIRBlock(id="table", type="table", order=0, page_index=0,
+                                html="<table><tr><td>Param</td></tr></table>",
+                                captions=["At voltage = 5 V"], footnotes=["Supply note $x^{2}$", "", "Signal note $x^{2}$"]),
+                DocumentIRBlock(id="image", type="image", order=1, page_index=0, asset_ref="figure",
+                                captions=["Top legend"], footnotes=["Bottom legend"]),
+            ],
+        )
+        target = DocumentIRTranslationService(Provider()).translate(source, term_version=None)
+        reread = DocumentIR.model_validate_json(target.model_dump_json())
+        rendered = DocumentIRWordRenderer().render_to_result(
+            reread, template_path=None, config_path=None, image_loader=lambda _asset: MINIMAL_PNG_BYTES,
+        )
+        word = Document(io.BytesIO(rendered.content))
+        self.assertEqual([paragraph.text for paragraph in word.paragraphs].count("相同表注 "), 2)
+        self.assertEqual([paragraph.text for paragraph in word.paragraphs].count("相同图注"), 2)
+        self.assertEqual([(e["source"]["block_id"], e["source"]["field"])
+                          for e in rendered.formula_report["entries"]],
+                         [("table", "footnotes/0"), ("table", "footnotes/2")])
+        self.assertEqual([(item.item_index, item.disposition) for item in rendered.plan.table_units[0].annotations
+                          if item.field == "footnotes"], [(0, "rendered"), (2, "rendered")])
+        self.assertEqual(rendered.plan.table_units[0].annotations[0].role, "context")
+        image, = (image for span in rendered.image_layout_report["spans"] for image in span["images"])
+        self.assertEqual([item["field"] for item in image["annotations"]], ["captions/0", "footnotes/0"])
+        evidence = build_renderer_evidence(reread, rendered.content, render_result=rendered)
+        ensure_renderer_integrity(evidence)
+        validate_persisted_renderer_content(reread, rendered.content, evidence)
 
     def test_render_to_bytes_does_not_force_break_between_same_orientation_source_pages(self) -> None:
         document = self._make_v2_hint_override_document()

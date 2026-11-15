@@ -17,7 +17,7 @@ from docx.text.run import Run
 from app.conversion.docx_rules.table_expansion import expanded_table_rows, requires_table_expansion
 from app.conversion.runtime.table_html_parser import HtmlCell, HtmlTable, parse_html_table
 from app.services.document_ir.models import DocumentIRBlock
-from app.services.document_ir.table_annotations import is_table_context_annotation
+from app.services.document_ir.table_annotations import annotation_items, is_table_context_annotation
 from app.services.renderer.block_evidence import LocalTarget, paragraph_target
 from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
 from app.services.tables.html_normalizer import MAX_GRID_SLOTS
@@ -40,8 +40,9 @@ def prepare_table_input(block: DocumentIRBlock, config: TemplateConfigPackage):
     return model, strategy
 
 
-def table_annotation_style(text: str) -> str:
-    if is_table_context_annotation(text):
+def table_annotation_style(text: str, *, is_context: bool | None = None) -> str:
+    context = is_table_context_annotation(text) if is_context is None else is_context
+    if context:
         return "normal"
     return "long_table_caption" if LONG_TABLE_CAPTION_RE.match((text or "").strip()) else "caption"
 
@@ -129,6 +130,7 @@ class WordTableRendererMixin:
         table_model: HtmlTable | None,
         table_strategy: str,
         annotation_styles: list[str],
+        preserve_positions: bool,
     ) -> list[LocalTarget]:
         targets = self._render_table_captions(
             document,
@@ -137,19 +139,21 @@ class WordTableRendererMixin:
             caption_bookmarks=caption_bookmarks,
             page_break_before=page_break_before,
             style_groups=annotation_styles,
+            preserve_positions=preserve_positions,
         )
         if table_strategy == "fallback":
-            self._set_formula_source(document, block.id, "text")
-            paragraph = document.add_paragraph()
-            self._fill_paragraph(
-                paragraph,
-                block.text or "",
-                template_config.normal,
-                terminology=template_config.terminology,
-                reference_bookmarks=reference_bookmarks,
-            )
-            targets.append(paragraph_target(paragraph, "body"))
-            targets.extend(self._render_table_notes(document, block, template_config))
+            if not preserve_positions or block.caption_text_alias_index is None:
+                self._set_formula_source(document, block.id, "text")
+                paragraph = document.add_paragraph()
+                self._fill_paragraph(
+                    paragraph,
+                    block.text or "",
+                    template_config.normal,
+                    terminology=template_config.terminology,
+                    reference_bookmarks=reference_bookmarks,
+                )
+                targets.append(paragraph_target(paragraph, "body"))
+            targets.extend(self._render_table_notes(document, block, template_config, preserve_positions=preserve_positions))
             return targets
 
         max_cols = table_model.max_columns
@@ -176,7 +180,7 @@ class WordTableRendererMixin:
                 reference_bookmarks=reference_bookmarks,
             )
         targets.append(LocalTarget(table._tbl, table.part, "table"))
-        targets.extend(self._render_table_notes(document, block, template_config))
+        targets.extend(self._render_table_notes(document, block, template_config, preserve_positions=preserve_positions))
         return targets
 
     def _render_standard_html_table(
@@ -356,10 +360,11 @@ class WordTableRendererMixin:
         caption_bookmarks: Any | None = None,
         page_break_before: bool = False,
         style_groups: list[str],
+        preserve_positions: bool,
     ) -> list[LocalTarget]:
         targets = []
-        for index, text in enumerate(self._unique_annotation_texts(block.captions)):
-            source_index = next(index for index, value in enumerate(block.captions) if value.strip() == text)
+        items = annotation_items(block.captions, preserve_positions=preserve_positions)
+        for index, (source_index, text) in enumerate(items.items()):
             self._set_formula_source(document, block.id, f"captions/{source_index}")
             paragraph = document.add_paragraph()
             paragraph.paragraph_format.keep_with_next = True
@@ -393,10 +398,12 @@ class WordTableRendererMixin:
         document: Any,
         block: DocumentIRBlock,
         template_config: TemplateConfigPackage,
+        *,
+        preserve_positions: bool,
     ) -> list[LocalTarget]:
         targets = []
-        for index, text in enumerate(self._unique_annotation_texts(block.footnotes)):
-            source_index = next(i for i, value in enumerate(block.footnotes) if value.strip() == text)
+        items = annotation_items(block.footnotes, preserve_positions=preserve_positions)
+        for index, (source_index, text) in enumerate(items.items()):
             self._set_formula_source(document, block.id, f"footnotes/{source_index}")
             paragraph = document.add_paragraph()
             targets.append(paragraph_target(paragraph, "note", index))
@@ -408,16 +415,6 @@ class WordTableRendererMixin:
             )
 
         return targets
-
-    def _unique_annotation_texts(self, values: list[str]) -> list[str]:
-        seen: set[str] = set()
-        texts: list[str] = []
-        for value in values:
-            text = value.strip()
-            if text and text not in seen:
-                texts.append(text)
-                seen.add(text)
-        return texts
 
     def _apply_table_header_run_style(
         self,

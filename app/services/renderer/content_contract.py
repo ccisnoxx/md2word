@@ -10,15 +10,7 @@ from typing import Any
 from docx.oxml.ns import qn
 from lxml import etree
 
-from app.conversion.docx_rules.formula import (
-    FORMULA_FALLBACK_NOTICE,
-    FormulaRenderResult,
-    _word_run,
-    content_math_spans,
-    formula_block_span,
-    render_formula,
-    sha256_text,
-)
+from app.conversion.docx_rules.formula import content_math_spans, formula_block_span, replay_formula_output, sha256_text
 from app.services.document_ir.integrity import DocumentIntegrityError, is_visible_body_block
 from app.services.renderer.render_plan import canonical_bytes, content_hash, document_ir_hash
 
@@ -121,6 +113,7 @@ def formula_sources(document, table_plan) -> list[FormulaSource]:
                     item.representative_block_id, f"{item.representative_field}/{item.representative_item_index}",
                     "table_annotation_coalesced")
     result = []
+    preserve_positions = document.metadata.translation_item_scope is not None
 
     def add(block_id, field, text, *, formula=False, spans=None):
         values = spans if spans is not None else [(span.start, span.end, span) for span in
@@ -145,7 +138,14 @@ def formula_sources(document, table_plan) -> list[FormulaSource]:
             for index, text in enumerate(block.list_items or []):
                 add(block.id, f"list_items/{index}", text)
         elif block.type == "image":
-            selected = {text: field for field, text in image_annotations(block)}
+            image_items = image_annotations(block, preserve_positions=preserve_positions)
+            if preserve_positions:
+                for field, text in image_items:
+                    add(block.id, field, text)
+                if not image_items:
+                    add(block.id, "text", block.text or "")
+                continue
+            selected = {text: field for field, text in image_items}
             values = [(f"captions/{i}", text) for i, text in enumerate(block.captions)]
             if isinstance(block.metadata.get("caption"), str):
                 values.append(("metadata/caption", block.metadata["caption"]))
@@ -158,7 +158,7 @@ def formula_sources(document, table_plan) -> list[FormulaSource]:
                     if chosen != field:
                         aliases[block.id, field] = (block.id, chosen, "annotation_duplicate")
                     add(block.id, field, text.strip())
-        else:
+        elif block.type != "table" or not preserve_positions or block.caption_text_alias_index is None:
             add(block.id, "text", block.text or "")
         if block.type == "table":
             for field in ("captions", "footnotes"):
@@ -168,7 +168,7 @@ def formula_sources(document, table_plan) -> list[FormulaSource]:
                     if not text:
                         continue
                     name = f"{field}/{index}"
-                    if (block.id, name) not in aliases and text in seen:
+                    if not preserve_positions and (block.id, name) not in aliases and text in seen:
                         aliases[block.id, name] = (block.id, seen[text], "annotation_duplicate")
                     seen.setdefault(text, name)
                     add(block.id, name, text)
@@ -348,11 +348,7 @@ def verify_native_content(document, content: bytes, table_plan, formula_report, 
             source = entry["source"]
             if source["source_sha256"] != sha256_text(span.source) or source["boundary"] != span.boundary:
                 raise content_failure("ir_render_evidence:target_mismatch")
-            if entry["mode"] == "text_fallback":
-                # 冻结报告只决定此 occurrence 的降级模式；提示和逐字原式仍由源独立重建。
-                return FormulaRenderResult("text_fallback",
-                    (_word_run(FORMULA_FALLBACK_NOTICE), _word_run(span.source)), entry["reason"])
-            return render_formula(span)
+            return replay_formula_output(span, entry["mode"], entry["reason"])
 
         paragraph = scratch.add_paragraph()
         scratch.part._md2word_formula_replay = replay_formula

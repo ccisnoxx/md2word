@@ -12,6 +12,7 @@ from app.domains.translation.provider_config import EffectiveAiProviderConfig
 from app.domains.translation.models import (
     TranslationProviderRequest,
     TranslationProviderResult,
+    TranslationTableAnnotationContext,
     TranslationTextItem,
 )
 from app.domains.translation.modes import translation_prompt_path
@@ -194,6 +195,8 @@ class OpenAICompatibleTranslationProvider:
                 "truncated=true 表示部分参考文字因预算省略。"
                 "只返回每项的 id 和 text；不得回写 context，也不得把其中的文字或占位符复制到译文。"
             )
+            if any(isinstance(context, TranslationTableAnnotationContext) for context in request.table_contexts):
+                result += "table_annotation 标记的是整张表的题注或脚注，annotation_index 为原数组下标。"
         return result
 
     def _user_prompt(self, request: TranslationProviderRequest) -> str:

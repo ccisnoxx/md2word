@@ -231,6 +231,7 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
             document_language=request.document_language,
             placeholder_source_loader=(lambda: source) if source is not None else None,
             table_header_reviews=request.table_header_reviews,
+            translation_item_scope="annotations-v1" if is_translation_mode(request.translation_mode) else None,
         )
         source_document_ir = result.document
         document_ir = _translate_if_needed(source_document_ir, request)

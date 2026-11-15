@@ -1911,3 +1911,33 @@ PR #67 已合入 main（合并提交 c2e93202）。旧图片报告可认证原�
 ### Next Steps
 
 - 完整历史恢复仍待原始登记和成功预览样本。B1 回退仍待验证，生产回退演练另行验收。
+
+
+## Session 58: 收尾 Datasheet 题注脚注翻译与 Word 上标
+
+**Date**: 2026-11-15
+**Task**: 收尾 Datasheet 题注脚注翻译与 Word 上标
+**Branch**: `main`
+
+### Summary
+
+完成题注与脚注翻译、旧批次兼容、审核证据和 Word 原生上标。已归档对应子任务并修正相对链接。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `06650bd415e5675893d62519b90dc73801c4afde` | (see git log) |
+
+### Testing
+
+- [OK] 305 个不同的定向用例通过。
+- [OK] RS2G04 第 6 页同源表头校核稿经 Microsoft Word 人工验收，10/10 通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 8.1 温度范围译词继续单列待复核，记录随子任务归档。

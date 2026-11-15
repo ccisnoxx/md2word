@@ -17,13 +17,15 @@ from docx import Document
 from app.conversion.docx_rules.formula import (
     FORMULA_FALLBACK_NOTICE,
     FormulaParseError,
+    FormulaRenderResult,
     _OmmlParser,
+    _word_run,
     formula_block_span,
     output_sha256,
     render_formula,
 )
 from app.services.document_ir.integrity import DocumentIntegrityError
-from app.services.document_ir.models import DocumentIR, DocumentIRBlock, DocumentIRMetadata
+from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock, DocumentIRMetadata
 from app.services.renderer.docx_quality import analyze_docx_quality_bytes, build_docx_quality_flags
 from app.services.renderer.render_evidence import (
     build_renderer_evidence, formula_source_inventory, validate_persisted_renderer_content,
@@ -181,6 +183,77 @@ class FormulaRenderingCompatibilityTests(unittest.TestCase):
             image_layout_report=old.image_layout_report,
             renderer_content_contract_version=old.renderer_content_contract_version,
             formula_source_coverage=coverage)
+
+    def test_old_table_note_fallback_replays_after_native_superscript_support(self):
+        marker = r"$^{(1)(2)}$"
+        ir = document(DocumentIRBlock(id="table", type="table", order=0,
+            html="<table><tr><td>工作温度范围</td></tr></table>",
+            footnotes=["参考说明 " + marker]))
+
+        # 用旧写法生成同源历史件，重读阶段使用正式认证入口。
+        old_fallback = FormulaRenderResult("text_fallback",
+            (_word_run(FORMULA_FALLBACK_NOTICE), _word_run(marker)), "invalid_syntax")
+        with patch("app.services.renderer.formula_renderer.render_formula", return_value=old_fallback):
+            old = render(ir)
+        old_evidence = build_renderer_evidence(ir, old.content, render_result=old)
+        restored = validate_persisted_renderer_content(ir, old.content, old_evidence)
+        self.assertEqual(restored["formula_summary"]["fallback_count"], 1)
+        self.assertIn("formula_text_fallback", restored["quality_flags"])
+
+        current = render(ir)
+        current_evidence = build_renderer_evidence(ir, current.content, render_result=current)
+        new_entry, = current.formula_report["entries"]
+        old_entry, = old.formula_report["entries"]
+        self.assertEqual(old_entry["source"], new_entry["source"])
+        self.assertEqual(new_entry["source"]["field"], "footnotes/0")
+        self.assertEqual(new_entry["mode"], "semantic_runs")
+        restored = validate_persisted_renderer_content(ir, current.content, current_evidence)
+        self.assertEqual(restored["formula_summary"]["semantic_count"], 1)
+        self.assertEqual(restored["formula_summary"]["fallback_count"], 0)
+
+    def test_old_image_annotations_replay_fallback_and_spaced_formula_by_original_anchor(self):
+        from tests.test_document_ir_word_renderer_layout import MINIMAL_PNG_BYTES
+
+        marker = r"$^{(1)(2)}$"
+        ir = document(
+            DocumentIRBlock(id="context", type="paragraph", order=0, text="处理条件：" + marker),
+            DocumentIRBlock(id="figure", type="image", order=1, asset_ref="chart",
+                captions=["图 1：说明 " + marker], footnotes=["Keep 10 V and " + marker + "."]),
+            DocumentIRBlock(id="table", type="table", order=2,
+                html="<table><tr><td>工作温度</td></tr></table>", footnotes=["Keep 10 V and " + marker + "."]),
+        )
+        ir.assets = [DocumentIRAsset(id="chart", kind="image", source_path="chart.png")]
+
+        def previous_parser(span):
+            if span.source == marker:
+                return FormulaRenderResult("text_fallback",
+                    (_word_run(FORMULA_FALLBACK_NOTICE), _word_run(span.source)), "invalid_syntax")
+            # 旧 scanner 将空格前的 ASCII 词连入数学基底，冻结件继续依报告认证。
+            return render_formula(span, _legacy_spaced_footnote=True)
+
+        renderer = DocumentIRWordRenderer()
+        with patch("app.services.renderer.formula_renderer.render_formula", side_effect=previous_parser):
+            old = renderer.render_to_result(ir, template_path=None, config_path=None, image_loader=lambda _: MINIMAL_PNG_BYTES)
+        old_evidence = build_renderer_evidence(ir, old.content, render_result=old)
+        restored = validate_persisted_renderer_content(ir, old.content, old_evidence)
+        self.assertEqual(restored["formula_summary"]["fallback_count"], 2)
+        self.assertEqual(restored["formula_summary"]["omml_count"], 2)
+
+        current = renderer.render_to_result(ir, template_path=None, config_path=None, image_loader=lambda _: MINIMAL_PNG_BYTES)
+        current_evidence = build_renderer_evidence(ir, current.content, render_result=current)
+        self.assertEqual([entry["source"] for entry in current.formula_report["entries"]],
+            [entry["source"] for entry in old.formula_report["entries"]])
+        self.assertEqual(validate_persisted_renderer_content(ir, current.content, current_evidence)
+            ["formula_summary"]["semantic_count"], 4)
+
+        # 全局公式源码和输出摘要均可对上，但题注不能引用正文中相同原式的 occurrence。
+        report = copy.deepcopy(old.formula_report)
+        body, image = report["entries"][:2]
+        self.assertEqual(body["mode"], image["mode"], "旧夹具中只有原位置可区分相同的降级")
+        body["source"], image["source"] = image["source"], body["source"]
+        analyze_docx_quality_bytes(old.content, formula_report=report)
+        with self.assertRaises(DocumentIntegrityError):
+            self.restored_evidence(ir, old, old.content, report)
 
     def test_old_table_caption_and_note_keep_authenticated_fallback_after_parser_upgrade(self):
         ir, old = self.old_table()

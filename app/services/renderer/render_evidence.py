@@ -158,16 +158,6 @@ def build_renderer_aggregate_evidence(
     """生成 DOCX 证据；新报告严格核验，历史无报告保持原字段。"""
 
     evidence = build_renderer_metadata(document_ir, layout_plan)
-    if image_layout_report is not None:
-        from app.services.renderer.logical_table_plan import table_unit_contracts
-        evidence["image_layout_summary"] = verify_image_report(document_ir, word_content, image_layout_report,
-            expected_template_version_id=expected_template_version_id, expected_generation_policy=expected_generation_policy,
-            _legacy_ir_identity=_legacy_ir_identity,
-            _table_contracts=table_unit_contracts(document_ir, _table_plan) if _v2_content else None,
-            _table_primary_block_ids={document_ir.blocks[unit.anchor_block_index].id
-                for unit in _table_plan.units if unit.is_group_primary} if _v2_content else None,
-            _placeholder_ownership=_placeholder_ownership)
-        evidence["image_layout_report"] = image_layout_report
     literal_identifiers: set[str] = set()
     if formula_report is not None:
         summary = validate_formula_report(formula_report)
@@ -179,6 +169,16 @@ def build_renderer_aggregate_evidence(
         verify_docx_formula_report(word_content, formula_report)
         evidence["formula_report"] = formula_report
         evidence["formula_summary"] = summary
+    if image_layout_report is not None:
+        from app.services.renderer.logical_table_plan import table_unit_contracts
+        evidence["image_layout_summary"] = verify_image_report(document_ir, word_content, image_layout_report,
+            expected_template_version_id=expected_template_version_id, expected_generation_policy=expected_generation_policy,
+            _legacy_ir_identity=_legacy_ir_identity,
+            _table_contracts=table_unit_contracts(document_ir, _table_plan) if _v2_content else None,
+            _table_primary_block_ids={document_ir.blocks[unit.anchor_block_index].id
+                for unit in _table_plan.units if unit.is_group_primary} if _v2_content else None,
+            _placeholder_ownership=_placeholder_ownership, _verified_formula_report=formula_report)
+        evidence["image_layout_report"] = image_layout_report
     annotation_anchors = frozenset(annotation["anchor"] for span in image_layout_report["spans"]
         for image in span["images"] for annotation in image["annotations"]) if image_layout_report is not None else frozenset()
     docx_quality = analyze_docx_quality_bytes(word_content, formula_report=formula_report,
@@ -248,6 +248,7 @@ def _binding_key(binding: dict[str, Any]) -> tuple[Any, ...]:
 def formula_source_inventory(document_ir: DocumentIR, *, _literal_identifiers: set[str] | None = None) -> list[dict[str, Any]]:
     """从权威 IR 重建公式源绑定；字面标识符只采集共享数学边界之外的整词。"""
     sources: list[dict[str, Any]] = []
+    preserve_positions = document_ir.metadata.translation_item_scope is not None
 
     def add(block_id: str, field: str, text: str, *, formula: bool = False) -> None:
         spans = (formula_block_span(text),) if formula else content_math_spans(text)
@@ -273,7 +274,7 @@ def formula_source_inventory(document_ir: DocumentIR, *, _literal_identifiers: s
                     for row_index, row in enumerate(table.rows):
                         for col_index, cell in enumerate(row):
                             add(block.id, f"html/{row_index}/{col_index}", cell.html or cell.text)
-            else:
+            elif not preserve_positions or block.caption_text_alias_index is None:
                 add(block.id, "text", block.text or "")
         elif block.type == "list":
             for index, text in enumerate(block.list_items or []):
@@ -281,7 +282,7 @@ def formula_source_inventory(document_ir: DocumentIR, *, _literal_identifiers: s
         elif block.type != "image":
             add(block.id, "text", block.text or "")
         if block.type == "image":
-            annotations = image_annotations(block)
+            annotations = image_annotations(block, preserve_positions=preserve_positions)
             for field, text in annotations:
                 add(block.id, field, text)
             if not annotations:
@@ -293,7 +294,7 @@ def formula_source_inventory(document_ir: DocumentIR, *, _literal_identifiers: s
             for field, text in values:
                 # 表题与表注分别去重；图片库存与 writer 共用上面的唯一注释遍历。
                 key = (field.split("/")[0], text.strip())
-                if text.strip() and key not in seen:
+                if text.strip() and (preserve_positions or key not in seen):
                     seen.add(key)
                     add(block.id, field, text.strip())
     return sources

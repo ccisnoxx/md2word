@@ -26,6 +26,7 @@ from app.services.renderer.layout_plan import build_layout_plan
 from app.services.renderer.render_evidence import validate_persisted_renderer_content
 from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
+from app.domains.translation.modes import spec_for_translation_mode
 from tests import test_database_job_repository as persistence
 from tests import test_fastapi_jobs_backend as fixtures
 from tests.test_image_group_rendering import legacy_image_docx
@@ -38,15 +39,31 @@ class DocumentJobExecutionStageTests(TestCase):
     _upload_source_pdf = fixtures.FastAPIJobsBackendTests._upload_source_pdf
 
     @contextmanager
-    def _runtime(self, *, provider=None, batch_items=3):
+    def _runtime(self, *, provider=None, batch_items=3, annotated=False, versioned=False):
         with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = fixtures.build_test_runtime(
+            builder = fixtures.build_mysql_test_runtime if versioned else fixtures.build_test_runtime
+            runtime = builder(
                 Path(temp_dir), jobs_artifact_storage_backend="local_object",
                 auth_jwt_secret_key="test-jwt-secret", auth_internal_users_json=fixtures.build_auth_users_json(),
                 document_jobs_worker_backend="eager",
             )
+            if versioned:
+                fixtures.publish_template_resource_version(
+                    runtime, version="1", content=runtime.settings.default_template_path.read_bytes(), make_default=True,
+                )
+                fixtures.publish_term_rule_resource_version(runtime, version="1", source_term="VONE", make_default=True)
             execution = runtime.document_job_execution_service
-            execution.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
+            package = fixtures.make_english_mineru_zip_bytes()
+            if annotated:
+                annotated_package = io.BytesIO()
+                with zipfile.ZipFile(io.BytesIO(package)) as source, zipfile.ZipFile(annotated_package, "w") as result:
+                    blocks = json.loads(source.read("content_list_v2.json"))
+                    blocks[2]["table_footnote"] = ["(1) Supply 5 V", "(2) Keep 25°C"]
+                    blocks[3]["image_footnote"] = ["Image note"]
+                    result.writestr("content_list_v2.json", json.dumps(blocks, ensure_ascii=False))
+                    result.writestr("images/figure1.png", source.read("images/figure1.png"))
+                package = annotated_package.getvalue()
+            execution.fake_mineru_client.result_zip_bytes = package
             provider = provider or fixtures.FakeDocumentJobTranslationProvider()
             execution.translation_batches.deps.document_ir_translation_service = DocumentIRTranslationService(
                 provider, max_items_per_request=batch_items, max_chars_per_request=10_000,
@@ -179,7 +196,7 @@ class DocumentJobExecutionStageTests(TestCase):
 
     def test_four_directions_share_real_stage_boundaries_before_eager_delivery(self):
         for mode, language in (("en2zh", "en"), ("ru2zh", "ru"), ("zh2en", "zh"), ("zh2ru", "zh")):
-            with self.subTest(mode=mode), self._runtime() as (runtime, execution, provider, client, headers):
+            with self.subTest(mode=mode), self._runtime(annotated=True, versioned=True) as (runtime, execution, provider, client, headers):
                 original = provider.translate
                 observed_stages = []
 
@@ -191,8 +208,32 @@ class DocumentJobExecutionStageTests(TestCase):
                 with patch.object(provider, "translate", side_effect=translate):
                     job_id = self._create(client, headers, mode=mode, language=language)
                 job = runtime.document_job_repository.get_document_job(job_id)
-                self.assertEqual(job.status, "succeeded")
-                self.assertEqual(observed_stages, ["translating"] * 3)
+                self.assertEqual(job.status, "succeeded", job.error_code)
+                self.assertEqual(observed_stages, ["translating"] * 4)
+                spec = spec_for_translation_mode(mode)
+                resources = JobResourceSnapshot.model_validate(job.request_snapshot["resources"])
+                self.assertEqual(resources.translation_profile.resource_id, spec.default_profile_id)
+                self.assertTrue(resources.translation_prompt_id)
+                self.assertTrue(all(
+                    (request.language_pair, request.source_language, request.target_language, request.prompt_id)
+                    == (mode, language, spec.target_language, resources.translation_prompt_id)
+                    for request in provider.requests
+                ))
+                sent = {item.id: item.text for request in provider.requests for item in request.items}
+                expected_annotations = {
+                    "block_0003.captions.0000", "block_0003.footnotes.0000", "block_0003.footnotes.0001",
+                    "block_0004.captions.0000", "block_0004.footnotes.0000",
+                }
+                self.assertEqual({item_id for item_id in sent if ".captions." in item_id or ".footnotes." in item_id}, expected_annotations)
+                self.assertFalse({"block_0003.text", "block_0004.text"} & sent.keys())
+                self.assertFalse(any("5 V" in text or "25°C" in text for text in sent.values()))
+                ir_file = runtime.document_file_repository.get_document_file(job.document_ir_file_id)
+                target = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(ir_file))
+                self.assertEqual(target.metadata.document_language, spec.target_language)
+                self.assertEqual(target.blocks[2].captions, [target.blocks[2].text])
+                self.assertEqual(target.blocks[3].captions, [target.blocks[3].text])
+                self.assertEqual(target.blocks[2].footnotes, ["译文:(1) Supply 5 V", "译文:(2) Keep 25°C"])
+                self.assertEqual(target.blocks[3].footnotes, ["译文:Image note"])
                 events = runtime.document_job_event_repository.list_document_job_events(job_id)
                 starts = [event.stage for event in events if event.event_type == "stage_started"]
                 self.assertEqual(starts[-5:], [
@@ -210,7 +251,7 @@ class DocumentJobExecutionStageTests(TestCase):
                 self.assertEqual(len(self._files(runtime, job_id, "generated_word")), 1)
 
     def test_direct_quality_checks_precede_main_word_registration(self):
-        with self._runtime() as (runtime, execution, provider, client, headers):
+        with self._runtime(annotated=True) as (runtime, execution, provider, client, headers):
             observed = []
 
             def ensure(evidence):
@@ -236,6 +277,17 @@ class DocumentJobExecutionStageTests(TestCase):
             self.assertEqual(runtime.document_job_repository.get_document_job(job_id).status, "succeeded")
             self.assertFalse({"translating", "translation_validating"} & {event.stage for event in events})
             self.assertFalse(provider.requests)
+            self.assertEqual(runtime.document_job_translation_batch_repository.list_translation_batches(job_id), [])
+            ir_file = runtime.document_file_repository.get_document_file(
+                runtime.document_job_repository.get_document_job(job_id).document_ir_file_id,
+            )
+            stored = json.loads(runtime.file_upload_service.read_file_content(ir_file))
+            self.assertNotIn("translation_item_scope", stored["metadata"])
+            self.assertNotIn("caption_text_alias_index", stored["blocks"][2]["metadata"])
+            self.assertEqual(stored["blocks"][2]["captions"], ["Electrical Characteristics"])
+            self.assertEqual(stored["blocks"][2]["footnotes"], ["(1) Supply 5 V", "(2) Keep 25°C"])
+            self.assertEqual(stored["blocks"][3]["captions"], ["Figure 1. Pin diagram"])
+            self.assertEqual(stored["blocks"][3]["footnotes"], ["Image note"])
             self.assertEqual(len(self._files(runtime, job_id, "generated_word")), 1)
 
     def test_failure_policy_preserves_direct_events_and_receipt_identity(self):

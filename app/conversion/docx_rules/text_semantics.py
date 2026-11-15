@@ -39,6 +39,13 @@ HEADING_NUMBER_RE = re.compile(
     re.IGNORECASE,
 )
 FIGURE_TABLE_PREFIX_RE = re.compile(r"^(?:图|表|figure|table)\s*[A-Z\d]", re.IGNORECASE)
+CAPTION_NUMBER_PATTERN = r"(?P<number>\d+)(?![A-Za-z0-9]|[.．]\d|[-–—][A-Za-z0-9])"
+CAPTION_RE = re.compile(
+    r"^(?P<prefix>\s*)(?P<label>图|表|Figure|Table)(?P<spacing>\s*)"
+    + CAPTION_NUMBER_PATTERN
+    + r"(?P<tail>.*)$",
+    re.IGNORECASE,
+)
 TOC_TITLE_RE = re.compile(r"^(目录|table of contents|contents)\b", re.IGNORECASE)
 TOC_ENTRY_RE = re.compile(
     r"^(?:\d+(?:\.\d+)*\s+|\d+[.、]|\d+\.\d+|附录\s*[A-Z\d.\-]+|appendix\s+[A-Z\d.\-]+|"
