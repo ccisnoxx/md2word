@@ -2,20 +2,26 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Annotated, Literal, TYPE_CHECKING
+from typing import Annotated, Literal, Self, TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app.services.document_ir.table_placeholder import PdfCropSource, checksum
 
 if TYPE_CHECKING:
-    from app.services.document_ir.models import DocumentIR, LogicalTableGroup, TableFragment
+    from app.services.document_ir.models import DocumentIR, DocumentIRPage, LogicalTableGroup, TableFragment
+    from app.services.tables.grid_builder import TableBuildResult
     from app.services.tables.models import TableGrid
     from app.services.tables.quality import TableFinding
 
 
 _Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 _Index = Annotated[int, Field(ge=0)]
+_Point = Annotated[float, Field(ge=0, allow_inf_nan=False)]
+_Interval = tuple[_Point, _Point]
+_Box = tuple[_Point, _Point, _Point, _Point]
+# v1 的 Poppler SVG 与文字输出各自舍入。余量只用于词框内字形锚，行列归属仍用实际词框。
+_GLYPH_POSITION_ROUNDING = 0.02
 
 
 class TableValueColumnReviewError(ValueError):
@@ -26,6 +32,60 @@ class TableValueColumnReviewError(ValueError):
     def __init__(self, reason: str) -> None:
         self.reason = reason
         super().__init__(f"{self.code}：人工数值列校核无效（{reason}）。")
+
+
+class PdfValueColumnBinding(BaseModel):
+    """冻结自动核定涉及的 PDF 左上原点坐标，单位为点。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True,
+                              revalidate_instances="always")
+    schema_version: Literal["pdf-value-column-binding/v1"] = "pdf-value-column-binding/v1"
+    extractor_version: str = Field(min_length=1, max_length=128)
+    layout_sha256: _Sha256
+    table_bbox: _Box
+    row_range: _Interval
+    column_range: _Interval
+    header_bbox: _Box
+    value_bbox: _Box
+    unit_bbox: _Box
+    row_anchor_bboxes: tuple[_Box, ...] = Field(min_length=1)
+    glyph_anchors: tuple[_Interval, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_geometry(self) -> Self:
+        left, top, right, bottom = self.table_bbox
+        row_top, row_bottom = self.row_range
+        column_left, column_right = self.column_range
+        value_left, value_top, value_right, value_bottom = self.value_bbox
+        header_left, _, header_right, _ = self.header_bbox
+        rounding = _GLYPH_POSITION_ROUNDING
+        if (not left <= column_left <= header_left < header_right <= column_right <= right
+                or not column_left < value_left < value_right < column_right
+                or not top <= row_top < value_top < value_bottom < row_bottom <= bottom
+                or any(not (left <= x0 < x1 <= right and top <= y0 < y1 <= bottom)
+                       for x0, y0, x1, y1 in (self.header_bbox, self.unit_bbox, *self.row_anchor_bboxes))
+                or len(set(self.glyph_anchors)) != len(self.glyph_anchors)
+                or any(not (value_left - rounding <= x < value_right
+                            and value_top - rounding <= y <= value_bottom + rounding) for x, y in self.glyph_anchors)):
+            raise ValueError("PDF 数值列核定的坐标超出表、行、列或值框。")
+        return self
+
+    @property
+    def binding_sha256(self) -> str:
+        from app.services.tables.models import canonical_sha256
+
+        return canonical_sha256(self.model_dump(mode="json"))
+
+
+class PdfValueColumnUnresolved(BaseModel):
+    """将未获证的候选连回原始跨列发现，供人工定位。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+    fragment_id: Annotated[str, Field(pattern=r"^table-fragment:[0-9a-f]{64}$")]
+    finding_id: Annotated[str, Field(pattern=r"^table-finding:[0-9a-f]{64}$")]
+    source_row_index: _Index
+    source_cell_index: _Index
+    reason: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 
 
 class TableValueColumnCorrection(BaseModel):
@@ -39,6 +99,7 @@ class TableValueColumnCorrection(BaseModel):
     original_column_range: tuple[_Index, _Index]
     target_column: _Index
     target_header: Literal["MIN", "TYP", "MAX", "NOM", "LOW", "HIGH"]
+    pdf_binding: PdfValueColumnBinding | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class TableValueColumnReview(BaseModel):
@@ -72,6 +133,25 @@ class TableValueColumnReview(BaseModel):
         if fragment.block_id is None or fragment.html_state != "present":
             raise TableValueColumnReviewError("unsupported_shape")
 
+    def verify_pdf_geometry(self, fragment: TableFragment, page: DocumentIRPage | None) -> None:
+        """重读时核对出处的表框仍对应本次 IR 的来源页及原始 bbox。"""
+        bindings = [item.pdf_binding for item in self.corrections if item.pdf_binding is not None]
+        if not bindings:
+            return
+        from app.services.document_ir.layout_signals import NORMALIZED_BBOX_SPACE, pdf_point_bbox
+
+        if page is None or page.metadata.get("bbox_coordinate_space") != NORMALIZED_BBOX_SPACE:
+            raise TableValueColumnReviewError("pdf_binding_geometry")
+        point_bbox = pdf_point_bbox(fragment.source_span.bbox, page)
+        if any(binding.table_bbox != point_bbox for binding in bindings):
+            raise TableValueColumnReviewError("pdf_binding_geometry")
+
+
+def supports_value_column_review_grid(result: TableBuildResult) -> bool:
+    return bool(result.grid.rows and result.grid.columns) and not any(diagnostic.code in {
+        "table_span_invalid", "table_span_collision", "table_span_out_of_bounds",
+    } for diagnostic in result.diagnostics)
+
 
 def resolve_table_value_column_review(
     review: TableValueColumnReview, group: LogicalTableGroup, *, source_content_sha256: str,
@@ -93,9 +173,7 @@ def resolve_table_value_column_review(
     grid = result.grid
     if result.normalizer_version != review.normalizer_version:
         raise TableValueColumnReviewError("normalizer_version")
-    if not grid.rows or not grid.columns or any(diagnostic.code in {
-        "table_span_invalid", "table_span_collision", "table_span_out_of_bounds",
-    } for diagnostic in result.diagnostics):
+    if not supports_value_column_review_grid(result):
         raise TableValueColumnReviewError("unsupported_shape")
 
     cells = {(cell.source_row_index, cell.source_cell_index): cell for cell in grid.cells}
@@ -133,8 +211,15 @@ def attach_table_value_column_reviews(
     source_loader: Callable[[], PdfCropSource] | None,
 ) -> None:
     """整批校核成功后把记录挂到本次 IR，任何失败均不附加部分记录。"""
-    from app.services.document_ir.integrity import is_visible_body_block
+    source = _verified_value_column_review_pdf(document, source_loader)
+    pending = _validate_value_column_reviews(document, reviews, source_hash, source)
+    for fragment, review in pending.values():
+        fragment.value_column_review = review
 
+
+def _verified_value_column_review_pdf(
+    document: DocumentIR, source_loader: Callable[[], PdfCropSource] | None,
+) -> PdfCropSource:
     if source_loader is None:
         raise TableValueColumnReviewError("pdf_source")
     source = source_loader()
@@ -142,6 +227,19 @@ def attach_table_value_column_reviews(
     if (source.file_id != document.metadata.source_file_id or source.checksum_sha256 != digest
             or not source.content.startswith(b"%PDF-")):
         raise TableValueColumnReviewError("pdf_source")
+    return source
+
+
+def _validate_value_column_reviews(
+    document: DocumentIR,
+    reviews: tuple[TableValueColumnReview, ...],
+    source_hash: str,
+    verified_source: PdfCropSource,
+    *,
+    pdf_generated: bool = False,
+) -> dict[str, tuple[TableFragment, TableValueColumnReview]]:
+    """校验来源与原格并准备挂载，自动出处只由 PDF 取证流程接纳。"""
+    from app.services.document_ir.integrity import is_visible_body_block
 
     targets = {
         fragment.source_span.json_pointer: (group, fragment)
@@ -150,12 +248,14 @@ def attach_table_value_column_reviews(
     }
     visible = {block.id for block in document.blocks if block.type == "table" and is_visible_body_block(block)}
     pending = {}
-    pdf_hash = digest.removeprefix("sha256:")
+    pdf_hash = verified_source.checksum_sha256.removeprefix("sha256:")
     for item in reviews:
         try:
             review = TableValueColumnReview.model_validate(item)
         except ValidationError:
             raise TableValueColumnReviewError("invalid_input") from None
+        if any((item.pdf_binding is not None) != pdf_generated for item in review.corrections):
+            raise TableValueColumnReviewError("invalid_input")
         if review.source_pdf_sha256 != pdf_hash:
             raise TableValueColumnReviewError("pdf_fingerprint")
         if review.content_list_sha256 != source_hash:
@@ -171,5 +271,4 @@ def attach_table_value_column_reviews(
             raise TableValueColumnReviewError("unsupported_shape")
         resolve_table_value_column_review(review, group, source_content_sha256=source_hash)
         pending[pointer] = (fragment, review)
-    for fragment, review in pending.values():
-        fragment.value_column_review = review
+    return pending

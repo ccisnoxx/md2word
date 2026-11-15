@@ -192,12 +192,14 @@ def _value_column_corrections(plan: LogicalTableRenderPlan) -> dict[str, list[Va
             review_sha256 = review.review_sha256
             applied = result.setdefault(unit.logical_group_id, [])
             for correction, finding_id in zip(review.corrections, fragment.value_column_finding_ids, strict=True):
+                binding = correction.pdf_binding
                 applied.append(ValueColumnCorrectionEvidence(
                     review_sha256=review_sha256,
                     source_cell_id=make_cell_id(source.fragment_id, correction.source_row_index, correction.source_cell_index),
                     finding_id=finding_id, original_column_range=list(correction.original_column_range),
                     target_column=correction.target_column, output_table_key=unit.key,
                     output_row=fragment.output_start + correction.source_row_index - fragment.removed_header_rows,
+                    pdf_binding_sha256=binding.binding_sha256 if binding is not None else None,
                 ))
     return result
 

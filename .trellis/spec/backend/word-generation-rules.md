@@ -377,7 +377,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 冲突/例外：`_render_table`、`_render_standard_html_table`、`_render_expanded_table` 保留旧写法的兼容与历史验证，不是当前正式计划的 owner；旧展开产物继续按原 occurrence 投影认证。无效 HTML 和缺少占位来源继续按各自输入合同失败关闭，不能为测试继续执行而放宽。
 - 禁止：把表格截图作为默认输出；为某一列数复制新 renderer；以旧 runtime writer 的测试声称正式输出已覆盖。
 - 参数值列跨列的 owner 是 `app/services/tables/validator.py::iter_parameter_value_column_spans`。同行至少两类单列标签可建立数值列集合，支持来源以 `<td>` 表示标签。普通文本单值（含 `e`/`E` 指数）覆盖 ≥2 个独立数值列时触发 `table_value_column_span_ambiguous`，默认 blocker。MIN–MAX 和 LOW–HIGH 同样适用。整个后缀为 `REF` 或 `BSC` 的参考值、区间及说明文字排除在此规则之外。历史 `.shared_limits` 报告按原合同重读。
-- 跨列检测给出 HTML Grid 的结构歧义。无人工核定时，正式渲染保留源 span 并生成 DOCX，检测的 blocker 进入本代基础质量，审核与发布按对应的质量阻断原因拒绝。验收见 `tests.test_table_value_column_span` 和 `tests.test_table_value_column_span_delivery`。
+- 跨列检测给出 HTML Grid 的结构歧义。没有核定的数值格保留源 span，原 blocker 进入本代基础质量，审核与发布按对应的质量阻断原因拒绝。验收见 `tests.test_table_value_column_span` 和 `tests.test_table_value_column_span_delivery`。
 - 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_styles_later_th_cells_as_table_headers`；`tests.test_formula_rendering` 的 native 大表与 `tests.test_formula_rendering_compatibility` 的独立旧展开回归分别保护合并 owner 和历史重复 occurrence。
 - 样本证据：OPA228 P6/P7 manifest 包含表格焦点但当前 Golden 未实际转换；CM4112 表格为 external negative evidence。
 - 来源/取代：commit `32edca58` 正式 renderer 收敛；保留共享 parser，取代旧 writer 权威性。
@@ -390,6 +390,14 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - `build_content_table_plan` 应用同一份核定记录，把核定指纹纳入渲染输入，保持原 HTML、源 Grid、源报告、未命中位置和其他内容。只有正式实物认证通过后才附加 `table_evidence.tables[].value_column_corrections`。已证明修正对应的 finding 退出交付 flags，原始发现继续留在 `validation`。重读基于本次 IR 与实际 DOCX 重建证据。
 - 例 `gs-008` 源行 2、3 的 `±5`、`±100` 分别只占 TYP、MAX，`±75`、空出的值列与单位纵向合并由 Word 实物核对。完整样本原报告有 23 项，已核定两项后本地质量结果仍为 `blocked`，余 21 项。旧记录遇 PDF 或内容列表指纹变化、原格或目标列不符时整批失败。带校核的旧渲染证据及真实错列的输出拒绝认证。
 - 无校核输入沿用原序列化和证据路径。验证入口为 `tests.test_table_value_column_review` 和 `tests.test_table_value_column_review_delivery`，前者覆盖来源和原格拒绝，后者覆盖 Word 列位置、交付证据和重读。
+
+#### 参数值列的同源 PDF 自动核定
+
+- 本地正式原排版转换可用 `--auto-table-value-columns` 与 `--source-pdf` 开启。实际输入 PDF 的指纹必须与所选 v2 内容列表对应的同包原件一致。唯一同文档 layout 必须确认源表范围，页坐标通过 IR-002 投影到 Poppler 核实的页框。显式人工核定先按原合同校验，有效记录控制其所在的源格。
+- 从已报的跨列 blocker 取候选。Poppler 的词框、可见字面与实际绘制共同证明独立表头、物理行列边界、精确值及单位。支持用贯穿的竖线和封闭行带确定列，或以实际表头色块、数据行分段线及右沿对齐互证。相邻行有内竖线而候选行断开时，分段横线不足以确认本行分列。行必须有独立的同行文字或参数组上下文，源行次序只作核对。目标列须位于原跨度内，释放格的 PDF 区域须无其他词或未匹配字形。涉及竞争、贴边、来源或取证不足的原发现继续阻断，`metadata.pdf_value_column_unresolved` 提供原 finding ID、源格和原因。
+- 自动核定把可复核坐标记录为逐格内部 `pdf_binding`，其指纹随核定纳入正式渲染输入。复用人工修正的源 Grid、原发现和实际 DOCX 认证。只有实际 Word 与修正计划一致时才生成带 `pdf_binding_sha256` 的交付修正证据，解除对应原 blocker。重读从当前 IR 与实际 Word 重建证据。人工 JSON 入口拒绝自动出处字段。
+- 文字归属以可信原件的 PDF 字体字符映射为前提。Poppler 的字形取证核实绘制及位置。若 PDF 内部字体映射误标字形对应的字符，现有文字工具可能给出相同的误读，仍需比对实际字形外观。
+- 自动验证覆盖独立 LOW/HIGH 实物 PDF、同名异源、可见性及归属冲突、Word 错列和来源证据篡改。完整 `gs-008` 仅用于本地同源回放。
 
 ### TABLE-002 表题、条件正文、表体和表注顺序
 

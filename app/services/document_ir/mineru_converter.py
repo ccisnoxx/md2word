@@ -129,6 +129,7 @@ class MinerUToDocumentIRService:
         placeholder_source_loader: Callable[[], PdfCropSource] | None = None,
         table_header_reviews: tuple[TableHeaderReview, ...] = (),
         table_value_column_reviews: tuple[TableValueColumnReview, ...] = (),
+        auto_table_value_columns: bool = False,
     ) -> MinerUToDocumentIRResult:
         """读取 MinerU 结果 zip，生成 DocumentIR v2 和待登记图片资产。"""
 
@@ -161,6 +162,7 @@ class MinerUToDocumentIRService:
                     placeholder_source_loader=placeholder_source_loader,
                     table_header_reviews=table_header_reviews,
                     table_value_column_reviews=table_value_column_reviews,
+                    auto_table_value_columns=auto_table_value_columns,
                     same_document_layout=same_document_layout,
                 )
             except MinerUPackageError as error:
@@ -182,6 +184,7 @@ class MinerUToDocumentIRService:
         placeholder_source_loader: Callable[[], PdfCropSource] | None,
         table_header_reviews: tuple[TableHeaderReview, ...],
         table_value_column_reviews: tuple[TableValueColumnReview, ...],
+        auto_table_value_columns: bool,
         same_document_layout: tuple[Any, str] | None,
     ) -> MinerUToDocumentIRResult:
         """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
@@ -413,7 +416,14 @@ class MinerUToDocumentIRService:
             attach_table_header_reviews(document, table_header_reviews, table_sources.checksum, source_loader)
         if same_document_layout is not None and content_list_path.name.endswith("content_list_v2.json"):
             attach_upstream_table_coverage(document, *same_document_layout)
-        if table_value_column_reviews:
+        if auto_table_value_columns:
+            from app.services.document_ir.pdf_value_column_review_flow import attach_automatic_table_value_column_reviews
+
+            attach_automatic_table_value_column_reviews(
+                document, table_value_column_reviews, table_sources.checksum, source_loader,
+                content_list_path=content_list_path, same_document_layout=same_document_layout,
+            )
+        elif table_value_column_reviews:
             attach_table_value_column_reviews(document, table_value_column_reviews, table_sources.checksum, source_loader)
         reference_assets = attach_table_references(document, table_references)
         try:

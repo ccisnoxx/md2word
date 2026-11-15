@@ -208,6 +208,7 @@ class ValueColumnCorrectionEvidence(EvidenceModel):
     target_column: NonNegativeInt
     output_table_key: TableOutputKey
     output_row: NonNegativeInt
+    pdf_binding_sha256: Sha256 | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class SourceGridSummary(EvidenceModel):

@@ -428,7 +428,7 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
     metadata = document.metadata
     groups = metadata.logical_table_groups
     if metadata.logical_table_groups_version is None:
-        if (groups or metadata.logical_table_group_counts or any(
+        if (groups or metadata.logical_table_group_counts or metadata.pdf_value_column_unresolved or any(
                 any(key in block.metadata for key in ("logical_group_id", "table_fragment_id"))
                 for block in document.blocks)):
             _fail("missing_version")
@@ -455,6 +455,19 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
     }
     if len(reviewed_pdf_digests | value_review_pdf_digests) > 1:
         _fail("value_column_review_pdf_fingerprint")
+    pdf_bindings = [correction.pdf_binding for fragment in fragments
+                    if fragment.value_column_review is not None
+                    for correction in fragment.value_column_review.corrections
+                    if correction.pdf_binding is not None]
+    if len({binding.layout_sha256 for binding in pdf_bindings}) > 1:
+        _fail("value_column_review_layout_fingerprint")
+    unresolved = metadata.pdf_value_column_unresolved
+    unresolved_cells = {(item.fragment_id, item.source_row_index, item.source_cell_index) for item in unresolved}
+    if unresolved and (len(unresolved_cells) != len(unresolved)
+                       or len({item.finding_id for item in unresolved}) != len(unresolved)
+                       or not {item.fragment_id for item in unresolved}.issubset(identities)):
+        _fail("value_column_unresolved_reference")
+    pages = {page.index: page for page in document.pages} if pdf_bindings else {}
     indices = [fragment.source_span.source_index for fragment in fragments]
     if len(set(indices)) != len(indices):
         _fail("duplicate_source_index")
@@ -538,6 +551,10 @@ def validate_logical_table_groups(document: DocumentIR) -> None:
                 fragment.value_column_review.verify_fragment(fragment, report.content_list_sha256)
                 if len(group.fragments) != 1 or not is_visible_body_block(owner):
                     _fail("value_column_review_shape")
+                fragment.value_column_review.verify_pdf_geometry(fragment, pages.get(span.page_index))
+                if any((fragment.fragment_id, correction.source_row_index, correction.source_cell_index)
+                       in unresolved_cells for correction in fragment.value_column_review.corrections):
+                    _fail("value_column_unresolved_reference")
             if fragment.block_id:
                 if fragment.block_id != owner.id or owner.metadata.get("mineru_source") != span.model_dump(exclude={"bbox"}):
                     _fail("block_source")

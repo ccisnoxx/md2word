@@ -134,6 +134,15 @@ def _cell_text(cell: TableCell) -> str:
     return "".join(run.source for run in cell.runs).strip()
 
 
+def parameter_value_header_label(text: str) -> str | None:
+    """将检测和 PDF 核定使用的参数值列标签归一为同一语义。"""
+    return _PARAMETER_VALUE_LABELS.get(" ".join(text.lower().split()).rstrip("."))
+
+
+def is_unit_header_label(text: str) -> bool:
+    return " ".join(text.lower().split()) in _UNIT_HEADERS
+
+
 def _finding_details(
     fragment: TableFragmentReference,
     policy: TableValidationPolicy,
@@ -172,7 +181,7 @@ def iter_parameter_value_column_spans(
     for row in sorted(rows):
         labels = {}
         for cell in rows[row]:
-            label = _PARAMETER_VALUE_LABELS.get(" ".join(_cell_text(cell).lower().split()).rstrip("."))
+            label = parameter_value_header_label(_cell_text(cell))
             if label is not None and cell.colspan == 1:
                 labels[cell.column] = label
         # MinerU 常用 td 写表头，同一行至少两类单列标签才更新后续数据行的数值列。
@@ -329,7 +338,7 @@ class _TableValidator:
                 id_columns[cell.source_fragment_id].update(columns)
             if text in _VALUE_HEADERS:
                 value_columns[cell.source_fragment_id].update(columns)
-            if text in _UNIT_HEADERS:
+            if is_unit_header_label(text):
                 unit_columns[cell.source_fragment_id].update(columns)
             if text in _SYMBOL_HEADERS:
                 symbol_columns[cell.source_fragment_id].update(columns)
