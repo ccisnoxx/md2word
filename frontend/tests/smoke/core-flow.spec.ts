@@ -1430,7 +1430,9 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
         role: currentRole,
         resource_mode: "versioned",
         defaults: {
-          template: { label: "template-default", resource_id: "template_default", version: "1" },
+          template: options.configWarnings?.includes("template_default_unavailable:legacy_internal_only")
+            ? null
+            : { label: "template-default", resource_id: "template_default", version: "1" },
           term_rule_set: { label: "term-rule-default", resource_id: "term_rule_default", version: "1" },
           translation_term_set: options.en2zhAvailable === false
             ? null
@@ -1508,7 +1510,7 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
       }),
     });
   });
-  await page.route("**/api/v1/templates/default/layout-config", async (route) => {
+  await page.route(/\/api\/v1\/templates\/default\/layout-config(?:\?.*)?$/, async (route) => {
     const requestedVersion = new URL(route.request().url()).searchParams.get("version");
     const draftChanges = layoutConfigDraftPayloads.at(-1)?.changes.heading1 as { font_size?: number } | undefined;
     const response = requestedVersion === "2"
@@ -2377,6 +2379,29 @@ test("operator can create an English to Chinese document job from the mode selec
     translation_mode: "en2zh",
     document_language: "en",
   });
+});
+
+test("默认模板仅供内部使用时，引导管理员选择已发布的可用模板", async ({ page }) => {
+  const controls = await mockApi(page, {
+    configWarnings: ["template_default_unavailable:legacy_internal_only"],
+    configOptions: con101ConfigOptions,
+  });
+  await page.goto("/login");
+  await loginAsRole(page, "admin");
+  await page.goto("/jobs/new");
+  await expect(page.getByText("默认模板版本仅供内部使用，创建新任务需要可用的已发布模板")).toBeVisible();
+  await page.locator("input[type='file']").setInputFiles({
+    name: "smoke.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF\n"),
+  });
+  const createButton = page.getByRole("button", { name: "创建任务", exact: true });
+  await expect(createButton).toBeDisabled();
+  expect(controls.createdDocumentJobPayloads()).toEqual([]);
+
+  await selectTaskConfigOption(page, "模板版本", "CON 模板@2");
+  await expect(createButton).toBeEnabled();
+  await createButton.click();
+  await expect.poll(() => controls.createdDocumentJobPayloads().length).toBe(1);
+  expect(controls.createdDocumentJobPayloads()[0]).toMatchObject({ template_version_id: "con-template@2" });
 });
 
 test("CON-101：operator 的未就绪翻译方向禁用，direct 可创建且不展开缺失配置细节", async ({ page }) => {

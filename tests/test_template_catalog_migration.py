@@ -203,10 +203,26 @@ class TemplateCatalogMigrationTests(unittest.TestCase):
 
     def test_absent_state_uses_eligible_legacy_default(self) -> None:
         self.state.unlink()
+        layout = Path(self.version1.payload["docx_path"]).with_name("layout.yaml")
+        layout.write_text("schema_version: template-config/v1\n", encoding="utf-8")
+        payload = {**self.version1.payload, "layout_config_path": str(layout),
+                   "layout_config_sha256": content_sha256(layout.read_bytes())}
+        candidate = self.version1.model_copy(update={"payload": payload, "snapshot_hash": resource_payload_sha256(payload)})
+        self.repo.snapshot = replace(self.repo.snapshot, versions=(candidate, self.version2, self.orphan))
         report = self.run_migration()
         self.assertEqual(report["default_to_import"], "custom")
         self.assertTrue(self.run_migration("apply", report["evidence"])["applied"])
         self.assertEqual(self.repo.snapshot.default_template_id, "custom")
+
+    def test_absent_state_does_not_select_internal_only_legacy_version(self) -> None:
+        self.state.unlink()
+        report = self.run_migration()
+        self.assertIsNone(report["default_to_import"])
+        self.assertIn(
+            {"code": "legacy_internal_only", "template_id": "custom", "version": "1"}, report["conflicts"],
+        )
+        self.assertFalse(self.run_migration("apply", report["evidence"])["applied"])
+        self.assertEqual(self.repo.writes, 0)
 
     def test_absent_state_does_not_make_draft_the_default(self) -> None:
         self.state.unlink()

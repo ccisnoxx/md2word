@@ -221,6 +221,7 @@ class WordRenderExecution:
                         template_version_id=template_selection.template_version_id,
                         resource_inputs=verified_inputs,
                         layout_asset_dir=render_resources.layout_asset_dir if render_resources is not None else None,
+                        expected_layout_config_sha256=job.request_snapshot.get("template_layout_config_sha256"),
                     ),
                 )
 
@@ -328,6 +329,10 @@ class WordRenderExecution:
             publication_provenance = capture_render_publication_provenance(
                 uploading, ir_file, render_result,
                 resources_publishable=render_resources is not None and render_resources.publishable,
+                legacy_internal_only=(
+                    template_selection.layout_config_path is None
+                    or render_resources is not None and render_resources.legacy_internal_only
+                ),
                 file_service=self.file_service,
             )
             renderer_metadata["publication_provenance_file_id"] = publication_provenance.id

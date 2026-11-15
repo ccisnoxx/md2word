@@ -78,7 +78,8 @@ def build_document_job_use_cases(
                                file_upload_service=file_upload_service)
     read_model = DocumentJobReadModel(settings=settings, job_repository=job_repository, file_repository=file_repository,
                                       job_resource_snapshot_service=job_resource_snapshot_service,
-                                      file_upload_service=file_upload_service, access=access)
+                                      file_upload_service=file_upload_service, access=access,
+                                      template_read_service=template_read_service)
     review_writer = DocumentReviewWriter(job_repository=job_repository, file_repository=file_repository,
                                          file_upload_service=file_upload_service, events=events, access=access)
     dispatcher = DocumentJobDispatcher(settings=settings, job_repository=job_repository, task_queue=task_queue,

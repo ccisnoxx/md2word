@@ -2,7 +2,7 @@
 // Purpose: Browser smoke coverage for the first convergence wave of low-frequency admin/config pages.
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-import { expectNoPageHorizontalOverflow } from "./support/accessibility";
+import { expectNoPageHorizontalOverflow, WORKBENCH_VIEWPORTS } from "./support/accessibility";
 
 const TOKEN_STORAGE_KEY = "md2word.frontend.access_token";
 
@@ -332,4 +332,74 @@ test("long-tail admin drawers and dialogs keep key actions reachable", async ({ 
   await expect(page.getByRole("button", { name: "保存" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("heading", { name: "编辑用户" })).toBeHidden();
+});
+
+test("历史内部模板仍可管理，新草稿可绑定 YAML 或沿用模板配置", async ({ page }) => {
+  await setupLongTailAdminApi(page);
+  const requests: string[] = [];
+  const legacyPublished = {
+    ...templateVersions[0],
+    version: 2,
+    is_default: false,
+    legacy_internal_only: true,
+    template: { file_name: "legacy-published.docx" },
+    layout_config: null,
+  };
+  const legacyDraft = {
+    ...legacyPublished,
+    version: 3,
+    status: "draft",
+    template: { file_name: "legacy-draft.docx" },
+  };
+  await page.route("**/api/v1/templates/default/versions", async (route) => {
+    if (route.request().method() === "POST") {
+      requests.push(route.request().postData() || "");
+      await fulfillJson(route, { ...templateVersions[0], version: 4, status: "draft" }, 201);
+      return;
+    }
+    await fulfillJson(route, { items: [...templateVersions, legacyPublished, legacyDraft] });
+  });
+  await page.route("**/api/v1/templates/default", async (route) => {
+    await fulfillJson(route, { ...templateDetail, legacy_internal_only: true });
+  });
+
+  await page.goto("/settings/templates/default?validate_version=3");
+  await expect(page.getByRole("button", { name: "下载模板" })).toBeEnabled();
+  const publishedRow = page.getByRole("row").filter({ hasText: "legacy-published.docx" });
+  await expect(publishedRow.getByText("仅供内部使用")).toBeVisible();
+  await expect(publishedRow.getByRole("button", { name: "创建验证任务" })).toBeDisabled();
+  await expect(publishedRow.getByRole("button", { name: "设默认" })).toBeDisabled();
+  const draftRow = page.getByRole("row").filter({ hasText: "legacy-draft.docx" });
+  await expect(draftRow.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+  await expect(page.getByRole("dialog", { name: "创建模板验证任务" })).toBeHidden();
+  await expect(
+    page.getByRole("row").filter({ hasText: "datasheet_template.docx" }).getByRole("button", { name: "创建验证任务" }),
+  ).toBeEnabled();
+
+  const upload = page.locator("input[type='file'][accept^='.docx']");
+  const yamlPath = page.getByRole("textbox", { name: "布局 YAML 路径" });
+  const draft = {
+    name: "upgrade.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: Buffer.from("mock docx"),
+  };
+  await upload.setInputFiles(draft);
+  await yamlPath.fill("  resources/template_configs/upgrade.yaml  ");
+  await page.getByRole("button", { name: "上传 draft" }).click();
+  await expect.poll(() => requests.length).toBe(1);
+  expect(requests[0]).toContain('name="layout_config_path"\r\n\r\nresources/template_configs/upgrade.yaml\r\n');
+  await expect(yamlPath).toHaveValue("");
+
+  await upload.setInputFiles(draft);
+  await page.getByRole("button", { name: "上传 draft" }).click();
+  await expect.poll(() => requests.length).toBe(2);
+  expect(requests[1]).not.toContain('name="layout_config_path"');
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  for (const { width, height } of WORKBENCH_VIEWPORTS) {
+    await page.setViewportSize({ width, height });
+    await expect(yamlPath).toBeVisible();
+    await expect(publishedRow.getByText("仅供内部使用")).toBeVisible();
+    await expectNoPageHorizontalOverflow(page);
+  }
 });

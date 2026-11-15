@@ -13,6 +13,7 @@ from app.domains.document_jobs.views.config import (
     DocumentJobConfigVersionOption,
     DocumentJobTranslationResourceDefaults,
 )
+from app.domains.templates.package_validator import TemplatePackageValidationError
 from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
 from app.domains.translation.modes import TRANSLATION_LANGUAGE_PAIRS, derive_translation_term_set_id, spec_for_language_pair
 from app.services.auth.models import AuthenticatedUser
@@ -74,13 +75,15 @@ def _string_list(value: Any) -> list[str]:
 
 def _default_template(runtime: AppRuntime, warnings: list[str]) -> DocumentJobConfigVersionOption | None:
     try:
-        template_id = runtime.template_read_service.get_default_template_id()
-        selection = runtime.template_read_service.resolve_template_version(None)
+        selection = runtime.template_read_service.resolve_template_version(None, for_new_binding=True)
+    except TemplatePackageValidationError as exc:
+        warnings.append(f"template_default_unavailable:{exc.code}")
+        return None
     except (FileNotFoundError, ValueError) as exc:
         warnings.append(f"template_default_unavailable:{exc}")
         return None
     return DocumentJobConfigVersionOption(
-        resource_id=template_id,
+        resource_id=selection.template_id,
         version=str(selection.version),
         label=selection.template_version_id,
         is_default=True,
@@ -101,7 +104,7 @@ def _template_options(runtime: AppRuntime, warnings: list[str]) -> list[Document
             warnings.append(f"template_versions_unavailable:{template.id}:{exc}")
             continue
         for version in versions:
-            if version.status != "published" or version.template_version_id is None:
+            if version.status != "published" or version.template_version_id is None or version.legacy_internal_only:
                 continue
             options.append(
                 DocumentJobConfigVersionOption(

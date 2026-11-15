@@ -193,8 +193,8 @@ class MysqlTemplateDefaultSwitchTests(TestCase):
         proceed = Event()
         validate = self.reader.validate_registered_template_package
 
-        def pause_after_validation(record):
-            validate(record)
+        def pause_after_validation(record, **kwargs):
+            validate(record, **kwargs)
             validated.set()
             self.assertTrue(proceed.wait(10))
 
@@ -215,8 +215,8 @@ class MysqlTemplateDefaultSwitchTests(TestCase):
     def test_changed_snapshot_after_validation_rejects_switch(self):
         validate = self.reader.validate_registered_template_package
 
-        def change_record(record):
-            validate(record)
+        def change_record(record, **kwargs):
+            validate(record, **kwargs)
             self.repository.save_resource_version(record.model_copy(update={"snapshot_hash": "sha256:" + "0" * 64}))
 
         with patch.object(self.reader, "validate_registered_template_package", side_effect=change_record):

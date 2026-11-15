@@ -65,15 +65,19 @@ def _save_private_report(job, payload, file_service, filename):
         metadata={"asset_role": "publication_provenance", "generation": job.retry_count})
 
 
-def capture_render_publication_provenance(job, ir_file, render_result, *, resources_publishable, file_service):
-    """冻结本次渲染实际消费的实物；草稿和无绑定历史任务不产生可发布证明。"""
+def capture_render_publication_provenance(
+    job, ir_file, render_result, *, resources_publishable, legacy_internal_only=False, file_service,
+):
+    """冻结本次实际消费的实物，并记录历史模板的内部使用限制。"""
 
     payload = {"schema_version": "publication-render/v1", "job_id": job.id, "generation": job.retry_count,
         "document_ir_file_id": ir_file.id, "document_ir_sha256": ir_file.checksum_sha256,
         "result_sha256": "sha256:" + hashlib.sha256(render_result.content).hexdigest(),
         "renderer": renderer_implementation_identity(), "status": "unavailable"}
     inputs = render_result.resource_inputs
-    if resources_publishable and inputs is not None and inputs.template_config is not None:
+    if legacy_internal_only:
+        payload["reason_code"] = "legacy_internal_only"
+    elif resources_publishable and inputs is not None and inputs.template_config is not None:
         try:
             snapshot = JobResourceSnapshot.model_validate(job.request_snapshot["resources"])
         except ValueError:

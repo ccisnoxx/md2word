@@ -88,7 +88,12 @@ function languagePairText(languagePair: string): string {
   return labels[languagePair] || languagePair;
 }
 
+export const LEGACY_DEFAULT_TEMPLATE_WARNING = "template_default_unavailable:legacy_internal_only";
+
 export function readinessCodeText(code: string): string {
+  if (code === LEGACY_DEFAULT_TEMPLATE_WARNING) {
+    return "默认模板版本仅供内部使用，创建新任务需要可用的已发布模板";
+  }
   const { baseCode, languagePair } = readinessCodeParts(code);
   const labels: Record<string, string> = {
     ai_provider_config_invalid: "AI provider 配置文件不可读取",

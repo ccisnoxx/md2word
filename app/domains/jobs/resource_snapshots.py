@@ -20,6 +20,8 @@ from app.domains.jobs.models import (
 from app.domains.jobs.paths import JobPaths
 from app.domains.resources.integrity import content_sha256, resource_payload_sha256
 from app.domains.resources.models import ResolvedResourceVersion, ResourceType, ResourceVersionRecord, ResourceVersionStatus
+from app.domains.templates.layout_config_schema import TemplateConfigPackage, TemplateLayoutValidationError
+from app.domains.templates.package_validator import external_logo_field
 from app.domains.term_rules.models import TermRulesStore
 from app.domains.translation.models import TermVersionSnapshot, TranslationProfileSnapshot
 from app.domains.translation.modes import (
@@ -63,11 +65,12 @@ class MaterializedJobResources:
     subscript_config_path: Path | None
     translation_profile: TranslationProfileSnapshot | None
     translation_term_version: TermVersionSnapshot | None
+    legacy_internal_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class MaterializedRenderResources:
-    """本次从任务目录回读并验证的实物及其原版式资产目录。"""
+    """本次回读认证的实物，以及历史和验证渲染使用的外部资产目录。"""
 
     template_path: Path
     layout_config_path: Path | None
@@ -77,6 +80,7 @@ class MaterializedRenderResources:
     layout_config_content: bytes | None = field(repr=False)
     subscript_content: bytes = field(repr=False)
     publishable: bool
+    legacy_internal_only: bool = False
 
 
 # 发布追加审计字段，原 draft 验证任务仍以自己的 payload 身份核验实物。
@@ -316,6 +320,7 @@ class JobResourceSnapshotService:
             subscript_config_path=render_resources.subscript_config_path,
             translation_profile=translation_profile,
             translation_term_version=translation_term_version,
+            legacy_internal_only=render_resources.legacy_internal_only,
         )
 
     def _resolve_translation_profile(self, options: ConversionOptions) -> ResolvedResourceVersion | None:
@@ -505,30 +510,25 @@ class JobResourceSnapshotService:
                 "模板版本未声明 DOCX 文件。", category="conflict", code="resource_snapshot_payload_missing",
             )
 
-        # 模板和规则独立定位，显式重绑规则仍可复用原模板副本。
-        template_key = resource_payload_sha256({
-            "id": template.resource_id, "version": template.version, "snapshot_hash": template.snapshot_hash,
-        })
-        template_dir = job_paths.resources_dir / template_key.removeprefix("sha256:")
+        template_dir = self._template_resource_directory(template, job_paths)
         template_path = template_dir / "template.docx"
         template_content = self._materialize_template_file(
             template_path, template_source, template_payload.get("docx_sha256"), "template_docx_hash_mismatch",
         )
-        layout_source = self._payload_text(template_payload, "layout_config_path")
+        layout_binding = self._template_layout_binding(template_payload)
         layout_config_path = None
         layout_config_content = None
         layout_asset_dir = None
-        if layout_source is not None:
+        legacy_internal_only = layout_binding is None
+        if layout_binding is not None:
+            layout_source, layout_hash = layout_binding
             layout_config_path = template_dir / "layout.yaml"
             layout_config_content = self._materialize_template_file(
-                layout_config_path, layout_source, template_payload.get("layout_config_sha256"),
-                "template_layout_config_hash_mismatch",
+                layout_config_path, layout_source, layout_hash, "template_layout_config_hash_mismatch",
             )
-            layout_asset_dir = self._resolve_payload_path(layout_source).parent
-        elif template_payload.get("layout_config_path") is not None or template_payload.get("layout_config_sha256") is not None:
-            raise JobResourceSnapshotError(
-                "模板版式配置绑定不完整。", category="conflict", code="resource_snapshot_payload_missing",
-            )
+            if self._layout_uses_external_logo(layout_config_content):
+                layout_asset_dir = self._resolve_payload_path(layout_source).parent
+                legacy_internal_only = template_record.status == ResourceVersionStatus.PUBLISHED
 
         department_id = snapshot.term_rule_department_id
         rules_key = resource_payload_sha256({
@@ -554,8 +554,73 @@ class JobResourceSnapshotService:
             publishable=(
                 template.status == "published"
                 and template_record.status == rules_record.status == ResourceVersionStatus.PUBLISHED
+                and not legacy_internal_only
             ),
+            legacy_internal_only=legacy_internal_only,
         )
+
+    def template_binding_is_legacy_internal_only(
+        self, binding: ResolvedResourceVersion, job_paths: JobPaths | None = None,
+    ) -> bool:
+        """读取登记绑定与认证版式，优先使用任务原有副本。"""
+
+        record = self.authenticate_render_binding(binding, "template")
+        assert record.payload is not None
+        layout_binding = self._template_layout_binding(record.payload)
+        if layout_binding is None:
+            return True
+        if record.status != ResourceVersionStatus.PUBLISHED:
+            return False
+
+        layout_source, layout_hash = layout_binding
+        try:
+            cached = None
+            if job_paths is not None:
+                try:
+                    cached = (self._template_resource_directory(binding, job_paths) / "layout.yaml").read_bytes()
+                except FileNotFoundError:
+                    pass
+            content = self._resolve_payload_path(layout_source).read_bytes() if cached is None else cached
+        except OSError:
+            raise JobResourceSnapshotError(
+                "任务绑定的版式文件不可读取。", category="conflict", code="resource_snapshot_file_unavailable",
+            ) from None
+        _verify_resource_bytes(content, layout_hash, "template_layout_config_hash_mismatch")
+        return self._layout_uses_external_logo(content)
+
+    @staticmethod
+    def _template_resource_directory(template: ResolvedResourceVersion, job_paths: JobPaths) -> Path:
+        # 模板和规则独立定位，显式重绑规则仍可复用原模板副本。
+        template_key = resource_payload_sha256({
+            "id": template.resource_id, "version": template.version, "snapshot_hash": template.snapshot_hash,
+        })
+        return job_paths.resources_dir / template_key.removeprefix("sha256:")
+
+    @staticmethod
+    def _template_layout_binding(payload: dict) -> tuple[str, str] | None:
+        path = payload.get("layout_config_path")
+        digest = payload.get("layout_config_sha256")
+        if path is None and digest is None:
+            return None
+        if not isinstance(path, str) or not path.strip():
+            raise JobResourceSnapshotError(
+                "模板版式配置绑定不完整。", category="conflict", code="resource_snapshot_payload_missing",
+            )
+        if not isinstance(digest, str) or not digest.startswith("sha256:"):
+            raise JobResourceSnapshotError(
+                "模板版本缺少有效的内容 SHA-256。", category="conflict", code="template_layout_config_hash_mismatch",
+            )
+        return path, digest
+
+    @staticmethod
+    def _layout_uses_external_logo(content: bytes) -> bool:
+        try:
+            config = TemplateConfigPackage.load_content(content)
+            return external_logo_field(config, active_only=True) is not None
+        except TemplateLayoutValidationError:
+            raise JobResourceSnapshotError(
+                "任务绑定的版式配置未通过校验。", category="conflict", code="template_layout_config_invalid",
+            ) from None
 
     def _materialize_template_file(
         self, destination: Path, source: str, expected_sha256: object, hash_error: str,

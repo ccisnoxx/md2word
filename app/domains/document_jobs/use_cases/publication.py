@@ -25,6 +25,7 @@ from app.domains.document_jobs.new_generation import (
 )
 from app.domains.document_jobs.preview_evidence import is_preview_storage_error
 from app.domains.document_jobs.publication import (
+    LEGACY_INTERNAL_ONLY_MESSAGE,
     PublicationConflict,
     PublicationExpectedSource,
     PublicationRecord,
@@ -177,7 +178,9 @@ class DocumentJobPublication:
                     source_file=source, audit_id="audit_" + uuid4().hex, trace_id=trace_id),
                 max_retries=self.settings.p0_document_job_max_retries)
         except NewGenerationConflict as error:
-            raise ApplicationError("conflict", "新代请求条件已变化，请重新读取。", reason_code=error.reason_code) from None
+            message = (LEGACY_INTERNAL_ONLY_MESSAGE if error.reason_code == "legacy_internal_only"
+                       else "新代请求条件已变化，请重新读取。")
+            raise ApplicationError("conflict", message, reason_code=error.reason_code) from None
         except NewGenerationCommitUnknownError:
             raise NewGenerationRequestUnavailable(key, reason_code="new_generation_acceptance_unknown") from None
         except ApplicationError:
@@ -278,6 +281,8 @@ class DocumentJobPublication:
 
     def _verify_new_generation_resources(self, job: DocumentJobRecord) -> None:
         """只物化原绑定版本；缺快照、实物或翻译绑定时拒绝，不读取当前默认值。"""
+        if self.read_model.legacy_template_binding(job):
+            raise NewGenerationConflict("legacy_internal_only")
         service = self.job_resource_snapshot_service
         if service is None:
             raise ApplicationError("service_unavailable", "绑定资源服务暂不可用。", reason_code="new_generation_resources_unavailable")
@@ -286,10 +291,12 @@ class DocumentJobPublication:
             resources_job = JobRecord(id=job.id, source_filename=job.request_snapshot["source_file"]["original_filename"],
                 status="completed", translation_mode=translation_mode_for_document_job_mode(job.mode), resource_snapshot=snapshot)
             materialized = service.materialize(resources_job, build_job_paths(self.settings.data_path, job.id))
-            if materialized.template_path is None or materialized.layout_config_path is None:
-                raise ValueError("原模板实物或版式配置缺失。")
         except (JobResourceSnapshotError, FileNotFoundError, ValueError, KeyError):
             raise ApplicationError("service_unavailable", "原绑定资源快照或实物不可用。", reason_code="new_generation_resources_unavailable") from None
+        if materialized.legacy_internal_only:
+            raise NewGenerationConflict("legacy_internal_only")
+        if materialized.template_path is None or materialized.layout_config_path is None:
+            raise ApplicationError("service_unavailable", "原绑定资源快照或实物不可用。", reason_code="new_generation_resources_unavailable")
 
     def _publication_job(self, job_id, user):
         try:
@@ -490,6 +497,8 @@ class DocumentJobPublication:
                 raise PublicationConflict("publication_source_changed")
             if job.review_status != "approved" or review_validity(job, file, now=utc_now()) is not None:
                 raise PublicationConflict("publication_review_invalid")
+            if self.read_model.legacy_template_binding(job):
+                raise PublicationConflict("legacy_internal_only")
             evidence = prepare_publication_evidence(job, file_repository=self.file_repository,
                 file_service=self.file_upload_service, job_repository=self.job_repository)
             publication_id = "publication_" + uuid4().hex

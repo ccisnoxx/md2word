@@ -1,12 +1,18 @@
 """列表仅判断发布状态，详情、发布前检查及提交仍认证真实证据。"""
 
 import hashlib
+import json
 from unittest import TestCase
 from unittest.mock import patch
 from uuid import uuid4
 
+import yaml
+
 from app.domains.document_jobs.publication import observed_publication_source
 from app.domains.document_jobs.publication_evidence import prepare_publication_evidence
+from app.domains.document_jobs.publication_provenance import capture_render_publication_provenance
+from app.domains.document_jobs.review import observed_review_source
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
 from tests.document_job_list_query_v2_publication_fixtures import V2PublicationFixture
 from tests import test_fastapi_jobs_backend as support
 from tests import test_document_job_list_query_v2_service as service_fixtures
@@ -14,6 +20,63 @@ from tests.document_job_use_case_support import patch_use_case_clock, patch_publ
 
 
 class DocumentJobListPublishLightCheckTests(V2PublicationFixture, TestCase):
+    def test_legacy_complete_provenance_rejects_external_logo_without_consumed_logo_bytes(self):
+        def configure_layout(path):
+            config = yaml.safe_load(path.read_bytes())
+            config.setdefault("language_overrides", {})["ru"] = {
+                "header": {"enabled": True, "logo_path": "old-logo.png"},
+            }
+            path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+
+        def capture_old_provenance(*args, **kwargs):
+            return capture_render_publication_provenance(
+                *args, file_service=kwargs["file_service"], resources_publishable=True,
+            )
+
+        with patch(
+            "app.domains.document_jobs.render_execution.capture_render_publication_provenance",
+            side_effect=capture_old_provenance,
+        ), self.publication_runtime(configure_layout=configure_layout) as (runtime, job, _, _, client, _, _):
+            files = runtime.document_file_repository
+            result = files.get_document_file(job.result_file_id)
+            report = files.get_document_file(result.metadata["publication_provenance_file_id"])
+            proof = json.loads(runtime.file_upload_service.read_file_content(report))
+            self.assertEqual(proof["status"], "complete")
+            self.assertIsNone(proof["resources"]["logo"])
+            self.assertIsNone(proof["resource_identity"]["logo_sha256"])
+
+            admin_headers = support.build_auth_header(client, "admin", "admin-pass")
+            base_url = f"/api/v1/document-jobs/{job.id}"
+            detail = client.get(base_url, headers=admin_headers)
+            self.assertEqual(detail.status_code, 200, detail.text)
+            actions = detail.json()["available_actions"]
+            self.assertEqual(actions["publish"]["disabled_reason_code"], "legacy_internal_only")
+            self.assertEqual(actions["new_generation"]["disabled_reason_code"], "legacy_internal_only")
+            generation = client.post(f"{base_url}/new-generation", headers=admin_headers, json={
+                "request_id": str(uuid4()), "note": "申请对旧模板生成新代",
+                "expected_source": observed_review_source(job, result).model_dump(mode="json"),
+            })
+            self.assertEqual(generation.status_code, 409, generation.text)
+            self.assertEqual(generation.json()["error"]["reason_code"], "legacy_internal_only")
+
+            # 即使登记实物已读不到，认证的旧来源报告仍足以确定外部 Logo 限制。
+            snapshots = runtime.document_job_use_cases.read_model.job_resource_snapshot_service
+            with patch.object(snapshots, "template_binding_is_legacy_internal_only",
+                side_effect=JobResourceSnapshotError("测试原版式文件不可用。")):
+                preflight = client.get(f"{base_url}/publications", headers=admin_headers)
+                self.assertEqual(preflight.status_code, 200, preflight.text)
+                self.assertEqual(
+                    preflight.json()["available_actions"]["publish"]["disabled_reason_code"],
+                    "legacy_internal_only",
+                )
+                rejected = client.post(f"{base_url}/publish", headers=admin_headers, json={
+                    "request_id": str(uuid4()), "note": "申请发布已生成的旧结果",
+                    "expected_source": observed_publication_source(job, result).model_dump(mode="json"),
+                })
+            self.assertEqual(rejected.status_code, 409, rejected.text)
+            self.assertEqual(rejected.json()["error"]["reason_code"], "legacy_internal_only")
+            self.assertEqual(runtime.document_job_repository.list_document_job_publications(job.id), [])
+
     def test_publication_replay_preserves_one_protected_final_file(self):
         for kind in ("file", "sqlite"):
             with self.subTest(kind=kind), self.publication_runtime(kind=kind) as (

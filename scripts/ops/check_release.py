@@ -19,7 +19,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.domains.templates.manifest import resolve_bundled_template_seed
-from app.domains.templates.package_validator import TemplatePackageValidationError, validate_template_package
+from app.domains.templates.package_validator import (
+    TemplatePackageValidationError,
+    bundled_seed_logo_policy,
+    validate_template_package,
+)
 from scripts.ops.export_openapi import check_openapi_export, format_pretty_report
 
 
@@ -151,7 +155,10 @@ def check_bundled_template_package(root_dir: Path) -> tuple[ReleaseCheckItem, Re
     identity = f"{seed.item.id}@{seed.item.version}"
     binding = ReleaseCheckItem("default-template-manifest-binding", True, identity)
     try:
-        validate_template_package(template_path=seed.template_path, layout_config_path=seed.layout_config_path)
+        validate_template_package(
+            template_path=seed.template_path, layout_config_path=seed.layout_config_path,
+            require_layout=True, logo_policy=bundled_seed_logo_policy(seed.item.id, seed.item.version),
+        )
     except TemplatePackageValidationError as exc:
         return binding, ReleaseCheckItem("template-package-preflight", False, identity, f"{exc.path} ({exc.code})")
     return binding, ReleaseCheckItem("template-package-preflight", True, identity)

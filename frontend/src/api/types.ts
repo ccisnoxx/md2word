@@ -2242,6 +2242,7 @@ export type TemplateListItemResponse = {
   description: string;
   version: number;
   is_default: boolean;
+  legacy_internal_only: boolean;
   downloadable: boolean;
   download_url: string | null;
   template: TemplateAssetResponse;
@@ -2264,6 +2265,7 @@ export type TemplateVersionResponse = {
   status: TemplateVersionStatus;
   is_current: boolean;
   is_default: boolean;
+  legacy_internal_only: boolean;
   snapshot_hash: string | null;
   render_policy: Record<string, unknown>;
   verification_job_id: string | null;

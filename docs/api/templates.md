@@ -57,6 +57,7 @@ Templates API 统一挂在 `/api/v1/templates` 下。MySQL 模式以数据库目
   - `items[].name`
   - `items[].version`
   - `items[].is_default`
+  - `items[].legacy_internal_only`
   - `items[].downloadable`
   - `items[].download_url`
   - `items[].template`
@@ -68,6 +69,7 @@ Templates API 统一挂在 `/api/v1/templates` 下。MySQL 模式以数据库目
 - 用途：查询单个模板详情。
 - 当前支持：
   - 任意启用且未删除的 `template_id`
+- `legacy_internal_only` 表示当前版本缺少 YAML 绑定，或历史已发布版本的有效页眉配置会读取外部 Logo。模板和版本资料可以按既有权限查看。该版本不能用于新任务或设为默认。
 
 - 资产元数据字段：
 
@@ -93,6 +95,7 @@ Templates API 统一挂在 `/api/v1/templates` 下。MySQL 模式以数据库目
   - `template_id`
   - `items[].version`
   - `items[].status`
+  - `items[].legacy_internal_only`
   - `items[].is_current`
   - `items[].is_default`
   - `items[].snapshot_hash`
@@ -166,7 +169,7 @@ Templates API 统一挂在 `/api/v1/templates` 下。MySQL 模式以数据库目
 | `name` | 是 | 展示名 |
 | `description` | 否 | 描述 |
 | `enabled` | 否 | 是否启用，默认 `true` |
-| `layout_config_path` | 否 | 绑定页面布局 YAML 路径 |
+| `layout_config_path` | 是 | 绑定有效的页面布局 YAML 路径 |
 | `render_policy_json` | 否 | JSON object；默认 `{}` |
 | `template` | 是 | `.docx` 文件 |
 
@@ -190,7 +193,7 @@ Templates API 统一挂在 `/api/v1/templates` 下。MySQL 模式以数据库目
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：`multipart/form-data`
   - `template`: `.docx` 文件
-- MySQL 模式创建新 draft，原默认版本和旧版本文件保留。file/SQLite 沿用原本地版本切换。
+- 替换使用模板目录配置的 YAML。所用 YAML 须通过联合预检。MySQL 模式创建新 draft，原默认版本和旧版本文件保留。file/SQLite 沿用原本地版本切换。
 
 ### `POST /api/v1/templates/{template_id}/versions`
 
@@ -199,7 +202,7 @@ Templates API 统一挂在 `/api/v1/templates` 下。MySQL 模式以数据库目
 - 前置：需要 `JOBS_REPOSITORY_BACKEND=mysql`，因为发布状态由 `ResourceVersionService` 管理。
 - 请求体：`multipart/form-data`
   - `template`: `.docx` 文件
-  - `layout_config_path`: 可选
+  - `layout_config_path` 可省略以继承模板目录配置的有效 YAML。新版本必须登记最终使用的 YAML 和内容哈希。
   - `render_policy_json`: 可选 JSON object
 - 成功后返回 `TemplateVersionResponse(status="draft")`，不自动替换当前默认版本。
 
@@ -214,6 +217,8 @@ Templates API 统一挂在 `/api/v1/templates` 下。MySQL 模式以数据库目
   - `verification_job_id`: 必填，验证任务 ID
   - `verification_note`: 必填，验证说明
 - 发布校验：
+  - 草稿必须绑定有效的 YAML。
+  - 基础配置及语言覆盖中的 `header.logo_path` 必须省略或为空。正式页眉 Logo 使用 DOCX 自带的媒体。历史已发布版本的旧字段在所有语言均禁用外部 Logo 时可继续使用。
   - `verification_job_id` 必须对应已存在的 Document Job
   - 验证任务 `status` 必须是 `succeeded`
   - 验证任务 `template_version_id` 必须匹配 `{template_id}@{version}`
@@ -234,6 +239,7 @@ Templates API 统一挂在 `/api/v1/templates` 下。MySQL 模式以数据库目
   - 后续按该模板创建任务时固化其默认版本，Worker 使用同版本的登记资源。
 - 常见错误：
   - `400` 表示目标状态或登记资源未通过校验。文件问题通过 `error.reason_code` 给出具体原因，原指针保留。
+  - `legacy_internal_only` 表示目标为仅供内部使用的历史版本。
   - `409` 与 `template_default_conflict` 表示指针或目标状态、快照已变化。重新读取版本列表后再决定是否发起切换。
   - `503` 与 `template_default_commit_unknown` 表示数据库提交结果无法确认。先读取版本列表核对实际默认版本，再决定后续操作。
 
@@ -251,7 +257,7 @@ Templates API 统一挂在 `/api/v1/templates` 下。MySQL 模式以数据库目
 - 用途：将指定模板设为当前运行态默认模板。
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 关键语义：
-  - MySQL 更新数据库全局默认模板 ID。目标必须已启用，且有可用的已发布默认版本
+  - MySQL 更新数据库全局默认模板 ID。目标必须已启用，且有符合 YAML 与页眉约束的已发布默认版本
   - 后续未显式选择模板的任务使用此默认模板。file/SQLite 继续使用 `template_state.json`
 
 - 常见状态：

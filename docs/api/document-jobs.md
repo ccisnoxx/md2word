@@ -106,6 +106,8 @@ direct：uploaded → parsing → parsed → ir_converting
 
 质量、复核和交付状态（CON-103）分别为 `pending/passed/warning/blocked`、`unreviewed/approved/needs_fix/blocked`、`internal_draft/ready_to_publish/published`，摘要默认 `{}`。旧 QA 原值保留但未绑定当前结果时只作历史记录，不自动成为批准证据。合法成功主件可内部下载，`approved` 不授予发布资格；retry 新代、clone 或结果换件使旧证据失效。
 
+新建和克隆任务必须使用有有效 YAML 绑定的模板版本。配置摘要过滤仅供内部使用的历史版本。缺少 YAML 或会读取外部页眉 Logo 的历史绑定返回 `legacy_internal_only`，不能创建新任务、新代或正式发布文档。历史任务仍按原状态和权限恢复及内部下载，下载分类继续使用 `internal_only`。已发布的最终件继续使用原发布记录。
+
 #### 质量、审核与正式交付的证据绑定
 
 | 对象 | 写入边界与可追溯性 |

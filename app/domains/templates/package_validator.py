@@ -6,6 +6,7 @@ import io
 from dataclasses import dataclass
 from pathlib import Path
 from struct import error as StructError
+from typing import Literal
 
 from docx import Document
 from docx.document import Document as WordDocument
@@ -43,8 +44,52 @@ class TemplatePackageFingerprint:
     layout_config_sha256: str | None
 
 
+LogoPolicy = Literal["allow", "inactive_only", "forbid"]
+
+
+def bundled_seed_logo_policy(template_id: str, version: int) -> LogoPolicy:
+    """内置版本 1 和 2 的原始 YAML 保留关闭状态的 Logo 路径。"""
+
+    return "inactive_only" if template_id == "default" and version in {1, 2} else "forbid"
+
+
+def external_logo_field(package: TemplateConfigPackage, *, active_only: bool) -> str | None:
+    """定位基础配置或任一种语言配置的外部页眉图像路径。"""
+
+    if package.header.logo_path and (package.header.enabled or not active_only):
+        return "header.logo_path"
+    for override in package.language_overrides.values():
+        try:
+            variant = package.with_language_override(override)
+        except TemplateLayoutValidationError as exc:
+            raise TemplatePackageValidationError(
+                "语言覆盖未通过校验。", path=f"language_overrides.{exc.path}", code=exc.code,
+            ) from None
+        if variant.header.logo_path and (variant.header.enabled or not active_only):
+            return "language_overrides.header.logo_path"
+    return None
+
+
+def require_template_yaml_binding(payload: dict) -> None:
+    """区分无版式的历史版本与不完整的登记绑定。"""
+
+    path = payload.get("layout_config_path")
+    digest = payload.get("layout_config_sha256")
+    if path is None and digest is None:
+        raise TemplatePackageValidationError(
+            "此模板版本未绑定版式 YAML，仅供历史恢复和内部下载。",
+            path="layout_config", code="legacy_internal_only",
+        )
+    if not isinstance(path, str) or not path.strip() or not isinstance(digest, str) or not digest.startswith("sha256:"):
+        raise TemplatePackageValidationError(
+            "模板资源版本未完整登记版式 YAML。",
+            path="layout_config", code="template_resource_payload_invalid",
+        )
+
+
 def validate_template_package(
     *, template_path: Path, layout_config_path: Path | None,
+    require_layout: bool = False, logo_policy: LogoPolicy = "allow",
 ) -> TemplatePackageFingerprint:
     """从文件读取模板包并返回通过预检的字节指纹。"""
 
@@ -54,6 +99,8 @@ def validate_template_package(
             read_template_resource(layout_config_path, kind="layout_config") if layout_config_path is not None else None
         ),
         layout_config_directory=layout_config_path.parent if layout_config_path is not None else None,
+        require_layout=require_layout,
+        logo_policy=logo_policy,
     )
 
 
@@ -70,9 +117,14 @@ def read_template_resource(path: Path, *, kind: str) -> bytes:
 
 def validate_template_package_content(
     *, template_content: bytes, layout_config_content: bytes | None, layout_config_directory: Path | None = None,
+    require_layout: bool = False, logo_policy: LogoPolicy = "allow",
 ) -> TemplatePackageFingerprint:
     """文件预检与写入前的候选字节共用相同检查。"""
 
+    if require_layout and layout_config_content is None:
+        raise TemplatePackageValidationError(
+            "模板版本必须绑定版式 YAML。", path="layout_config", code="template_layout_config_required",
+        )
     try:
         inspection = inspect_docx_package(template_content, verify_all_parts=True)
     except DocxPackageError as exc:
@@ -82,7 +134,7 @@ def validate_template_package_content(
         raise TemplatePackageValidationError("模板 DOCX 部件或关系无效。", path=issue.path, code=issue.code)
     try:
         document = Document(io.BytesIO(template_content))
-        _validate_configurations(document, layout_config_content, layout_config_directory)
+        _validate_configurations(document, layout_config_content, layout_config_directory, logo_policy=logo_policy)
     except TemplatePackageValidationError:
         raise
     except (OpcError, InvalidXmlError, etree.XMLSyntaxError, AttributeError, KeyError, ValueError, RecursionError):
@@ -97,12 +149,14 @@ def validate_template_package_content(
 
 def _validate_configurations(
     document: WordDocument, content: bytes | None, directory: Path | None,
+    *, logo_policy: LogoPolicy,
 ) -> None:
     try:
         package = TemplateConfigPackage.load_content(content) if content is not None else TemplateConfigPackage()
     except TemplateLayoutValidationError as exc:
         raise TemplatePackageValidationError("版式配置未通过校验。", path=exc.path, code=exc.code) from None
 
+    validate_template_logo(package, logo_policy=logo_policy)
     table_styles = {style.name for style in document.styles if style.type == WD_STYLE_TYPE.TABLE}
     paragraph_styles = {style.name for style in document.styles if style.type == WD_STYLE_TYPE.PARAGRAPH}
     # Renderer 清理模板正文后，以最后一节为新正文的初始节。
@@ -116,6 +170,19 @@ def _validate_configurations(
             raise TemplatePackageValidationError(
                 "语言覆盖未通过校验。", path=f"language_overrides.{exc.path}", code=exc.code,
             ) from None
+
+
+def validate_template_logo(package: TemplateConfigPackage, *, logo_policy: LogoPolicy) -> None:
+    """正式发布禁止声明路径，历史准入只拒绝会消费外部图像的配置。"""
+
+    if logo_policy == "allow":
+        return
+    field = external_logo_field(package, active_only=logo_policy == "inactive_only")
+    if field is not None:
+        reason = "template_external_logo_forbidden" if logo_policy == "forbid" else "legacy_internal_only"
+        raise TemplatePackageValidationError(
+            "正式页眉的 Logo 须由 DOCX 模板提供。", path=field, code=reason,
+        )
 
 
 def _validate_configuration(

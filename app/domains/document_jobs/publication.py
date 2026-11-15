@@ -14,6 +14,7 @@ from app.domains.document_jobs.review import ReviewExpectedSource, ReviewRecord,
 from app.domains.files.models import DocumentFileRecord
 
 PUBLICATION_ENVELOPE = "_publication_records_v1"
+LEGACY_INTERNAL_ONLY_MESSAGE = "此历史模板版本仅供恢复和内部下载。"
 
 
 class PublicationConflict(ValueError):
@@ -21,7 +22,10 @@ class PublicationConflict(ValueError):
 
     def __init__(self, reason_code: str):
         self.reason_code = reason_code
-        super().__init__("发布条件不满足，请刷新并核对当前文档。")
+        super().__init__(
+            LEGACY_INTERNAL_ONLY_MESSAGE if reason_code == "legacy_internal_only"
+            else "发布条件不满足，请刷新并核对当前文档。"
+        )
 
 
 class PublicationExpectedSource(ReviewExpectedSource):

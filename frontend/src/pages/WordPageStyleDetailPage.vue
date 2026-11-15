@@ -34,12 +34,14 @@
           <el-option
             v-for="item in templateVersions"
             :key="item.template_version_id"
-            :label="`v${item.version} · ${versionStatusLabel(item.status)}${item.is_default ? '（默认）' : ''}`"
+            :label="`v${item.version} · ${versionStatusLabel(item.status)}${item.is_default ? '（默认）' : ''}${item.legacy_internal_only ? ' · 仅供内部使用' : ''}`"
             :value="item.version"
           />
         </el-select>
         <el-button :icon="Document" @click="$router.push(`/settings/templates/${props.templateId}`)">模板文档</el-button>
-        <el-button v-if="layoutConfig?.status === 'draft'" @click="openValidationFlow">创建验证任务</el-button>
+        <el-button v-if="layoutConfig?.status === 'draft'" :disabled="isLegacyInternalVersion" @click="openValidationFlow">
+          创建验证任务
+        </el-button>
         <el-button :icon="Refresh" :loading="loading || layoutConfigLoading" @click="confirmReloadAll">刷新</el-button>
         <el-button :disabled="!isLayoutDirty || layoutConfigSaving" @click="resetLayoutConfigForm">撤销</el-button>
         <el-button type="primary" :loading="layoutConfigSaving" :disabled="!layoutConfig || !isLayoutDirty" @click="saveLayoutConfigVersion">
@@ -291,6 +293,9 @@ const templateVersions = ref<TemplateVersionResponse[]>([]);
 const selectedVersion = ref<number | null>(null);
 const template = ref<TemplateDetailResponse | null>(null);
 const layoutConfig = ref<TemplateLayoutConfigResponse | null>(null);
+const isLegacyInternalVersion = computed(() =>
+  templateVersions.value.find((item) => item.version === layoutConfig.value?.version)?.legacy_internal_only === true,
+);
 const layoutConfigForm = ref<Record<string, any>>({});
 const sourceLayoutConfig = ref<Record<string, any>>({});
 const activeCategoryId = ref("");
@@ -341,8 +346,8 @@ const overviewItems = computed<WorkbenchMetricItem[]>(() => [
     id: "version",
     label: "当前版本",
     value: layoutConfig.value?.template_version_id || "-",
-    helper: layoutConfig.value?.status === "draft" ? "草稿，尚未影响生产生成" : "已发布版本",
-    tone: layoutConfig.value?.status === "draft" ? "warning" : "success",
+    helper: isLegacyInternalVersion.value ? "仅供内部使用" : layoutConfig.value?.status === "draft" ? "草稿，尚未影响生产生成" : "已发布版本",
+    tone: isLegacyInternalVersion.value || layoutConfig.value?.status === "draft" ? "warning" : "success",
   },
   {
     id: "group_count",

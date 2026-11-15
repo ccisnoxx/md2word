@@ -25,7 +25,11 @@ from app.domains.templates.manifest import BundledTemplateSeed, resolve_bundled_
 from app.domains.templates.models import (
     TemplateCatalogItem, TemplateManifestItem, TemplatesManifest, TemplateState, validate_template_id,
 )
-from app.domains.templates.package_validator import TemplatePackageValidationError, validate_template_package
+from app.domains.templates.package_validator import (
+    TemplatePackageValidationError,
+    bundled_seed_logo_policy,
+    validate_template_package,
+)
 from app.domains.templates.read_service import TemplateReadService
 from app.domains.templates.repository import TemplateCatalogCommitUnknown
 from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend, MysqlPersistenceConfig
@@ -212,6 +216,7 @@ def _plan_legacy_default(
     records: dict[str, dict[str, ResourceVersionRecord]],
     record_issues: dict[tuple[str, str], str],
     plan: MigrationPlan,
+    validator: TemplateReadService,
 ) -> None:
     old_default = state.default_template_id
     existing_default = snapshot.default_template_id
@@ -248,6 +253,12 @@ def _plan_legacy_default(
     elif (issue := record_issues.get((selected, record.version))) is not None:
         plan.conflicts.append(MigrationIssue(issue, selected, record.version))
     elif existing_default is None:
+        if old_default is None:
+            try:
+                validator.validate_registered_template_package(record, logo_policy="inactive_only")
+            except TemplatePackageValidationError as exc:
+                plan.conflicts.append(MigrationIssue(exc.code, selected, record.version))
+                return
         plan.default_template_id = selected
 
 
@@ -334,6 +345,7 @@ def build_migration_plan(
             try:
                 fingerprint = validate_template_package(
                     template_path=seed.template_path, layout_config_path=seed.layout_config_path,
+                    require_layout=True, logo_policy=bundled_seed_logo_policy(seed.item.id, seed.item.version),
                 )
             except TemplatePackageValidationError as exc:
                 plan.conflicts.append(MigrationIssue(exc.code, item.id, str(item.version)))
@@ -379,7 +391,7 @@ def build_migration_plan(
             validator.validate_bundled_seed_identity(bundled_record, seed)
         except ValueError:
             plan.conflicts.append(MigrationIssue("bundled_seed_identity_conflict", seed.item.id, bundled_record.version))
-    _plan_legacy_default(state, manifest, snapshot, target, records, record_issues, plan)
+    _plan_legacy_default(state, manifest, snapshot, target, records, record_issues, plan, validator)
     plan.conflicts = list(dict.fromkeys(plan.conflicts))
     plan.orphan_versions = sorted(
         (record.resource_id, record.version) for record in snapshot.versions

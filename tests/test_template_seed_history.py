@@ -17,10 +17,6 @@ from pydantic_settings import SettingsConfigDict
 
 from app.core.config import Settings
 from app.domains.document_jobs.models import DocumentJobRecord
-from app.domains.document_jobs.schemas.jobs import DocumentJobCreateRequest
-from app.domains.document_jobs.use_cases import build_document_job_use_cases
-from app.domains.files.models import DocumentFileRecord
-from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
 from app.domains.resources.models import ResourceType, ResourceVersionRecord, ResourceVersionStatus
 from app.domains.resources.service import ResourceVersionService
 from app.domains.templates.manifest import BUNDLED_TEMPLATE_MANIFEST
@@ -29,9 +25,6 @@ from app.domains.templates.package_validator import TemplatePackageValidationErr
 from app.domains.templates.read_service import TemplateReadService
 from app.domains.templates.repository import TemplateCatalogCommitUnknown
 from app.domains.templates.schemas import TemplateAssetResponse
-from app.domains.term_rules.models import TermRulesStore
-from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
-from app.services.auth.models import AuthenticatedUser
 
 
 def _snapshot_hash(payload: dict[str, Any]) -> str:
@@ -293,6 +286,20 @@ class TemplateSeedHistoryTests(TestCase):
         self.assertEqual(caught.exception.code, "template_layout_config_hash_mismatch")
         self.assertEqual(self._repository_snapshot(), before)
 
+    def test_new_bundled_seed_rejects_even_inactive_external_logo_declarations(self) -> None:
+        self.manifest_item["version"] = 3
+        self._write_manifest()
+        self.layout_path.write_text(
+            "schema_version: template-config/v1\nheader: {enabled: false, logo_path: company.png}\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(TemplatePackageValidationError) as caught:
+            self.reader.bootstrap_manifest_versions()
+
+        self.assertEqual(caught.exception.code, "template_external_logo_forbidden")
+        self.assertEqual(self._repository_snapshot(), ({}, {}, []))
+
     def test_invalid_upload_or_layout_leaves_no_draft_files_or_repository_writes(self) -> None:
         self.reader.bootstrap_manifest_versions()
         before = self._repository_snapshot()
@@ -303,6 +310,19 @@ class TemplateSeedHistoryTests(TestCase):
         invalid_layout.write_text("schema_version: template-config/v1\nnormal: {word_style_name: Table Grid}\n")
         new_upload = self._docx("uploads/valid.docx", "有效上传")
         cases = (
+            (
+                lambda: self.reader.create_template(
+                    template_id="custom", name="自定义", description="", source_path=new_upload,
+                    source_filename=new_upload.name, layout_config_path=None,
+                ),
+                "template_layout_config_required",
+            ),
+            (
+                lambda: self.reader.create_template_version(
+                    "default", source_path=new_upload, source_filename=new_upload.name, layout_config_path=" ",
+                ),
+                "template_layout_config_required",
+            ),
             (
                 lambda: self.reader.create_template(
                     template_id="custom", name="自定义", description="", source_path=new_upload,
@@ -369,11 +389,20 @@ class TemplateSeedHistoryTests(TestCase):
         rebound = self._repository_snapshot()
         with self.assertRaises(TemplatePackageValidationError) as caught:
             publish()
-        self.assertEqual(caught.exception.code, "template_verification_resource_mismatch")
+        self.assertEqual(caught.exception.code, "legacy_internal_only")
         self.assertEqual(self._repository_snapshot(), rebound)
         self.assertFalse(self.settings.template_state_file.exists())
 
         self.repository.save_resource_version(draft)
+        rebound_job = job.model_copy(update={"request_snapshot": {"resources": {
+            "template": {**bound, "snapshot_hash": "sha256:" + "0" * 64},
+        }}})
+        self.reader.document_job_repository.get_document_job.return_value = rebound_job
+        with self.assertRaises(TemplatePackageValidationError) as caught:
+            publish()
+        self.assertEqual(caught.exception.code, "template_verification_resource_mismatch")
+
+        self.reader.document_job_repository.get_document_job.return_value = job
         self.assertEqual(publish().status, "published")
         self.assertEqual(self.repository.get_default_resource_version("template", "default").version, "3")
 
@@ -441,7 +470,7 @@ class TemplateSeedHistoryTests(TestCase):
         def create(source: Path) -> None:
             self.reader.create_template(
                 template_id="custom", name="自定义模板", description="", source_path=source,
-                source_filename="upload.docx", layout_config_path=None,
+                source_filename="upload.docx", layout_config_path=self._relative(self.layout_path),
             )
 
         catalog.create_template.side_effect = RuntimeError("事务回滚")
@@ -484,63 +513,88 @@ class TemplateSeedHistoryTests(TestCase):
         self.assertTrue(source.exists())
         self.assertFalse(self.settings.templates_storage_dir.exists())
 
-    def test_publish_and_create_job_without_layout_does_not_consult_manifest_layout(self) -> None:
+    def test_unbound_layout_is_internal_only_for_legacy_resolution(self) -> None:
         self.reader.bootstrap_manifest_versions()
         draft_path = self._docx("history/unbound.docx", "只使用 Word 模板")
-        self._register(
+        draft = self._register(
             3, self._payload(3, draft_path, layout_config_path=None, layout_config_sha256=None),
             status=ResourceVersionStatus.DRAFT,
         )
         self.reader.update_template_metadata("default", layout_config_path="missing-manifest-layout.yaml")
-        job = DocumentJobRecord(
-            id="old-verification", tenant_id="tenant", company_id="company", created_by="admin",
-            source_file_id="source", status="succeeded", stage="completed", template_version_id="default@3",
-        )
-        job_repository = Mock(get_document_job=Mock(return_value=job))
-        self.reader.document_job_repository = job_repository
+        self.reader.document_job_repository = Mock()
+        before = self._repository_snapshot()
+        with self.assertRaises(TemplatePackageValidationError) as caught:
+            self.reader.publish_template_version(
+                "default", 3, make_default=True, publish_reason="通过验收",
+                verification_job_id="old-verification", verification_note="历史验证成功",
+            )
+        self.assertEqual(caught.exception.code, "legacy_internal_only")
+        self.reader.document_job_repository.get_document_job.assert_not_called()
+        self.assertEqual(self._repository_snapshot(), before)
 
-        published = self.reader.publish_template_version(
-            "default", 3, make_default=True, publish_reason="通过验收",
-            verification_job_id=job.id, verification_note="历史验证成功",
-        )
+        with self.assertRaises(TemplatePackageValidationError) as caught:
+            self.reader.resolve_template_version("default@3", allow_draft=True, for_new_binding=True)
+        self.assertEqual(caught.exception.code, "legacy_internal_only")
 
-        self.assertEqual(published.status, "published")
-        self.assertTrue(published.is_default)
-        self.assertTrue(self.settings.template_state_file.exists())
-        self.assertFalse(published.layout_config.exists)
-        self.assertIsNone(published.layout_config.file_name)
-        detail = self.reader.get_template_detail("default", url_for=None)
-        self.assertEqual(detail.layout_config, published.layout_config)
+        self.repository.save_resource_version(draft.model_copy(update={"status": ResourceVersionStatus.PUBLISHED}))
+        self.repository.set_default_resource_version("template", "default", "3")
+        historical = self.reader.resolve_template_version("default@3")
+        self.assertIsNone(historical.layout_config_path)
+        self.assertEqual(historical.template_path, draft_path)
+        version = next(item for item in self.reader.list_template_versions("default") if item.version == 3)
+        self.assertTrue(version.legacy_internal_only)
+        self.assertFalse(version.layout_config.exists)
+        self.assertTrue(self.reader.get_template_detail("default", url_for=None).legacy_internal_only)
+        for version_id in (None, "default@3"):
+            with self.subTest(version_id=version_id), self.assertRaises(TemplatePackageValidationError) as caught:
+                self.reader.resolve_template_version(version_id, for_new_binding=True)
+            self.assertEqual(caught.exception.code, "legacy_internal_only")
 
-        rules_payload = {"store": TermRulesStore().model_dump(mode="json")}
-        self.repository.create_resource_version(ResourceVersionRecord(
-            resource_type="term_rule_set", resource_id=DEFAULT_TERM_RULE_SET_ID, version="seed",
-            status=ResourceVersionStatus.PUBLISHED, snapshot_hash=_snapshot_hash(rules_payload), payload=rules_payload,
-        ))
-        self.repository.set_default_resource_version("term_rule_set", DEFAULT_TERM_RULE_SET_ID, "seed")
-        user = AuthenticatedUser(id="operator", username="operator", role="operator", tenant_id="tenant",
-                                 company_id="company")
-        source = DocumentFileRecord(
-            id="new-source", tenant_id=user.tenant_id, company_id=user.company_id, file_type="source_pdf",
-            storage_provider="local_object", bucket="local", object_key="new-source.pdf",
-            original_filename="new-source.pdf", mime_type="application/pdf", size_bytes=1, status="uploaded",
-            created_by=user.id,
-        )
-        use_cases = build_document_job_use_cases(
-            self.settings,
-            job_repository=job_repository,
-            event_repository=Mock(),
-            file_repository=Mock(get_document_file=Mock(return_value=source)),
-            template_read_service=self.reader,
-            job_resource_snapshot_service=JobResourceSnapshotService(self.settings, self.resources),
-        )
-        request = DocumentJobCreateRequest(source_file_id=source.id)
-        created = use_cases.submission.create_job(user=user, trace_id=None, **request.model_dump())
-        self.assertEqual(created.template_version_id, "default@3")
-        binding = created.request_snapshot["resources"]["template"]
-        self.assertEqual((binding["resource_id"], binding["version"], binding["snapshot_hash"]),
-                         ("default", "3", published.snapshot_hash))
-        job_repository.create_document_job.assert_called_once_with(created)
+    def test_external_logo_policy_distinguishes_draft_declaration_and_legacy_use(self) -> None:
+        self.reader.bootstrap_manifest_versions()
+        docx_path = self._docx("history/logo.docx", "外部页眉图像")
+        for target, overrides, expected_field in (
+            ("基础配置", {}, "header.logo_path"),
+            ("语言覆盖", {"en": {"header": {"logo_path": " ", "enabled": True}}},
+             "language_overrides.header.logo_path"),
+        ):
+            with self.subTest(target=target):
+                layout_path = self.root / "logo-layout.yaml"
+                layout_path.write_text(yaml.safe_dump({
+                    "schema_version": "template-config/v1",
+                    "header": {"logo_path": "logo.png", "enabled": False} if not overrides else {"enabled": False},
+                    "language_overrides": overrides,
+                }))
+                version = 3 if not overrides else 4
+                draft = self._register(
+                    version, self._payload(version, docx_path, layout_path=layout_path),
+                    status=ResourceVersionStatus.DRAFT,
+                )
+                version_id = f"default@{version}"
+                self.assertIsNotNone(
+                    self.reader.resolve_template_version(version_id, allow_draft=True, for_new_binding=True).resource_binding,
+                )
+                before = self._repository_snapshot()
+                with self.assertRaises(TemplatePackageValidationError) as caught:
+                    self.reader.publish_template_version(
+                        "default", version, make_default=True, publish_reason="试发",
+                        verification_job_id="proof", verification_note="验证完成",
+                    )
+                self.assertEqual((caught.exception.code, caught.exception.path),
+                                 ("template_external_logo_forbidden", expected_field))
+                self.assertEqual(self._repository_snapshot(), before)
+
+                self.repository.save_resource_version(draft.model_copy(update={"status": ResourceVersionStatus.PUBLISHED}))
+                if not overrides:
+                    self.assertIsNotNone(self.reader.resolve_template_version(version_id, for_new_binding=True).resource_binding)
+                else:
+                    for content in (None, b"mutable logo bytes"):
+                        if content is not None:
+                            (self.root / " ").write_bytes(content)
+                        with self.assertRaises(TemplatePackageValidationError) as caught:
+                            self.reader.resolve_template_version(version_id, for_new_binding=True)
+                        self.assertEqual(caught.exception.code, "legacy_internal_only")
+                    self.assertEqual(self.reader.resolve_template_version(version_id).layout_config_path, layout_path)
 
     def test_publish_cas_refuses_changes_after_preflight_without_switching_default(self) -> None:
         self.reader.bootstrap_manifest_versions()
@@ -565,8 +619,8 @@ class TemplateSeedHistoryTests(TestCase):
                 self.repository.save_resource_version(draft)
                 before = self.repository.writes.copy()
 
-                def preflight_and_change(record):
-                    check(record)
+                def preflight_and_change(record, **kwargs):
+                    check(record, **kwargs)
                     self.repository.save_resource_version(changed)
 
                 with patch.object(self.reader, "validate_registered_template_package", side_effect=preflight_and_change):

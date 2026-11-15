@@ -110,9 +110,13 @@ class V2PublicationFixture:
                 yield runtime, execution, provider, job, user, client, headers
 
     @contextmanager
-    def publication_runtime(self, *, kind="file", pages=True, complete=True, approved=True, legacy_base=True):
+    def publication_runtime(
+        self, *, kind="file", pages=True, complete=True, approved=True, legacy_base=True, configure_layout=None,
+    ):
         with self.runtime(kind=kind, pages=pages, quality="passed") as (runtime, execution, provider, job, user, client, headers):
-            job = self.install_publication_resources(runtime, execution, job, complete=complete)
+            job = self.install_publication_resources(
+                runtime, execution, job, complete=complete, configure_layout=configure_layout,
+            )
             if legacy_base:
                 # 合法历史任务不具有 fresh 基础贡献槽；实际表格/预览/发布认证仍完整执行。
                 # 现代表格的自由布局风险会保持 pending，不能用本夹具宣称自动通过质量门。
@@ -132,10 +136,15 @@ class V2PublicationFixture:
             admin = user.model_copy(update={"id": "user_admin", "username": "admin", "role": "admin"})
             yield runtime, result, admin, user, client, headers, provider
 
-    def install_publication_resources(self, runtime, execution, job, *, complete=True):
+    def install_publication_resources(self, runtime, execution, job, *, complete=True, configure_layout=None):
         repository = resource_fixtures._MemoryResourceVersionRepository()
         resources = ResourceVersionService(repository)
         selection = runtime.template_read_service.resolve_template_version(job.template_version_id)
+        layout_path = selection.layout_config_path
+        if configure_layout is not None:
+            layout_path = runtime.settings.data_path / "publication-layout.yaml"
+            layout_path.write_bytes(selection.layout_config_path.read_bytes())
+            configure_layout(layout_path)
         rules_store = TermRulesStore()
         rules_path = runtime.settings.data_path / "publication-symbol-rules.yaml"
         rules_path.write_text(TermRuleYamlCodec().dump_legacy_runtime_yaml(rules_store), encoding="utf-8")
@@ -143,8 +152,8 @@ class V2PublicationFixture:
         for resource_type, resource_id, version, payload in (
             ("template", selection.template_id, str(selection.version), {"docx_path": str(selection.template_path),
                 "docx_sha256": content_sha256(selection.template_path.read_bytes()),
-                "layout_config_path": str(selection.layout_config_path),
-                "layout_config_sha256": content_sha256(selection.layout_config_path.read_bytes())}),
+                "layout_config_path": str(layout_path),
+                "layout_config_sha256": content_sha256(layout_path.read_bytes())}),
             ("term_rule_set", "publication-rules", "1", {"store": rules_store.model_dump(mode="json")}),
         ):
             repository.save_resource_version(ResourceVersionRecord(resource_type=resource_type, resource_id=resource_id,

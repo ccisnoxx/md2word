@@ -41,7 +41,14 @@
         </el-table-column>
           <el-table-column prop="name" label="名称" min-width="150" />
           <el-table-column prop="description" label="说明" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="version" label="当前版本" width="96" />
+          <el-table-column label="当前版本" width="136">
+            <template #default="{ row }">
+              <span>{{ row.version }}</span>
+              <div v-if="row.legacy_internal_only">
+                <el-tag type="warning" size="small" effect="plain">仅供内部使用</el-tag>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column label="默认" width="80">
           <template #default="{ row }">
             <el-tag v-if="row.is_default" type="success" effect="plain">默认</el-tag>

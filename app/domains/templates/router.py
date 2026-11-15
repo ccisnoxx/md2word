@@ -109,7 +109,7 @@ async def create_template(
     name: str = Form(...),
     description: str = Form(default=""),
     enabled: bool = Form(default=True),
-    layout_config_path: str | None = Form(default=None),
+    layout_config_path: str = Form(...),
     render_policy_json: str = Form(default="{}"),
     template: UploadFile = File(...),
     actor: ActorContext = Depends(require_admin_actor),

@@ -88,10 +88,11 @@ class DocumentJobSubmission:
             translation_profile_version=translation_profile_version,
             debug_full_text=debug_full_text,
         )
-        normalized_template_version_id = self.request_snapshot.resolve_template_version_id(
+        template = self.request_snapshot.resolve_new_template(
             template_version_id,
             allow_draft=user.role == "admin",
         )
+        normalized_template_version_id = template.template_version_id
         normalized_term_version_id = self.request_snapshot.resolve_term_version_id(
             mode,
             self.request_snapshot.legacy_translation_term_version_id(mode, term_version_id, translation_term_version),
@@ -112,12 +113,14 @@ class DocumentJobSubmission:
             translation_term_version=translation_term_version,
             translation_profile_id=translation_profile_id,
             translation_profile_version=translation_profile_version,
+            template_layout_config_sha256=template.layout_config_sha256,
             resource_snapshot=self.request_snapshot.build_resource_snapshot(
                 job_id=job_id,
                 mode=mode,
                 document_language=document_language,
                 template_version_id=normalized_template_version_id,
                 template_selection_explicit=bool(self.access.normalize_optional_text(template_version_id)),
+                new_template_binding=template.resource_binding,
                 term_rule_set_id=term_rule_set_id,
                 term_rule_set_version=term_rule_set_version,
                 term_rule_department_id=user.department_id,

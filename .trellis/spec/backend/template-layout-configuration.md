@@ -14,6 +14,7 @@
 - `TemplateReadService.bootstrap_manifest_versions() -> None`：启动登记缺失 seed，并核对已有内置 seed 的 DOCX 身份。
 - `TemplateReadService.list_template_versions(template_id: str) -> list[TemplateVersionResponse]`：MySQL 列出已登记版本。file/SQLite 保留旧目录/manifest 视图。
 - `GET /api/v1/templates/{template_id}/versions`：沿用 admin-only 和现有响应字段。
+- `POST /api/v1/templates`：multipart 的 `layout_config_path` 必填。模板摘要和版本响应投影 `legacy_internal_only`。
 - `GET /api/v1/templates/{template_id}/layout-config?version={int}`：admin-only 读取默认或指定版本。
 - `POST /api/v1/templates/{template_id}/layout-config/versions`：admin-only 创建不可变 draft。
 - `POST /api/v1/templates/{template_id}/versions/{version}/set-default`：admin-only 把指定 published 版本设为默认，请求体必须提供非空 `set_default_reason`。
@@ -92,9 +93,12 @@
 
 #### 3.5 联合预检与任务实物
 
-- 模板创建、替换、版式草稿、发布和 seed bootstrap 共用联合预检。输入为实际 DOCX 与可选 YAML 字节，校验 OPC 内部关系、可达装饰媒体、Word 样式、页面几何和语言配置变体。版式草稿的严格编辑规则继续由 `apply_layout_changes` 拥有。
+- 模板创建、替换、版式草稿、发布和 seed bootstrap 共用联合预检，使用实际的 DOCX 和 YAML 字节校验 OPC 内部关系、可达装饰媒体、Word 样式、页面几何和语言配置变体。新版本必须绑定 YAML。既有模板的上传与替换可继承有效配置，登记最终使用的路径及哈希。版式草稿的严格编辑规则继续由 `apply_layout_changes` 拥有。
+- 新发布草稿的基础配置和语言覆盖均须清除非空 `header.logo_path`。已有发布版本在所有语言都不读取外部 Logo 时可继续使用，包括保持原 YAML 和哈希的 `default@1`、`default@2`。从旧配置派生合规样式草稿时仅清理新候选的无效力路径。
+- 缺 YAML 或任一语言会读取外部 Logo 的历史版本仅供原任务恢复和内部下载。模板 API 投影 `legacy_internal_only`。全局和版本默认切换都拒绝该类版本。当前指针由管理员显式切换。
 - `part_number` 和 `category` 保留历史配置与预览值，编辑器两组均只读。消费测试登记每个可编辑叶子及适用的 OOXML 分支。
 - 正式任务的 `request_snapshot.resources` 固化同一已解析模板版本和格式规则。快照记录及 canonical payload 自洽后，按内容 SHA-256 核验 DOCX、YAML 和部门规则，从任务目录使用同次已认证字节。任务路径按绑定身份定位，文件以同目录临时文件、flush、fsync、原子 replace 写入，已有副本先对账。
+- file/SQLite 环境没有登记资源快照时，新任务将准入所读 YAML 的 `template_layout_config_sha256` 保存到请求快照。renderer 对本次实际读取的字节做比较。无此字段的历史任务沿用原恢复路径。
 - 普通重试和显式术语重绑都保留模板绑定。模板级停用或删除只阻止新建和克隆任务，包含继承源快照的克隆。已绑定任务的 Worker 仅认证数据库版本状态及快照，显式禁用版本仍阻止渲染。正式渲染与发布证明共用实际资源身份；无快照的历史任务继续通过既有模板与规则入口。
 
 ### 4. Validation & Error Matrix
@@ -103,6 +107,8 @@
 |---|---|
 | 非 admin 读取、列版本或保存 | `403`，前后端同时隐藏/拒绝 |
 | 模板或版本不存在 | `404`，不 fallback 到其他 YAML |
+| 新资源缺 YAML，或草稿声明外部 Logo 后申请发布 | 按入口返回模板字段错误，写入前拒绝 |
+| 无 YAML 的旧版本或会读取外部 Logo 的旧发布版本用于新任务、克隆或设默认 | `legacy_internal_only`，拒绝绑定，保留原指针及任务记录 |
 | active version 或 base hash 变化 | `409`，返回当前 active version 与 config hash |
 | 未知、只读、类型、范围、边距或 Word 表格样式错误 | `422`，返回 `field_errors[].path/code/message` |
 | MySQL 版本服务或原子文件写入不可用 | `503`，不声明保存成功 |
@@ -138,7 +144,7 @@
 - Good：从当前 `default@2` 只提交 `normal.western_font_name`，生成 `default@3` draft，seed YAML 与默认指针不变；真实 DOCX 的 `eastAsia/ascii/hAnsi/cs` 分别匹配三类字体。
 - Good：manifest 发布 bundled `default@2` 后，已有生产 `default@1` 仍按固定路径/hash 读取，运维验证通过后再显式 set-default。
 - Base：旧 YAML 只有 `font_name: 宋体`，无需迁移即可读取和生成，四个字体槽位继续使用宋体。
-- Base：历史 published 版本通过 set-default 回滚，使用原登记文件及哈希，指针和成功审计一起提交。
+- Base：符合 YAML 与 Logo 准入的历史 published 版本通过 set-default 回滚，使用原登记文件及哈希，指针和成功审计一起提交。
 - Good：manifest 进入 seed v2 后，旧 v1 仍按数据库默认指针和原 payload 列出；目录残留 DOCX 不遮蔽登记文件。
 - Bad：为消除同号冲突更新 published payload/hash，或用完整新 manifest hash 拒绝合法元数据变化。
 - Bad：提交完整 YAML、只读字段、未知字段或不存在的 Word table style。
@@ -160,12 +166,14 @@
 - 配置 API/schema 变化后运行前端 unit/build；smoke mock 至少验证三种字体标签可见。
 - `tests.test_template_seed_history`：真实读取/版本服务、临时自有资源和最小内存仓储端口，覆盖登记幂等与默认保留、内置冲突、元数据/关闭状态、上传 draft 排除、历史补全、登记路径优先/丢失和去重/legacy。该证据只保护服务层与文件快照合同，不推断真实 MySQL 并发或 Word 外观结论；具体运行范围遵守当前用户授权。
 
-- `tests.test_template_package_validator`、`tests.test_template_seed_history`：校验实际模板包、失败无写入、草稿发布 CAS 和 seed 历史。
+- `tests.test_template_package_validator`、`tests.test_template_seed_history`：校验实际模板包、YAML 缺失和 Logo 语言覆盖的前置拒绝、草稿发布 CAS 和 seed 历史。
 - `tests.test_job_render_resources`：校验文件、payload、并发物化、部门规则、旧任务和同次发布证明。
 - `tests.test_template_config_consumption`：检查完整 editor 字段集合，逐叶变异 OOXML。
 - `python scripts/ops/check_release.py`：检查内置默认绑定、联合预检、消费覆盖和装饰合同。
 
 ### 7. Wrong vs Correct
+
+绑定新任务前检查目标版本登记的 YAML 和有效页眉配置。模板目录元数据和渲染器默认版式无法替代版本绑定。历史内部专用版本在准入时返回 `legacy_internal_only`，避免延迟到正式发布时才返回来源不可用。
 
 #### Wrong
 

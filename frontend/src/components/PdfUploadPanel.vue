@@ -178,7 +178,7 @@ import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { useAuthStore } from "@/stores/auth";
 import { getMaxUploadBytes, uploadFileContent, validatePdfFile } from "@/utils/upload";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
-import { readinessCodeText } from "@/utils/displayText";
+import { LEGACY_DEFAULT_TEMPLATE_WARNING, readinessCodeText } from "@/utils/displayText";
 import { configOptionKey, configVersionId, findConfigOption } from "@/utils/configOptions";
 import {
   documentJobConfigWarningsForMode,
@@ -239,9 +239,6 @@ const selectedModeDisabled = computed(() =>
   selectedModeRequiresTranslationResources.value
   && !isTranslationModeAvailable(configSummary.value, selectedTranslationMode.value),
 );
-const createDisabled = computed(() => (
-  !selectedFile.value || configLoading.value || configUnavailable.value || p0ExecutionBlocked.value || selectedModeDisabled.value
-));
 const modeReadinessHint = computed(() => {
   if (!configSummary.value) {
     return "";
@@ -296,6 +293,13 @@ const activeStep = computed(() => {
 const selectedTemplateOption = computed(() =>
   findConfigOption(configSummary.value?.options.templates || [], selectedTemplateVersion.value),
 );
+const templateUnavailable = computed(() => (
+  !selectedTemplateOption.value && configSummary.value?.readiness.warnings.includes(LEGACY_DEFAULT_TEMPLATE_WARNING)
+));
+const configurationBlocksCreate = computed(() => (
+  configLoading.value || configUnavailable.value || p0ExecutionBlocked.value || selectedModeDisabled.value || templateUnavailable.value
+));
+const createDisabled = computed(() => !selectedFile.value || configurationBlocksCreate.value);
 const selectedTermRuleOption = computed(() =>
   findConfigOption(configSummary.value?.options.term_rule_sets || [], selectedTermRuleVersion.value),
 );
@@ -354,14 +358,7 @@ function handleExceed(): void {
 }
 
 async function submit(): Promise<void> {
-  if (
-    !selectedFile.value
-    || submitting.value
-    || configLoading.value
-    || configUnavailable.value
-    || p0ExecutionBlocked.value
-    || selectedModeDisabled.value
-  ) {
+  if (!selectedFile.value || submitting.value || configurationBlocksCreate.value) {
     return;
   }
 
