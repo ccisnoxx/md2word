@@ -15,16 +15,36 @@ from uuid import uuid4
 from app.clients.mineru_client import MinerUClient, MinerUError
 from app.core.config import Settings
 from app.domains.document_jobs.execution_support import DocumentJobLifecycle, require_uploaded_file
-from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobRecord
+from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobMinerUUpload, DocumentJobRecord
 from app.domains.document_jobs.repository import (
     DocumentJobCallbackMessageStoreProtocol,
     DocumentJobRepositoryProtocol,
+)
+from app.domains.document_jobs.table_value_column_sources import (
+    MINERU_RESULT_IDENTITY_VERIFIED, MINERU_UPLOADED_SOURCE_SHA256,
 )
 from app.domains.files import FileUploadService
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.mineru.config import EffectiveMinerUConfig
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import normalize_mineru_language, spec_for_document_job_mode
+
+
+def _matches_mineru_result_identity(
+    payload: Any, *, batch_id: str | None, data_id: str | None, full_zip_url: Any,
+) -> bool:
+    """仅认可服务端给出的同批唯一结果，兼容字段补值不能作为证明。"""
+    if (not isinstance(payload, dict) or not batch_id or not data_id
+            or not full_zip_url or payload.get("batch_id") != batch_id):
+        return False
+    items = payload.get("extract_result", [payload])
+    if not isinstance(items, list):
+        return False
+    matched = [item for item in items if isinstance(item, dict) and str(item.get("data_id") or "") == data_id]
+    return (len(matched) == 1 and matched[0].get("data_id") == data_id
+            and matched[0].get("full_zip_url") == full_zip_url
+            and str(matched[0].get("state") or "").lower() in {"done", "success", "succeeded"})
+
 
 class MinerUExecution:
     """MinerU 执行：由 DocumentJobExecutionService 构造并持有，负责解析提交与轮询、回调排队与重放、结果下载登记。
@@ -80,7 +100,14 @@ class MinerUExecution:
             if not batch_id:
                 source_file = require_uploaded_file(self.file_repository, job.source_file_id)
                 source_path = Path(temp_dir) / source_file.original_filename
-                source_path.write_bytes(self.file_service.read_file_content(source_file))
+                source_bytes = self.file_service.read_file_content(source_file)
+                source_sha256 = "sha256:" + hashlib.sha256(source_bytes).hexdigest()
+                upload_binding = (DocumentJobMinerUUpload(
+                    source_file_id=source_file.id, source_pdf_sha256=source_sha256, parse_generation=job.retry_count,
+                ) if (len(source_bytes), source_sha256) == (source_file.size_bytes, source_file.checksum_sha256) else None)
+                # 用同一份已量测的字节创建实际 PUT 读取的私有临时文件。
+                source_path.write_bytes(source_bytes)
+                del source_bytes
                 callback = self.settings.mineru_callback_url.strip() or None
                 callback_seed = self._build_callback_seed() if callback else None
                 batch_id, _file_urls = client.upload_files_batch(
@@ -100,6 +127,7 @@ class MinerUExecution:
                     mineru_batch_id=batch_id,
                     mineru_data_id=data_id,
                     mineru_callback_seed=callback_seed,
+                    mineru_upload_binding=upload_binding,
                     progress=max(job.progress, 15),
                     updated_at=utc_now(),
                 )
@@ -159,6 +187,9 @@ class MinerUExecution:
                 temp_dir=Path(temp_dir),
                 trace_id=trace_id,
                 expected_retry_count=job.retry_count,
+                result_identity_verified=_matches_mineru_result_identity(
+                    payload, batch_id=job.mineru_batch_id, data_id=job.mineru_data_id, full_zip_url=full_zip_url,
+                ),
             )
 
     def find_job_for_mineru_callback(self, payload: dict[str, Any]) -> DocumentJobRecord | None:
@@ -303,6 +334,20 @@ class MinerUExecution:
         state = str(payload.get("state") or "").lower()
         batch_id = str(payload.get("batch_id") or job.mineru_batch_id or "").strip()
         data_id = str(payload.get("data_id") or job.mineru_data_id or job.id).strip()
+        if (job.mineru_batch_id and job.mineru_batch_id != batch_id
+                or job.mineru_data_id and job.mineru_data_id != data_id):
+            # 先固定上传建立的本代身份，迟到回调不能改写后续主动轮询的查询目标。
+            ignored = self.callback_message_store.mark_callback_message_ignored(
+                running_message.id, error_code="mineru_callback_identity_mismatch",
+                error_message="回调批次或数据标识与本代已登记的上传身份不一致。",
+                updated_at=utc_now(),
+            )
+            self._record_callback_ignored_event(job, ignored, trace_id=trace_id)
+            return job
+        result_identity_verified = (
+            payload.get(MINERU_RESULT_IDENTITY_VERIFIED) is True
+            and (job.mineru_batch_id, job.mineru_data_id) == (batch_id, data_id)
+        )
         job = self._sync_callback_ids(job, batch_id=batch_id, data_id=data_id, trace_id=trace_id)
         if job.status != "running" or job.stage != "parsing":
             ignored = self.callback_message_store.mark_callback_message_ignored(
@@ -351,6 +396,7 @@ class MinerUExecution:
                 temp_dir=Path(temp_dir),
                 trace_id=trace_id,
                 expected_retry_count=running_message.job_retry_count,
+                result_identity_verified=result_identity_verified,
             )
         if parsed.status != "running" or parsed.stage != "parsed":
             ignored = self.callback_message_store.mark_callback_message_ignored(
@@ -381,13 +427,21 @@ class MinerUExecution:
         content_hash = None
         if isinstance(content, str) and content.strip():
             content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        return {
+        message = {
             "batch_id": batch_id,
             "data_id": data_id,
             "state": state or None,
             "full_zip_url": str(full_zip_url) if full_zip_url is not None else None,
             "content_hash": content_hash,
         }
+        # 回调签名覆盖 content，外层补值和兼容别名不能替代签名内的结果身份。
+        if (content_hash and (batch_id, data_id) == (job.mineru_batch_id, job.mineru_data_id)
+                and _matches_mineru_result_identity(
+                payload.get("data"), batch_id=job.mineru_batch_id, data_id=job.mineru_data_id,
+                full_zip_url=full_zip_url,
+        )):
+            message[MINERU_RESULT_IDENTITY_VERIFIED] = True
+        return message
 
     def _build_callback_dedupe_key(self, *, job_id: str, retry_count: int, payload: dict[str, Any]) -> str:
         stable_payload = {
@@ -411,9 +465,9 @@ class MinerUExecution:
         trace_id: str | None,
     ) -> DocumentJobRecord:
         patch: dict[str, Any] = {}
-        if batch_id and batch_id != (job.mineru_batch_id or ""):
+        if batch_id and not job.mineru_batch_id:
             patch["mineru_batch_id"] = batch_id
-        if data_id and data_id != (job.mineru_data_id or ""):
+        if data_id and not job.mineru_data_id:
             patch["mineru_data_id"] = data_id
         if not patch:
             return job
@@ -474,6 +528,7 @@ class MinerUExecution:
         temp_dir: Path,
         trace_id: str | None,
         expected_retry_count: int | None = None,
+        result_identity_verified: bool = False,
     ) -> DocumentJobRecord:
         """下载 MinerU 原始结果包，登记为 document_file 并把任务推进到 parsed。"""
 
@@ -497,6 +552,21 @@ class MinerUExecution:
         latest, can_continue = self._refresh_mineru_parse_attempt(job, trace_id=trace_id)
         if not can_continue:
             return latest
+        upload_binding = latest.mineru_upload_binding
+        metadata = {
+            "source_file_id": latest.source_file_id,
+            "mineru_batch_id": batch_id,
+            "mineru_data_id": data_id,
+            "full_zip_url": full_zip_url,
+            "retry_count": latest.retry_count,
+        }
+        if (
+            result_identity_verified and upload_binding is not None
+            and (upload_binding.source_file_id, upload_binding.parse_generation) == (latest.source_file_id, latest.retry_count)
+            and (latest.mineru_batch_id, latest.mineru_data_id) == (batch_id, data_id)
+        ):
+            metadata[MINERU_RESULT_IDENTITY_VERIFIED] = True
+            metadata[MINERU_UPLOADED_SOURCE_SHA256] = upload_binding.source_pdf_sha256
         raw_file = self.file_service.register_generated_content(
             tenant_id=latest.tenant_id,
             company_id=latest.company_id,
@@ -506,13 +576,7 @@ class MinerUExecution:
             filename="mineru_raw_result.zip",
             mime_type="application/zip",
             content=raw_zip_path.read_bytes(),
-            metadata={
-                "source_file_id": latest.source_file_id,
-                "mineru_batch_id": batch_id,
-                "mineru_data_id": data_id,
-                "full_zip_url": full_zip_url,
-                "retry_count": latest.retry_count,
-            },
+            metadata=metadata,
         )
         parsed = self.job_repository.update_document_job_if_current(
             latest.id,

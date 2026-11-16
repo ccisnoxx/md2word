@@ -34,7 +34,8 @@ from app.services.renderer.block_anchors import validate_block_anchor_evidence
 from app.services.renderer.render_event_summary import build_renderer_event_summary
 from app.services.renderer.render_evidence import validate_persisted_renderer_content
 from app.services.renderer.render_evidence_validation import validate_persisted_render_evidence
-from app.services.tables.evidence import TableEvidenceError
+from app.services.tables.evidence import TableEvidenceError, legacy_value_column_replay_for_report
+from app.services.tables.quality import LegacyValueColumnReplay
 
 
 class WordResultFinalizer:
@@ -147,17 +148,24 @@ class WordResultFinalizer:
         if ir_file.size_bytes != len(ir_bytes) or ir_file.checksum_sha256 != placeholder_checksum(ir_bytes):
             raise ValueError("主 DOCX 的原始 IR 字节与描述不一致。")
         ir = DocumentIR.model_validate_json(ir_bytes)
-        validate_persisted_renderer_content(ir, content, record.metadata,
+        validated = validate_persisted_renderer_content(ir, content, record.metadata,
             expected_template_version_id=record.metadata.get("template_version_id"))
-        self._validate_optional_block_anchors(ir, content, record.metadata)
+        self._validate_optional_block_anchors(
+            ir, content, record.metadata,
+            legacy_value_column_replay=legacy_value_column_replay_for_report(validated.get("table_evidence")),
+        )
         return ir_file, ir, content
 
-    def _validate_optional_block_anchors(self, document_ir: DocumentIR, content: bytes, metadata: dict[str, Any]) -> None:
+    def _validate_optional_block_anchors(
+        self, document_ir: DocumentIR, content: bytes, metadata: dict[str, Any], *,
+        legacy_value_column_replay: LegacyValueColumnReplay | None,
+    ) -> None:
         """历史恢复只局部认证可选锚点；保留原 metadata，不重建或升级创建事实。"""
         if "block_anchor_evidence" not in metadata:
             return
         verified = validate_persisted_render_evidence(document_ir, content,
-            render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"))
+            render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"),
+            legacy_value_column_replay=legacy_value_column_replay)
         anchors = None
         if verified is not None:
             plan, trace = verified

@@ -331,7 +331,7 @@ class DocumentJobDeliveryStateApiTests(TestCase):
                         elif race == "blocked":
                             repository.update_document_job(current_id, quality_status="blocked")
                         else:
-                            self.assertIsNone(kwargs["expected_result_file_id"])
+                            self.assertIsNone(kwargs["submission"].binding.result_file_id)
                             repository.update_document_job(current_id, result_file_id=file.id)
                         return original(current_id, **kwargs)
 

@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/index.md","reason":"后端和 Word 交付规范入口"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"真实 InnoDB 并发与原子结果合同"}
+{"file":".trellis/spec/backend/document-job-mode-contract.md","reason":"原排版、同代恢复和选定结果合同"}
+{"file":".trellis/tasks/11-15-table-value-pdf-binding-rollout/research/worker-and-rollout.md","reason":"执行入口、实际容器取证和定向停用"}
+{"file":".trellis/tasks/11-15-table-value-pdf-binding-rollout/research/mineru-provenance.md","reason":"原上传与真实回包同源核对"}
+{"file":".trellis/tasks/11-15-table-value-pdf-binding-rollout/research/mysql-concurrency.md","reason":"真实 MySQL 夹具和竞争调度"}
+{"file":".trellis/tasks/11-15-table-value-pdf-binding-rollout/research/approval-window.md","reason":"锁内审批边界与发布独立认证"}

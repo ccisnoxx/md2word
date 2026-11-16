@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager, ExitStack
+from contextlib import contextmanager, ExitStack, nullcontext
 from datetime import datetime, timezone
 from typing import Any, Literal
 
 from app.domains.document_jobs.new_generation import (
     GENERATION_REQUESTS_ENVELOPE, NewGenerationAcceptance, NewGenerationSubmission, NewGenerationLedgerEntry,
+    TableValueColumnReplay, new_generation_file_ids, read_table_value_column_replay,
     NewGenerationCommitUnknownError, accept_new_generation, decode_generation_requests,
     ensure_generation_ledger_not_patched, read_generation_request, replay_generation_request,
 )
@@ -17,7 +18,7 @@ from app.domains.document_jobs.publication import (
     PUBLICATION_ENVELOPE, PublicationRecord, PublicationSubmission, commit_publication, decode_file_publications, validate_publication_history,
 )
 from app.domains.document_jobs.review import (
-    REVIEW_ENVELOPE, ReviewRecord, ReviewSubmission, decode_file_history, validate_history, submit_review,
+    REVIEW_ENVELOPE, ReviewEvidenceSnapshot, ReviewRecord, ReviewSubmission, decode_file_history, validate_history, submit_review,
 )
 from app.domains.document_jobs.models import (
     DocumentJobCallbackMessage,
@@ -174,8 +175,9 @@ class FileDocumentJobRepository:
         self, job_id: str, *, expected_retry_count: int, max_retries: int, **patch: Any,
     ) -> DocumentJobRecord | None:
         ensure_generation_ledger_not_patched(patch)
-        with self._locked_job(job_id) as (connection, existing):
-            updated = retry_job(existing, expected_retry_count=expected_retry_count, max_retries=max_retries, **patch)
+        with self._locked_payload(job_id) as (connection, payload):
+            updated = retry_job(DocumentJobRecord.model_validate(payload), expected_retry_count=expected_retry_count,
+                                max_retries=max_retries, generation_payload=payload, **patch)
             if updated is not None:
                 self._write_job(connection, updated)
             return updated
@@ -212,14 +214,20 @@ class FileDocumentJobRepository:
                 self._write_job(connection, updated)
             return updated
 
-    def update_document_job_review_if_current(self, job_id: str, *, submission: ReviewSubmission) -> DocumentJobRecord | None:
-        with self._locked_payload(job_id) as (payload, _):
+    def update_document_job_review_if_current(
+        self, job_id: str, *, submission: ReviewSubmission, evidence_snapshot: ReviewEvidenceSnapshot | None = None,
+    ) -> DocumentJobRecord | None:
+        lifecycle_lock = self.backend.publication_lifecycle_lock() if evidence_snapshot is not None else nullcontext()
+        with lifecycle_lock, self._locked_payload(job_id) as (payload, _), ExitStack() as locks:
             existing = DocumentJobRecord.model_validate(payload)
             records = decode_file_history(payload)
             validate_history(existing, records)
             prior = next((r for r in records if r.id == submission.record_id), None)
             updated, record = submit_review(existing, submission, prior)
             if record is not None:
+                if evidence_snapshot is not None:
+                    current = self._lock_file_records(locks, evidence_snapshot.file_ids)
+                    evidence_snapshot.require_current(existing, current, now=utc_now())
                 self._insert_review(payload, record)
                 self._write_job(payload, updated)
             return updated
@@ -259,6 +267,13 @@ class FileDocumentJobRepository:
             result = (entry.acceptance, DocumentJobRecord.model_validate(payload)) if entry is not None else None
         return result
 
+    def get_document_job_table_value_column_replay(
+        self, job_id: str, generation: int,
+    ) -> TableValueColumnReplay | None:
+        with self._locked_payload(job_id) as (_, payload):
+            return read_table_value_column_replay(payload, job=DocumentJobRecord.model_validate(payload),
+                                                  generation=generation)
+
     def accept_document_job_new_generation(
         self, job_id: str, *, submission: NewGenerationSubmission, max_retries: int,
     ) -> tuple[NewGenerationAcceptance, DocumentJobRecord, bool]:
@@ -272,7 +287,7 @@ class FileDocumentJobRepository:
                 return prior.acceptance, job, True
             with ExitStack() as locks:
                 current_files = {}
-                for file_id in sorted({job.source_file_id, *([job.result_file_id] if job.result_file_id else [])}):
+                for file_id in new_generation_file_ids(job, submission):
                     locks.enter_context(record_lock(self.backend.document_files_dir / f"{file_id}.lock"))
                     file = files.get_document_file(file_id)
                     if file is not None:
@@ -291,17 +306,20 @@ class FileDocumentJobRepository:
     def is_document_file_protected(self, file_id: str) -> bool:
         return any(file_id in record.protected_file_ids for record in self.backend.list_publication_records())
 
-    def publish_document_job(self, job_id: str, *, submission: PublicationSubmission) -> tuple[PublicationRecord, bool]:
-        from app.infrastructure.persistence.file.files import FileDocumentFileRepository
+    def _lock_file_records(self, locks: ExitStack, file_ids: Sequence[str]) -> list[DocumentFileRecord]:
+        current_files = []
+        files = FileDocumentFileRepository(self.backend)
+        for file_id in file_ids:
+            locks.enter_context(record_lock(self.backend.document_files_dir / f"{file_id}.lock"))
+            current = files.get_document_file(file_id)
+            if current is not None:
+                current_files.append(current)
+        return current_files
 
+    def publish_document_job(self, job_id: str, *, submission: PublicationSubmission) -> tuple[PublicationRecord, bool]:
         files = FileDocumentFileRepository(self.backend)
         with self.backend.publication_lifecycle_lock(), self._locked_payload(job_id) as (payload, _), ExitStack() as locks:
-            current_files = []
-            for file_id in sorted({file.id for file in submission.files}):
-                locks.enter_context(record_lock(self.backend.document_files_dir / f"{file_id}.lock"))
-                current = files.get_document_file(file_id)
-                if current is not None:
-                    current_files.append(current)
+            current_files = self._lock_file_records(locks, sorted({file.id for file in submission.files}))
             updated, record, created = commit_publication(DocumentJobRecord.model_validate(payload), submission,
                 prior=self.backend.list_publication_records(), current_files=current_files,
                 all_files=files.list_document_files(), reviews=decode_file_history(payload), now=utc_now())

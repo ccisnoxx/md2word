@@ -9,6 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from app.services.document_ir.artifact_validator import MinerUValidationReport
 from app.services.document_ir.table_header_review import TableHeaderReview
 from app.services.document_ir.table_placeholder import TablePlaceholderBinding
+from app.services.document_ir.table_value_column_review import (
+    LegacyValueColumnReplay, PdfValueColumnPageEquivalence, PdfValueColumnUnresolved, TableValueColumnReview,
+)
 
 
 DocumentIRBlockType = Literal["heading", "paragraph", "table", "image", "list", "formula"]
@@ -85,6 +88,7 @@ class TableFragment(BaseModel):
     header_signature: str | None = None
     repeated_header_hint: RepeatedHeaderHint | None = None
     header_review: TableHeaderReview | None = Field(default=None, exclude_if=lambda value: value is None)
+    value_column_review: TableValueColumnReview | None = Field(default=None, exclude_if=lambda value: value is None)
     upstream_coverage: UpstreamTableCoverage | None = Field(default=None, exclude_if=lambda value: value is None)
     normalization_rule_id: str | None = None
     normalization_reason: Literal["explicit_table_placeholder", "strict_empty_table_placeholder"] | None = None
@@ -175,6 +179,15 @@ class DocumentIRMetadata(BaseModel):
     logical_table_groups_version: Literal["logical-table-groups/v1"] | None = None
     logical_table_groups: list[LogicalTableGroup] = Field(default_factory=list)
     logical_table_group_counts: dict[str, int] = Field(default_factory=dict)
+    pdf_value_column_unresolved: tuple[PdfValueColumnUnresolved, ...] = Field(
+        default=(), exclude_if=lambda value: not value,
+    )
+    legacy_value_column_replay: LegacyValueColumnReplay | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
+    pdf_value_column_page_equivalence: PdfValueColumnPageEquivalence | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
     table_references_version: Literal["table-reference/v1"] | None = None
     table_placeholders_version: Literal["table-placeholder/v1"] | None = None
     table_placeholders: list[TablePlaceholderBinding] = Field(default_factory=list)

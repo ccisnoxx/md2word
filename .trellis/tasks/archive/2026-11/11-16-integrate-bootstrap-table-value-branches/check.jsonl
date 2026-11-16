@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"定向检查与 OpenAPI 一致性"}
+{"file":".trellis/spec/backend/word-generation-rules.md","reason":"实物认证、旧案兼容和发布阻断"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"事务内重验和私有账本"}
+{"file":".trellis/spec/backend/runtime-configuration.md","reason":"冷启动和 Worker 复用"}

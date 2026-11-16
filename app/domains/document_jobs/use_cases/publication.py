@@ -60,6 +60,7 @@ from app.domains.document_jobs.use_cases.download_tokens import (
 )
 from app.domains.document_jobs.use_cases.events import DocumentJobEventWriter
 from app.domains.document_jobs.use_cases.read_model import DocumentJobReadModel
+from app.domains.document_jobs.use_cases.table_value_generation import prepare_table_value_column_replay
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.files.result_registration import file_lifecycle_unavailable, review_source_descriptor
@@ -69,6 +70,8 @@ from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import translation_mode_for_document_job_mode
 from app.services.auth.models import AuthenticatedUser
+from app.services.document_ir.table_placeholder import PdfCropSource
+from app.services.document_ir.table_value_column_review import TableValueColumnReview
 
 
 @dataclass(frozen=True)
@@ -145,8 +148,9 @@ class DocumentJobPublication:
 
     def request_new_generation(self, job_id: str, *, user: AuthenticatedUser, request_id: str,
         note: str, expected_source: ReviewExpectedSource, trace_id: str,
+        table_value_column_reviews: tuple[TableValueColumnReview, ...] | None = None,
     ):
-        """先按原 UUID 对账；只有新请求才认证原 PDF 和固定资源并原子接纳。"""
+        """先按原 UUID 对账，再认证本次实物、固定资源及同包核定。"""
         job = self._new_generation_job(job_id, user, request_id=request_id)
         try:
             key = str(UUID(request_id))
@@ -155,8 +159,10 @@ class DocumentJobPublication:
         note = note.strip()
         if not 1 <= len(note) <= 1000:
             raise ApplicationError("validation_error", "新代原因去除首尾空白后必须为 1..1000 字。")
+        review_sha256 = (digest([item.model_dump(mode="json") for item in table_value_column_reviews])
+            if table_value_column_reviews is not None else None)
         fingerprint = new_generation_request_sha256(job_id=job.id, actor_id=user.id,
-            expected_source=expected_source, note=note)
+            expected_source=expected_source, note=note, table_value_column_request_sha256=review_sha256)
         try:
             prior = self.job_repository.get_document_job_generation_request(job.id, request_id=key, actor_id=user.id)
             if prior is not None:
@@ -164,18 +170,33 @@ class DocumentJobPublication:
                 if acceptance.submission_sha256 != fingerprint:
                     raise NewGenerationConflict("new_generation_request_conflict")
                 return self._new_generation_response(acceptance, current, replayed=True), False
+            if table_value_column_reviews is not None:
+                if not self.settings.allows_table_value_pdf_binding(job.tenant_id, job.company_id):
+                    raise NewGenerationConflict("table_value_column_review_disabled")
+                if translation_mode_for_document_job_mode(job.mode) != "direct":
+                    raise NewGenerationConflict("table_value_column_review_mode_unsupported")
             reason = new_generation_eligibility_reason(job, max_retries=self.settings.p0_document_job_max_retries)
             if reason is not None:
                 raise NewGenerationConflict(reason)
             result_file = self.access.review_api_file(job, conflict_reason="new_generation_source_changed")
             if observed_review_source(job, result_file) != expected_source:
                 raise NewGenerationConflict("new_generation_source_changed")
-            source = self._verify_new_generation_source(job)
+            source, source_content = self._verify_new_generation_source(job)
+            replay = None
+            replay_files = ()
+            if table_value_column_reviews is not None:
+                replay, replay_files = prepare_table_value_column_replay(job, result_file,
+                    PdfCropSource(source.id, source.checksum_sha256, source_content), table_value_column_reviews,
+                    job_repository=self.job_repository, file_repository=self.file_repository,
+                    file_service=self.file_upload_service)
+            del source_content
             self._verify_new_generation_resources(job)
             acceptance, current, replayed = self.job_repository.accept_document_job_new_generation(job.id,
                 submission=NewGenerationSubmission(request_id=key, actor_id=user.id, note=note,
                     expected_source=expected_source, expected_request_snapshot_sha256=digest(job.request_snapshot),
-                    source_file=source, audit_id="audit_" + uuid4().hex, trace_id=trace_id),
+                    source_file=source, audit_id="audit_" + uuid4().hex, trace_id=trace_id,
+                    table_value_column_replay=replay, table_value_column_request_sha256=review_sha256,
+                    table_value_column_files=replay_files),
                 max_retries=self.settings.p0_document_job_max_retries)
         except NewGenerationConflict as error:
             message = (LEGACY_INTERNAL_ONLY_MESSAGE if error.reason_code == "legacy_internal_only"
@@ -256,7 +277,7 @@ class DocumentJobPublication:
             "current_generation": current.retry_count, "current_job": {field: getattr(current, field) for field in (
                 "id", "status", "stage", "progress", "retry_count", "result_file_id", "quality_status", "review_status", "delivery_status")}}
 
-    def _verify_new_generation_source(self, job: DocumentJobRecord) -> DocumentFileRecord:
+    def _verify_new_generation_source(self, job: DocumentJobRecord) -> tuple[DocumentFileRecord, bytes]:
         """锁外完整读取原 PDF；仓储随后在接受锁内复核冻结 descriptor。"""
         source = self.read_model.new_generation_source_file(job)
         if self.file_upload_service is None:
@@ -277,7 +298,7 @@ class DocumentJobPublication:
             raise NewGenerationConflict("new_generation_source_unavailable") from None
         if len(content) != source.size_bytes or "sha256:" + hashlib.sha256(content).hexdigest() != source.checksum_sha256:
             raise NewGenerationConflict("new_generation_source_changed")
-        return source.model_copy(deep=True)
+        return source.model_copy(deep=True), content
 
     def _verify_new_generation_resources(self, job: DocumentJobRecord) -> None:
         """只物化原绑定版本；缺快照、实物或翻译绑定时拒绝，不读取当前默认值。"""

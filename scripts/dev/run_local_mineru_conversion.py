@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one MinerU result package through the official md2word conversion runtime."""
+"""通过正式转换链路将一份本地 MinerU 结果包转换为 DOCX。"""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from loguru import logger
 from app.clients.openai_sdk import DEFAULT_MODEL
 from app.core.conversion_config import APP_CONFIG
 from app.services.document_ir.table_placeholder import PdfCropSource, checksum
+from app.services.document_ir.table_value_column_review import TableValueColumnReviewError
 from scripts.dev import formal_mineru_conversion
 
 
@@ -42,6 +43,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", help="Output DOCX path. Defaults to the runtime output rule.")
     parser.add_argument("--source-pdf", type=Path, help="用于校核或裁图的原始 PDF。")
     parser.add_argument("--table-header-reviews", type=Path, help="绑定当前 PDF 和 MinerU 结果的表头校核 JSON。")
+    parser.add_argument(
+        "--table-value-column-reviews", type=Path,
+        help="数值列核定 JSON，仅用于提供 --source-pdf 的原排版转换。",
+    )
+    parser.add_argument(
+        "--auto-table-value-columns", action="store_true",
+        help="用同源 PDF 的坐标证据自动核定数值列，仅用于提供 --source-pdf 的原排版转换。",
+    )
     parser.add_argument("--template", help="Optional Word template path.")
     parser.add_argument("--layout-config", help="Optional template layout YAML path.")
     parser.add_argument("--subscript-config", help="Optional term/subscript YAML path.")
@@ -139,6 +148,14 @@ def build_conversion_kwargs(args: argparse.Namespace, *, environ: dict[str, str]
         kwargs["table_header_reviews"] = formal_mineru_conversion.parse_table_header_reviews(
             args.table_header_reviews.expanduser().read_bytes()
         )
+    if args.table_value_column_reviews is not None:
+        if args.source_pdf is None:
+            raise TableValueColumnReviewError("pdf_source")
+        kwargs["table_value_column_reviews"] = formal_mineru_conversion.parse_table_value_column_reviews(
+            args.table_value_column_reviews.expanduser().read_bytes()
+        )
+    if args.auto_table_value_columns:
+        kwargs["auto_table_value_columns"] = True
     if args.source_pdf is not None:
         content = args.source_pdf.expanduser().read_bytes()
         kwargs["placeholder_source"] = PdfCropSource(
@@ -167,9 +184,29 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     configure_logging(args.log_level)
     try:
-        formal_mineru_conversion.run_conversion(**build_conversion_kwargs(args))
+        result = formal_mineru_conversion.run_conversion(**build_conversion_kwargs(args))
     except (OSError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
+    if args.auto_table_value_columns:
+        evidence = result.renderer_metadata["table_evidence"]
+        certified_count = sum(
+            "pdf_binding_sha256" in correction
+            for table in evidence["tables"]
+            for correction in table.get("value_column_corrections", ())
+        )
+        blockers = evidence["counts"]["blocker_count"]
+        logger.log("WARNING" if blockers else "INFO",
+                   "Word 认证通过的 PDF 数值列修正 {} 处，需人工核定 {} 处。表格质量 {}，剩余阻断项 {}。",
+                   certified_count, len(result.pdf_value_column_unresolved), evidence["status"], blockers)
+        for issue in result.pdf_value_column_unresolved:
+            logger.warning("需人工核定片段 {} 的源行 {}、源格 {}（零基），发现 {}，原因为 {}。",
+                           issue.fragment_id, issue.source_row_index, issue.source_cell_index,
+                           issue.finding_id, issue.reason)
+    elif args.table_value_column_reviews is not None:
+        evidence = result.renderer_metadata["table_evidence"]
+        blockers = evidence["counts"]["blocker_count"]
+        logger.log("WARNING" if blockers else "INFO",
+                   "已应用数值列核定，表格质量为 {}，剩余阻断项 {}。", evidence["status"], blockers)
 
 
 if __name__ == "__main__":

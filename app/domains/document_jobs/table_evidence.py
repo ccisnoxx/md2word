@@ -1,26 +1,34 @@
 """表格报告的应用绑定、受控实物读取与候选保留期，不拥有任务状态机。"""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import hashlib
 import re
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import ValidationError, field_validator, model_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.result_registration import ensure_result_descriptor_matches, retained_file_expiry
 from app.domains.resources.models import utc_now
 from app.services.document_ir.models import DocumentIR
+from app.services.document_ir.table_value_column_review import PdfValueColumnUnresolved
 from app.services.renderer.render_evidence import validate_persisted_renderer_content
 from app.services.tables.evidence import (
     Checksum, EvidenceModel, SafeId, TableEvidenceError, TableEvidenceReport,
     read_table_evidence, table_evidence_summary, VERSION,
 )
-from app.services.tables.models import VALUE_COLUMN_SPAN_AMBIGUOUS, NonNegativeInt, canonical_json_bytes, canonical_sha256
+from app.services.tables.models import (
+    LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS,
+    VALUE_COLUMN_SPAN_AMBIGUOUS,
+    NonNegativeInt,
+    canonical_json_bytes,
+    canonical_sha256,
+)
+from app.services.tables.quality import TableFinding
 
 
 class EvidencePreparation(EvidenceModel):
@@ -79,6 +87,8 @@ class TableEvidenceView(EvidenceModel):
     report_sha256: str | None = None
     summary: dict
     tables: list
+    unresolved_value_columns: dict[SafeId, tuple[PdfValueColumnUnresolved, TableFinding]] = Field(
+        default_factory=dict, exclude=True, repr=False)
 
 
 def _read_model(model, value):
@@ -105,6 +115,22 @@ def required_table_semantics_report_sha256(metadata: dict) -> str | None:
     if not isinstance(report_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", report_sha256) is None:
         raise TableEvidenceError("table_evidence_integrity")
     return report_sha256
+
+
+def has_value_column_corrections(metadata: dict) -> bool:
+    """从修正结果与渲染片段两处识别必须通过实物重验的主件。"""
+    report = metadata.get("table_evidence")
+    tables = report.get("tables") if isinstance(report, dict) else None
+    if isinstance(tables, list) and any(isinstance(table, dict) and "value_column_corrections" in table
+                                       for table in tables):
+        return True
+    rendering = metadata.get("table_rendering")
+    tables = rendering.get("tables") if isinstance(rendering, dict) else None
+    return isinstance(tables, list) and any(
+        isinstance(fragment, dict) and "value_column_review_sha256" in fragment
+        for table in tables if isinstance(table, dict) and isinstance(table.get("fragments"), list)
+        for fragment in table["fragments"]
+    )
 
 
 def ensure_selected_result_descriptor(job: DocumentJobRecord, result: DocumentFileRecord) -> None:
@@ -180,6 +206,35 @@ class VerifiedTableEvidence:
     summary: dict
     job: DocumentJobRecord
     files: tuple[DocumentFileRecord, ...]
+    document: DocumentIR = field(repr=False)
+    unresolved_value_columns: dict[str, tuple[PdfValueColumnUnresolved, TableFinding]] = field(repr=False)
+
+
+def _unresolved_value_columns(
+    document: DocumentIR, report: TableEvidenceReport,
+) -> dict[str, tuple[PdfValueColumnUnresolved, TableFinding]]:
+    """未决定位必须与同一份报告中仍生效的原跨列发现逐格对账。"""
+    pending = {item.finding_id: item for item in document.metadata.pdf_value_column_unresolved}
+    if not pending:
+        return {}
+    codes = {VALUE_COLUMN_SPAN_AMBIGUOUS, LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS}
+    matched = {}
+    for table in report.tables:
+        blockers = {flag.identity for flag in table.flags
+                    if flag.producer == "table_validator" and flag.code in codes and flag.severity == "blocker"}
+        for finding in table.validation.findings:
+            item = pending.get(finding.finding_id)
+            if item is None:
+                continue
+            origin = finding.evidence
+            if (finding.finding_id not in blockers or origin.rule_id not in codes
+                    or (origin.fragment_id, origin.source_row_index, origin.source_cell_index)
+                    != (item.fragment_id, item.source_row_index, item.source_cell_index)):
+                raise TableEvidenceError("table_evidence_integrity")
+            matched[finding.finding_id] = (item, finding)
+    if matched.keys() != pending.keys():
+        raise TableEvidenceError("table_evidence_integrity")
+    return matched
 
 
 def table_evidence_snapshot_values(job: DocumentJobRecord) -> tuple:
@@ -271,5 +326,6 @@ def verify_report(job, result, *, file_repository, file_service, job_repository)
             raise TableEvidenceError("table_evidence_integrity")
     except (ValueError, TypeError, KeyError):
         raise TableEvidenceError("table_evidence_integrity") from None
+    unresolved = _unresolved_value_columns(document, envelope.report)
     current()
-    return VerifiedTableEvidence(envelope, summary, snapshot, tuple(files))
+    return VerifiedTableEvidence(envelope, summary, snapshot, tuple(files), document, unresolved)

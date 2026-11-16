@@ -1,0 +1,29 @@
+[
+  {
+    "schema_version": "table-value-column-review/v1",
+    "source_pdf_sha256": "24f724cf0e795f6afeb6fec5c72ff8f144085c59d57fbf0a5c9efbf1808b1eb3",
+    "content_list_sha256": "fdc0ea4050914df39ce7d3e9e42798164d32d1f04b82bd9dff4d2ffc1e9e98c3",
+    "page_index": 0,
+    "json_pointer": "/0/2",
+    "raw_html_sha256": "c5cfc86947e81ae9e8b832f36f96f08aadb37a4c4261e4c3fb5235b8677f2485",
+    "normalizer_version": "table-html/v1",
+    "corrections": [
+      {
+        "source_row_index": 2,
+        "source_cell_index": 4,
+        "content_sha256": "4e40b4e9dbfef4e9c36f610edab5beecec9038718e8dbe253654cf6bb4d05393",
+        "original_column_range": [4, 6],
+        "target_column": 5,
+        "target_header": "TYP"
+      },
+      {
+        "source_row_index": 3,
+        "source_cell_index": 1,
+        "content_sha256": "90342bf296626a52e53356f30d4b43074eca0dbe97c8e5ffd2716779e595548a",
+        "original_column_range": [4, 7],
+        "target_column": 6,
+        "target_header": "MAX"
+      }
+    ]
+  }
+]

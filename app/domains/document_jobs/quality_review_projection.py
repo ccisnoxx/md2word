@@ -35,6 +35,7 @@ from app.domains.document_jobs.views.quality_review import (
     DocumentQualityTableReferenceResponse,
     DocumentQualityTableReportResponse,
     DocumentQualityTableValueFindingResponse,
+    DocumentQualityUnresolvedValueColumnResponse,
     DocumentPreviewPageResponse,
     DocumentPreviewRunResponse,
     DocumentReviewBindingResponse,
@@ -47,12 +48,13 @@ from app.domains.document_jobs.views.quality_review import (
     QualityMetric,
     QualityReviewModel,
 )
+from app.services.document_ir.table_value_column_review import PdfValueColumnUnresolved
 from app.services.preview.models import PreviewErrorCode
 from app.services.preview.page_quality import QualityFlag, Reason, RULES
 from app.services.renderer.render_event_summary import controlled_quality_flags
 from app.services.tables.evidence import ISSUE_CODES
 from app.services.tables.models import VALUE_COLUMN_SPAN_AMBIGUOUS
-from app.services.tables.quality import VALIDATOR_VERSION
+from app.services.tables.quality import BINDING_VALIDATOR_VERSION, VALIDATOR_VERSION, TableFinding
 
 
 MAX_CURSOR_LENGTH = 2048
@@ -64,6 +66,8 @@ _REASONS = _PAGE_REASONS | _PREVIEW_ERRORS | frozenset(get_args(BaseReason)) | {
     "preview_artifact_unavailable", "legacy_evidence_missing", "not_ready", "disabled",
 }
 _PAGE_FLAGS = frozenset(get_args(QualityFlag.model_fields["code"].annotation))
+_VALUE_COLUMN_REASONS = frozenset(
+    get_args(DocumentQualityUnresolvedValueColumnResponse.model_fields["reason_code"].annotation))
 _METRICS_BY_RULE = {
     "clipping": {"native_outside_area_pt2", "foreground_union_area_pt2", "outside_area_ratio", "outside_object_count", "max_outside_distance_pt", "edge_ink_ratio"},
     "overflow": {"outside_body_area_ratio", "clearance_pt", "excluded_object_count"},
@@ -163,13 +167,13 @@ def _source_span(value, *, table=False):
         **(_fields(value, ("fragment_id", "html_state", "row_start", "row_count", "columns")) if table else {}))
 
 
-def _value_column_findings(validation) -> list[DocumentQualityTableValueFindingResponse] | None:
-    if _field(validation, "validator_version") != VALIDATOR_VERSION:
+def _value_column_findings(validation, flags) -> list[DocumentQualityTableValueFindingResponse] | None:
+    if _field(validation, "validator_version") not in {VALIDATOR_VERSION, BINDING_VALIDATOR_VERSION}:
         return None
+    active = {_field(flag, "identity") for flag in flags if _field(flag, "code") == VALUE_COLUMN_SPAN_AMBIGUOUS}
     items = []
     for finding in _field(validation, "findings"):
-        flag = _field(finding, "flag")
-        if _field(flag, "code") != VALUE_COLUMN_SPAN_AMBIGUOUS:
+        if _field(finding, "finding_id") not in active:
             continue
         evidence = _field(finding, "evidence")
         span = _field(evidence, "value_column_span")
@@ -183,7 +187,30 @@ def _value_column_findings(validation) -> list[DocumentQualityTableValueFindingR
     return items
 
 
-def project_table_item(table) -> DocumentQualityTableItemResponse:
+def _project_unresolved_value_columns(
+    validation, pending: Mapping[str, tuple[PdfValueColumnUnresolved, TableFinding]],
+) -> list[DocumentQualityUnresolvedValueColumnResponse] | None:
+    if not pending:
+        return None
+    result = []
+    for raw in _field(validation, "findings"):
+        item = pending.get(_field(raw, "finding_id"))
+        if item is None:
+            continue
+        unresolved, finding = item
+        evidence = finding.evidence
+        result.append(DocumentQualityUnresolvedValueColumnResponse(
+            finding_id=unresolved.finding_id, fragment_id=unresolved.fragment_id,
+            source_page_index=evidence.page_index, bbox=evidence.bbox,
+            source_row_index=unresolved.source_row_index, source_cell_index=unresolved.source_cell_index,
+            reason_code=unresolved.reason if unresolved.reason in _VALUE_COLUMN_REASONS else "pdf_observation_unavailable",
+        ))
+    return result or None
+
+
+def project_table_item(
+    table, *, unresolved_value_columns: Mapping[str, tuple[PdfValueColumnUnresolved, TableFinding]] | None = None,
+) -> DocumentQualityTableItemResponse:
     validation, grid = _field(table, "validation"), _field(table, "source_grid")
     cells = _field(validation, "cells")
     outputs = []
@@ -212,7 +239,8 @@ def project_table_item(table) -> DocumentQualityTableItemResponse:
                     for reference in _field(table, "references")], outputs=outputs,
         placeholders=[DocumentQualityPlaceholderResponse(**_fields(item, ("placeholder_id", "fragment_id", "owner_block_id", "asset_ref", "source_kind", "issue_code")))
                       for item in _field(table, "placeholders")], flags=flags, unknown_flag_count=unknown,
-        value_column_findings=_value_column_findings(validation))
+        value_column_findings=_value_column_findings(validation, _field(table, "flags")),
+        unresolved_value_columns=_project_unresolved_value_columns(validation, unresolved_value_columns or {}))
 
 
 def project_table_report(view) -> DocumentQualityTableReportResponse:

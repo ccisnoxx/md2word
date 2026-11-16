@@ -186,7 +186,8 @@ class DocumentJobQualityReview:
         response = DocumentQualityTablesResponse(job_id=job.id, source=project_source(job, file),
             availability=evidence.evidence_status, reason_code=None,
             report=project_table_report(evidence) if evidence.evidence_status == "available" else None,
-            items=[project_table_item(table) for table in evidence.tables[start:end]], next_cursor=encode_cursor(
+            items=[project_table_item(table, unresolved_value_columns=evidence.unresolved_value_columns)
+                   for table in evidence.tables[start:end]], next_cursor=encode_cursor(
                 TableCursor(job_id=job.id, **binding, next_index=end)) if end < len(evidence.tables) else None)
         self.finish_review_read(job, file, user)
         return response
@@ -352,7 +353,8 @@ class DocumentJobQualityReview:
                 raise ApplicationError("not_found", "当前报告未引用该表格。")
         return TableEvidenceView(**base, evidence_status="available", report_file_id=summary["report_file_id"],
             report_sha256=envelope.report.report_sha256, summary=summary,
-            tables=[table.model_dump(mode="json", warnings=False) for table in tables])
+            tables=[table.model_dump(mode="json", warnings=False) for table in tables],
+            unresolved_value_columns=verified.unresolved_value_columns)
 
     def submit_document_review(
         self, job_id: str, *, user: AuthenticatedUser, review_status: ReviewStatus,

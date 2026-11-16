@@ -1,10 +1,11 @@
 """正式复核记录、锁内提交与只读有效性规则；不承担对象 I/O。"""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
@@ -12,6 +13,9 @@ from app.domains.document_jobs.quality_state import effective_quality_status
 from app.domains.files.models import DocumentFileRecord
 from app.domains.users.models import InternalUserRole
 from app.domains.files.result_registration import review_source_descriptor
+
+if TYPE_CHECKING:
+    from app.domains.document_jobs.models import DocumentJobRecord
 
 ReviewStatus = Literal["unreviewed", "approved", "needs_fix", "blocked"]
 ReviewIssueType = Literal["conversion", "translation", "terminology", "table_structure", "layout", "source_quality", "artifact_missing", "other"]
@@ -179,6 +183,31 @@ class ReviewSubmission(BaseModel):
         if self.reviewed_at.tzinfo is None:
             raise ValueError("复核时间必须包含时区。")
         return self
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ReviewEvidenceSnapshot:
+    """锁外认证得到的本次审批前置条件，独立于复核记录及提交摘要。"""
+
+    job: DocumentJobRecord
+    files: tuple[DocumentFileRecord, ...]
+
+    @property
+    def file_ids(self) -> tuple[str, ...]:
+        return tuple(sorted({file.id for file in self.files}))
+
+    def require_current(
+        self, job: DocumentJobRecord, files: list[DocumentFileRecord], *, now: datetime,
+    ) -> None:
+        from app.domains.document_jobs.publication import publication_file_available
+        from app.domains.document_jobs.table_evidence import table_evidence_snapshot_values
+
+        if job.id != self.job.id or table_evidence_snapshot_values(job) != table_evidence_snapshot_values(self.job):
+            raise ReviewSubmissionConflict("review_source_changed")
+        current = {file.id: file for file in files}
+        if any(current.get(file.id) != file or not publication_file_available(file, now=now)
+               for file in self.files):
+            raise ReviewSubmissionConflict("review_result_integrity_conflict")
 
 
 class ReviewRecord(BaseModel):

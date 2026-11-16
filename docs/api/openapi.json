@@ -4138,6 +4138,19 @@
         "additionalProperties": false,
         "description": "固定原模式与快照的新代命令，不接受配置或状态覆盖。",
         "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "const": "replay_table_value_columns",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "核定型请求显式选择从当前同源 MinerU 存档生成新一代。",
+            "title": "Action"
+          },
           "expected_source": {
             "$ref": "#/components/schemas/ReviewExpectedSourceRequest"
           },
@@ -4149,6 +4162,22 @@
             "description": "客户端生成并保留的 UUID；接受前归一为规范格式。",
             "title": "Request Id",
             "type": "string"
+          },
+          "table_value_column_reviews": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ManualTableValueColumnReviewRequest"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "同包核定动作所需的整批人工原格记录。",
+            "title": "Table Value Column Reviews"
           }
         },
         "required": [
@@ -8470,6 +8499,20 @@
             "title": "Unknown Flag Count",
             "type": "integer"
           },
+          "unresolved_value_columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DocumentQualityUnresolvedValueColumnResponse"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unresolved Value Columns"
+          },
           "value_column_findings": {
             "anyOf": [
               {
@@ -8820,6 +8863,112 @@
           "next_cursor"
         ],
         "title": "DocumentQualityTablesResponse",
+        "type": "object"
+      },
+      "DocumentQualityUnresolvedValueColumnResponse": {
+        "additionalProperties": false,
+        "description": "当前代中仍需人工核定的零基源格定位。",
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "maxItems": 4,
+                "minItems": 4,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbox"
+          },
+          "finding_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:\\-]+$",
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "fragment_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:\\-]+$",
+            "title": "Fragment Id",
+            "type": "string"
+          },
+          "reason_code": {
+            "enum": [
+              "source_pair_unverified",
+              "layout_unverified",
+              "table_layout_unverified",
+              "table_region_ambiguous",
+              "unsupported_table_shape",
+              "unsupported_cell_shape",
+              "unsupported_pdf_geometry",
+              "pdf_source_unavailable",
+              "pdf_geometry_unverified",
+              "pdf_text_unavailable",
+              "pdf_observation_unavailable",
+              "pdf_observation_budget_exhausted",
+              "header_ambiguous",
+              "row_ambiguous",
+              "column_ambiguous",
+              "value_ambiguous",
+              "value_visibility_unverified",
+              "span_contains_other_content",
+              "unit_mismatch",
+              "competing_pdf_binding"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "source_cell_index": {
+            "minimum": 0.0,
+            "title": "Source Cell Index",
+            "type": "integer"
+          },
+          "source_page_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page Index"
+          },
+          "source_row_index": {
+            "minimum": 0.0,
+            "title": "Source Row Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "finding_id",
+          "fragment_id",
+          "source_page_index",
+          "bbox",
+          "source_row_index",
+          "source_cell_index",
+          "reason_code"
+        ],
+        "title": "DocumentQualityUnresolvedValueColumnResponse",
         "type": "object"
       },
       "DocumentQualityValueColumnResponse": {
@@ -13992,6 +14141,130 @@
         "type": "object"
       },
       "JsonValue": {},
+      "ManualTableValueColumnCorrectionRequest": {
+        "additionalProperties": false,
+        "description": "HTTP 数组可进入领域 tuple，自动出处不属于人工输入。",
+        "properties": {
+          "content_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "original_column_range": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            ],
+            "title": "Original Column Range",
+            "type": "array"
+          },
+          "source_cell_index": {
+            "minimum": 0.0,
+            "title": "Source Cell Index",
+            "type": "integer"
+          },
+          "source_row_index": {
+            "minimum": 0.0,
+            "title": "Source Row Index",
+            "type": "integer"
+          },
+          "target_column": {
+            "minimum": 0.0,
+            "title": "Target Column",
+            "type": "integer"
+          },
+          "target_header": {
+            "enum": [
+              "MIN",
+              "TYP",
+              "MAX",
+              "NOM",
+              "LOW",
+              "HIGH"
+            ],
+            "title": "Target Header",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_row_index",
+          "source_cell_index",
+          "content_sha256",
+          "original_column_range",
+          "target_column",
+          "target_header"
+        ],
+        "title": "ManualTableValueColumnCorrectionRequest",
+        "type": "object"
+      },
+      "ManualTableValueColumnReviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content_list_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content List Sha256",
+            "type": "string"
+          },
+          "corrections": {
+            "items": {
+              "$ref": "#/components/schemas/ManualTableValueColumnCorrectionRequest"
+            },
+            "minItems": 1,
+            "title": "Corrections",
+            "type": "array"
+          },
+          "json_pointer": {
+            "pattern": "^/(?:content_list/)?(?:0|[1-9][0-9]*)(?:/(?:0|[1-9][0-9]*))?$",
+            "title": "Json Pointer",
+            "type": "string"
+          },
+          "normalizer_version": {
+            "const": "table-html/v1",
+            "title": "Normalizer Version",
+            "type": "string"
+          },
+          "page_index": {
+            "minimum": 0.0,
+            "title": "Page Index",
+            "type": "integer"
+          },
+          "raw_html_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Raw Html Sha256",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "table-value-column-review/v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_pdf_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Pdf Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "source_pdf_sha256",
+          "content_list_sha256",
+          "page_index",
+          "json_pointer",
+          "raw_html_sha256",
+          "normalizer_version",
+          "corrections"
+        ],
+        "title": "ManualTableValueColumnReviewRequest",
+        "type": "object"
+      },
       "MinerUConfigResponse": {
         "description": "不含 UID 或密钥字符的 MinerU 配置安全摘要。",
         "properties": {
