@@ -17,6 +17,7 @@
 
 - 历史 `zh2zh`、`zh_to_zh` 仅在服务端输入归一为 direct。请求 schema 在 Literal 前处理明确 alias；OpenAPI/前端枚举保持五值，响应/snapshot/event 保存规范值。
 - direct 使用模板、MinerU、符号与排版规则，不调用翻译术语服务、Profile payload/Prompt 解析、Provider 或翻译批次服务。符号规则 `term_rule_set` 不属于翻译术语。
+- PDF 任务在 `request_snapshot.resources.mineru.language` 绑定 MinerU v4 语言包。无版本化资源快照时，绑定在 `request_snapshot.mineru_language`。Worker 提交 `/api/v4/file-urls/batch` 时用绑定值作为顶层 `language`。中译英和中译俄使用 `ch`，俄译中使用 `east_slavic`，英译中使用 `en`。direct 使用 `MINERU_LANGUAGE`，其中 `zh` 与 `ru` 同样转换为供应商取值，其它已配置语言包原样传递。
 - direct 的新请求不接受非空 `term_version_id`、`translation_term_set_id/version`、`translation_profile_id/version`。校验必须在翻译加载与 mutation 前，但仍保留权限/状态检查优先级。
 - 历史 direct 快照可读；默认 retry、keep-source clone 的惰性字段不重新加载或回写清理，源任务与审计保留。
 - 新建和 clone 在写任务和投递前检查最终绑定的模板版本。缺 YAML 或会读取外部页眉 Logo 的历史绑定为 `legacy_internal_only`。保留源快照的 clone 仍创建新任务，必须认证原绑定并通过新任务准入。版本化入口的默认资源失败不得降级为无快照任务。
@@ -37,16 +38,20 @@
 | 无资源重选权限 | 保留现有 403。 |
 | Operator debug true / Admin direct debug true | 403 `role_forbidden` / 400 `invalid_request`。 |
 | 必需 P0 执行链未就绪 | 503 `document_jobs_not_ready`。 |
+| 已提交批次或已登记结果包 | 恢复既有批次或结果，不因语言映射变化重新上传。 |
+| 未提交的历史任务缺少 MinerU 语言快照 | 按任务模式和现有 `MINERU_LANGUAGE` 回退，应用同一映射。 |
 
 ## 5. 正常、缺省与非法场景
 
 - 正常：direct 绑定 published 模板和符号规则，生成一份主 DOCX，零 AI/批次/翻译 Artifact。
 - 缺省：未给 mode/translation_mode 使用 direct；翻译默认资源缺失不构成 direct 的翻译依赖。
 - 非法：direct 传显式翻译术语，不能先加载后丢弃；未知模式不能回退 direct。
+- 历史快照可保留 `zh`、`ru`。再次上传时在请求边界转换旧值，默认重试保留历史记录。重绑术语时沿用已有 MinerU 语言，复用解析结果时保持语言证据。继承旧快照的克隆在新任务副本绑定规范语言包。
 
 ## 6. 必要测试
 
 - `tests.test_document_job_modes`：真实请求 schema alias、双字段与非法输入、direct 零翻译加载/单 DOCX、拒绝无 mutation、历史 retry/clone。
+- `tests.test_document_job_modes` 的 MinerU 语言回归覆盖五种模式的快照与序列化请求、有无版本化资源的直转配置漂移、历史任务缺字段、继承克隆及术语重绑重试。
 - `tests.test_fastapi_jobs_backend`：复用四方向资源、语言匹配、debug/owner 权限和正式 Worker 回归。
 - `frontend/src/utils/format.test.ts`、`documentJobConfig.test.ts`：模式能力、精确 warning 过滤、投影不修改输入。
 - mock API UI smoke：两角色 direct 创建/详情、翻译切 direct payload、展开快照隐藏、长文案宽度与键盘。
@@ -65,6 +70,8 @@ if not spec_for_document_job_mode(mode).is_translation:
 ```
 
 UI 同样先按共享模式能力判断是否展示，再构造展示副本；不能用删除后端 snapshot 字段来隐藏配置。
+
+MinerU 语言的正确做法是创建时绑定供应商值、执行时消费快照。Worker 每次只重读 `MINERU_LANGUAGE` 会让已入队的 direct 任务随配置变化而切换语言包。
 
 ## 8. 执行阶段与恢复合同（CON-102）
 

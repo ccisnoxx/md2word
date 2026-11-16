@@ -8243,7 +8243,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 self.assertEqual(
                     resources["mineru"]["language"],
-                    "zh",
+                    "ch",
                 )
                 self.assertNotIn("markdown", json.dumps(resources))
                 self.assertEqual(
@@ -8321,7 +8321,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(snapshot["translation_term_set"]["set_id"], "translation-terms-ru2zh")
         self.assertEqual(snapshot["translation_term_set"]["language_pair"], "ru2zh")
         self.assertEqual(snapshot["translation_term_set"]["version"], ru_term_version)
-        self.assertEqual(snapshot["mineru"]["language"], "ru")
+        self.assertEqual(snapshot["mineru"]["language"], "east_slavic")
 
     def test_document_job_create_rejects_translation_profile_language_pair_mismatch(self):
         with tempfile.TemporaryDirectory() as temp_dir:

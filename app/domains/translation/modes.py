@@ -23,6 +23,12 @@ DocumentJobMode = Literal[
 ]
 DocumentLanguage = Literal["auto", "zh", "en", "ru"]
 LEGACY_DIRECT_TRANSLATION_MODES: tuple[str, ...] = ("zh2zh", "zh_to_zh")
+_MINERU_LANGUAGE_ALIASES = {"zh": "ch", "ru": "east_slavic"}
+
+
+def normalize_mineru_language(language: str) -> str:
+    """将项目文种别名转换为 MinerU v4 的语言包取值。"""
+    return _MINERU_LANGUAGE_ALIASES.get(language, language)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +53,9 @@ class TranslationModeSpec:
         if self.language_pair is None:
             return None
         return derive_translation_term_set_id(self.language_pair)
+
+    def resolve_mineru_language(self, configured_language: str) -> str:
+        return normalize_mineru_language(self.mineru_language or configured_language)
 
 
 TRANSLATION_MODE_SPECS: dict[TranslationMode, TranslationModeSpec] = {

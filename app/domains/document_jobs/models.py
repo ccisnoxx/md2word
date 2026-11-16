@@ -179,6 +179,18 @@ class DocumentJobRecord(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
+    @property
+    def bound_mineru_language(self) -> str | None:
+        """读取已绑定的原始语言值，供执行和历史追溯使用。"""
+        resources = self.request_snapshot.get("resources")
+        mineru = resources.get("mineru") if isinstance(resources, dict) else None
+        if isinstance(mineru, dict):
+            language = mineru.get("language")
+            if isinstance(language, str) and language:
+                return language
+        language = self.request_snapshot.get("mineru_language")
+        return language if isinstance(language, str) and language else None
+
     @model_validator(mode="after")
     def _validate_state(self) -> "DocumentJobRecord":
         if (self.current_review_record_id is None) != (self.current_review_binding is None):

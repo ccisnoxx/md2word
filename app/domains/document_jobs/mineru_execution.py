@@ -24,7 +24,7 @@ from app.domains.files import FileUploadService
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.mineru.config import EffectiveMinerUConfig
 from app.domains.resources.models import utc_now
-from app.domains.translation.modes import spec_for_document_job_mode
+from app.domains.translation.modes import normalize_mineru_language, spec_for_document_job_mode
 
 class MinerUExecution:
     """MinerU 执行：由 DocumentJobExecutionService 构造并持有，负责解析提交与轮询、回调排队与重放、结果下载登记。
@@ -555,8 +555,13 @@ class MinerUExecution:
         return parsed
 
     def _mineru_language_for_job(self, job: DocumentJobRecord) -> str:
+        """优先沿用提交时绑定的语言，兼容缺少字段的历史快照。"""
+        language = job.bound_mineru_language
+        if language is not None:
+            return normalize_mineru_language(language)
+
         spec = spec_for_document_job_mode(job.mode)
-        return spec.mineru_language or self.settings.mineru_language
+        return spec.resolve_mineru_language(self.settings.mineru_language)
 
     def _refresh_mineru_parse_attempt(
         self, job: DocumentJobRecord, *, trace_id: str | None,
