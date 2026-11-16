@@ -85,6 +85,8 @@ def build_document_pipeline(
     settings: Settings,
     adapters: PersistenceAdapters,
     platform: PlatformServices,
+    *,
+    cache_template_manifest: bool,
 ) -> DocumentPipeline:
     """只构造，不执行种子写入；翻译术语 CSV 导入等 bootstrap 由 composition.startup 统一执行。"""
 
@@ -125,6 +127,7 @@ def build_document_pipeline(
         audit_service,
         document_job_repository=adapters.document_job_repository,
         catalog_repository=adapters.template_catalog_repository,
+        cache_manifest=cache_template_manifest,
     )
     document_word_renderer = DocumentIRWordRenderer()
     # 启动期校验页面质量策略配置，配置非法时在构造预览与执行服务前失败。

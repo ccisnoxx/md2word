@@ -44,6 +44,7 @@ from app.infrastructure.persistence import (
     PersistenceAdapters,
     build_file_persistence_adapters,
     build_mysql_persistence_adapters,
+    build_persistence_adapters,
     build_sqlite_persistence_adapters,
 )
 from app.services.auth import hash_password
@@ -1689,12 +1690,13 @@ class PersistenceAdapterTests(TestCase):
             )
             with patch(
                 "app.main.build_persistence_adapters",
-                lambda _settings: build_mysql_persistence_adapters(
+                lambda _settings, *, initialize: build_mysql_persistence_adapters(
                     _mysql_config(),
                     connect_factory=fake_mysql.connect,
+                    initialize=initialize,
                 ),
             ):
-                runtime = build_runtime(settings)
+                runtime = build_runtime(settings, initialize=True)
                 expected_term_rule_store = runtime.term_rule_service.repository.load()
                 rogue_store = runtime.term_rule_set_version_service.yaml_codec.parse_yaml_text(changed_seed_yaml)
                 runtime.term_rule_service.repository.save(rogue_store)
@@ -1703,13 +1705,13 @@ class PersistenceAdapterTests(TestCase):
                 fake_mysql.resource_default_versions.pop(("term_rule_set", "electronics-default"))
                 fake_mysql.resource_default_versions.pop(("translation_profile", "electronics-ru2zh"))
                 fake_mysql.resource_versions.pop(("translation_profile", "electronics-ru2zh", "seed"))
-                restarted_runtime = build_runtime(settings)
+                restarted_runtime = build_runtime(settings, initialize=True)
                 restarted_rule_terms = [rule.source_term for rule in restarted_runtime.term_rule_service.repository.load().rules]
                 restarted_runtime_yaml_text = restarted_runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
                 snapshot = restarted_runtime.term_version_service.load_version("en2zh@v1", language_pair="en2zh")
                 ru_snapshot = restarted_runtime.term_version_service.load_version("ru2zh@v1", language_pair="ru2zh")
                 terms_path.unlink()
-                final_runtime = build_runtime(settings)
+                final_runtime = build_runtime(settings, initialize=True)
                 final_ru_snapshot = final_runtime.term_version_service.load_version("ru2zh@v1", language_pair="ru2zh")
 
         self.assertIsNotNone(runtime.term_rule_set_version_service)
@@ -2095,7 +2097,7 @@ class PersistenceAdapterTests(TestCase):
                 jobs_repository_backend="database",
                 jobs_metadata_database_path=str(data_dir / "metadata.sqlite3"),
             )
-            runtime = build_runtime(settings)
+            runtime = build_runtime(settings, initialize=True)
             checks = runtime.health_service.build_dependency_checks()
 
         self.assertIsInstance(runtime.document_job_repository, SqliteDocumentJobRepository)
@@ -2114,19 +2116,18 @@ class PersistenceAdapterTests(TestCase):
                 jobs_repository_backend="mysql",
                 jobs_mysql_database="md2word_test",
             )
-            def build_fake_adapters(runtime_settings: Settings) -> PersistenceAdapters:
-                runtime_settings.jobs_dir.mkdir(parents=True, exist_ok=True)
-                runtime_settings.tmp_dir.mkdir(parents=True, exist_ok=True)
-                return build_mysql_persistence_adapters(
-                    _mysql_config(),
-                    connect_factory=fake_mysql.connect,
+            def build_fake_adapters(runtime_settings: Settings, *, initialize: bool) -> PersistenceAdapters:
+                return build_persistence_adapters(
+                    runtime_settings,
+                    mysql_connect_factory=fake_mysql.connect,
+                    initialize=initialize,
                 )
 
             with patch(
                 "app.main.build_persistence_adapters",
                 build_fake_adapters,
             ):
-                runtime = build_runtime(settings)
+                runtime = build_runtime(settings, initialize=True)
             checks = runtime.health_service.build_dependency_checks()
 
         self.assertIsInstance(runtime.document_job_repository, MysqlDocumentJobRepository)
@@ -2139,7 +2140,7 @@ class PersistenceAdapterTests(TestCase):
         with TemporaryDirectory() as temp_dir:
             data_dir = Path(temp_dir) / "data"
             settings = Settings(_env_file=None, data_dir=str(data_dir))
-            runtime = build_runtime(settings)
+            runtime = build_runtime(settings, initialize=True)
             checks = runtime.health_service.build_dependency_checks()
             database_file_exists = settings.jobs_metadata_database_file.exists()
 

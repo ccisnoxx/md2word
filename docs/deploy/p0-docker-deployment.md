@@ -129,6 +129,8 @@ docker compose --env-file .env -f docker/prod/docker-compose.yml build api
 docker compose --env-file .env -f docker/prod/docker-compose.yml up -d --no-build
 ```
 
+Compose 等待 API 的 `/api/v1/health/live` 成功后才启动 Worker。API 工厂在此之前完成 schema 维护和 seed 初始化。业务接单状态仍由下方 `/health/ready` 检查。
+
 在部署机上检查：
 
 ```bash

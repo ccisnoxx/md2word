@@ -11,7 +11,6 @@ from app.domains.term_rules.models import TermRuleCategoryRecord, TermRuleRecord
 class FileTermRuleRepository:
     def __init__(self, store_path: Path):
         self.store_path = store_path
-        self.store_path.parent.mkdir(parents=True, exist_ok=True)
 
     def load(self) -> TermRulesStore:
         if not self.store_path.exists():
@@ -19,6 +18,7 @@ class FileTermRuleRepository:
         return TermRulesStore.model_validate_json(self.store_path.read_text(encoding="utf-8"))
 
     def save(self, store: TermRulesStore) -> TermRulesStore:
+        self.store_path.parent.mkdir(parents=True, exist_ok=True)
         self.store_path.write_text(store.model_dump_json(indent=2), encoding="utf-8")
         return store
 

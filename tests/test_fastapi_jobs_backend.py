@@ -442,6 +442,7 @@ def build_test_runtime(
     audit_service = AuditService(audit_event_repository)
     acceptance_run_service = AcceptanceRunService(acceptance_run_repository)
     auth_service = AuthService(settings, internal_user_repository)
+    auth_service.bootstrap_repository_from_config_if_empty()
     internal_user_management_service = InternalUserManagementService(internal_user_repository)
     file_retention_policy_service = FileRetentionPolicyService(
         settings,
@@ -628,6 +629,7 @@ def build_test_runtime(
     if translation_profile_service is not None:
         translation_profile_service.bootstrap_default_profiles_if_missing()
     template_read_service.get_default_template_id()
+    template_read_service.bootstrap_manifest_versions()
     saved_view_service = SavedViewService(saved_view_repository)
     return AppRuntime(
         settings=settings,

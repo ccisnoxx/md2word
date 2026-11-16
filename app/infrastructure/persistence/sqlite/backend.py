@@ -17,7 +17,6 @@ class SqlitePersistenceBackend:
 
     def __init__(self, database_path: Path, *, initialize: bool = True) -> None:
         self.database_path = database_path
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
         if initialize:
             self.initialize_schema()
 
@@ -35,6 +34,7 @@ class SqlitePersistenceBackend:
             connection.close()
 
     def initialize_schema(self) -> None:
+        self.database_path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             initialize_schema(connection)
 

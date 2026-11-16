@@ -793,9 +793,9 @@ class TemplateSeedHistoryTests(TestCase):
         )
 
         with patch("app.main.build_persistence_adapters", return_value=adapters) as build_adapters:
-            runtime = build_runtime(settings)
+            runtime = build_runtime(settings, initialize=True)
 
-        build_adapters.assert_called_once_with(settings)
+        build_adapters.assert_called_once_with(settings, initialize=True)
         self.assertIs(runtime.resource_version_service.repository, self.repository)
         self.assertEqual(self.repository.get_resource_version("template", "default", "2"), record)
         self.assertEqual(self.repository.get_default_resource_version("template", "default"), record)

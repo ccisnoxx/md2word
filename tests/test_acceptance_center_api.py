@@ -29,9 +29,9 @@ class AcceptanceCenterApiTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
             )
-            runtime = build_runtime(settings)
+            runtime = build_runtime(settings, initialize=True)
             seeded = runtime.acceptance_run_repository.list_acceptance_runs()
-            build_runtime(settings)
+            build_runtime(settings, initialize=True)
             reloaded = build_file_persistence_adapters(Path(temp_dir)).acceptance_run_repository.list_acceptance_runs()
 
         self.assertEqual({record.tier for record in seeded}, {"P0", "P1", "P2"})

@@ -34,7 +34,7 @@ class InternalUserManagementTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
             )
-            AuthService(settings, adapters.internal_user_repository)
+            AuthService(settings, adapters.internal_user_repository).bootstrap_repository_from_config_if_empty()
 
             second_settings = Settings(
                 _env_file=None,
@@ -42,7 +42,7 @@ class InternalUserManagementTests(TestCase):
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_multi_operator_auth_users_json(),
             )
-            AuthService(second_settings, adapters.internal_user_repository)
+            AuthService(second_settings, adapters.internal_user_repository).bootstrap_repository_from_config_if_empty()
 
             self.assertEqual(adapters.internal_user_repository.count_internal_users(), 2)
             self.assertIsNone(adapters.internal_user_repository.get_internal_user_by_username("operator2"))

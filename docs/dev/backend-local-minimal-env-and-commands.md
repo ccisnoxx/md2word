@@ -156,7 +156,7 @@ TEMPLATE_STATE_PATH=data/config/template_state.json
 或者：
 
 ```bash
-.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+.venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
 如果使用独立 worker 模式，`.env` 里设置：

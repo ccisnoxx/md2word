@@ -116,12 +116,14 @@ class TemplateReadService:
         document_job_repository: DocumentJobRepositoryProtocol | None = None,
         *,
         catalog_repository: TemplateCatalogRepositoryProtocol | None = None,
+        cache_manifest: bool = True,
     ) -> None:
         self.settings = settings
         self.resource_version_service = resource_version_service
         self.audit_service = audit_service
         self.document_job_repository = document_job_repository
         self.catalog_repository = catalog_repository
+        self._cache_manifest = cache_manifest
         self._manifest_cache: TemplatesManifest | None = None
 
     def list_templates(self, *, url_for: Callable[..., str] | None) -> list[TemplateListItemResponse]:
@@ -1126,7 +1128,7 @@ class TemplateReadService:
         if self._manifest_cache is not None:
             return self._manifest_cache
         try:
-            self._manifest_cache = load_template_manifest(self.settings.templates_manifest_file)
+            manifest = load_template_manifest(self.settings.templates_manifest_file)
         except FileNotFoundError:
             seed = self.settings.bundled_template_seed
             templates: list[TemplateManifestItem] = []
@@ -1136,8 +1138,10 @@ class TemplateReadService:
                     # 自定义默认 ID 在无部署清单时仍沿用历史合成版本。
                     item = item.model_copy(update={"id": self.settings.default_template_id, "version": 1})
                 templates.append(item)
-            self._manifest_cache = TemplatesManifest(templates=templates)
-        return self._manifest_cache
+            manifest = TemplatesManifest(templates=templates)
+        if self._cache_manifest:
+            self._manifest_cache = manifest
+        return manifest
 
     def _record_audit(
         self,
@@ -1166,7 +1170,8 @@ class TemplateReadService:
             yaml.safe_dump(manifest.model_dump(mode="json"), allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )
-        self._manifest_cache = manifest
+        if self._cache_manifest:
+            self._manifest_cache = manifest
 
     def _visible_templates(self) -> list[TemplateCatalogItem] | list[TemplateManifestItem]:
         if self.catalog_repository is not None:

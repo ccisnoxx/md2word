@@ -34,20 +34,21 @@ def _validate_runtime_guardrails(settings: Settings) -> None:
         )
 
 
-def build_runtime(settings: Settings | None = None, *, bootstrap_templates: bool = True) -> AppRuntime:
-    """构建当前进程共享运行时：先构造全部服务，再统一执行启动 bootstrap，最后装配健康检查。"""
+def build_runtime(settings: Settings | None = None, *, initialize: bool = False) -> AppRuntime:
+    """装配运行时，API 工厂显式启用目录、数据库 schema 和种子初始化。"""
 
     resolved_settings = settings or Settings()
     _validate_runtime_guardrails(resolved_settings)
     configure_logging(resolved_settings.app_env, resolved_settings.log_format)
     # 持久化适配器在此构造（测试按 app.main.build_persistence_adapters 替换后端）。
-    adapters = build_persistence_adapters(resolved_settings)
+    adapters = build_persistence_adapters(resolved_settings, initialize=initialize)
     platform = build_platform_services(resolved_settings, adapters)
-    pipeline = build_document_pipeline(resolved_settings, adapters, platform)
-    terminology = build_terminology_services(resolved_settings, adapters, platform)
-    run_startup_bootstrap(
-        resolved_settings, platform, pipeline, terminology, bootstrap_templates=bootstrap_templates,
+    pipeline = build_document_pipeline(
+        resolved_settings, adapters, platform, cache_template_manifest=initialize,
     )
+    terminology = build_terminology_services(resolved_settings, adapters, platform)
+    if initialize:
+        run_startup_bootstrap(resolved_settings, platform, pipeline, terminology)
     observability = build_observability_services(resolved_settings, adapters, platform, pipeline)
     return AppRuntime(
         settings=resolved_settings,
@@ -107,10 +108,9 @@ def build_runtime(settings: Settings | None = None, *, bootstrap_templates: bool
 
 
 def create_app(runtime: AppRuntime | None = None) -> FastAPI:
-    app_runtime = runtime or build_runtime()
-    if runtime is not None:
-        # 注入的 runtime 可能尚未登记 seed。
-        app_runtime.template_read_service.bootstrap_manifest_versions()
+    """完成 API 初始化后组装应用，注入的运行时由调用方准备。"""
+
+    app_runtime = runtime if runtime is not None else build_runtime(initialize=True)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

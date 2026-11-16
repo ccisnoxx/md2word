@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-# app/composition/startup.py: 进程启动时的幂等种子写入与登记，集中在全部服务构造完成之后执行。
-#
-# 顺序约束（见 .trellis/tasks/archive/2026-11/11-11-sr-3-composition-root/research/bootstrap-order.md）：
-# 下列步骤各自只写自己的存储且"为空才写入"，构造函数不读取它们的产物，因此可以在构造之后统一执行；
-# 步骤之间仍保持拆分前的相对顺序。
+# app/composition/startup.py: API 在持久化和服务装配完成后执行启动初始化。
 
 from app.composition.document_pipeline import DocumentPipeline
 from app.composition.platform import PlatformServices
@@ -18,9 +14,8 @@ def run_startup_bootstrap(
     platform: PlatformServices,
     pipeline: DocumentPipeline,
     terminology: TerminologyServices,
-    *,
-    bootstrap_templates: bool = True,
 ) -> None:
+    platform.auth_service.bootstrap_repository_from_config_if_empty()
     platform.acceptance_run_service.bootstrap_default_runs_if_empty()
     pipeline.term_version_service.bootstrap_repository_from_csv_if_empty()
     if terminology.term_rule_set_version_service is not None:
@@ -34,7 +29,6 @@ def run_startup_bootstrap(
         ).bootstrap()
     if terminology.translation_profile_service is not None:
         terminology.translation_profile_service.bootstrap_default_profiles_if_missing()
-    if bootstrap_templates:
-        # MySQL 默认选择依赖已登记的目录与版本。
-        pipeline.template_read_service.bootstrap_manifest_versions()
-        pipeline.template_read_service.get_default_template_id()
+    # MySQL 默认选择依赖已登记的目录与版本。
+    pipeline.template_read_service.bootstrap_manifest_versions()
+    pipeline.template_read_service.get_default_template_id()

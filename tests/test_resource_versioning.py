@@ -348,11 +348,12 @@ class MysqlResourceVersionRepositoryTests(TestCase):
             )
             with patch(
                 "app.main.build_persistence_adapters",
-                lambda _settings: build_mysql_persistence_adapters(
+                lambda _settings, *, initialize: build_mysql_persistence_adapters(
                     _mysql_config(),
                     connect_factory=fake_mysql.connect,
+                    initialize=initialize,
                 ),
             ):
-                runtime = build_runtime(settings)
+                runtime = build_runtime(settings, initialize=True)
 
         self.assertIsNotNone(runtime.resource_version_service)

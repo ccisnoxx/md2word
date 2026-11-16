@@ -68,7 +68,7 @@ B05 第 3、4 步已删除旧 Jobs 服务、stage 调度/启动重放、独立 S
 
 ### `app/workers/`
 
-正式 Document Jobs 的 Celery 任务与 worker 接线；启动入口为 `scripts/dev/run_document_worker.py`。API 启动恢复由 `DocumentJobRecoveryService` 负责。
+正式 Document Jobs 的 Celery 启动入口为 `scripts/dev/run_document_worker.py`。任务执行子进程首次运行任务时装配 Runtime，并供本进程后续任务复用。API 与 MinerU 轮询 Worker 均经 `DocumentJobRecoveryService` 执行各自的启动恢复。
 
 ### `app/conversion/`
 
@@ -121,7 +121,7 @@ var/
   - `file` 是代码默认值，用于本地开发和最小联调。
   - `database` 使用 SQLite 文件；生产要求以现有正式 readiness 合同为准，旧 shadow copy 工具已删除。
   - `mysql` 使用 MySQL 保存正式 document_jobs、document_files、job_events、回调、批次及资源版本；需要显式配置连接参数。
-- 当前没有 PostgreSQL，也没有 Alembic 迁移系统；MySQL schema 由 adapter 启动时做最小 bootstrap。
+- 当前没有 PostgreSQL 或 Alembic 迁移系统。API 工厂启用 SQLite/MySQL 的 schema 维护并执行种子初始化。Worker 使用已初始化的存储。
 - 正式 Worker 由 `DOCUMENT_JOBS_WORKER_BACKEND` 配置；生产使用 Celery。`jobs_worker_mode` 仅保留既有健康配置回显，不再控制旧 stage 消费。
 - artifact 二进制存储与 metadata backend 分开配置；sqlite/MySQL 都只保存 metadata，不搬运本地文件本身。artifact storage 可用 `local_file`、`local_object` 或 `s3`。
 - 模板 CRUD、term-rule rule CRUD 和 category CRUD 已提供 admin 写接口。

@@ -66,10 +66,10 @@ verification_scope: >-
 - mysql/redis：同一项目名，但来自 `/root/md2word/docker-compose.p0.yml`；上线时不得重建。
 - 每次上线把完整 `-f` 文件清单写入新 release 的 `compose-files.txt`，下一次上线以最近一次成功 release 的清单为基础。
 
-上线步骤：
+包含 API 启动初始化的新版本按以下顺序发布：
 
 1. 按“快速上线命令骨架”导出 release、补齐并核对 57 个 wheel（可从上一个 release 的 `requirements/wheels/` 复制后重新对锁核对哈希），用 `docker/prod/Dockerfile` 构建版本化镜像，并用 `--network none --read-only` 的临时容器做 `pip check` 与 `import app.main, app.workers.celery_app` 冒烟。
-2. 在新 release 写一层只替换镜像与发布标识的 override：
+2. 在新 release 写一层 override，更新镜像与发布标识：
 
 ```yaml
 services:
@@ -85,19 +85,28 @@ services:
       DEPLOYMENT_ID: hostdzire-<release-id>-<short-sha>
 ```
 
-3. 在基础工作目录下，用“上一次成功清单 + 新 override”只重建 api/worker：
+3. 在基础工作目录下使用“上一次成功清单 + 新 override”。核对实际生效的 API 命令使用 `app.main:create_app --factory`。基础 Compose 若覆盖镜像 CMD，应在本次 override 更新启动入口并保留原监听、代理参数。待在途任务完成后停止旧 Worker，先只更新 API。
 
 ```bash
 cd /root/md2word-releases/template-compat-c1f7e8a1468f-20261029
 BASE="$(cat "${PREVIOUS_RELEASE_DIR:?}/compose-files.txt")"   # 首次按现状清单手工组装
 FILES="${BASE} -f ${RELEASE_DIR}/compose.override.yaml"
 echo "${FILES}" > "${RELEASE_DIR}/compose-files.txt"
-docker compose -p md2word-p0 ${FILES} config --quiet
-docker compose -p md2word-p0 ${FILES} up -d --no-deps --no-build api worker
+docker compose -p md2word-p0 ${FILES} config --quiet &&
+  docker compose -p md2word-p0 ${FILES} stop worker &&
+  docker compose -p md2word-p0 ${FILES} up -d --no-deps --no-build api
 ```
 
-4. 约 30 秒后核对：`/api/v1/health/live` 与 `/health/ready` 为 200、公网入口为 200、api/worker 的 `.Image` 相同、两者日志无 Traceback/ERROR、Celery worker 已 ready。任一项失败立即回滚。
-5. 回滚：用上一次成功清单（不含新 override）执行同一条 `up -d --no-deps --no-build api worker`。上一版镜像须仍在本机，回滚前不要清理。
+4. 核对新 API 容器的 `.Image` 和本次发布镜像一致。`--no-deps` 跳过 Compose 的依赖等待，以下命令显式等待 API 完成初始化。探针失败时保持 Worker 停止，检查 API 日志并按回滚步骤处理。
+
+```bash
+curl -fsS --connect-timeout 3 --max-time 5 --retry 30 --retry-delay 2 \
+  --retry-connrefused --retry-max-time 120 http://127.0.0.1:18000/api/v1/health/live &&
+  docker compose -p md2word-p0 ${FILES} up -d --no-deps --no-build worker
+```
+
+5. 核对 `/health/ready` 的部署标识与业务门禁、公网入口、api/worker 共用的 `.Image`、启动日志和 Celery ready 状态。任一项失败立即回滚。
+6. 回滚使用上一次成功清单和本机保留的上一版镜像，按停止 Worker、恢复 API 并等待 `/api/v1/health/live` 成功、恢复同镜像 Worker 的顺序操作。
 
 ### 仅改运行配置（不发新镜像）
 
@@ -105,7 +114,7 @@ docker compose -p md2word-p0 ${FILES} up -d --no-deps --no-build api worker
 
 1. api/worker 的 `env_file` 均指向基础工作目录的 `./.env`（`/root/md2word-releases/template-compat-c1f7e8a1468f-20261029/.env`）；先只读核对目标键在 `.env`、容器 `printenv` 及全部 `-f` 文件中的实际来源，确认没有 override 覆盖。
 2. 备份为 `.env.bak-<UTC 时间>-<用途>`，用精确匹配的 `sed` 只替换目标行；不打印其他配置。
-3. 以最近一次成功 release 的 `compose-files.txt` 执行 `config --quiet`，再按配置实际影响的服务执行 `up -d --no-deps --no-build --force-recreate <服务>`；镜像 ID 应保持不变且与另一服务一致。`compose-files.txt` 不变，下一次上线仍以该清单为基础。
+3. 以最近一次成功 release 的 `compose-files.txt` 执行 `config --quiet`，再按配置实际影响的服务执行 `up -d --no-deps --no-build --force-recreate <服务>`。两者都需重建时，按上面的顺序等待新 API 健康后再重建 Worker。镜像 ID 应保持不变且与另一服务一致。`compose-files.txt` 不变，下一次上线仍以该清单为基础。
 4. 回滚：恢复备份 `.env`，用同一清单重建同一服务。
 
 已知陷阱：模板 `default@2` 在库中登记于受管目录 `var/config/templates/default/v2/`，内容与绑定挂载的 seed 相同；早于 PR #28 的 11-01 后版本会在启动时误判 seed 冲突并全部返回 500（2026-11-06 首次部署 cc6d4dc 时触发并已回滚）。

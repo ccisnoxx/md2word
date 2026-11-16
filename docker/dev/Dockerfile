@@ -23,4 +23,4 @@ RUN mkdir -p /app/var /app/deploy
 
 EXPOSE 8000
 
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["python", "-m", "uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--reload"]
