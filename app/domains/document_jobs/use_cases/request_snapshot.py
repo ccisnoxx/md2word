@@ -99,6 +99,8 @@ class DocumentJobRequestSnapshots:
             if template_layout_config_sha256 is not None:
                 # 本地模板只有清单路径，Worker 仍需认证提交时通过准入的同一份 YAML。
                 snapshot["template_layout_config_sha256"] = template_layout_config_sha256
+        elif mineru_language is not None:
+            snapshot["resources"] = self._with_mineru_language(resource_snapshot, mineru_language)
         return snapshot
 
     def resolve_clone_config(
@@ -130,8 +132,6 @@ class DocumentJobRequestSnapshots:
                 normalize_mineru_language(inherited_language) if inherited_language is not None
                 else spec.resolve_mineru_language(self.settings.mineru_language)
             )
-            if source_resources is not None:
-                source_resources = self._with_mineru_language(source_resources, mineru_language)
             source_assets = self.read_snapshot_record(source_job.request_snapshot, "term_assets")
             source_profile = self.read_snapshot_record(source_job.request_snapshot, "translation_profile")
             resolved_debug = self.resolve_debug_full_text_enabled(
