@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import re
-from typing import Annotated, Any, Literal
+from collections import defaultdict
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -13,6 +14,10 @@ from app.services.renderer.render_evidence_validation import ensure_renderer_int
 from app.services.tables.evidence import ISSUE_CODES, read_table_evidence
 from app.services.tables.models import canonical_sha256
 from app.services.tables.quality import BINDING_VALIDATOR_VERSION, REVIEWABLE_VALUE_COLUMN_RULES
+
+if TYPE_CHECKING:
+    from app.services.renderer.block_evidence import BlockRenderEvidence
+    from app.services.renderer.render_plan import RenderPlan
 
 
 VERSION = "document-base-quality/v1"
@@ -112,6 +117,41 @@ def project_base_quality(value: Any, *, generation: int | None = None) -> dict:
     return public
 
 
+def _verified_layout_hints(plan: RenderPlan, trace: BlockRenderEvidence, table_blocks: set[str]) -> set[str]:
+    """以已认证的 Word 处置结果对账源几何与表格条件提示。"""
+    records = {(item.block_id, item.decision_id): item for item in trace.block_render_map}
+    hints: set[str] = set()
+    table_contexts: dict[str, list[bool]] = defaultdict(list)
+    for decision in plan.decisions:
+        block_id = decision.block_id
+        record = records.get((block_id, decision.decision_id))
+        paragraphs = [
+            target for target in record.targets
+            if target.part == "word/document.xml" and target.element_kind == "paragraph" and target.role == "body"
+        ] if record is not None and record.disposition == "rendered" else []
+        # 首节的计划可继承模板栏数，须使用目标在实际 Word 中的栏数。
+        sections = paragraphs[0].actual.get("sections") if len(paragraphs) == 1 else None
+        if (
+            decision.mode == "decoration" and record is not None and not record.content_visible
+            and record.disposition in {"rendered", "suppressed", "superseded"}
+        ) or (
+            decision.block_type == "heading" and isinstance(sections, list) and len(sections) == 1
+            and isinstance(sections[0], dict) and sections[0].get("columns") == 1
+            and any(policy.mode == "heading" for policy in decision.text_policies)
+        ):
+            hints.update((f"layout_two_column_candidate:{block_id}:left", f"layout_two_column_candidate:{block_id}:right"))
+
+        # 条件段落由源表派生。只有同表的全部条件段落都已写入 Word，才确认绑定提示。
+        owner_id, _, item_index = block_id.rpartition("_context_")
+        if owner_id in table_blocks and item_index.isascii() and item_index.isdecimal():
+            table_contexts[owner_id].append(
+                len(paragraphs) == 1 and any(policy.mode == "table_context" for policy in decision.text_policies)
+            )
+    hints.update(f"layout_table_context_binding:{owner_id}" for owner_id, rendered in table_contexts.items()
+                 if all(rendered))
+    return hints
+
+
 def derive_base_quality(job: Any) -> dict | None:
     """完成 CAS 只消费自己的本代 marker 和已选 receipt；实物认证由原执行器先完成。"""
     if current_base(job) is None:
@@ -208,6 +248,7 @@ def derive_base_quality(job: Any) -> dict | None:
         if complete:
             # 已逐格认证的修正片段可核销分栏提示。未决数值列若完整写入原生表，
             # 同片段的宽表分类仅作诊断，数值归属风险仍由活动警告保留。
+            verified_value_table_blocks: set[str] = set()
             for item in table.tables:
                 warning_fragments = set()
                 if table.validator_version == BINDING_VALIDATOR_VERSION and item.render_state == "native":
@@ -220,6 +261,10 @@ def derive_base_quality(job: Any) -> dict | None:
                     }
                 for output in item.outputs:
                     for fragment in output.fragments:
+                        if (item.render_state == "native" and fragment.source_rows == fragment.retained_source_rows
+                                and (fragment.value_column_review_sha256 is not None
+                                     or fragment.fragment_id in warning_fragments)):
+                            verified_value_table_blocks.add(fragment.block_id)
                         if fragment.value_column_review_sha256 is not None:
                             block_id = fragment.block_id
                             compared_layout_hints.update((
@@ -230,6 +275,8 @@ def derive_base_quality(job: Any) -> dict | None:
                         elif (fragment.fragment_id in warning_fragments
                               and fragment.source_rows == fragment.retained_source_rows):
                             compared_layout_hints.add(f"layout_wide_table:{fragment.block_id}")
+            if table.validator_version == BINDING_VALIDATOR_VERSION and verified_value_table_blocks:
+                compared_layout_hints.update(_verified_layout_hints(plan, trace, verified_value_table_blocks))
     # 自由 flags 没有原 typed 分级；即使看起来像 info，也不能据名称忽略。
     risk_flags = [*metadata.get("quality_flags", []),
                   *(flag for flag in metadata.get("layout_quality_flags", []) if flag not in compared_layout_hints)]

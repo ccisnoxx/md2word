@@ -345,6 +345,11 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
         self.assertEqual(sha256(package).hexdigest(), "5de05d59fdacea166361bde14625ff8045350b0aefc894a923ff181a030fe033")
         with self.worker_case(package, source, filename="OPA228_P7.pdf") as (runtime, _, job, client, owner, _):
             report, word = self.read_verified_word(runtime, job)
+            with self.subTest("下载主 DOCX"):
+                self.check_internal_download(client, owner, job.id, word)
+            with self.subTest("整体质量"):
+                self.assertEqual(job.quality_status, "warning", job.quality_summary["checks_v1"])
+                self.assertEqual(current_base(job).counts.blocker_count, 0)
             self.assertIsNotNone(report.document.metadata.pdf_value_column_page_equivalence)
             table, = report.envelope.report.tables
             output, = table.outputs
@@ -359,6 +364,15 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
             waiting = report.document.metadata.pdf_value_column_unresolved
             self.assertEqual(len(waiting), 13)
             self.assertEqual({item.reason for item in waiting}, {"row_ambiguous"})
+            response = client.get(f"/api/v1/document-jobs/{job.id}/quality/tables", headers=owner)
+            self.assertEqual(response.status_code, 200, response.text)
+            item, = response.json()["items"]
+            self.assertCountEqual(
+                [(row["finding_id"], row["fragment_id"], row["source_row_index"], row["source_cell_index"],
+                  row["reason_code"], row["manual_review_required"]) for row in item["unresolved_value_columns"]],
+                [(row.finding_id, row.fragment_id, row.source_row_index, row.source_cell_index, "row_ambiguous", True)
+                 for row in waiting],
+            )
             certified = {item.finding_id for item in table.value_column_corrections}
             self.assertEqual({item.finding_id for item in waiting},
                              {item.finding_id for item in table.validation.findings} - certified)
@@ -369,7 +383,6 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                 binding = correction.pdf_binding
                 self.assertAlmostEqual(binding.table_bbox[2], 554.472)
                 self.assertAlmostEqual(binding.table_edge.corrected_bbox[2], 555.480469, places=4)
-            self.check_warning_download(client, owner, job, word)
 
     @skipUnless(which("pdftoppm"), "逐页比对需要 Poppler 栅格渲染")
     def test_changed_page_value_or_table_line_preserves_warnings(self) -> None:
