@@ -34,6 +34,7 @@ from app.domains.document_jobs.views.quality_review import (
     DocumentQualityTableItemResponse,
     DocumentQualityTableReferenceResponse,
     DocumentQualityTableReportResponse,
+    DocumentQualityTableValueFindingResponse,
     DocumentPreviewPageResponse,
     DocumentPreviewRunResponse,
     DocumentReviewBindingResponse,
@@ -50,6 +51,8 @@ from app.services.preview.models import PreviewErrorCode
 from app.services.preview.page_quality import QualityFlag, Reason, RULES
 from app.services.renderer.render_event_summary import controlled_quality_flags
 from app.services.tables.evidence import ISSUE_CODES
+from app.services.tables.models import VALUE_COLUMN_SPAN_AMBIGUOUS
+from app.services.tables.quality import VALIDATOR_VERSION
 
 
 MAX_CURSOR_LENGTH = 2048
@@ -160,6 +163,26 @@ def _source_span(value, *, table=False):
         **(_fields(value, ("fragment_id", "html_state", "row_start", "row_count", "columns")) if table else {}))
 
 
+def _value_column_findings(validation) -> list[DocumentQualityTableValueFindingResponse] | None:
+    if _field(validation, "validator_version") != VALIDATOR_VERSION:
+        return None
+    items = []
+    for finding in _field(validation, "findings"):
+        flag = _field(finding, "flag")
+        if _field(flag, "code") != VALUE_COLUMN_SPAN_AMBIGUOUS:
+            continue
+        evidence = _field(finding, "evidence")
+        span = _field(evidence, "value_column_span")
+        items.append(DocumentQualityTableValueFindingResponse(
+            finding_id=_field(finding, "finding_id"), code=VALUE_COLUMN_SPAN_AMBIGUOUS,
+            source_page_index=_field(evidence, "page_index"),
+            **_fields(evidence, ("fragment_id", "cell_id", "source_row_index", "column", "end_column")),
+            value=_field(span, "value"), unit=_field(span, "unit"),
+            columns=[_fields(column, ("column", "label", "group_start_column")) for column in _field(span, "columns")],
+        ))
+    return items
+
+
 def project_table_item(table) -> DocumentQualityTableItemResponse:
     validation, grid = _field(table, "validation"), _field(table, "source_grid")
     cells = _field(validation, "cells")
@@ -188,7 +211,8 @@ def project_table_item(table) -> DocumentQualityTableItemResponse:
         references=[DocumentQualityTableReferenceResponse(**_fields(reference, ("fragment_id", "source_status", "asset_id", "file_id", "mime_type", "registered")))
                     for reference in _field(table, "references")], outputs=outputs,
         placeholders=[DocumentQualityPlaceholderResponse(**_fields(item, ("placeholder_id", "fragment_id", "owner_block_id", "asset_ref", "source_kind", "issue_code")))
-                      for item in _field(table, "placeholders")], flags=flags, unknown_flag_count=unknown)
+                      for item in _field(table, "placeholders")], flags=flags, unknown_flag_count=unknown,
+        value_column_findings=_value_column_findings(validation))
 
 
 def project_table_report(view) -> DocumentQualityTableReportResponse:
@@ -261,7 +285,8 @@ def _review_quality(value):
 
 
 def _review_binding(value):
-    return DocumentReviewBindingResponse(**_fields(value, ("generation", "result_file_id", "binding_state", "result_sha256", "file_review_source_revision", "receipt_sha256")))
+    return DocumentReviewBindingResponse(**_fields(value, ("generation", "result_file_id", "binding_state", "result_sha256",
+        "file_review_source_revision", "receipt_sha256", "acknowledged_table_semantics_report_sha256")))
 
 
 def project_review(record, *, effective_status, validity_reason) -> DocumentReviewResponse:

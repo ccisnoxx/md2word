@@ -19,6 +19,7 @@ from app.main import create_app
 from app.services.auth.models import AuthenticatedUser
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
 from tests import test_fastapi_jobs_backend as fixtures
+from tests.document_job_list_query_v2_publication_fixtures import PARAMETER_TABLE_WITH_AMBIGUOUS_SPAN, natural_package
 from tests.document_job_use_case_support import replace_dependency
 
 
@@ -65,6 +66,19 @@ class DocumentJobDeliveryStateApiTests(TestCase):
             f"/api/v1/document-jobs/{job_id}/translation-qa", headers={**headers, "X-Trace-Id": "trace-review"},
             json={"status": qa_status, "issue_type": "terminology", "note": note},
         )
+
+    def test_legacy_translation_qa_cannot_approve_unacknowledged_table_semantics(self):
+        with self._application("file", eager=True) as (runtime, client, headers):
+            runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = natural_package(
+                table_html=PARAMETER_TABLE_WITH_AMBIGUOUS_SPAN)
+            job_id = self._create(client, headers)["job_id"]
+            job = runtime.document_job_repository.get_document_job(job_id)
+            self.assertEqual(job.status, "succeeded", job.error_message)
+            self.assertIn("table_semantics:value_column_span_ambiguous", job.quality_summary["table_evidence"]["issue_codes"])
+            rejected = self._qa(client, headers, job_id)
+            self.assertEqual(rejected.status_code, 409, rejected.text)
+            self.assertIn("疑似数值列归属", rejected.json()["detail"])
+            self.assertEqual(runtime.document_job_repository.list_document_job_reviews(job_id), [])
 
     def _assert_defaults(self, response, *, quality_summary=None):
         expected = {**STATE_DEFAULTS, "quality_summary": {} if quality_summary is None else quality_summary}

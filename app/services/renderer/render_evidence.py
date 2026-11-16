@@ -33,6 +33,7 @@ from app.services.renderer.template_conformance import (
     TemplateConformanceError,
     verify_template_conformance_report,
 )
+from app.services.tables.quality import LEGACY_VALIDATOR_VERSION, VALIDATOR_VERSION, ValidatorVersion
 
 
 if TYPE_CHECKING:
@@ -310,7 +311,8 @@ def build_renderer_evidence(document_ir: DocumentIR, word_content: bytes, layout
                             block_anchor_evidence: BlockAnchorEvidence | dict[str, Any] | None = None,
                             renderer_content_contract_version: Any = _UNSET,
                             formula_source_coverage: Any = _UNSET,
-                            template_conformance: Any = _UNSET) -> dict[str, Any]:
+                            template_conformance: Any = _UNSET,
+                            _table_validator_version: ValidatorVersion = VALIDATOR_VERSION) -> dict[str, Any]:
     """原内容认证保持严格；恢复时只消费已存 trace，可选锚点失败局部降级。"""
     if render_result is not None:
         if formula_report is not None and formula_report != render_result.formula_report or image_layout_report is not None and image_layout_report != render_result.image_layout_report:
@@ -334,7 +336,8 @@ def build_renderer_evidence(document_ir: DocumentIR, word_content: bytes, layout
             raise content_failure()
         evidence = build_v2_content_evidence(document_ir, word_content, layout_plan, coverage=formula_source_coverage,
             formula_report=formula_report, image_report=image_layout_report,
-            expected_template_version_id=expected_template_version_id, expected_generation_policy=expected_generation_policy)
+            expected_template_version_id=expected_template_version_id, expected_generation_policy=expected_generation_policy,
+            table_validator_version=_table_validator_version)
     else:
         if formula_source_coverage is not _UNSET:
             raise content_failure()
@@ -408,6 +411,13 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
     from copy import deepcopy
     from app.services.renderer.content_contract import CONTENT_VERSION, content_failure
     from app.services.renderer import image_evidence
+    table_validator_version = VALIDATOR_VERSION
+    if "table_evidence" in metadata:
+        stored = metadata["table_evidence"]
+        # 用持久化版本选择重算算法，随后逐值核对报告和绑定指纹。
+        if not isinstance(stored, dict) or stored.get("validator_version") not in (LEGACY_VALIDATOR_VERSION, VALIDATOR_VERSION):
+            raise content_failure("ir_render_evidence:binding_mismatch")
+        table_validator_version = stored["validator_version"]
     v2 = "renderer_content_contract_version" in metadata
     if not v2 and "formula_source_coverage" in metadata:
         raise content_failure()
@@ -421,7 +431,8 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
             expected_template_version_id=expected_template_version_id,
             render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"),
             block_anchor_evidence=metadata.get("block_anchor_evidence"),
-            template_conformance=metadata.get("template_conformance", _UNSET))
+            template_conformance=metadata.get("template_conformance", _UNSET),
+            _table_validator_version=table_validator_version)
         _restore_legacy_docx_quality(actual, word_content, metadata)
         ensure_renderer_integrity(actual)
         optional = {"render_trace_status", "render_plan", "block_render_evidence", "block_anchor_evidence", "block_anchor_summary"}
@@ -457,7 +468,9 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
         if proof is not None:
             actual["table_placeholder_rendering"] = proof
         if "table_evidence" in metadata and not actual["blocking_quality_flags"]:
-            actual["table_evidence"] = _build_table_evidence(document_ir, word_content, actual).model_dump(mode="json", warnings=False)
+            actual["table_evidence"] = _build_table_evidence(
+                document_ir, word_content, actual, validator_version=table_validator_version,
+            ).model_dump(mode="json", warnings=False)
     _restore_legacy_docx_quality(actual, word_content, metadata)
     if "template_conformance" in metadata:
         _add_template_conformance(actual, word_content, metadata["template_conformance"])

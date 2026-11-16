@@ -15,7 +15,7 @@ from app.infrastructure.persistence.file.record_lock import record_lock
 class FilePersistenceBackend:
     """保存 file backend 的稳定目录布局和原子 JSON 写入规则。"""
 
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(self, data_dir: Path, *, initialize: bool = True) -> None:
         self.data_dir = data_dir
         self.jobs_dir = data_dir / "jobs"
         self.document_files_dir = data_dir / "document_files"
@@ -25,16 +25,17 @@ class FilePersistenceBackend:
         self.saved_views_dir = data_dir / "saved_views"
         self.tmp_dir = data_dir / "tmp"
         self.audit_events_jsonl = data_dir / "audit_events.jsonl"
-        for path in (
-            self.jobs_dir,
-            self.document_files_dir,
-            self.document_jobs_dir,
-            self.document_job_translation_batches_dir,
-            self.document_job_callback_messages_dir,
-            self.saved_views_dir,
-            self.tmp_dir,
-        ):
-            path.mkdir(parents=True, exist_ok=True)
+        if initialize:
+            for path in (
+                self.jobs_dir,
+                self.document_files_dir,
+                self.document_jobs_dir,
+                self.document_job_translation_batches_dir,
+                self.document_job_callback_messages_dir,
+                self.saved_views_dir,
+                self.tmp_dir,
+            ):
+                path.mkdir(parents=True, exist_ok=True)
 
     @contextmanager
     def publication_lifecycle_lock(self) -> Iterator[None]:

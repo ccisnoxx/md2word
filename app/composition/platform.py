@@ -28,7 +28,7 @@ class PlatformServices:
 
 
 def build_platform_services(settings: Settings, adapters: PersistenceAdapters) -> PlatformServices:
-    """只构造，不执行种子写入；`AuthService` 构造时导入配置用户属于其自身合同。"""
+    """构造平台服务，配置用户由 API 启动流程导入。"""
 
     file_retention_policy_service = FileRetentionPolicyService(
         settings,

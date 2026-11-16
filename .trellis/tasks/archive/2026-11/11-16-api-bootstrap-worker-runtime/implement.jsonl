@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/index.md","reason":"后端装配、数据库、Worker 和验证规则入口"}
+{"file":".trellis/spec/backend/runtime-configuration.md","reason":"MinerU 配置轮换即时生效和 Worker 启动检查合同"}
+{"file":".trellis/spec/backend/template-layout-configuration.md","reason":"模板种子身份、默认版本和 legacy 路径兼容"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Worker 与 API 启动恢复及健康日志边界"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"API、持久化、Worker 与部署依赖顺序"}
+{"file":".trellis/tasks/archive/2026-11/11-11-sr-3-composition-root/research/bootstrap-order.md","reason":"现有初始化顺序和构造期副作用的基线证据"}

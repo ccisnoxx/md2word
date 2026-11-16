@@ -118,6 +118,12 @@ direct：uploaded → parsing → parsed → ir_converting
 | 交付投影 | `ready_to_publish` 表示按当前读入口观察到的发布资格。列表执行轻量检查，发布提交以实时证据为准。只有原子发布提交可设置 `published`。发布后归档只更新归档元数据，主件、快照和历史记录继续绑定原版本。 |
 | 最终下载 | `GET /api/v1/document-jobs/{job_id}/publications/{publication_id}/download-url` 按任务访问权限签发，最终下载再次验证当前发布指针、文件保护、对象身份、文件长度和 SHA-256。验证失败返回对应的错误，历史发布记录保持原值。 |
 
+#### 参数表数值列复核
+
+1. 读取 `GET /api/v1/document-jobs/{job_id}/quality/tables` 的表格项。新版报告的 `value_column_findings` 列出源页、表格内源行、单元格、值、单位和跨越的数值列。页、行、列使用零基索引，`end_column` 为排他边界。空数组表示已检查且无此类疑似项。历史报告省略该字段。
+2. 对照源 PDF 核查所有分页中的 `table_semantics:value_column_span_ambiguous`。当前 DOCX 可接受时，使用既有 `PATCH /api/v1/document-jobs/{job_id}/review` 提交 `status: "approved"` 和当前 `expected_source`，并将本次读取的 `report.report_sha256` 传给 `acknowledged_table_semantics_report_sha256`。发现确有错列时提交 `needs_fix`。内部下载仍可取得可编辑的 Word 草稿。
+3. 需要确认但未提交时，批准返回 `409`，原因码为 `table_semantics_confirmation_required`。确认摘要与当前报告不一致时返回 `table_semantics_confirmation_stale`。当前声明的证据无法验证时返回 `table_semantics_evidence_invalid`。正式发布仍要求有效批准，主件、代次或报告变化后须重新核查。
+
 恢复保留最终IR和资源快照，不重复已完成的解析或翻译。`quality_checking` 或尚未选定结果的 `uploading` 在现有replay触发时，可条件回到 `rendering` 重建丢失的字节并重新检查；恢复事件记录来源阶段，进度不下降。质量通过后，每次尝试先登记内部pending候选，再写独立对象路径；仓储原子选定第一份有效结果凭据，所有恢复者只登记其同一个文件并完成任务。已有凭据时不再重渲染、换件或重写对象。此机制不增加持续扫描器、租约或公开状态字段。
 
 候选不是用户主件。任务文件列表、按文件ID签发和技术Token消费均只允许合法完成任务的当前结果指针；pending、落选或取消后未绑定的候选不能下载。既有租户/公司/owner、Token签名/过期和文件有效期校验保持。自动发现legacy主件必须是唯一可核验的当前generation/最终IR文件；无generation、旧代、不同IR或矛盾多件不自动晋升。明确绑定的 `result_file_id` 按既有重试语义验证和复用，历史文件/审计保留。

@@ -21,6 +21,8 @@ verification_scope: >-
 
 API/Worker 共用 `MD2WORD_IMAGE`：开发默认 `md2word-dev:local`，生产必填版本化引用。先构建一次 API 镜像，再用 `--no-build` 启动两者；生产切换还需核对实际 image ID。下面是仓库 Compose 的入口，hostdzire 既有分层 override 方式见[部署记录](../docs/deploy/hostdzire-dmit-md2word.md#分层-override-上线当前生产方式)，不能直接套用仓库编排覆盖线上配置。
 
+API 工厂在提供 HTTP 服务前完成 schema 和 seed 初始化。两份 Compose 都通过 `service_healthy` 等待 API 的 `/api/v1/health/live` 探针成功，再启动 Worker。
+
 ## 开发环境
 
 ```bash

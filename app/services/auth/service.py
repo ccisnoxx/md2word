@@ -78,12 +78,11 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 class AuthService:
-    """Authenticate managed internal users and issue HS256 JWT access tokens."""
+    """认证受管内部用户，并签发 HS256 JWT 访问令牌。"""
 
     def __init__(self, settings: Settings, user_repository: InternalUserRepositoryProtocol) -> None:
         self.settings = settings
         self.user_repository = user_repository
-        self._bootstrap_repository_from_config_if_empty()
 
     def authenticate(self, username: str, password: str) -> AuthenticatedUser:
         """校验用户名密码，成功后返回不含密码哈希的用户上下文。"""
@@ -179,8 +178,8 @@ class AuthService:
             raise TokenValidationError("token_expired", "token 已过期。")
         return payload
 
-    def _bootstrap_repository_from_config_if_empty(self) -> None:
-        """Import configured users once when the managed repository is empty."""
+    def bootstrap_repository_from_config_if_empty(self) -> None:
+        """仅在受管用户仓储为空时导入配置中的内部用户。"""
 
         if self.user_repository.count_internal_users() > 0:
             return

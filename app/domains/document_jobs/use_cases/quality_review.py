@@ -286,11 +286,12 @@ class DocumentJobQualityReview:
         return response
 
     def submit_document_review_with_source(self, job_id, *, user, review_status, expected_source,
-            issue_type=None, note=None, trace_id=None):
+            issue_type=None, note=None, trace_id=None, acknowledged_table_semantics_report_sha256=None):
         from app.domains.document_jobs.views.quality_review import DocumentReviewUpdateResponse
         expected = ReviewExpectedSource.model_validate(expected_source)
         committed = self.review_writer.submit_document_review(self.review_api_job(job_id, user), user=user,
-            review_status=review_status, issue_type=issue_type, note=note, trace_id=trace_id, expected_source=expected)
+            review_status=review_status, issue_type=issue_type, note=note, trace_id=trace_id, expected_source=expected,
+            acknowledged_table_semantics_report_sha256=acknowledged_table_semantics_report_sha256)
         try:
             current = self.get_document_review(job_id, user=user)
         except ApplicationError as exc:

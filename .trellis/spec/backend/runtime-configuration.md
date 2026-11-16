@@ -78,3 +78,49 @@ client = MinerUClient(api_token=config.api_token, user_token=config.uid or "", .
 - `pdf_crop.poppler_tools_available()` 是工具判断的唯一实现。生产环境缺失时 `/health/ready` 报阻断项 `pdf_crop_tools_missing`，`run_document_worker.main()` 在启动 Celery 前抛错；开发环境只告警。不得放进 `worker_ready` 信号：Celery 的 `Signal.send` 会捕获接收方异常，Worker 仍继续运行。
 - `PAGE_DEGRADATION_MAX_RATIO`（默认 0.5，范围 `(0, 1]`）、`PAGE_DEGRADATION_ALLOW_SINGLE_PAGE`（默认 false）由 `build_runtime` 经 `app/composition/document_pipeline.py` 构造为 `PageDegradationPolicy` 并注入 converter，Worker 读取同一实例。单页文档只看开关，不看比例。
 - `RENDER_DEGRADATION_MAX_ATTEMPTS`（默认 5，范围 `0..20`）限制渲染阶段降级轮数；非法值在 `Settings` 构造时被拒绝。
+
+## API 初始化和 Worker 装配
+
+### 1. 范围
+
+调整 API、Celery、持久化装配或 Compose 启动顺序时使用本合同。适用于使用同一份存储的单 API 部署。
+
+### 2. 入口
+
+- `build_runtime(settings=None, *, initialize=False)` 默认只装配。无参数 `create_app()` 显式启用初始化，`create_app(runtime=...)` 使用已准备好的运行时。
+- Uvicorn 启动命令使用 `app.main:create_app --factory`。Compose 中 Worker 的 `depends_on.api.condition` 为 `service_healthy`，对应 `GET /api/v1/health/live`。
+
+### 3. 职责与约束
+
+- API 依次准备存储目录和 schema、装配服务、导入配置内部用户、执行验收记录、翻译术语、术语规则、翻译 Profile 和模板的现有 bootstrap。保持后端适用条件和现有默认指针规则。
+- Worker 子进程首次执行文档或翻译批次任务时构造 Runtime，成功后以当前 PID 复用。MinerU 和 AI Provider 的有效配置仍在实际调用时解析。file/SQLite 路径每次读取最新模板清单，MySQL 继续使用模板目录仓储和资源版本。
+- Worker 主进程仅在轮询模式执行 `worker_ready` 恢复，使用独立装配得到的运行时调用 `run_startup_recovery(trace_id="worker_startup", polling_only=True)`。该业务恢复可以写事件并续投，子进程任务也可正常写入业务状态。
+
+### 4. 失败处理
+
+| 情形 | 行为 |
+| --- | --- |
+| 存储或 seed 初始化异常 | API 工厂失败，健康探针不能成功，依赖它的 Worker 等待。 |
+| Worker 初次装配抛错 | 错误继续传播，后续任务调用可以重新构造。 |
+| 配置了 MinerU callback | Worker 应用 `LOG_FORMAT` 后直接返回，跳过 Runtime 装配和轮询恢复。 |
+
+### 5. 运行场景
+
+- 空库首次启动由 API 初始化。已有库重启沿用原 schema maintenance 和幂等 seed。Worker 独立重启依赖已经准备好的存储，并按现有恢复规则续投。
+- 分层部署命令使用 `--no-deps` 时，应先核对新 API 容器身份和 `/api/v1/health/live` 成功，再启动同镜像 Worker。
+
+### 6. 验证
+
+验证 API 初始化成功和失败、三种持久化后端的 Worker 装配无写入、两种任务按 PID 复用、配置和模板清单更新可见，以及 callback/轮询恢复路径。解析 dev/prod Compose 核对工厂参数、探针与启动条件。
+
+### 7. 接线示例
+
+```python
+# API 工厂
+runtime = build_runtime(initialize=True)
+
+# Worker 或只需读取已初始化存储的运维脚本
+runtime = build_runtime()
+```
+
+在 Worker 调用中传入 `initialize=True` 会重新触发 schema 维护与种子写入，使 Worker 参与 API 的初始化职责。

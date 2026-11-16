@@ -119,10 +119,10 @@ class PersistenceAdapters:
     translation_term_repository: TranslationTermRepositoryProtocol | None = None
 
 
-def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
+def build_file_persistence_adapters(data_dir: Path, *, initialize: bool = True) -> PersistenceAdapters:
     """为 local file metadata backend 构造端口 adapter。"""
 
-    backend = FilePersistenceBackend(data_dir)
+    backend = FilePersistenceBackend(data_dir, initialize=initialize)
     return PersistenceAdapters(
         backend_name="file",
         job_event_repository=FileJobEventRepository(backend),
@@ -147,10 +147,10 @@ def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
     )
 
 
-def build_sqlite_persistence_adapters(database_path: Path) -> PersistenceAdapters:
+def build_sqlite_persistence_adapters(database_path: Path, *, initialize: bool = True) -> PersistenceAdapters:
     """为 sqlite metadata backend 构造端口 adapter。"""
 
-    backend = SqlitePersistenceBackend(database_path)
+    backend = SqlitePersistenceBackend(database_path, initialize=initialize)
     return PersistenceAdapters(
         backend_name="database",
         job_event_repository=SqliteJobEventRepository(backend),
@@ -179,10 +179,11 @@ def build_mysql_persistence_adapters(
     config: MysqlPersistenceConfig,
     *,
     connect_factory: ConnectFactory | None = None,
+    initialize: bool = True,
 ) -> PersistenceAdapters:
     """为 MySQL metadata backend 构造端口 adapter。"""
 
-    backend = MysqlPersistenceBackend(config, connect_factory=connect_factory)
+    backend = MysqlPersistenceBackend(config, connect_factory=connect_factory, initialize=initialize)
     return PersistenceAdapters(
         backend_name="mysql",
         job_event_repository=MysqlJobEventRepository(backend),
@@ -212,16 +213,16 @@ def build_persistence_adapters(
     settings: Settings,
     *,
     mysql_connect_factory: ConnectFactory | None = None,
+    initialize: bool = True,
 ) -> PersistenceAdapters:
-    """根据 Settings 选择当前 metadata backend，并保持原 backend 名称语义。"""
+    """根据 Settings 选择元数据后端，按调用方要求初始化目录和 schema。"""
 
+    if initialize and settings.jobs_repository_backend in {"database", "mysql"}:
+        settings.jobs_dir.mkdir(parents=True, exist_ok=True)
+        settings.tmp_dir.mkdir(parents=True, exist_ok=True)
     if settings.jobs_repository_backend == "database":
-        settings.jobs_dir.mkdir(parents=True, exist_ok=True)
-        settings.tmp_dir.mkdir(parents=True, exist_ok=True)
-        return build_sqlite_persistence_adapters(settings.jobs_metadata_database_file)
+        return build_sqlite_persistence_adapters(settings.jobs_metadata_database_file, initialize=initialize)
     if settings.jobs_repository_backend == "mysql":
-        settings.jobs_dir.mkdir(parents=True, exist_ok=True)
-        settings.tmp_dir.mkdir(parents=True, exist_ok=True)
         return build_mysql_persistence_adapters(
             MysqlPersistenceConfig(
                 host=settings.jobs_mysql_host,
@@ -233,5 +234,6 @@ def build_persistence_adapters(
                 connect_timeout_seconds=settings.jobs_mysql_connect_timeout_seconds,
             ),
             connect_factory=mysql_connect_factory,
+            initialize=initialize,
         )
-    return build_file_persistence_adapters(settings.data_path)
+    return build_file_persistence_adapters(settings.data_path, initialize=initialize)

@@ -1,25 +1,154 @@
 """列表仅判断发布状态，详情、发布前检查及提交仍认证真实证据。"""
 
 import hashlib
+import io
 import json
+from datetime import timedelta
 from unittest import TestCase
 from unittest.mock import patch
 from uuid import uuid4
 
 import yaml
+from docx import Document
 
 from app.domains.document_jobs.publication import observed_publication_source
 from app.domains.document_jobs.publication_evidence import prepare_publication_evidence
 from app.domains.document_jobs.publication_provenance import capture_render_publication_provenance
 from app.domains.document_jobs.review import observed_review_source
+from app.domains.resources.models import utc_now
+from app.services.tables.models import VALUE_COLUMN_SPAN_AMBIGUOUS
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
-from tests.document_job_list_query_v2_publication_fixtures import V2PublicationFixture
+from tests.document_job_list_query_v2_publication_fixtures import (
+    PARAMETER_TABLE_WITH_AMBIGUOUS_SPAN,
+    V2PublicationFixture,
+    natural_package,
+)
 from tests import test_fastapi_jobs_backend as support
 from tests import test_document_job_list_query_v2_service as service_fixtures
 from tests.document_job_use_case_support import patch_use_case_clock, patch_publication_evidence
 
 
 class DocumentJobListPublishLightCheckTests(V2PublicationFixture, TestCase):
+    def test_table_semantics_confirmation_is_bound_to_an_available_report(self):
+        source = natural_package(table_html=PARAMETER_TABLE_WITH_AMBIGUOUS_SPAN)
+        for kind in ("file", "sqlite"):
+            with self.subTest(kind=kind), self.publication_runtime(
+                kind=kind, approved=False, source_package=source,
+            ) as (runtime, job, _, _, client, headers, _):
+                repository = runtime.document_job_repository
+                file = runtime.document_file_repository.get_document_file(job.result_file_id)
+                admin_headers = support.build_auth_header(client, "admin", "admin-pass")
+                base_url = f"/api/v1/document-jobs/{job.id}"
+                tables = client.get(f"{base_url}/quality/tables", headers=headers)
+                self.assertEqual(tables.status_code, 200, tables.text)
+                report = tables.json()["report"]
+                finding, = tables.json()["items"][0]["value_column_findings"]
+                self.assertEqual(
+                    {key: finding[key] for key in ("code", "source_page_index", "source_row_index", "value", "column", "end_column")},
+                    {"code": VALUE_COLUMN_SPAN_AMBIGUOUS, "source_page_index": 0, "source_row_index": 1,
+                     "value": "±5", "column": 1, "end_column": 3},
+                )
+                self.assertEqual(finding["columns"], [
+                    {"column": 1, "label": "MIN", "group_start_column": 1},
+                    {"column": 2, "label": "TYP", "group_start_column": 1},
+                ])
+                self.assertIn(VALUE_COLUMN_SPAN_AMBIGUOUS,
+                    file.metadata["table_evidence_summary"]["issue_codes"])
+                review_payload = {"status": "approved", "expected_source": observed_review_source(job, file).model_dump(mode="json")}
+                preflight = client.get(f"{base_url}/publications", headers=admin_headers)
+                self.assertEqual(preflight.status_code, 200, preflight.text)
+                self.assertFalse(preflight.json()["available_actions"]["publish"]["eligible"])
+                publish = {"request_id": str(uuid4()), "note": "正式交付",
+                    "expected_source": observed_publication_source(job, file).model_dump(mode="json")}
+                rejected = client.post(f"{base_url}/publish", headers=admin_headers, json=publish)
+                self.assertEqual(rejected.status_code, 409, rejected.text)
+                self.assertEqual(rejected.json()["error"]["reason_code"], "publication_review_invalid")
+                self.assertEqual(repository.list_document_job_publications(job.id), [])
+
+                signed = client.get(f"{base_url}/download-url", headers=headers)
+                self.assertEqual(signed.status_code, 200, signed.text)
+                downloaded = client.get(signed.json()["download_url"])
+                self.assertEqual(downloaded.status_code, 200, downloaded.text)
+                native_cell = Document(io.BytesIO(downloaded.content)).tables[0].rows[1].cells[1]
+                self.assertEqual((native_cell.text, native_cell._tc.grid_span), ("±5", 2))
+
+                for fields, reason in (
+                    ({}, "table_semantics_confirmation_required"),
+                    ({"acknowledged_table_semantics_report_sha256": "0" * 64}, "table_semantics_confirmation_stale"),
+                ):
+                    rejected = client.patch(f"{base_url}/review", headers=headers, json={**review_payload, **fields})
+                    self.assertEqual(rejected.status_code, 409, rejected.text)
+                    self.assertEqual(rejected.json()["error"]["reason_code"], reason)
+                with patch("app.domains.document_jobs.use_cases.review_writer.table_semantics_approval_conflict", return_value=None):
+                    locked_rejection = client.patch(f"{base_url}/review", headers=headers, json=review_payload)
+                self.assertEqual(locked_rejection.status_code, 409, locked_rejection.text)
+                self.assertEqual(locked_rejection.json()["error"]["reason_code"], "table_semantics_confirmation_required")
+                confirmed = {**review_payload, "acknowledged_table_semantics_report_sha256": report["report_sha256"]}
+                self.assertEqual(repository.list_document_job_reviews(job.id), [])
+                read_content = runtime.file_upload_service.read_file_content
+
+                def missing_report(observed):
+                    if observed.id == report["report_file_id"]:
+                        raise FileNotFoundError("测试中的报告实物不可用。")
+                    return read_content(observed)
+
+                with patch.object(runtime.file_upload_service, "read_file_content", side_effect=missing_report):
+                    rejected = client.patch(f"{base_url}/review", headers=headers, json=confirmed)
+                self.assertEqual(rejected.status_code, 409, rejected.text)
+                self.assertEqual(rejected.json()["error"]["reason_code"], "table_semantics_evidence_invalid")
+                self.assertEqual(repository.list_document_job_reviews(job.id), [])
+
+                accepted = client.patch(f"{base_url}/review", headers=headers, json=confirmed)
+                self.assertEqual(accepted.status_code, 200, accepted.text)
+                self.assertEqual(accepted.json()["review"]["status"], "approved")
+                history = client.get(f"{base_url}/review/history", headers=headers)
+                self.assertEqual(history.status_code, 200, history.text)
+                self.assertEqual(history.json()["items"][0]["binding"]["acknowledged_table_semantics_report_sha256"],
+                    report["report_sha256"])
+                preflight = client.get(f"{base_url}/publications", headers=admin_headers)
+                self.assertEqual(preflight.status_code, 200, preflight.text)
+                self.assertTrue(preflight.json()["available_actions"]["publish"]["enabled"], preflight.text)
+                publish["expected_source"] = preflight.json()["expected_source"]
+                response = client.post(f"{base_url}/publish", headers=admin_headers, json=publish)
+                self.assertEqual(response.status_code, 201, response.text)
+                stored, = repository.list_document_job_publications(job.id)
+                self.assertEqual(stored.quality["table_report"]["report_sha256"], report["report_sha256"])
+
+    def test_table_semantics_publish_rechecks_registered_report_at_commit(self):
+        source = natural_package(table_html=PARAMETER_TABLE_WITH_AMBIGUOUS_SPAN)
+        with self.publication_runtime(approved=False, source_package=source) as (
+            runtime, job, _, _, client, headers, _,
+        ):
+            repository = runtime.document_job_repository
+            files = runtime.document_file_repository
+            file = files.get_document_file(job.result_file_id)
+            metadata = file.metadata["table_evidence_summary"]
+            base_url = f"/api/v1/document-jobs/{job.id}"
+            admin_headers = support.build_auth_header(client, "admin", "admin-pass")
+            approved = client.patch(f"{base_url}/review", headers=headers, json={
+                "status": "approved", "expected_source": observed_review_source(job, file).model_dump(mode="json"),
+                "acknowledged_table_semantics_report_sha256": metadata["report_sha256"],
+            })
+            self.assertEqual(approved.status_code, 200, approved.text)
+            current = repository.get_document_job(job.id)
+            commit = repository.publish_document_job
+
+            def expire_report_at_commit(job_id, *, submission):
+                files.update_document_file(metadata["report_file_id"], expires_at=utc_now() - timedelta(seconds=1))
+                return commit(job_id, submission=submission)
+
+            with patch.object(repository, "publish_document_job", side_effect=expire_report_at_commit):
+                rejected = client.post(f"{base_url}/publish", headers=admin_headers, json={
+                    "request_id": str(uuid4()), "note": "报告在提交前过期",
+                    "expected_source": observed_publication_source(current, file).model_dump(mode="json"),
+                })
+            self.assertEqual(rejected.status_code, 409, rejected.text)
+            self.assertEqual(rejected.json()["error"]["reason_code"], "publication_result_unavailable")
+            self.assertEqual(repository.list_document_job_publications(job.id), [])
+            preflight = client.get(f"{base_url}/publications", headers=admin_headers)
+            self.assertEqual(preflight.status_code, 200, preflight.text)
+            self.assertFalse(preflight.json()["available_actions"]["publish"]["enabled"])
+
     def test_legacy_complete_provenance_rejects_external_logo_without_consumed_logo_bytes(self):
         def configure_layout(path):
             config = yaml.safe_load(path.read_bytes())

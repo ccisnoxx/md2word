@@ -49,7 +49,7 @@ Schema creation is bootstrap SQL in code:
 
 - sqlite statements live in `app/infrastructure/persistence/sqlite/schema.py`.
 - MySQL statements live in `app/infrastructure/persistence/mysql/schema.py`.
-- `SqlitePersistenceBackend` and `MysqlPersistenceBackend` call `initialize_schema()` during backend initialization.
+- `SqlitePersistenceBackend` 和 `MysqlPersistenceBackend` 在 `initialize=True` 时调用 `initialize_schema()`。服务入口由 API 工厂启用，Worker 和其他默认 Runtime 装配透传 `initialize=False`。直接使用后端的迁移工具按各自显式入口执行。
 
 MySQL 的 `initialize_schema(connection)` 不止建表：按建表、maintenance SQL、补列、post-column SQL、删除旧索引、补索引的顺序执行。`_ensure_column()` / `_ensure_index()` 查询 `INFORMATION_SCHEMA` 后决定是否执行 ALTER；这是启动时 schema maintenance，不是有版本账本的 up/down migration。SQLite 在 CREATE TABLE/INDEX IF NOT EXISTS 后检查 DocumentJob 状态列并幂等补列；payload 回填仍由显式工具执行。旧 jobs shadow copy 工具已移除，不作为正式 DocumentJob 的迁移入口。
 

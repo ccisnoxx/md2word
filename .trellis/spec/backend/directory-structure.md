@@ -14,16 +14,16 @@ Evidence:
 
 ## Runtime Composition
 
-`app/main.py` is the composition root entry. `build_runtime()` builds `Settings`, configures logging, builds persistence adapters (kept in `app.main` so tests can patch `app.main.build_persistence_adapters`), then calls the per-area assembly functions in `app/composition/` in order — `platform.build_platform_services` → `document_pipeline.build_document_pipeline` → `terminology.build_terminology_services` → `startup.run_startup_bootstrap` → `health.build_observability_services` — and creates `AppRuntime` with explicit keyword arguments. 装配函数只构造对象并返回 frozen dataclass；种子写入与登记等幂等 bootstrap 统一在 `run_startup_bootstrap` 中、全部服务构造之后按固定顺序执行，构造函数不得读取 bootstrap 的产物（顺序依据见 `.trellis/tasks/archive/2026-11/11-11-sr-3-composition-root/research/bootstrap-order.md`）。
+`app/main.py` 是进程装配入口。`build_runtime(settings=None, *, initialize=False)` 先准备设置、日志和持久化适配器，再依次装配 platform、document pipeline、terminology。API 工厂显式启用 `initialize=True`，持久化适配器在构造业务服务前初始化目录和 schema，`run_startup_bootstrap` 在业务服务构造后统一执行 seed。最后装配 observability 并构造 `AppRuntime`。持久化工厂保留为 `app.main.build_persistence_adapters`，便于替换测试后端。进程职责与健康顺序见 [API 初始化和 Worker 装配](runtime-configuration.md#api-初始化和-worker-装配)。
 
 Follow this pattern for runtime dependencies:
 
-- Construct shared services in the owning `app/composition/*.py` assembly function; add new bootstrap side effects only to `run_startup_bootstrap`.
+- 在所属的 `app/composition/*.py` 中构造共享服务。业务 seed 写入统一经 `run_startup_bootstrap`，构造函数只依赖装配输入。
 - Store shared dependencies on `AppRuntime` in `app/core/runtime.py`.
 - Read runtime dependencies in routers through `Depends(get_runtime)` from `app/api/dependencies.py`.
 - Avoid constructing repositories, clients, or services directly inside route handlers unless the existing route already owns a narrow local helper.
 
-`create_app()` registers `register_api_error_handlers(app)`, CORS, trace/access logging middleware (`app/api/middleware.py::install_trace_logging_middleware`), 正式 DocumentJob 启动恢复任务, and `api_v1_router`. `app = LazyDefaultApp()` delays reading `.env` and connecting runtime dependencies until the ASGI app is actually called.
+`create_app()` 注册错误处理、CORS、访问日志、DocumentJob 启动恢复及 `api_v1_router`。传入 `AppRuntime` 时，调用方负责准备测试所需 schema 和 seed。`app = LazyDefaultApp()` 在 ASGI 调用时延迟构建默认 API。
 
 ## API Layout
 
@@ -75,7 +75,7 @@ Examples:
 
 `app/workers/` owns worker implementations. Script entrypoints under `scripts/dev/` adapt them for local/PyCharm use:
 
-- `scripts/dev/run_api.py` runs `uvicorn` against `app.main:app`.
+- `scripts/dev/run_api.py` 通过 Uvicorn 调用 `app.main:create_app` 工厂。
 - `scripts/dev/run_document_worker.py` is the Document Jobs worker entrypoint.
 
 ## Infrastructure And Runtime Data

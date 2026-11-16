@@ -1,6 +1,7 @@
 """表格验证的纯值合同、严重度策略与独立质量贡献，不决定任务发布状态。"""
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Annotated, ClassVar, Literal, Self
 
@@ -9,13 +10,18 @@ from pydantic_core import PydanticCustomError
 
 from app.services.document_ir.models import UpstreamTableCoverage
 from app.services.document_ir.table_header_review import TableHeaderReview
+from app.services.tables.measurement import (
+    MAX_PARAMETER_UNIT_CHARS, MAX_PARAMETER_VALUE_CHARS, PARAMETER_VALUE, ValueColumnLabel, is_measurement_unit,
+)
 from app.services.tables.models import (
     CellId, FragmentId, NonNegativeInt, PositiveInt, RunId, RunType, Sha256,
-    TableQualityFlag, canonical_sha256, make_cell_id, make_run_id,
+    VALUE_COLUMN_SPAN_AMBIGUOUS, TableQualityFlag, canonical_sha256, make_cell_id, make_run_id,
 )
 
 
-VALIDATOR_VERSION = "table-validator/v1"
+LEGACY_VALIDATOR_VERSION = "table-validator/v1"
+VALIDATOR_VERSION = "table-validator/v2"
+ValidatorVersion = Literal["table-validator/v1", "table-validator/v2"]
 NORMALIZER_VERSION = "table-html/v1"
 POLICY_VERSION = "table-validation-policy/v1"
 GROUPS_VERSION = "logical-table-groups/v1"
@@ -33,6 +39,7 @@ RULE_DEFAULTS: dict[str, Severity] = {
     "table_cross_page_inconsistent.header_mismatch": "warning", "table_continuation_uncertain": "warning",
     "table_span_invalid": "warning", "table_html_removed_unsafe": "warning",
     "table_formula_unresolved": "warning", "table_nested_script": "warning",
+    VALUE_COLUMN_SPAN_AMBIGUOUS: "warning",
 }
 HARD_BLOCKERS = frozenset({"table_html_missing", "table_html_empty", "table_html_no_rows", "table_zero_columns",
                            "table_span_collision", "table_span_out_of_bounds"})
@@ -43,7 +50,7 @@ Reason = Literal[
     "row_underfill", "severe_underfill", "repeated_units", "compressed_value_columns", "glued_units",
     "long_decimal", "column_mismatch", "header_mismatch", "missing_geometry", "geometry_mismatch",
     "page_not_adjacent", "page_body_boundary", "insufficient_evidence", "unreliable_columns",
-    "invalid_span", "unsafe_removed", "formula_unresolved", "nested_script",
+    "invalid_span", "unsafe_removed", "formula_unresolved", "nested_script", "value_column_span_ambiguous",
 ]
 RULE_REASONS = {
     "table_html_missing": {"missing"}, "table_html_empty": {"empty"}, "table_html_no_rows": {"no_rows"},
@@ -59,6 +66,7 @@ RULE_REASONS = {
                                       "page_body_boundary", "insufficient_evidence", "unreliable_columns"},
     "table_span_invalid": {"invalid_span"}, "table_html_removed_unsafe": {"unsafe_removed"},
     "table_formula_unresolved": {"formula_unresolved"}, "table_nested_script": {"nested_script"},
+    VALUE_COLUMN_SPAN_AMBIGUOUS: {"value_column_span_ambiguous"},
 }
 
 
@@ -207,6 +215,33 @@ class TableRunRange(_QualityModel):
         return self
 
 
+class ValueColumn(_QualityModel):
+    """同名值列用组首列的源 Grid 索引区分。"""
+
+    column: NonNegativeInt
+    label: ValueColumnLabel
+    group_start_column: NonNegativeInt
+
+
+class ValueColumnSpan(_QualityModel):
+    """内部复核用受限值，保留原数值和已确认的单位。"""
+
+    json_tuple_fields: ClassVar[tuple[str, ...]] = ("columns",)
+    value: Annotated[str, Field(min_length=1, max_length=MAX_PARAMETER_VALUE_CHARS)]
+    unit: Annotated[str, Field(min_length=1, max_length=MAX_PARAMETER_UNIT_CHARS)] | None
+    columns: Annotated[tuple[ValueColumn, ...], Field(min_length=2)]
+
+    @model_validator(mode="after")
+    def _check_columns_and_value(self) -> Self:
+        if (PARAMETER_VALUE.fullmatch(self.value) is None
+                or self.unit is not None and not is_measurement_unit(self.unit)
+                or [item.column for item in self.columns] != sorted({item.column for item in self.columns})
+                or any(not 0 <= item.column - item.group_start_column <= 2 for item in self.columns)
+                or any(not 2 <= count <= 3 for count in Counter(item.group_start_column for item in self.columns).values())):
+            _invalid()
+        return self
+
+
 class TableFindingEvidence(_QualityModel):
     json_tuple_fields: ClassVar[tuple[str, ...]] = ("bbox", "run_ranges")
     rule_id: str
@@ -233,6 +268,7 @@ class TableFindingEvidence(_QualityModel):
     end_char: PositiveInt | None = None
     run_ranges: tuple[TableRunRange, ...] = ()
     attribute: Literal["rowspan", "colspan"] | None = None
+    value_column_span: ValueColumnSpan | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _check_rule(self) -> Self:
@@ -241,6 +277,8 @@ class TableFindingEvidence(_QualityModel):
         if ((self.start_char is None) != (self.end_char is None) or
                 (self.start_char is not None and self.end_char <= self.start_char) or
                 (self.end_column is not None and (self.column is None or self.end_column <= self.column))):
+            _invalid()
+        if (self.value_column_span is not None) != (self.rule_id == VALUE_COLUMN_SPAN_AMBIGUOUS):
             _invalid()
         return self
 
@@ -304,7 +342,7 @@ class TableValidationReport(_QualityModel):
 
     json_tuple_fields: ClassVar[tuple[str, ...]] = ("fragments", "related_fragments", "cells", "findings")
     schema_version: Literal["table-validation/v1"]
-    validator_version: Literal["table-validator/v1"]
+    validator_version: ValidatorVersion
     normalizer_version: Literal["table-html/v1"]
     table_id: TableId
     source_content_sha256: Sha256
@@ -394,6 +432,14 @@ class TableValidationReport(_QualityModel):
                     finding.finding_id != make_finding_id(self.table_id, finding.flag, evidence)):
                 _invalid()
             cell = cells.get(evidence.cell_id)
+            if evidence.value_column_span is not None and (
+                self.validator_version == LEGACY_VALIDATOR_VERSION
+                or cell is None or cell.is_header
+                or (evidence.row, evidence.column, evidence.end_column) != (cell.row, cell.column, cell.column + cell.colspan)
+                or any(not cell.column <= item.column < cell.column + cell.colspan
+                       for item in evidence.value_column_span.columns)
+            ):
+                _invalid()
             if evidence.related_fragment_id is not None:
                 related_used.add(evidence.related_fragment_id)
             if evidence.cell_id is not None:
@@ -500,10 +546,11 @@ class TableValidationReport(_QualityModel):
 def make_table_report(*, table_id: str, source_content_sha256: str, raw_html_sha256: str,
                       policy: TableValidationPolicy, fragments: tuple[TableFragmentReference, ...],
                       related_fragments: tuple[TableFragmentReference, ...], cells: tuple[TableCellReference, ...],
-                      findings: Sequence[TableFinding]) -> TableValidationReport:
+                      findings: Sequence[TableFinding],
+                      validator_version: ValidatorVersion = VALIDATOR_VERSION) -> TableValidationReport:
     """只在生产者完成检查后封装；重读仍执行全部跨字段校验。"""
     ordered = _ordered_findings(findings, fragments + related_fragments, cells)
-    payload = dict(schema_version="table-validation/v1", validator_version=VALIDATOR_VERSION,
+    payload = dict(schema_version="table-validation/v1", validator_version=validator_version,
                    normalizer_version=NORMALIZER_VERSION, table_id=table_id,
                    source_content_sha256=source_content_sha256, raw_html_sha256=raw_html_sha256,
                    policy=policy.model_dump(mode="json", warnings=False), policy_sha256=policy.policy_sha256,
@@ -524,7 +571,7 @@ class TableQualityContribution(_QualityModel):
     schema_version: Literal["table-quality-contribution/v1"]
     producer: Literal["table_validator"]
     source_content_sha256: Sha256 | None
-    validator_version: Literal["table-validator/v1"]
+    validator_version: ValidatorVersion
     normalizer_version: Literal["table-html/v1"]
     policy: TableValidationPolicy
     policy_sha256: Sha256
@@ -560,7 +607,9 @@ class TableQualityContribution(_QualityModel):
         source_indices = set()
         first_indices = []
         for report in self.reports:
-            if report.source_content_sha256 != self.source_content_sha256 or report.policy_sha256 != self.policy_sha256:
+            if (report.validator_version != self.validator_version
+                    or report.source_content_sha256 != self.source_content_sha256
+                    or report.policy_sha256 != self.policy_sha256):
                 _invalid()
             for fragment in report.fragments:
                 if fragment.fragment_id in seen_fragments or fragment.source_index in source_indices:
@@ -588,7 +637,8 @@ class TableQualityContribution(_QualityModel):
 def aggregate_table_quality(reports: Sequence[TableValidationReport], *, expected_table_ids: Sequence[str],
                             source_content_sha256: str | None, source_groups_version: str | None,
                             expected_fragment_count: int | None,
-                            policy: TableValidationPolicy | None = None) -> TableQualityContribution:
+                            policy: TableValidationPolicy | None = None,
+                            validator_version: ValidatorVersion = VALIDATOR_VERSION) -> TableQualityContribution:
     """仅聚合表格来源；缺覆盖与同表冲突拒绝，完全相同的重投幂等。"""
     if not all(isinstance(report, TableValidationReport) for report in reports):
         raise TableValidationError("table_validation_input")
@@ -614,7 +664,7 @@ def aggregate_table_quality(reports: Sequence[TableValidationReport], *, expecte
     blockers = sum(item.flag.severity == "blocker" for item in findings)
     return TableQualityContribution(
         schema_version="table-quality-contribution/v1", producer="table_validator",
-        source_content_sha256=source_content_sha256, validator_version=VALIDATOR_VERSION,
+        source_content_sha256=source_content_sha256, validator_version=validator_version,
         normalizer_version=NORMALIZER_VERSION, policy=selected, policy_sha256=selected.policy_sha256,
         source_groups_version=source_groups_version, expected_fragment_count=expected_fragment_count,
         expected_table_ids=expected, evaluated_table_ids=tuple(report.table_id for report in ordered),

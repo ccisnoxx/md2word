@@ -7,8 +7,8 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-1.md`
-- **Total Sessions**: 60
+- **Active File**: `journal-2.md`
+- **Total Sessions**: 62
 - **Last Active**: 2026-11-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1989 | Active |
+| `journal-2.md` | ~67 | Active |
+| `journal-1.md` | ~1989 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +30,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 62 | 2026-11-16 | 集中 API 启动初始化并复用 Celery Worker Runtime | `dab58d26` | `main` |
+| 61 | 2026-11-16 | 参数表数值列归属检查 | `f1fd5398c34881a56b1594e3496717436fed28a5` | `main` |
 | 60 | 2026-11-16 | MinerU v4 语言映射和接入评估收尾 | `6d006e389cf31cf8bc9c807e27ebab6597787ecf` | `codex/mineru-v4-language-mapping` |
 | 59 | 2026-11-16 | 模板 YAML 绑定与正式页眉约束 | `7b64dd3` | `main` |
 | 58 | 2026-11-15 | 收尾 Datasheet 题注脚注翻译与 Word 上标 | `06650bd415e5675893d62519b90dc73801c4afde` | `main` |

@@ -135,6 +135,7 @@ def update_document_job_review(
         issue_type=payload.issue_type,
         note=payload.note,
         expected_source=ReviewExpectedSource.model_validate(payload.expected_source.model_dump()),
+        acknowledged_table_semantics_report_sha256=payload.acknowledged_table_semantics_report_sha256,
         trace_id=trace_id,
     )
 

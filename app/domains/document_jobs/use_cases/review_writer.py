@@ -23,7 +23,9 @@ from app.domains.document_jobs.review import (
     observed_review_source,
     receipt_identity,
     receipt_matches_file,
+    table_semantics_approval_conflict,
 )
+from app.domains.document_jobs.table_evidence import recheck_verified_report, verify_report
 from app.domains.document_jobs.use_cases.access import DocumentJobAccess
 from app.domains.document_jobs.use_cases.common import ReviewCommit
 from app.domains.document_jobs.use_cases.events import DocumentJobEventWriter
@@ -33,6 +35,7 @@ from app.domains.resources.models import utc_now
 from app.domains.translation.modes import is_translation_document_job_mode
 from app.services.auth.models import AuthenticatedUser
 from app.services.renderer.render_event_summary import is_valid_table_rendering_evidence
+from app.services.tables.evidence import TableEvidenceError
 
 
 class DocumentReviewWriter:
@@ -57,6 +60,7 @@ class DocumentReviewWriter:
         self, job: DocumentJobRecord, *, user: AuthenticatedUser, review_status: ReviewStatus,
         issue_type: ReviewIssueType | None, note: str | None, trace_id: str | None,
         expected_source: ReviewExpectedSource | None = None,
+        acknowledged_table_semantics_report_sha256: str | None = None,
     ) -> ReviewCommit:
         def conflict(message, reason):
             return ApplicationError("conflict", message,
@@ -132,7 +136,29 @@ class DocumentReviewWriter:
         binding = ReviewBinding(generation=job.retry_count, result_file_id=job.result_file_id,
             binding_state="verified" if actual_hash else ("no_result" if job.result_file_id is None else "unverified_result"),
             result_sha256=actual_hash, file_review_source_revision=result_file.review_source_revision if result_file else None,
-            descriptor=review_source_descriptor(result_file) if result_file else None, receipt_sha256=receipt_identity(job))
+            descriptor=review_source_descriptor(result_file) if result_file else None, receipt_sha256=receipt_identity(job),
+            acknowledged_table_semantics_report_sha256=acknowledged_table_semantics_report_sha256)
+        if review_status == "approved":
+            reason = table_semantics_approval_conflict(job, binding)
+            if reason is not None:
+                messages = {
+                    "table_semantics_confirmation_required": "请对照源 PDF 核对当前报告的疑似数值列归属后，再明确确认。",
+                    "table_semantics_confirmation_stale": "数值列归属确认与当前报告不一致，请刷新后核对。",
+                    "table_semantics_evidence_invalid": "当前表格证据无效，不能批准复核。",
+                }
+                raise conflict(messages[reason], reason)
+            if acknowledged_table_semantics_report_sha256 is not None:
+                try:
+                    verified = verify_report(job, result_file, file_repository=self.file_repository,
+                        file_service=self.file_upload_service, job_repository=self.job_repository)
+                    if verified is None or verified.envelope.report.report_sha256 != acknowledged_table_semantics_report_sha256:
+                        raise TableEvidenceError("table_evidence_integrity")
+                    recheck_verified_report(verified, file_repository=self.file_repository, job_repository=self.job_repository)
+                except (TableEvidenceError, FileNotFoundError):
+                    raise conflict("当前表格证据无法验证，请刷新后核对。", "table_semantics_evidence_invalid") from None
+                except RuntimeError:
+                    raise ApplicationError("service_unavailable", "表格证据存储暂不可用。",
+                        reason_code="quality_storage_unavailable") from None
         submission = ReviewSubmission(record_id=f"review_{uuid4().hex}", status=review_status, issue_type=issue_type,
             note=self.access.normalize_optional_text(note), reviewed_by=user.id, reviewed_at=now, reviewer_role=user.role,
             binding=binding, expected_source=expected_source)

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import hashlib
+import re
 from typing import Literal
 from uuid import uuid4
 
@@ -18,8 +20,7 @@ from app.services.tables.evidence import (
     Checksum, EvidenceModel, SafeId, TableEvidenceError, TableEvidenceReport,
     read_table_evidence, table_evidence_summary, VERSION,
 )
-from app.services.tables.models import NonNegativeInt, canonical_json_bytes, canonical_sha256
-import hashlib
+from app.services.tables.models import VALUE_COLUMN_SPAN_AMBIGUOUS, NonNegativeInt, canonical_json_bytes, canonical_sha256
 
 
 class EvidencePreparation(EvidenceModel):
@@ -89,6 +90,21 @@ def _read_model(model, value):
 
 def has_evidence(metadata: dict) -> bool:
     return any(key in metadata for key in ("table_evidence", "table_evidence_report", "table_evidence_summary", "table_evidence_preparation"))
+
+
+def required_table_semantics_report_sha256(metadata: dict) -> str | None:
+    """从已认证的主件表格摘要取得疑似项绑定，报告身份缺损时失败。"""
+    if not has_evidence(metadata):
+        return None
+    summary = metadata.get("table_evidence_summary")
+    if not isinstance(summary, dict) or not isinstance(summary.get("issue_codes"), list):
+        raise TableEvidenceError("table_evidence_integrity")
+    if VALUE_COLUMN_SPAN_AMBIGUOUS not in summary["issue_codes"]:
+        return None
+    report_sha256 = summary.get("report_sha256")
+    if not isinstance(report_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", report_sha256) is None:
+        raise TableEvidenceError("table_evidence_integrity")
+    return report_sha256
 
 
 def ensure_selected_result_descriptor(job: DocumentJobRecord, result: DocumentFileRecord) -> None:

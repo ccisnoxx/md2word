@@ -15,6 +15,8 @@ from app.domains.files.result_registration import review_source_descriptor
 
 ReviewStatus = Literal["unreviewed", "approved", "needs_fix", "blocked"]
 ReviewIssueType = Literal["conversion", "translation", "terminology", "table_structure", "layout", "source_quality", "artifact_missing", "other"]
+TableSemanticsReviewConflict = Literal["table_semantics_confirmation_required", "table_semantics_confirmation_stale",
+    "table_semantics_evidence_invalid"]
 REVIEW_ENVELOPE = "_review_records_v1"
 
 
@@ -62,6 +64,9 @@ class ReviewBinding(BaseModel):
     file_review_source_revision: StrictInt | None = Field(default=None, ge=0)
     descriptor: dict[str, Any] | None = None
     receipt_sha256: str | None = None
+    acknowledged_table_semantics_report_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$", exclude_if=lambda value: value is None,
+    )
 
     @model_validator(mode="after")
     def _verified(self):
@@ -72,7 +77,26 @@ class ReviewBinding(BaseModel):
             raise ValueError("已验证复核必须保存主件、实际摘要、描述与来源序号。")
         if self.binding_state == "no_result" and self.result_file_id is not None:
             raise ValueError("无结果绑定不能指定主件。")
+        if self.acknowledged_table_semantics_report_sha256 is not None and self.binding_state != "verified":
+            raise ValueError("确认数值列归属要求已验证的主件绑定。")
         return self
+
+
+def table_semantics_approval_conflict(job: Any, binding: ReviewBinding) -> TableSemanticsReviewConflict | None:
+    """使用候选登记时认证的报告摘要，锁内与列表投影都无需读对象。"""
+    from app.domains.document_jobs.table_evidence import required_table_semantics_report_sha256
+    from app.services.tables.evidence import TableEvidenceError
+
+    metadata = job.prepared_result.file.metadata if job.prepared_result is not None else (
+        binding.descriptor.get("metadata", {}) if binding.descriptor is not None else {})
+    try:
+        required_hash = required_table_semantics_report_sha256(metadata)
+    except TableEvidenceError:
+        return "table_semantics_evidence_invalid"
+    acknowledged_hash = binding.acknowledged_table_semantics_report_sha256
+    if required_hash == acknowledged_hash:
+        return None
+    return "table_semantics_confirmation_required" if acknowledged_hash is None else "table_semantics_confirmation_stale"
 
 
 class ReviewQualitySnapshot(BaseModel):
@@ -150,6 +174,8 @@ class ReviewSubmission(BaseModel):
     def _approval(self):
         if self.status == "approved" and self.binding.binding_state != "verified":
             raise ValueError("批准要求实际校验的主件绑定。")
+        if self.status != "approved" and self.binding.acknowledged_table_semantics_report_sha256 is not None:
+            raise ValueError("仅批准复核可以确认数值列归属报告。")
         if self.reviewed_at.tzinfo is None:
             raise ValueError("复核时间必须包含时区。")
         return self
@@ -186,6 +212,8 @@ class ReviewRecord(BaseModel):
             raise ValueError("正式复核缺少实际操作身份或提交指纹。")
         if self.status == "approved" and self.binding.binding_state != "verified":
             raise ValueError("批准记录缺少已验证的主件绑定。")
+        if self.status != "approved" and self.binding.acknowledged_table_semantics_report_sha256 is not None:
+            raise ValueError("数值列归属确认须绑定批准记录。")
         return self
 
 
@@ -234,6 +262,8 @@ def submit_review(job: Any, submission: ReviewSubmission, prior: ReviewRecord | 
             reason = "review_quality_blocked"
         elif job.status != "succeeded" or not job.result_file_id:
             reason = "review_result_unavailable"
+        else:
+            reason = table_semantics_approval_conflict(job, b)
     if reason is not None:
         if submission.expected_source is not None:
             raise ReviewSubmissionConflict(reason)
@@ -286,8 +316,10 @@ def review_validity(job: Any, file: DocumentFileRecord | None, *, now: datetime)
         return "integrity_conflict"
     if job.prepared_result is not None and not receipt_matches_file(file, job.prepared_result):
         return "integrity_conflict"
-    if job.review_status == "approved" and effective_quality_status(job) == "blocked":
-        return "quality_blocked"
+    if job.review_status == "approved":
+        if effective_quality_status(job) == "blocked":
+            return "quality_blocked"
+        return table_semantics_approval_conflict(job, binding)
     return None
 
 

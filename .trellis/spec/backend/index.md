@@ -25,7 +25,7 @@ Before backend changes:
 3. Read [Quality Guidelines](./quality-guidelines.md) for tests and release checks.
 4. If the change touches metadata, repositories, stage messages, schema bootstrap, or artifact storage, read [Database Guidelines](./database-guidelines.md).
 5. If the change emits logs, affects health/metrics, workers, callbacks, or long-running jobs, read [Logging Guidelines](./logging-guidelines.md).
-6. 修改 MinerU 账号与密钥、运行时配置文件或环境变量优先级时，阅读 [Runtime Configuration](./runtime-configuration.md)。
+6. 修改启动初始化、Worker 进程装配、MinerU 账号与密钥或运行时配置优先级时，阅读 [Runtime Configuration](./runtime-configuration.md)。
 7. 修改 Word 模板样式 schema、版本 API、默认指针、draft 验证权限或多文种字体槽位时，阅读 [Word 模板样式配置合同](./template-layout-configuration.md)。
 8. 修改 MinerU content list、DocumentIR、页面/分栏规划、Word renderer、DOCX 字段或输出质量门禁时，必须阅读 [Word 生成规则](./word-generation-rules.md)。
 9. 修改 DocumentJob 模式、资源选择或相关 UI 合同时，阅读 [任务模式与 direct 资源合同](./document-job-mode-contract.md)。

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, JsonValue, field_validator
+from pydantic import BaseModel, Field, JsonValue, field_validator, model_validator
 
 from app.domains.document_jobs.models import (
     DocumentJobDeliveryStatus,
@@ -15,6 +15,7 @@ from app.domains.document_jobs.models import (
 from app.domains.document_jobs.views.quality_review import (
     QualityChecksum,
     QualityCount,
+    QualityHash,
     QualityId,
     QualityIssue,
     QualityReviewModel,
@@ -110,6 +111,14 @@ class DocumentReviewUpdateRequest(QualityReviewModel):
     issue_type: QualityIssue | None = None
     note: str | None = Field(default=None, max_length=1000)
     expected_source: ReviewExpectedSourceRequest
+    acknowledged_table_semantics_report_sha256: QualityHash | None = Field(default=None,
+        description="批准时确认已核对该表格报告中的疑似数值列归属。填写当前表格质量详情的 report_sha256。")
+
+    @model_validator(mode="after")
+    def _confirm_on_approval(self):
+        if self.status != "approved" and self.acknowledged_table_semantics_report_sha256 is not None:
+            raise ValueError("仅批准复核可以确认数值列归属报告。")
+        return self
 
 
 class QualityReviewErrorDetailResponse(QualityReviewModel):
