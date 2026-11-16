@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"定向验证、已锁依赖和同镜像发布的证据边界"}
+{"file":".trellis/spec/backend/runtime-configuration.md","reason":"Runtime 复用后 MinerU 配置时效与 Poppler 启动合同"}
+{"file":".trellis/spec/backend/template-layout-configuration.md","reason":"核对模板历史版本、默认指针和文件模式兼容"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"核对 Worker 恢复、事件日志与健康探针语义"}
+{"file":".trellis/tasks/archive/2026-11/11-11-sr-3-composition-root/research/bootstrap-order.md","reason":"核对改动未遗漏既有启动初始化行为"}
