@@ -117,7 +117,7 @@ DOCUMENT_JOBS_CELERY_QUEUE=document-jobs
 DOCUMENT_JOBS_TRANSLATION_BATCH_CELERY_QUEUE=document-translation-batches
 ```
 
-启动 API 后另起 Document Jobs worker：
+手动启动时先启动 API。等待同一环境的 `/api/v1/health/live` 返回成功，再另起 Document Jobs worker。API 负责 schema 维护、内部账号导入和资源 seed，Worker 使用初始化后的存储。
 
 ```bash
 .venv/bin/python scripts/dev/run_document_worker.py

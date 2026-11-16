@@ -34,20 +34,19 @@ def _validate_runtime_guardrails(settings: Settings) -> None:
         )
 
 
-def build_runtime(settings: Settings | None = None, *, bootstrap_templates: bool = True) -> AppRuntime:
-    """构建当前进程共享运行时：先构造全部服务，再统一执行启动 bootstrap，最后装配健康检查。"""
+def build_runtime(settings: Settings | None = None, *, bootstrap: bool = True) -> AppRuntime:
+    """装配运行时，由启动方决定是否初始化数据库结构、内部账号和种子资源。"""
 
     resolved_settings = settings or Settings()
     _validate_runtime_guardrails(resolved_settings)
     configure_logging(resolved_settings.app_env, resolved_settings.log_format)
     # 持久化适配器在此构造（测试按 app.main.build_persistence_adapters 替换后端）。
-    adapters = build_persistence_adapters(resolved_settings)
-    platform = build_platform_services(resolved_settings, adapters)
+    adapters = build_persistence_adapters(resolved_settings, initialize_schema=bootstrap)
+    platform = build_platform_services(resolved_settings, adapters, bootstrap_users=bootstrap)
     pipeline = build_document_pipeline(resolved_settings, adapters, platform)
     terminology = build_terminology_services(resolved_settings, adapters, platform)
-    run_startup_bootstrap(
-        resolved_settings, platform, pipeline, terminology, bootstrap_templates=bootstrap_templates,
-    )
+    if bootstrap:
+        run_startup_bootstrap(resolved_settings, platform, pipeline, terminology)
     observability = build_observability_services(resolved_settings, adapters, platform, pipeline)
     return AppRuntime(
         settings=resolved_settings,

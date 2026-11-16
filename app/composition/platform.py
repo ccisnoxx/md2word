@@ -27,8 +27,10 @@ class PlatformServices:
     saved_view_service: SavedViewService
 
 
-def build_platform_services(settings: Settings, adapters: PersistenceAdapters) -> PlatformServices:
-    """只构造，不执行种子写入；`AuthService` 构造时导入配置用户属于其自身合同。"""
+def build_platform_services(
+    settings: Settings, adapters: PersistenceAdapters, *, bootstrap_users: bool = True,
+) -> PlatformServices:
+    """装配平台服务，由调用方指定是否允许导入初始账号。"""
 
     file_retention_policy_service = FileRetentionPolicyService(
         settings,
@@ -38,7 +40,7 @@ def build_platform_services(settings: Settings, adapters: PersistenceAdapters) -
     return PlatformServices(
         audit_service=AuditService(adapters.audit_event_repository),
         acceptance_run_service=AcceptanceRunService(adapters.acceptance_run_repository),
-        auth_service=AuthService(settings, adapters.internal_user_repository),
+        auth_service=AuthService(settings, adapters.internal_user_repository, bootstrap_users=bootstrap_users),
         internal_user_management_service=InternalUserManagementService(adapters.internal_user_repository),
         file_retention_policy_service=file_retention_policy_service,
         file_upload_service=FileUploadService(

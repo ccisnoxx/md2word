@@ -58,6 +58,8 @@ verification_scope: >-
 
 > **当前生产实际运行方式（2026-11-06 核实）**：生产 api/worker 并非由仓库 `docker/prod/docker-compose.yml` 启动，而是由一个冻结的基础 compose 叠加多层 override 运行，MySQL/Redis 来自另一份历史 compose。直接在新 release 内执行下文 `build`/`up -d --no-build` 会丢失 override 中的环境变量与模板绑定挂载，并连带重建 MySQL/Redis。在统一编排之前，普通上线按下节[分层 override 上线](#分层-override-上线当前生产方式)执行；下文“快速上线命令骨架”中的 release 导出、wheel 核对与镜像构建步骤仍适用，`up` 步骤以下节为准。
 
+分层上线使用 `up --no-deps`，启动顺序由发布步骤负责。首次接管空库或需要协调 schema 更新时，先暂停旧 Worker，再用候选镜像启动 API。确认候选 API 的 `/api/v1/health/live` 返回成功并核对版本标识后，启动同版本 Worker。命令仍使用当前发布的完整 `-f` 清单和 `--no-deps`，MySQL、Redis 和共享卷按原发布边界保留。
+
 ## 分层 override 上线（当前生产方式）
 
 现状（只记录结构，不记录变量值）：

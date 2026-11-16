@@ -14,7 +14,7 @@ Evidence:
 
 ## Runtime Composition
 
-`app/main.py` is the composition root entry. `build_runtime()` builds `Settings`, configures logging, builds persistence adapters (kept in `app.main` so tests can patch `app.main.build_persistence_adapters`), then calls the per-area assembly functions in `app/composition/` in order — `platform.build_platform_services` → `document_pipeline.build_document_pipeline` → `terminology.build_terminology_services` → `startup.run_startup_bootstrap` → `health.build_observability_services` — and creates `AppRuntime` with explicit keyword arguments. 装配函数只构造对象并返回 frozen dataclass；种子写入与登记等幂等 bootstrap 统一在 `run_startup_bootstrap` 中、全部服务构造之后按固定顺序执行，构造函数不得读取 bootstrap 的产物（顺序依据见 `.trellis/tasks/archive/2026-11/11-11-sr-3-composition-root/research/bootstrap-order.md`）。
+`app/main.py` 是运行时装配入口。`build_runtime()` 读取 `Settings`、配置日志、构建持久化适配器，再依次装配平台服务、文档流水线和术语服务，按初始化模式执行 `run_startup_bootstrap`，装配健康检查并构造 `AppRuntime`。持久化工厂保留在 `app.main` 供定向测试替换。各业务 seed 在服务构造完成后统一执行，服务构造须允许尚未登记 seed。现有顺序依据见 [启动顺序调查](../../tasks/archive/2026-11/11-11-sr-3-composition-root/research/bootstrap-order.md)。
 
 Follow this pattern for runtime dependencies:
 
@@ -24,6 +24,16 @@ Follow this pattern for runtime dependencies:
 - Avoid constructing repositories, clients, or services directly inside route handlers unless the existing route already owns a narrow local helper.
 
 `create_app()` registers `register_api_error_handlers(app)`, CORS, trace/access logging middleware (`app/api/middleware.py::install_trace_logging_middleware`), 正式 DocumentJob 启动恢复任务, and `api_v1_router`. `app = LazyDefaultApp()` delays reading `.env` and connecting runtime dependencies until the ASGI app is actually called.
+
+### API 与 Worker 的启动初始化合同
+
+1. **适用范围。** 标准单 API 服务的生产、开发 Compose 和手动运行的 Celery Worker。API 负责共享存储的初始化，Worker 负责恢复与队列消费。
+2. **内部入口。** `build_runtime(settings=None, *, bootstrap=True)` 默认执行初始化。Worker 的 `worker_ready`、普通任务、翻译批次调用 `build_runtime(bootstrap=False)`。
+3. **装配顺序。** API 依次执行 SQL schema 维护、平台构造时的空库账号导入，以及服务装配后的 Acceptance、Translation Term、Term Rule、Translation Profile 和模板 seed。Worker 装配跳过这些步骤，恢复和任务执行仍可按业务合同写入数据。
+4. **健康与失败。** 标准 Compose 使用 `api: {condition: service_healthy}`，API 的 `/api/v1/health/live` 成功表明同步初始化已完成。初始化失败时健康探针失败，Compose 挡住 Worker 启动。已经初始化的库允许单独重启 Worker。
+5. **启动场景。** 空库由一次标准 Compose `up` 拉起。手动启动先等 API `/api/v1/health/live` 成功，再启动 Worker。使用 `--no-deps` 的编排自行保证这个顺序。
+6. **验证。** 定向检查覆盖 Worker 三个入口的 schema、账号与 seed 跳过行为。隔离 Compose 检查空库一次启动和任务完成、API 初始化失败时 Worker 未执行、保留数据并分别重启后的读回与继续消费。
+7. **接线示例。** Worker 接线使用 `build_runtime(bootstrap=False)` 和 `service_healthy`。旧接线中的 `bootstrap_templates=False` 只跳过模板初始化，`service_started` 允许 API 完成初始化前启动 Worker。
 
 ## API Layout
 

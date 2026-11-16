@@ -1689,9 +1689,10 @@ class PersistenceAdapterTests(TestCase):
             )
             with patch(
                 "app.main.build_persistence_adapters",
-                lambda _settings: build_mysql_persistence_adapters(
+                lambda _settings, *, initialize_schema: build_mysql_persistence_adapters(
                     _mysql_config(),
                     connect_factory=fake_mysql.connect,
+                    initialize_schema=initialize_schema,
                 ),
             ):
                 runtime = build_runtime(settings)
@@ -2114,12 +2115,13 @@ class PersistenceAdapterTests(TestCase):
                 jobs_repository_backend="mysql",
                 jobs_mysql_database="md2word_test",
             )
-            def build_fake_adapters(runtime_settings: Settings) -> PersistenceAdapters:
+            def build_fake_adapters(runtime_settings: Settings, *, initialize_schema: bool) -> PersistenceAdapters:
                 runtime_settings.jobs_dir.mkdir(parents=True, exist_ok=True)
                 runtime_settings.tmp_dir.mkdir(parents=True, exist_ok=True)
                 return build_mysql_persistence_adapters(
                     _mysql_config(),
                     connect_factory=fake_mysql.connect,
+                    initialize_schema=initialize_schema,
                 )
 
             with patch(

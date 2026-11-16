@@ -147,10 +147,12 @@ def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
     )
 
 
-def build_sqlite_persistence_adapters(database_path: Path) -> PersistenceAdapters:
-    """为 sqlite metadata backend 构造端口 adapter。"""
+def build_sqlite_persistence_adapters(
+    database_path: Path, *, initialize_schema: bool = True,
+) -> PersistenceAdapters:
+    """装配 SQLite 元数据仓储，按启动方决定是否初始化数据库结构。"""
 
-    backend = SqlitePersistenceBackend(database_path)
+    backend = SqlitePersistenceBackend(database_path, initialize=initialize_schema)
     return PersistenceAdapters(
         backend_name="database",
         job_event_repository=SqliteJobEventRepository(backend),
@@ -179,10 +181,11 @@ def build_mysql_persistence_adapters(
     config: MysqlPersistenceConfig,
     *,
     connect_factory: ConnectFactory | None = None,
+    initialize_schema: bool = True,
 ) -> PersistenceAdapters:
-    """为 MySQL metadata backend 构造端口 adapter。"""
+    """装配 MySQL 元数据仓储，按启动方决定是否初始化数据库结构。"""
 
-    backend = MysqlPersistenceBackend(config, connect_factory=connect_factory)
+    backend = MysqlPersistenceBackend(config, connect_factory=connect_factory, initialize=initialize_schema)
     return PersistenceAdapters(
         backend_name="mysql",
         job_event_repository=MysqlJobEventRepository(backend),
@@ -212,13 +215,16 @@ def build_persistence_adapters(
     settings: Settings,
     *,
     mysql_connect_factory: ConnectFactory | None = None,
+    initialize_schema: bool = True,
 ) -> PersistenceAdapters:
-    """根据 Settings 选择当前 metadata backend，并保持原 backend 名称语义。"""
+    """根据 Settings 选择元数据仓储，并将数据库结构初始化选择传给 SQL 后端。"""
 
     if settings.jobs_repository_backend == "database":
         settings.jobs_dir.mkdir(parents=True, exist_ok=True)
         settings.tmp_dir.mkdir(parents=True, exist_ok=True)
-        return build_sqlite_persistence_adapters(settings.jobs_metadata_database_file)
+        return build_sqlite_persistence_adapters(
+            settings.jobs_metadata_database_file, initialize_schema=initialize_schema,
+        )
     if settings.jobs_repository_backend == "mysql":
         settings.jobs_dir.mkdir(parents=True, exist_ok=True)
         settings.tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -233,5 +239,6 @@ def build_persistence_adapters(
                 connect_timeout_seconds=settings.jobs_mysql_connect_timeout_seconds,
             ),
             connect_factory=mysql_connect_factory,
+            initialize_schema=initialize_schema,
         )
     return build_file_persistence_adapters(settings.data_path)

@@ -78,12 +78,19 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 class AuthService:
-    """Authenticate managed internal users and issue HS256 JWT access tokens."""
+    """认证托管内部用户并签发 HS256 JWT 访问令牌。"""
 
-    def __init__(self, settings: Settings, user_repository: InternalUserRepositoryProtocol) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        user_repository: InternalUserRepositoryProtocol,
+        *,
+        bootstrap_users: bool = True,
+    ) -> None:
         self.settings = settings
         self.user_repository = user_repository
-        self._bootstrap_repository_from_config_if_empty()
+        if bootstrap_users:
+            self._bootstrap_repository_from_config_if_empty()
 
     def authenticate(self, username: str, password: str) -> AuthenticatedUser:
         """校验用户名密码，成功后返回不含密码哈希的用户上下文。"""

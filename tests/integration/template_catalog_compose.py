@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""在隔离的生产 Docker Compose 拓扑中验证动态模板目录。"""
+"""在隔离的生产 Docker Compose 拓扑中验证启动初始化和动态模板目录。"""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -36,6 +37,7 @@ SEED = Path("resources/template_configs/templates_manifest.yaml")
 SOURCE_PDF = ROOT / "tests/fixtures/p1_translation_samples/pdfs/en-datasheet-smoke.pdf"
 DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TEMPLATE_ID = "catalog-compose"
+TEMPLATE_LAYOUT = Path("resources/template_configs/catalog-compose.yaml")
 TEMPLATE_ROUTE = f"/api/v1/templates/{TEMPLATE_ID}"
 JOBS_ROUTE = "/api/v1/document-jobs"
 
@@ -61,8 +63,9 @@ def check_wheelhouse(wheelhouse: Path) -> None:
 
 
 class Compose:
-    def __init__(self, context: str, directory: Path, wheelhouse: Path) -> None:
+    def __init__(self, context: str, directory: Path, wheelhouse: Path, *, image: str | None = None) -> None:
         self.project = f"md2word-catalog-{secrets.token_hex(6)}"
+        self.image = image or f"{self.project}:candidate"
         self.docker = ["docker", "--context", context]
         self.command = [
             *self.docker, "compose", "--project-name", self.project,
@@ -73,7 +76,7 @@ class Compose:
         self.wheelhouse = wheelhouse
         self.passwords = {role: secrets.token_urlsafe(24) for role in ("admin", "operator")}
 
-    def prepare(self) -> None:
+    def prepare(self, *, invalid_auth_file: bool = False) -> None:
         for path in ("app", "scripts", "resources", "requirements/locks"):
             shutil.copytree(ROOT / path, self.directory / path, ignore=shutil.ignore_patterns("__pycache__"))
         shutil.copytree(self.wheelhouse, self.directory / "requirements/wheels")
@@ -89,14 +92,17 @@ class Compose:
              "tenant_id": "default", "company_id": "default", "status": "active"}
             for role, password in self.passwords.items()
         ]
-        (deploy / "auth_internal_users.json").write_text(json.dumps({"users": users}))
+        (deploy / "auth_internal_users.json").write_text(
+            '{"users":' if invalid_auth_file else json.dumps({"users": users}), encoding="utf-8",
+        )
+        (self.directory / TEMPLATE_LAYOUT).write_text("schema_version: template-config/v1\n", encoding="utf-8")
         fixture = self.directory / "mineru_fixture.py"
         shutil.copyfile(Path(__file__).with_name("template_catalog_mineru_fixture.py"), fixture)
         env = {
             "APP_ENV": "prod",
             "APP_VERSION": self.project,
             "DEPLOYMENT_ID": self.project,
-            "MD2WORD_IMAGE": f"{self.project}:candidate",
+            "MD2WORD_IMAGE": self.image,
             "MD2WORD_API_BIND_HOST": "127.0.0.1",
             "MD2WORD_API_BIND_PORT": "0",
             "DATA_DIR": "/app/var",
@@ -142,6 +148,50 @@ class Compose:
             text=True, check=check, stdout=subprocess.PIPE if capture else None,
         ).stdout
 
+    def verify_health_dependency(self) -> None:
+        services = json.loads(self.run("config", "--format", "json", capture=True))["services"]
+        require(services["worker"]["depends_on"]["api"]["condition"] == "service_healthy",
+                "合并后的 Compose 配置应要求 API 健康后才能启动 Worker。")
+        require("/api/v1/health/live" in " ".join(services["api"]["healthcheck"]["test"]),
+                "API 应使用生产环境的存活探针。")
+
+    def cold_start(self) -> dict:
+        self.run("up", "-d", "--no-build", "--wait", "--wait-timeout", "240")
+        containers = self.application_containers()
+        api_state = containers["api"]["State"]
+        worker_started = containers["worker"]["State"]["StartedAt"]
+        successful_probe = next((probe for probe in api_state["Health"]["Log"] if probe["ExitCode"] == 0), None)
+        require(api_state["Health"]["Status"] == "healthy" and successful_probe is not None,
+                "API 未记录成功的健康检查。")
+        healthy_at = successful_probe["End"]
+        require(datetime.fromisoformat(healthy_at) <= datetime.fromisoformat(worker_started),
+                "Worker 在 API 健康检查成功前已启动。")
+        restart_counts = {name: container["RestartCount"] for name, container in containers.items()}
+        require(all(count == 0 for count in restart_counts.values()), "空库首次启动期间 API 或 Worker 发生重启。")
+        self.wait_worker()
+        return {"api_started_at": api_state["StartedAt"], "api_healthcheck_succeeded_at": healthy_at,
+                "worker_started_at": worker_started, "restart_counts": restart_counts}
+
+    def assert_initialization_failure_blocks_worker(self) -> dict:
+        failed_up = subprocess.run(
+            [*self.command, "up", "-d", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "240"],
+            env=self.env, cwd=self.directory, text=True, capture_output=True, check=False,
+        )
+        api = self.container("api")
+        worker = self.container("worker")
+        require(failed_up.returncode != 0 and api is not None,
+                "API 初始化失败场景未按预期拒绝 Compose 启动。")
+        api_health = api["State"]["Health"]["Status"]
+        require(api_health != "healthy", "错误的内部账号配置未阻断 API 健康探针。")
+        logs = self.run("logs", "--no-color", "--tail", "80", "api", capture=True)
+        reason = "AUTH_INTERNAL_USERS_FILE 不是合法 JSON。"
+        require(reason in logs, "API 日志缺少预期的内部账号初始化失败原因。")
+        if worker is not None:
+            require(worker["State"]["Status"] == "created" and worker["RestartCount"] == 0,
+                    "API 初始化失败时 Worker 容器已被启动。")
+        return {"compose_exit_code": failed_up.returncode, "api_health": api_health, "api_error": reason,
+                "worker_state": worker["State"]["Status"] if worker is not None else "absent"}
+
     def worker_python(self, code: str, *args: str) -> str:
         return self.run("exec", "-T", "worker", "python", "-c", code, *args, capture=True).strip()
 
@@ -161,17 +211,23 @@ class Compose:
             time.sleep(2)
         raise TimeoutError("隔离 Celery Worker 未就绪。")
 
+    def container(self, service: str) -> dict | None:
+        container_id = self.run("ps", "--all", "--quiet", service, capture=True).strip()
+        if not container_id:
+            return None
+        return json.loads(subprocess.check_output([*self.docker, "inspect", container_id], text=True))[0]
+
     def application_containers(self) -> dict:
-        services = ("api", "worker")
-        ids = [self.run("ps", "-q", service, capture=True).strip() for service in services]
-        require(all(ids) and ids[0] != ids[1], "API 和 Worker 必须运行在独立容器。")
-        containers = json.loads(subprocess.check_output([*self.docker, "inspect", *ids], text=True))
-        return dict(zip(services, containers, strict=True))
+        api = self.container("api")
+        worker = self.container("worker")
+        require(api is not None and worker is not None and api["Id"] != worker["Id"],
+                "API 和 Worker 必须运行在独立容器。")
+        return {"api": api, "worker": worker}
 
     def restart(self, service: str) -> dict:
         before = self.application_containers()
         self.run("restart", service)
-        self.run("up", "-d", "--no-build", "--wait", "--wait-timeout", "180")
+        self.run("up", "-d", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "180")
         self.wait_worker()
         after = self.application_containers()
         for name in before:
@@ -262,6 +318,51 @@ class Acceptance:
         response = self.request("POST", "/api/v1/auth/login", 200, json=body)
         return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
+    def initialized_data(self) -> dict:
+        accounts = {}
+        for role, headers in (("admin", self.admin), ("operator", self.operator)):
+            account = self.request("GET", "/api/v1/auth/me", 200, headers=headers).json()
+            require(account["id"] == f"fixture-{role}" and account["role"] == role, "内部账号导入结果不符。")
+            accounts[role] = account["id"]
+
+        acceptance_runs = self.request("GET", "/api/v1/acceptance/runs", 200, headers=self.admin).json()["items"]
+        require({item["tier"] for item in acceptance_runs} == {"P0", "P1", "P2"}, "Acceptance 初始记录不完整。")
+        defaults = {}
+        for name, route, key in (
+            ("term_rules", "/api/v1/term-rule-sets", "id"),
+            ("translation_terms", "/api/v1/translation-term-sets", "set_id"),
+            ("translation_profiles", "/api/v1/translation-profiles", "id"),
+        ):
+            items = self.request("GET", route, 200, headers=self.admin).json()["items"]
+            require(items, f"未读取到 {name} 初始记录。")
+            defaults[name] = {}
+            for item in items:
+                resource_id = item[key]
+                detail = self.request("GET", f"{route}/{resource_id}", 200, headers=self.admin).json()
+                defaults[name][resource_id] = self.version_snapshot(detail["versions"])
+                require(defaults[name][resource_id]["default"] == detail["default_version"],
+                        f"{resource_id} 默认指针与版本状态不一致。")
+
+        templates = self.request("GET", "/api/v1/templates", 200, headers=self.admin).json()["items"]
+        selected = [item for item in templates if item["is_default"]]
+        require(len(selected) == 1, "全局默认模板缺失或不唯一。")
+        template = selected[0]
+        versions = self.request("GET", f"/api/v1/templates/{template['id']}/versions", 200,
+                                headers=self.admin).json()["items"]
+        template_snapshot = self.version_snapshot(versions)
+        require(template_snapshot["default"] == template["version"], "模板目录默认指针与版本状态不一致。")
+        defaults["template"] = {"id": template["id"], **template_snapshot}
+        return {"accounts": accounts, "defaults": defaults,
+                "acceptance_runs": {item["id"]: item["updated_at"] for item in acceptance_runs}}
+
+    @staticmethod
+    def version_snapshot(versions: list[dict]) -> dict:
+        default = [item for item in versions if item["is_default"] and item["status"] == "published"]
+        require(len(default) == 1 and default[0]["snapshot_hash"], "已发布默认版本或其快照摘要缺失。")
+        return {"default": default[0]["version"], "versions": {
+            str(item["version"]): {"status": item["status"], "snapshot_hash": item["snapshot_hash"]} for item in versions
+        }}
+
     def upload_pdf(self, headers: dict, *, hold=False) -> str:
         content = SOURCE_PDF.read_bytes()
         filename = "hold-fixture.pdf" if hold else "fixture.pdf"
@@ -292,27 +393,34 @@ class Acceptance:
             time.sleep(1)
         raise TimeoutError(f"任务 {job['id']} 未在时限内进入预期状态。")
 
-    def successful_docx(self, job: dict, headers: dict, version: int, status: str = "published") -> None:
+    def download_docx(self, job_id: str, headers: dict) -> bytes:
+        grant = self.request("GET", f"{JOBS_ROUTE}/{job_id}/download-url", 200, headers=headers).json()
+        return self.request("GET", grant["download_url"], 200).content
+
+    def successful_docx(self, job: dict, headers: dict, version: int, status: str = "published") -> dict:
         done = self.wait_job(job, headers)
         require(done["status"] == "succeeded", f"任务 {job['id']} 生成失败：{done['error_code']} {done['error_message']}")
         bound = done["request_snapshot"]["resources"]["template"]
         require(bound["resource_id"] == TEMPLATE_ID and bound["version"] == str(version) and bound["status"] == status,
                 f"任务 {job['id']} 的模板快照与预期不一致。")
-        grant = self.request("GET", f"{JOBS_ROUTE}/{job['id']}/download-url", 200, headers=headers).json()
-        content = self.request("GET", grant["download_url"], 200).content
+        content = self.download_docx(job["id"], headers)
         document = Document(BytesIO(content))
         require(any(BODY_MARKER in paragraph.text for paragraph in document.paragraphs),
                 f"任务 {job['id']} 的 DOCX 缺少 MinerU 夹具正文。")
         require(any(f"Catalog template version {version}" in paragraph.text
                     for section in document.sections for paragraph in section.header.paragraphs),
                 f"任务 {job['id']} 的 DOCX 页眉未使用绑定模板。")
-        self.jobs.append({"id": job["id"], "template_version_id": done["template_version_id"],
-                          "snapshot_status": status, "snapshot_hash": bound["snapshot_hash"],
-                          "docx_sha256": hashlib.sha256(content).hexdigest()})
+        evidence = {"id": job["id"], "template_version_id": done["template_version_id"],
+                    "snapshot_status": status, "snapshot_hash": bound["snapshot_hash"],
+                    "docx_sha256": hashlib.sha256(content).hexdigest()}
+        self.jobs.append(evidence)
+        return evidence
 
     def upload_template(self, version: int) -> None:
         route = "/api/v1/templates" if version == 1 else f"{TEMPLATE_ROUTE}/versions"
-        data = {"template_id": TEMPLATE_ID, "name": "Compose fixture"} if version == 1 else {}
+        data = {"layout_config_path": str(TEMPLATE_LAYOUT)}
+        if version == 1:
+            data.update(template_id=TEMPLATE_ID, name="Compose fixture")
         result = self.request("POST", route, 201, headers=self.admin, data=data, files={
             "template": (f"catalog-v{version}.docx", template_docx(version), DOCX_TYPE),
         }).json()
@@ -355,25 +463,39 @@ class Acceptance:
 
     def run(self) -> dict:
         before = self.compose.topology()
+        cold_data = self.initialized_data()
         self.upload_template(1)
         self.create_job(self.operator, selection=f"{TEMPLATE_ID}@1", expected=(400, 403))
         validation = self.create_job(self.admin, selection=f"{TEMPLATE_ID}@1")
         self.successful_docx(validation, self.admin, 1, status="draft")
         self.publish(1, validation, make_default=True)
         self.request("PATCH", f"{TEMPLATE_ROUTE}/default", 200, headers=self.admin)
-        self.successful_docx(self.create_job(self.operator), self.operator, 1)
+        retained_job = self.successful_docx(self.create_job(self.operator), self.operator, 1)
 
         self.upload_template(2)
         draft2 = self.create_job(self.admin, selection=f"{TEMPLATE_ID}@2")
         self.successful_docx(draft2, self.admin, 2, status="draft")
         self.publish(2, draft2, make_default=False)
         self.check_legacy_replacement()
+        existing_data = self.initialized_data()
         restarts = []
         for service in ("api", "worker"):
-            restarts.append(self.compose.restart(service))
+            restart = self.compose.restart(service)
             self.refresh_address()
+            self.admin = self.login("admin")
+            self.operator = self.login("operator")
             self.assert_catalog(visible=True)
-            self.successful_docx(self.create_job(self.operator), self.operator, 1)
+            require(self.initialized_data() == existing_data, f"重启 {service} 后，既有账号、默认资源或版本记录发生变化。")
+            job_id = retained_job["id"]
+            previous_job = self.request("GET", f"{JOBS_ROUTE}/{job_id}", 200, headers=self.operator).json()
+            artifact_hash = hashlib.sha256(self.download_docx(job_id, self.operator)).hexdigest()
+            require(previous_job["status"] == "succeeded"
+                    and previous_job["template_version_id"] == retained_job["template_version_id"]
+                    and previous_job["request_snapshot"]["resources"]["template"]["snapshot_hash"] == retained_job["snapshot_hash"]
+                    and artifact_hash == retained_job["docx_sha256"], f"重启 {service} 后，既有任务或 DOCX 发生变化。")
+            subsequent_job = self.successful_docx(self.create_job(self.operator), self.operator, 1)
+            restarts.append({**restart, "retained_job_id": job_id, "retained_docx_sha256": artifact_hash,
+                             "subsequent_job_id": subsequent_job["id"]})
 
         self.request("PATCH", "/api/v1/templates/default/default", 200, headers=self.admin)
         closed = self.create_job(self.admin, selection=f"{TEMPLATE_ID}@2", hold=True)
@@ -406,6 +528,7 @@ class Acceptance:
         after = self.compose.topology()
         require(after == before, "验收前后的镜像、运行用户或 bundled seed 哈希不一致。")
         return {"topology_before": before, "topology_after": after, "restarts": restarts, "jobs": self.jobs,
+                "cold_initialized_data": cold_data, "retained_data": existing_data,
                 "disabled_version_job_id": closed["id"], "disabled_version_reason": "resource_snapshot_invalid_status",
                 "retained_assets": retained}
 
@@ -421,26 +544,39 @@ def main() -> None:
     scratch = ROOT / "tests/tmp"
     scratch.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="template-catalog-compose-", dir=scratch) as temporary:
-        compose = Compose(args.docker_context, Path(temporary), wheelhouse)
+        directory = Path(temporary)
+        compose = Compose(args.docker_context, directory / "healthy", wheelhouse)
         compose.prepare()
-        compose.run("config", "-q")
+        compose.verify_health_dependency()
+        compose.run("build", "api")
         try:
-            compose.run("build", "api")
-            # 空库先让 API 完成非模板种子登记，再启动 Worker，避免无关的首次登记竞争。
-            compose.run("up", "-d", "--no-build", "--wait", "--wait-timeout", "240", "api")
-            compose.run("up", "-d", "--no-build", "--wait", "--wait-timeout", "180", "worker")
-            compose.wait_worker()
-            with requests.Session() as client:
-                client.trust_env = False
-                report = Acceptance(compose, client).run()
+            try:
+                cold_start = compose.cold_start()
+                with requests.Session() as client:
+                    client.trust_env = False
+                    report = Acceptance(compose, client).run()
+                    report["cold_start"] = cold_start
+            except (Exception, KeyboardInterrupt):
+                compose.run("logs", "--no-color", "--tail", "50", check=False)
+                raise
+            finally:
+                compose.run("down", "--volumes", "--remove-orphans")
+
+            failed = Compose(args.docker_context, directory / "invalid-auth", wheelhouse, image=compose.image)
+            failed.prepare(invalid_auth_file=True)
+            failed.verify_health_dependency()
+            try:
+                report["initialization_failure"] = failed.assert_initialization_failure_blocks_worker()
+            except (Exception, KeyboardInterrupt):
+                failed.run("logs", "--no-color", "--tail", "50", check=False)
+                raise
+            finally:
+                failed.run("down", "--volumes", "--remove-orphans")
             if args.report is not None:
                 args.report.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
             print(json.dumps(report, ensure_ascii=False))
-        except (Exception, KeyboardInterrupt):
-            compose.run("logs", "--no-color", "--tail", "50", check=False)
-            raise
         finally:
-            compose.run("down", "--volumes", "--remove-orphans", "--rmi", "local")
+            subprocess.run([*compose.docker, "image", "rm", compose.image], check=True)
 
 
 if __name__ == "__main__":

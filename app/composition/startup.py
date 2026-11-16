@@ -18,8 +18,6 @@ def run_startup_bootstrap(
     platform: PlatformServices,
     pipeline: DocumentPipeline,
     terminology: TerminologyServices,
-    *,
-    bootstrap_templates: bool = True,
 ) -> None:
     platform.acceptance_run_service.bootstrap_default_runs_if_empty()
     pipeline.term_version_service.bootstrap_repository_from_csv_if_empty()
@@ -34,7 +32,6 @@ def run_startup_bootstrap(
         ).bootstrap()
     if terminology.translation_profile_service is not None:
         terminology.translation_profile_service.bootstrap_default_profiles_if_missing()
-    if bootstrap_templates:
-        # MySQL 默认选择依赖已登记的目录与版本。
-        pipeline.template_read_service.bootstrap_manifest_versions()
-        pipeline.template_read_service.get_default_template_id()
+    # MySQL 默认选择依赖已登记的目录与版本。
+    pipeline.template_read_service.bootstrap_manifest_versions()
+    pipeline.template_read_service.get_default_template_id()

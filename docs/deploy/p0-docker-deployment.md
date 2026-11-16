@@ -129,6 +129,8 @@ docker compose --env-file .env -f docker/prod/docker-compose.yml build api
 docker compose --env-file .env -f docker/prod/docker-compose.yml up -d --no-build
 ```
 
+标准 Compose 会等 MySQL 和 Redis 健康后启动 API。API 同步完成 schema 创建或维护、内部账号首次导入和资源 seed 登记后，`/api/v1/health/live` 才能响应。Worker 等 API 通过该探针后启动，随后执行任务恢复和队列消费。已有库可独立重启 Worker。采用自定义编排或 `--no-deps` 时，由部署流程保证 API 先完成初始化。
+
 在部署机上检查：
 
 ```bash
@@ -193,7 +195,7 @@ docker compose --env-file .env -f docker/dev/docker-compose.yml build api
 docker compose --env-file .env -f docker/dev/docker-compose.yml up -d --no-build
 ```
 
-开发 API 的构建平台与 API/Worker 的运行平台均固定为 `linux/amd64`。Apple Silicon 通过 Docker 的 amd64 仿真使用同一锁，不新增 arm64 或多架构锁；需由本机 Docker 环境提供仿真支持。开发编排会把仓库挂载到容器 `/app`，API 使用 `uvicorn --reload`；生产编排则把代码复制进镜像。
+开发 API 的构建平台与 API/Worker 的运行平台均固定为 `linux/amd64`。Apple Silicon 通过 Docker 的 amd64 仿真使用同一锁，不新增 arm64 或多架构锁；需由本机 Docker 环境提供仿真支持。开发编排会把仓库挂载到容器 `/app`，API 使用 `uvicorn --reload`；生产编排则把代码复制进镜像。开发 Worker 同样等待 API 完成初始化。
 
 ## 已知边界
 

@@ -57,7 +57,7 @@ services:
       redis:
         condition: service_healthy
       api:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - md2word-var:/app/var
       - ../../deploy/auth_internal_users.json:/app/deploy/auth_internal_users.json:ro

@@ -58,7 +58,7 @@ services:
       redis:
         condition: service_healthy
       api:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ../..:/app
       - md2word-dev-var:/app/var
