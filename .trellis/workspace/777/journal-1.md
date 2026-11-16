@@ -1962,3 +1962,24 @@ PR #67 已合入 main（合并提交 c2e93202）。旧图片报告可认证原�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 60: 生产冷启动单一初始化
+
+**Date**: 2026-11-16
+**Task**: 生产冷启动单一初始化
+**Branch**: `codex/production-cold-start-bootstrap`
+
+### Summary
+
+API 统一负责 SQL schema、内部账号导入和资源 seed。生产与开发 Compose 等待 API 健康后启动 Worker。16 项定向检查及空库一次启动、API 初始化失败拦截、保留数据分别重启三项隔离验收通过。验收报告已随任务归档，隔离资源已清理。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `374403859b74242daa327491c7d085fb619eeed2` | (see git log) |
+
+### Status
+
+[OK] **Completed**
