@@ -65,3 +65,24 @@ Datasheet Q3 / AC4 子项已归档。质量报告定位数值跨列歧义，保�
 ### Next Steps
 
 - 本次为本地收尾，未推送或部署生产。
+
+
+## Session 63: 生产冷启动单一初始化
+
+**Date**: 2026-11-16
+**Task**: 生产冷启动单一初始化
+**Branch**: `codex/production-cold-start-bootstrap`
+
+### Summary
+
+API 统一负责 SQL schema、内部账号导入和资源 seed。生产与开发 Compose 等待 API 健康后启动 Worker。16 项定向检查及空库一次启动、API 初始化失败拦截、保留数据分别重启三项隔离验收通过。验收报告已随任务归档，隔离资源已清理。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `374403859b74242daa327491c7d085fb619eeed2` | (see git log) |
+
+### Status
+
+[OK] **Completed**
