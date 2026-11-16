@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"定向验证、生产镜像和锁定构建输入"}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"核对默认 API 和 Worker 装配所有权"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"核对 MySQL 和 SQLite 初始化及已有数据兼容性"}
+{"file":".trellis/spec/backend/runtime-configuration.md","reason":"核对 Worker 启动条件与既有配置合同"}
+{"file":".trellis/tasks/archive/2026-11/11-13-production-template-catalog/research/verification.md","reason":"区分历史验收、一次启动验收和线上证据"}

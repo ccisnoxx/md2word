@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/index.md","reason":"后端约定和相应检查入口"}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Runtime 装配顺序和启动副作用归属"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"持久化适配器、schema 初始化和已有库约束"}
+{"file":".trellis/spec/backend/runtime-configuration.md","reason":"Worker 启动与动态配置合同"}
+{"file":".trellis/tasks/archive/2026-11/11-13-production-template-catalog/research/verification.md","reason":"既有隔离 Compose 验收与分批启动证据"}
