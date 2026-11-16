@@ -477,7 +477,10 @@ class JobResourceSnapshotService:
         spec = spec_for_translation_mode(options.translation_mode)
         return JobMineruSnapshot(
             model_version=self.settings.mineru_model_version if source_kind == "source_pdf" else None,
-            language=(spec.mineru_language or self.settings.mineru_language) if source_kind == "source_pdf" else None,
+            language=(
+                spec.resolve_mineru_language(self.settings.mineru_language)
+                if source_kind == "source_pdf" else None
+            ),
             enable_formula=self.settings.mineru_enable_formula if source_kind == "source_pdf" else None,
             enable_table=self.settings.mineru_enable_table if source_kind == "source_pdf" else None,
             callback_enabled=source_kind == "source_pdf" and bool(self.settings.mineru_callback_url),
