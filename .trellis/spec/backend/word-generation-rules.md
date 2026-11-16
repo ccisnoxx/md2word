@@ -457,6 +457,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 内部 Admin 可为现有 `POST /api/v1/document-jobs/{job_id}/new-generation` 选择 `action=replay_table_value_columns` 并提交整批 `table_value_column_reviews`。普通请求保留原解析路径。同包动作在同源及当前报告已验证时原子冻结累计人工记录、文件身份、核定规则、执行摘要和审计，从 `parsed` 重新构建 IR 与 Word。旧 `table-value-column-replay/v1` 意图继续使用其原跨列阻断规则。无效记录在接纳前拒绝新代请求，当前代、主件指针和内部下载保留。既有 UUID 幂等、代次与预算继续约束接纳。关闭开关或移除公司后停止新接纳，已接纳 UUID 保留对账回执，其执行继续使用冻结来源和规则。
 - 逐页比对通过时，最终 IR 记录两份 PDF、所选 v2 与 layout、原包和原解析来源的绑定及页面观察摘要。管理员同包接纳从已认证 IR 复核这些描述，成功时冻结该证据。重放在复核完全相同的源与结果包后复用证据；人工请求只能提交逐格核定。已有逐页证据的重放记录要求兼容读写版本，功能停用仍用兼容镜像。
 - 基础质量保留原报告，只按实物认证移除已修正的活动数值列 flag。已认证修正片段的分栏候选提示保留为诊断。完整 v3 报告中，带活动数值列警告且源行全部经实物认证的原生表片段，其 `layout_wide_table` 同样保留为诊断。其他自由风险仍参与基础质量。带核定证据的正式结果在锁外重验独立报告、IR 与实际 Word。批准写入在现有 job 序列化点重核其当前登记和生命周期，依赖描述变化或失效返回 `review_result_integrity_conflict`。发布独立重验并在提交时核对依赖文件，审批与发布均继续执行当前主件和代次门禁。
+- 对含已认证数值列证据的 v3 原生表结果，基础质量使用同代完整渲染计划及 Word trace 逐项对账布局提示。按计划处置的装饰块和实际写入单栏的标题可对账分栏候选，同表的所有派生条件段落已写入 Word 才可对账 `layout_table_context_binding`。提示仍留在原报告。未对账提示仍计入未知风险，无 blocker 时基础质量保持 `pending`。
 - 本地验收用真实 Poppler、正式 Worker 与生成的实际 Word。独立 LOW/HIGH 夹具覆盖 `row_ambiguous`、`source_pair_unverified`、`pdf_observation_unavailable` 的警告与下载，以及缺失或过期报告确认、确认后批准发布、无效新代保留主件和实际 Word 中的独立格。同源取证使用当前 v3 策略，有原 blocker 策略的 v3 实物对照验证历史报告可重读。完整 `gs-008` 使用同源缓存做本地实物验收，生产回包和 Worker 环境另行验证。
 
 ### IMAGE-001 图片资产绑定、显示宽度和可见失败

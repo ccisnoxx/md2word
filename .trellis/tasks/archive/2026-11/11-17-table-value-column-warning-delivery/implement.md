@@ -105,3 +105,32 @@ tests/test_table_value_pdf_binding_poppler.py
 ```
 
 原有暂存删除 `docs/md2word 模板与渲染完整性优化实施清单.md` 单独保留。提交获授权后，用临时 Git index 从当前 HEAD 构造候选，逐项核对上述路径和差异，再提交并仅同步原 index 中本次提交的路径。提交前后核对原暂存删除的记录。本次工作停在提交计划。
+
+## PR #80 后续补验与 P7 基础质量修复
+
+在 `main@2699eec2` 上用已核对 SHA-256 的本地真实 P7 原件和留存 MinerU ZIP 补验。首次补跑两套夹具时，嵌字体 LOW/HIGH 通过。P7 已生成 DOCX 并通过表框、单元格与 13 项未决定位断言，整体质量仍为 `pending`。原用例先断言整体质量，这次未发起 P7 下载请求。
+
+基础质量将标题、页眉页脚页码的分栏候选及已写入 Word 的表格条件绑定计作未分类风险，产生 `base_risk_unclassified`。修复限定在含已认证数值列证据的 v3 原生表结果。使用同代完整渲染计划和 Word 实物记录，对账按计划处置的装饰块、实际写入单栏的标题及已写入同表的全部派生条件段落。首节计划可以继承模板栏数，因此按实际 Word 同节栏数确认单栏。未对账的提示仍参与基础质量分级。
+
+### 实际执行的定向验证
+
+从仓库根目录运行以下两个指定用例。首轮通过 Python 包装器核对夹具摘要后调用相同的两个 unittest 目标，最终复验直接使用以下命令。测试输出使用测试自建临时目录。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 \
+MD2WORD_TABLE_VALUE_P7_PDF="$PWD/mineru_result/OPA228_P7.pdf-d457d448-c495-41ea-8bcf-41a3f18c00fb/bb850108-9783-4a28-8523-9b115319bd47_origin.pdf" \
+MD2WORD_TABLE_VALUE_P7_ZIP=/tmp/md2word-rollout5.roi2be/evidence/live-gs-008-returned.zip \
+.venv/bin/python -m unittest -v \
+  tests.test_online_table_value_pdf_binding.OnlineTableValuePdfBindingTests.test_retained_p7_real_package_certifies_word_after_table_edge_recovery \
+  tests.test_document_job_list_query_v2_service.DocumentJobListV2PublicationTests.test_modern_table_layout_risk_remains_pending_and_cannot_publish
+```
+
+- 首轮布局风险负例通过。真实 P7 已通过内部下载与 13 项未决定位核对，整体质量仍为 `pending`，基础质量显示 `unknown_flag_count=1`。确认是首节计划栏数为 `inherit` 后，改用获认证的实际 Word 栏数。
+- 最终复验退出码为 0，2 项通过，0 项跳过，耗时 2.754 秒。P7 成功完成，整体质量为 `warning`，质量接口保留 13 项 `row_ambiguous` 定位及 `manual_review_required`，内部签发与 HTTP 下载均返回 200，下载 DOCX 字节与登记主件完全一致。现有布局风险负例仍为 `pending` 且发布不可用。
+- `git diff --check` 通过。
+
+### 复用结果及未验证范围
+
+- 嵌字体 LOW/HIGH 的通过来自修复前的补验，覆盖异摘要逐页同源及同包新代批准发布。本次复用该记录，修复后未重跑 LOW/HIGH。
+- P7 此次使用留存回包、真实 Poppler、本地 Worker、测试仓储和预览替身。未对这份 P7 执行批准或正式发布，未验证真实 MySQL、生产 MinerU、在线 Worker、部署或实际预览后端，以及 Word/WPS 视觉效果。
+- 本次修复只运行上述两个目标。未运行全仓回归、完整发布检查或 CI。
