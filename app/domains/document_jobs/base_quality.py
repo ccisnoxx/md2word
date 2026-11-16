@@ -12,6 +12,7 @@ from app.services.renderer.docx_quality import validate_formula_report
 from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.services.tables.evidence import ISSUE_CODES, read_table_evidence
 from app.services.tables.models import canonical_sha256
+from app.services.tables.quality import BINDING_VALIDATOR_VERSION, REVIEWABLE_VALUE_COLUMN_RULES
 
 
 VERSION = "document-base-quality/v1"
@@ -205,10 +206,18 @@ def derive_base_quality(job: Any) -> dict | None:
         warnings += table.counts.warning_count
         codes.update(flag.code for item in table.tables for flag in item.flags)
         if complete:
-            # 只核销已逐格认证的原生表片段的分栏位置提示，报告中仍保留诊断。
+            # 已逐格认证的修正片段可核销分栏提示。未决数值列若完整写入原生表，
+            # 同片段的宽表分类仅作诊断，数值归属风险仍由活动警告保留。
             for item in table.tables:
-                if not item.value_column_corrections:
-                    continue
+                warning_fragments = set()
+                if table.validator_version == BINDING_VALIDATOR_VERSION and item.render_state == "native":
+                    active_warnings = {flag.identity for flag in item.flags
+                                       if flag.producer == "table_validator" and flag.severity == "warning"}
+                    warning_fragments = {
+                        finding.evidence.fragment_id for finding in item.validation.findings
+                        if finding.finding_id in active_warnings
+                        and finding.evidence.rule_id in REVIEWABLE_VALUE_COLUMN_RULES
+                    }
                 for output in item.outputs:
                     for fragment in output.fragments:
                         if fragment.value_column_review_sha256 is not None:
@@ -218,6 +227,9 @@ def derive_base_quality(job: Any) -> dict | None:
                                 f"layout_two_column_candidate:{block_id}:left",
                                 f"layout_two_column_candidate:{block_id}:right",
                             ))
+                        elif (fragment.fragment_id in warning_fragments
+                              and fragment.source_rows == fragment.retained_source_rows):
+                            compared_layout_hints.add(f"layout_wide_table:{fragment.block_id}")
     # 自由 flags 没有原 typed 分级；即使看起来像 info，也不能据名称忽略。
     risk_flags = [*metadata.get("quality_flags", []),
                   *(flag for flag in metadata.get("layout_quality_flags", []) if flag not in compared_layout_hints)]

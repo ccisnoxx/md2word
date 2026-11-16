@@ -424,10 +424,10 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 ### TABLE-005 参数表数值列归属与复核
 
 - 触发条件及 owner：`app/services/tables/validator.py` 检查源 Grid 中同一组独立 MIN/TYP/MAX、MIN/MAX、LOW/NOM/HIGH 或最小/典型/最大。只含 `td` 的表可从首部独立标签识别该规则的数值列。已核验同宽无表头续片复用上一片的列义，位置和值取自本地片段。跨越组内多个值列的技术数值生成 `table_semantics:value_column_span_ambiguous`。
-- 证据合同：常规报告使用 `table-validator/v2`，在 finding 中绑定片段、单元格和行列位置。含未决或核定记录的新版取证报告使用 `table-validator/v3`，加入经验证的双值列表头并对该路径的候选保留强阻断。内部 `GET /quality/tables` 返回仍有效的 `value_column_findings` 及报告摘要。历史 `table-validator/v1` 按保存的证据区分原无跨列规则、共享上下限提示和旧跨列阻断，省略该字段。旧报告、渲染计划和预览采用同一套历史规则复验。数值文本只投影到受权详情。没有核定证据时按 TABLE-001 保留源 span，生成可编辑 Word 表格。
+- 证据合同：常规报告使用 `table-validator/v2`，在 finding 中绑定片段、单元格和行列位置。含未决或核定记录的新版取证报告使用 `table-validator/v3`，加入经验证的双值列表头，未决数值跨列 finding 作为 `warning`。内部 `GET /quality/tables` 返回仍有效的 `value_column_findings` 及报告摘要，活动数值列疑点和未决定位带 `manual_review_required: true`。历史 v3 报告按保存的原正式 blocker 策略复验证据和摘要。历史 `table-validator/v1` 按保存的证据区分原无跨列规则、共享上下限提示和旧跨列阻断，省略该字段。旧报告、渲染计划和预览采用同一套历史规则复验。数值文本只投影到受权详情。没有核定证据时按 TABLE-001 保留源 span，生成可编辑 Word 表格。
 - 审核合同：`PATCH /review` 在批准当前主 DOCX 时接受 `acknowledged_table_semantics_report_sha256`，格式为 64 位小写十六进制，与 `report.report_sha256` 一致。既有授权、主件绑定与锁内提交复用这次确认。复核有效性、发布预检和原子发布共同消费主件与报告身份。
-- 边界：有疑似项且确认缺失或摘要变化时，批准分别以 `table_semantics_confirmation_required`、`table_semantics_confirmation_stale` 拒绝。确认凭据引用的报告无法验证时使用 `table_semantics_evidence_invalid`。此类拒绝保留内部草稿。已存在的其他质量阻断仍会阻止发布。
-- 基准与负例：合法跨列标题、空数值格和竖向合并可通过本规则。普通批准不能确认疑似项。常规待确认项由审核员对照源 PDF 后用当前报告摘要确认，原风险记录保留。同源取证发现的未决 blocker 须经实际 Word 认证后解除。表格外框不足以确认单元格在 PDF 中的正确列。
+- 边界：有疑似项且确认缺失或摘要变化时，批准分别以 `table_semantics_confirmation_required`、`table_semantics_confirmation_stale` 拒绝。确认凭据引用的报告无法验证时使用 `table_semantics_evidence_invalid`。此类拒绝保留可下载的内部草稿。确认当前报告后，`quality_status=warning` 的结果可批准并满足其他发布条件后正式发布。系统完整性失败和其他质量阻断仍按原合同处理。
+- 基准与负例：合法跨列标题、空数值格和竖向合并可通过本规则。普通批准不能确认疑似项。常规待确认项由审核员对照源 PDF 后用当前报告摘要确认，原风险记录保留。同源取证的修正须经实际 Word 认证后，才移除对应活动 flag 并附加修正证据。表格外框不足以确认单元格在 PDF 中的正确列。
 - 验证：`tests.test_parameter_table_value_column_binding` 检查规则与历史报告读取。通过 `scripts.dev.replay_parameter_table_value_columns` 校验三份固定 ZIP 指纹、质量项目与实际 Word 单元格合并。审批、下载和正式发布的权威回归在 Document Jobs 测试中验证。 [样本定位与回放入口](../../tasks/archive/2026-11/11-16-parameter-table-value-column-binding/research/samples.md)
 
 #### 参数值列的同源人工修正
@@ -436,28 +436,28 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 本地入口为 `scripts/dev/run_local_mineru_conversion.py` 的 `--table-value-column-reviews <JSON>` 和 `--source-pdf <PDF>`。转换入口 `MinerUToDocumentIRService.convert_zip(..., table_value_column_reviews=...)` 校验 `TableValueColumnReview` 数组，合同版本为 `table-value-column-review/v1`。
 - 每条记录绑定实际 PDF 与选用的 MinerU 内容列表 SHA-256、源页、JSON Pointer、原 HTML 和 normalizer 版本。源行/源格序号、原格哈希、原列区间、目标零基列号及标题须匹配同一份源 Grid。整批通过后才将可选的 `value_column_review` 写进 IR。来源不匹配、定位冲突或未支持形状以 `table_value_column_review_invalid` 和固定原因拒绝，发生在本次结果写入前。
 - `build_content_table_plan` 应用同一份核定记录，把核定指纹纳入渲染输入，保持原 HTML、源 Grid、源报告、未命中位置和其他内容。只有正式实物认证通过后才附加 `table_evidence.tables[].value_column_corrections`。已证明修正对应的 finding 退出交付 flags，原始发现继续留在 `validation`。重读基于本次 IR 与实际 DOCX 重建证据。
-- 例 `gs-008` 源行 2、3 的 `±5`、`±100` 分别只占 TYP、MAX，`±75`、空出的值列与单位纵向合并由 Word 实物核对。完整样本原报告有 23 项，已核定两项后本地质量结果仍为 `blocked`，余 21 项。旧记录遇 PDF 或内容列表指纹变化、原格或目标列不符时整批失败。带校核的旧渲染证据及真实错列的输出拒绝认证。
+- 例 `gs-008` 源行 2、3 的 `±5`、`±100` 分别只占 TYP、MAX，`±75`、空出的值列与单位纵向合并由 Word 实物核对。历史样本报告有 23 项，已核定两项后，该版策略保留 21 项跨列阻断。旧记录遇 PDF 或内容列表指纹变化、原格或目标列不符时整批失败。带校核的旧渲染证据及真实错列的输出拒绝认证。
 - 无校核输入沿用原序列化和证据路径。验证入口为 `tests.test_table_value_column_review` 和 `tests.test_table_value_column_review_delivery`，前者覆盖来源和原格拒绝，后者覆盖 Word 列位置、交付证据和重读。
 
 #### 参数值列的同源 PDF 自动核定
 
 - 本地正式原排版转换可用 `--auto-table-value-columns` 与 `--source-pdf` 开启。实际输入 PDF 的指纹必须与所选 v2 内容列表对应的同包原件一致。唯一同文档 layout 必须确认源表范围，页坐标通过 IR-002 投影到 Poppler 核实的页框。显式人工核定先按原合同校验，有效记录控制其所在的源格。
-- 从原跨列发现中取候选。Poppler 的词框、可见字面与实际绘制共同证明独立表头、物理行列边界、精确值及单位。支持用贯穿的竖线和封闭行带确定列，或以实际表头色块、数据行分段线及右沿对齐互证。相邻行有内竖线而候选行断开时，分段横线不足以确认本行分列。行必须有独立的同行文字或参数组上下文，源行次序只作核对。目标列须位于原跨度内，释放格的 PDF 区域须无其他词或未匹配字形。涉及竞争、贴边、来源或取证不足的原发现继续阻断，`metadata.pdf_value_column_unresolved` 提供原 finding ID、源格和原因。
+- 从 `REVIEWABLE_VALUE_COLUMN_RULES` 指定的原跨列规则中取候选，自动取证、人工核定和证据对账统一依据 `finding.evidence.rule_id`。旧共享限值提示有独立规则，不参与核定。Poppler 的词框、可见字面与实际绘制共同证明独立表头、物理行列边界、精确值及单位。支持用贯穿的竖线和封闭行带确定列，或以实际表头色块、数据行分段线及右沿对齐互证。相邻行有内竖线而候选行断开时，分段横线不足以确认本行分列。行必须有独立的同行文字或参数组上下文，源行次序只作核对。目标列须位于原跨度内，释放格的 PDF 区域须无其他词或未匹配字形。涉及竞争、贴边、来源或取证不足时保留源跨度与原警告，`metadata.pdf_value_column_unresolved` 提供原 finding ID、源格和原因。
 - 唯一同页 layout 已确认的表体在原框无法证实完整表头时，可用上传 PDF 的相接外竖线与横线证明单侧截断。以 layout 的点坐标侧缘为基准，搜索及最终侧缘均限 1 pt；保持原框的上下缘和另一侧。证据需连接最外列表头的上下边和至少一条表体横线。新增条带内有相邻版面块、可见文字、未匹配字形、未证填色或实际描边、共边或竞争边线时不采纳。实际描边按墨迹范围判断，线轴在条带外也可能侵入。
 - `pdf_binding.table_bbox` 仍使用原始源框。可选内部 `table_edge` 记录同包 layout 点框、实测取证框、证实边界的关键横线和贯通竖线。重读独立核对原框投影、页范围、相接和单侧 1 pt 上限，同表各自动修正须引用同一证明。旧件无此字段时沿用其原摘要。已产生新证明的环境须使用支持该字段的读者做停用或回退。校正只改变列核定取证范围，原 Grid、人工输入、定位框和 Word 认证门禁沿用。
-- 自动核定把可复核坐标记录为逐格内部 `pdf_binding`，其指纹随核定纳入正式渲染输入。复用人工修正的源 Grid、原发现和实际 DOCX 认证。只有实际 Word 与修正计划一致时才生成带 `pdf_binding_sha256` 的交付修正证据，解除对应原 blocker。重读从当前 IR 与实际 Word 重建证据。人工 JSON 入口拒绝自动出处字段。
+- 自动核定把可复核坐标记录为逐格内部 `pdf_binding`，其指纹随核定纳入正式渲染输入。复用人工修正的源 Grid、原发现和实际 DOCX 认证。只有实际 Word 与修正计划一致时才生成带 `pdf_binding_sha256` 的交付修正证据，移除对应活动 flag，原发现保留在来源验证报告。重读从当前 IR 与实际 Word 重建证据。人工 JSON 入口拒绝自动出处字段。
 - 文字归属以可信原件的 PDF 字体字符映射为前提。Poppler 的字形取证核实绘制及位置。若 PDF 内部字体映射误标字形对应的字符，现有文字工具可能给出相同的误读，仍需比对实际字形外观。
 - 自动验证覆盖独立 LOW/HIGH 实物 PDF、同名异源、可见性及归属冲突、Word 错列和来源证据篡改。完整 `gs-008` 仅用于本地同源回放。
 
 #### 线上原排版的同源取证与人工核定
 
-- Worker 在正式建 IR 时通过 `DOCUMENT_TABLE_VALUE_PDF_BINDING_ENABLED` 接入，默认关闭。新自动绑定和管理员新同包接纳还要求当前任务的 `(tenant_id, company_id)` 在服务端 `DOCUMENT_TABLE_VALUE_PDF_BINDING_COMPANY_ALLOWLIST` 中。名单为 JSON 数组，每项包含两个非空 ID，例如 `[["tenant_demo","company_demo"]]`。默认空名单。API 和所有 Worker 使用同一配置，资格取自已登记任务。使用当前归属、原解析批次、明确的 raw 文件指针、实读长度与摘要和包内原件核对同源。启用取证时，历史缺绑定或可选 PDF 来源不可用的跨列候选保留 blocker 与逐格原因。关闭或名单外的新任务沿用常规跨列复核。正式输入身份、字节完整性和必需裁图按原合同校验。单任务可选 Poppler 取证预算为最多 60 秒且不超过当次剩余执行时限的一半，同页复用已有观测。
-- 包内对应 PDF 指纹一致时沿用原判断。指纹不同时，线上逐页比对要求本次 PUT 字节与登记原件摘要及长度一致，并有实际 MinerU 完成结果回显的批次和 data ID、原解析代及原包身份。仅用本地补值或历史缺提交证明的包走原证据路径。回调不得把已提交的批次或 data ID 换成其他结果。异指纹比对使用匹配版本的 Poppler，在同一预算内核对整份文档的同序页框、完整词框及 96 与 144 DPI 渲染像素，并逐页核对唯一同文档 layout。工具错误、越界或不匹配时保留原 blocker。后续取证只读取已核实的实际上传 PDF。
-- `GET /api/v1/document-jobs/{job_id}/quality/tables` 从已认证的当前代 IR、报告和 Word 投影仍有效的 `unresolved_value_columns`。条目携带片段、finding、源页、表框、零基行格和固定原因。现有权限与报告快照控制可见范围。渲染降级的最终 IR 移除被删组的悬挂引用，原 IR 和整页质量 blocker 保留。
-- 内部 Admin 可为现有 `POST /api/v1/document-jobs/{job_id}/new-generation` 选择 `action=replay_table_value_columns` 并提交整批 `table_value_column_reviews`。普通请求保留原解析路径。同包动作在同源及当前报告已验证时原子冻结累计人工记录、文件身份、核定规则、执行摘要和审计，从 `parsed` 重新构建 IR 与 Word。旧 `table-value-column-replay/v1` 意图继续使用其原跨列阻断规则。既有 UUID 幂等、代次与预算继续约束接纳。关闭开关或移除公司后停止新接纳，已接纳 UUID 保留对账回执，其执行继续使用冻结来源和规则。
+- Worker 在正式建 IR 时通过 `DOCUMENT_TABLE_VALUE_PDF_BINDING_ENABLED` 接入，默认关闭。新自动绑定和管理员新同包接纳还要求当前任务的 `(tenant_id, company_id)` 在服务端 `DOCUMENT_TABLE_VALUE_PDF_BINDING_COMPANY_ALLOWLIST` 中。名单为 JSON 数组，每项包含两个非空 ID，例如 `[["tenant_demo","company_demo"]]`。默认空名单。API 和所有 Worker 使用同一配置，资格取自已登记任务。使用当前归属、原解析批次、明确的 raw 文件指针、实读长度与摘要和包内原件核对同源。启用取证时，历史缺绑定或可选 PDF 来源不可用的跨列候选保留 warning 与逐格原因。关闭或名单外的新任务沿用常规跨列复核。正式输入身份、字节完整性和必需裁图按原合同校验。单任务可选 Poppler 取证预算为最多 60 秒且不超过当次剩余执行时限的一半，同页复用已有观测。
+- 包内对应 PDF 指纹一致时沿用原判断。指纹不同时，线上逐页比对要求本次 PUT 字节与登记原件摘要及长度一致，并有实际 MinerU 完成结果回显的批次和 data ID、原解析代及原包身份。仅用本地补值或历史缺提交证明的包走原证据路径。回调不得把已提交的批次或 data ID 换成其他结果。异指纹比对使用匹配版本的 Poppler，在同一预算内核对整份文档的同序页框、完整词框及 96 与 144 DPI 渲染像素，并逐页核对唯一同文档 layout。工具错误、越界或不匹配时保留原警告。后续取证只读取已核实的实际上传 PDF。
+- `GET /api/v1/document-jobs/{job_id}/quality/tables` 从已认证的当前代 IR、报告和 Word 投影仍有效的 `unresolved_value_columns`。条目携带片段、finding、源页、表框、零基行格和固定原因。现有权限与报告快照控制可见范围。渲染降级的最终 IR 移除被删组的悬挂引用，原 IR 和独立的整页质量 blocker 保留。
+- 内部 Admin 可为现有 `POST /api/v1/document-jobs/{job_id}/new-generation` 选择 `action=replay_table_value_columns` 并提交整批 `table_value_column_reviews`。普通请求保留原解析路径。同包动作在同源及当前报告已验证时原子冻结累计人工记录、文件身份、核定规则、执行摘要和审计，从 `parsed` 重新构建 IR 与 Word。旧 `table-value-column-replay/v1` 意图继续使用其原跨列阻断规则。无效记录在接纳前拒绝新代请求，当前代、主件指针和内部下载保留。既有 UUID 幂等、代次与预算继续约束接纳。关闭开关或移除公司后停止新接纳，已接纳 UUID 保留对账回执，其执行继续使用冻结来源和规则。
 - 逐页比对通过时，最终 IR 记录两份 PDF、所选 v2 与 layout、原包和原解析来源的绑定及页面观察摘要。管理员同包接纳从已认证 IR 复核这些描述，成功时冻结该证据。重放在复核完全相同的源与结果包后复用证据；人工请求只能提交逐格核定。已有逐页证据的重放记录要求兼容读写版本，功能停用仍用兼容镜像。
-- 基础质量保留原报告，只按实物认证解除逐格 blocker。完整报告中已认证修正且实际渲染的同一源表片段，其分栏候选提示保留为诊断，其他自由风险仍参与基础质量。带核定证据的正式结果在锁外重验独立报告、IR 与实际 Word。批准写入在现有 job 序列化点重核其当前登记和生命周期，依赖描述变化或失效返回 `review_result_integrity_conflict`。发布独立重验并在提交时核对依赖文件，审批与发布均继续执行当前主件和代次门禁。
-- 本地验收用真实 Poppler、正式 Worker 与生成的实际 Word。独立 LOW/HIGH 夹具同时覆盖业务阻断及同包新代批准发布。完整 `gs-008` 使用同源缓存做本地实物验收，生产回包和 Worker 环境另行验证。
+- 基础质量保留原报告，只按实物认证移除已修正的活动数值列 flag。已认证修正片段的分栏候选提示保留为诊断。完整 v3 报告中，带活动数值列警告且源行全部经实物认证的原生表片段，其 `layout_wide_table` 同样保留为诊断。其他自由风险仍参与基础质量。带核定证据的正式结果在锁外重验独立报告、IR 与实际 Word。批准写入在现有 job 序列化点重核其当前登记和生命周期，依赖描述变化或失效返回 `review_result_integrity_conflict`。发布独立重验并在提交时核对依赖文件，审批与发布均继续执行当前主件和代次门禁。
+- 本地验收用真实 Poppler、正式 Worker 与生成的实际 Word。独立 LOW/HIGH 夹具覆盖 `row_ambiguous`、`source_pair_unverified`、`pdf_observation_unavailable` 的警告与下载，以及缺失或过期报告确认、确认后批准发布、无效新代保留主件和实际 Word 中的独立格。同源取证使用当前 v3 策略，有原 blocker 策略的 v3 实物对照验证历史报告可重读。完整 `gs-008` 使用同源缓存做本地实物验收，生产回包和 Worker 环境另行验证。
 
 ### IMAGE-001 图片资产绑定、显示宽度和可见失败
 

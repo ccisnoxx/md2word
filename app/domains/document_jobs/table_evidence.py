@@ -22,13 +22,12 @@ from app.services.tables.evidence import (
     read_table_evidence, table_evidence_summary, VERSION,
 )
 from app.services.tables.models import (
-    LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS,
     VALUE_COLUMN_SPAN_AMBIGUOUS,
     NonNegativeInt,
     canonical_json_bytes,
     canonical_sha256,
 )
-from app.services.tables.quality import TableFinding
+from app.services.tables.quality import REVIEWABLE_VALUE_COLUMN_RULES, TableFinding
 
 
 class EvidencePreparation(EvidenceModel):
@@ -217,17 +216,15 @@ def _unresolved_value_columns(
     pending = {item.finding_id: item for item in document.metadata.pdf_value_column_unresolved}
     if not pending:
         return {}
-    codes = {VALUE_COLUMN_SPAN_AMBIGUOUS, LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS}
     matched = {}
     for table in report.tables:
-        blockers = {flag.identity for flag in table.flags
-                    if flag.producer == "table_validator" and flag.code in codes and flag.severity == "blocker"}
+        active_findings = {flag.identity for flag in table.flags if flag.producer == "table_validator"}
         for finding in table.validation.findings:
             item = pending.get(finding.finding_id)
             if item is None:
                 continue
             origin = finding.evidence
-            if (finding.finding_id not in blockers or origin.rule_id not in codes
+            if (finding.finding_id not in active_findings or origin.rule_id not in REVIEWABLE_VALUE_COLUMN_RULES
                     or (origin.fragment_id, origin.source_row_index, origin.source_cell_index)
                     != (item.fragment_id, item.source_row_index, item.source_cell_index)):
                 raise TableEvidenceError("table_evidence_integrity")

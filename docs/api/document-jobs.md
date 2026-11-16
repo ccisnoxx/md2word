@@ -120,15 +120,15 @@ direct：uploaded → parsing → parsed → ir_converting
 
 #### 参数表数值列复核
 
-1. 读取 `GET /api/v1/document-jobs/{job_id}/quality/tables` 的表格项。新版报告的 `value_column_findings` 列出源页、表格内源行、单元格、值、单位和跨越的数值列。页、行、列使用零基索引，`end_column` 为排他边界。空数组表示已检查且无此类疑似项。历史报告省略该字段。
+1. 读取 `GET /api/v1/document-jobs/{job_id}/quality/tables` 的表格项。新版报告的 `value_column_findings` 列出源页、表格内源行、单元格、值、单位和跨越的数值列，并标记 `manual_review_required: true`。页、行、列使用零基索引，`end_column` 为排他边界。空数组表示已检查且无此类疑似项。v1 历史报告省略该字段。
 2. 对照源 PDF 核查所有分页中的 `table_semantics:value_column_span_ambiguous`。当前 DOCX 可接受时，使用既有 `PATCH /api/v1/document-jobs/{job_id}/review` 提交 `status: "approved"` 和当前 `expected_source`，并将本次读取的 `report.report_sha256` 传给 `acknowledged_table_semantics_report_sha256`。发现确有错列时提交 `needs_fix`。内部下载仍可取得可编辑的 Word 草稿。
-3. 需要确认但未提交时，批准返回 `409`，原因码为 `table_semantics_confirmation_required`。确认摘要与当前报告不一致时返回 `table_semantics_confirmation_stale`。当前声明的证据无法验证时返回 `table_semantics_evidence_invalid`。正式发布仍要求有效批准，主件、代次或报告变化后须重新核查。
+3. 需要确认但未提交时，批准返回 `409`，原因码为 `table_semantics_confirmation_required`。确认摘要与当前报告不一致时返回 `table_semantics_confirmation_stale`。当前声明的证据无法验证时返回 `table_semantics_evidence_invalid`。确认当前报告后可以批准 `warning` 结果，满足其他发布条件即可正式发布。主件、代次或报告变化后须重新核查。
 
 #### 参数值列同包核定
 
-取证功能开启且任务归属在配置名单内时，正式原排版可核对同源 PDF。实物认证通过后，仅对应的跨列项解除阻断。表格详情的可选 `unresolved_value_columns` 记录仍有效的 finding、原格位置及受控原因。此类未决项继续阻断审批和正式发布。
+取证功能开启且任务归属在配置名单内时，正式原排版可核对同源 PDF。实物认证通过后，仅移除对应的活动 flag，报告保留修正证据。证据不足时保留源单元格跨度，生成可下载的内部 DOCX，并保留 `warning`。表格详情的可选 `unresolved_value_columns` 记录仍有效的 finding、原格位置、受控原因及 `manual_review_required: true`。
 
-内部管理员可向 `POST /api/v1/document-jobs/{job_id}/new-generation` 提交 `action: "replay_table_value_columns"`、`table_value_column_reviews`、`request_id`、`note` 和当前 `expected_source`。同包核定要求当前任务在试点名单中，并且当前报告、主件、原 PDF 和 MinerU 存档通过身份核对。首次接受返回 `202`。同一请求重放返回 `200`，可用 `GET /api/v1/document-jobs/{job_id}/generation-requests/{request_id}` 对账。新代需重新生成 Word 并经过实物认证及既有审批流程。普通新代沿用原解析路径。
+内部管理员可向 `POST /api/v1/document-jobs/{job_id}/new-generation` 提交 `action: "replay_table_value_columns"`、`table_value_column_reviews`、`request_id`、`note` 和当前 `expected_source`。同包核定要求当前任务在试点名单中，并且当前报告、主件、原 PDF 和 MinerU 存档通过身份核对。无效核定在新代接纳前拒绝，当前代 DOCX 继续可下载。首次接受返回 `202`。同一请求重放返回 `200`，可用 `GET /api/v1/document-jobs/{job_id}/generation-requests/{request_id}` 对账。新代需重新生成 Word 并经过实物认证及既有审批流程。普通新代沿用原解析路径。
 
 恢复保留最终IR和资源快照，不重复已完成的解析或翻译。`quality_checking` 或尚未选定结果的 `uploading` 在现有replay触发时，可条件回到 `rendering` 重建丢失的字节并重新检查；恢复事件记录来源阶段，进度不下降。质量通过后，每次尝试先登记内部pending候选，再写独立对象路径；仓储原子选定第一份有效结果凭据，所有恢复者只登记其同一个文件并完成任务。已有凭据时不再重渲染、换件或重写对象。此机制不增加持续扫描器、租约或公开状态字段。
 

@@ -80,7 +80,7 @@ class TableValuePdfBindingDeliveryTests(TestCase):
                 self.assertFalse(output.exists())
                 self.assertFalse(output.with_suffix(".document-ir.json").exists())
 
-    def test_same_named_different_pdf_preserves_word_blockers_and_source_locations(self) -> None:
+    def test_same_named_different_pdf_preserves_word_warnings_and_source_locations(self) -> None:
         other_dir = self.root / "other-source"
         other_dir.mkdir()
         other_pdf = other_dir / self.pdf.name
@@ -88,9 +88,12 @@ class TableValuePdfBindingDeliveryTests(TestCase):
         result = self._convert("unpaired.docx", pdf=other_pdf)
         evidence = read_table_evidence(result.renderer_metadata["table_evidence"])
         table_evidence, = evidence.tables
-        self.assertEqual((evidence.status, evidence.counts.blocker_count), ("blocked", 2))
+        self.assertEqual((evidence.status, evidence.counts.blocker_count), ("warning", 0))
         self.assertIsNone(table_evidence.value_column_corrections)
         finding_ids = {finding.finding_id for finding in table_evidence.validation.findings if finding.flag.code == _CODE}
+        self.assertEqual([(flag.identity, flag.severity) for flag in table_evidence.flags if flag.code == _CODE],
+                         [(finding.finding_id, "warning") for finding in table_evidence.validation.findings
+                          if finding.flag.code == _CODE])
         self.assertEqual({issue.finding_id for issue in result.pdf_value_column_unresolved}, finding_ids)
         self.assertEqual({(issue.source_row_index, issue.source_cell_index) for issue in result.pdf_value_column_unresolved},
                          {(2, 4), (3, 1)})
@@ -120,15 +123,15 @@ class TableValuePdfBindingDeliveryTests(TestCase):
             content_sha256=cell.content_sha256, original_column_range=(cell.column, cell.column + cell.colspan),
             target_column=5, target_header="TYP", pdf_binding=proof,
         )
-        blocked, location, _ = second
+        flag, location, _ = second
         issue = PdfValueColumnUnresolved(
-            fragment_id=blocked.fragment_id, finding_id=make_finding_id(source.grid.table_id, blocked, location),
+            fragment_id=flag.fragment_id, finding_id=make_finding_id(source.grid.table_id, flag, location),
             source_row_index=location.source_row_index, source_cell_index=location.source_cell_index,
             reason="row_ambiguous",
         )
         return (correction,), (issue,)
 
-    def test_pdf_provenance_and_blocker_resolution_require_actual_word_on_reopening(self) -> None:
+    def test_pdf_provenance_and_finding_resolution_require_actual_word_on_reopening(self) -> None:
         page = PdfValueColumnPage(width=72.0, height=72.0, page_count=1, words=(), rectangles=(),
                                   horizontal_lines=(), vertical_lines=(), extractor_version="synthetic-test")
         with (
@@ -141,10 +144,11 @@ class TableValuePdfBindingDeliveryTests(TestCase):
         metadata = result.renderer_metadata
         evidence = read_table_evidence(metadata["table_evidence"])
         table, = evidence.tables
-        self.assertEqual((evidence.status, evidence.counts.blocker_count), ("blocked", 1))
+        self.assertEqual((evidence.status, evidence.counts.blocker_count), ("warning", 0))
         self.assertEqual(len([finding for finding in table.validation.findings if finding.flag.code == _CODE]), 2)
         unreviewed, = result.pdf_value_column_unresolved
-        self.assertEqual([flag.identity for flag in table.flags if flag.code == _CODE], [unreviewed.finding_id])
+        self.assertEqual([(flag.identity, flag.severity) for flag in table.flags if flag.code == _CODE],
+                         [(unreviewed.finding_id, "warning")])
         correction, = table.value_column_corrections
         document = DocumentIR.model_validate_json(result.document_ir_path.read_bytes())
         source_group, = document.metadata.logical_table_groups

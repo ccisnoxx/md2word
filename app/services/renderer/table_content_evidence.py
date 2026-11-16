@@ -19,7 +19,7 @@ from app.services.tables.evidence import (
     source_grid_summary, table_validator_flags,
 )
 from app.services.tables.models import canonical_sha256, make_cell_id
-from app.services.tables.quality import LegacyValueColumnReplay, ValidatorVersion
+from app.services.tables.quality import LegacyValueColumnReplay, TableValidationPolicy, ValidatorVersion
 from app.services.tables.validator import validate_document_tables
 from app.services.document_ir.table_reference_assets import decode_table_references
 from app.services.document_ir.table_placeholder import decode_placeholders
@@ -208,11 +208,12 @@ def _value_column_corrections(plan: LogicalTableRenderPlan) -> dict[str, list[Va
 def _build_table_evidence(document: DocumentIR, content: bytes, evidence: dict, *,
                           certified_plan: LogicalTableRenderPlan | None = None,
                           validator_version: ValidatorVersion | None = None,
+                          policy: TableValidationPolicy | None = None,
                           legacy_value_column_replay: LegacyValueColumnReplay | None = None):
     """唯一编排点连接来源、当前渲染视图和实际 OOXML；纯层不感知 IR 或 renderer。"""
     groups = document.metadata.logical_table_groups
     source = validate_document_tables(
-        document, validator_version=validator_version, legacy_value_column_replay=legacy_value_column_replay,
+        document, policy=policy, validator_version=validator_version, legacy_value_column_replay=legacy_value_column_replay,
     )
     references = {item.fragment.fragment_id: item for item in decode_table_references(document)}
     native = evidence.get("table_rendering", {})

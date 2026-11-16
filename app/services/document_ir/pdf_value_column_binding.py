@@ -16,7 +16,8 @@ from app.services.document_ir.table_value_column_review import (
 from app.services.tables.grid_builder import TableBuildResult
 from app.services.tables.models import TableCell
 from app.services.tables.quality import (
-    BINDING_VALIDATOR_VERSION, LEGACY_VALIDATOR_VERSION, default_table_validation_policy, make_finding_id,
+    BINDING_VALIDATOR_VERSION, LEGACY_VALIDATOR_VERSION, REVIEWABLE_VALUE_COLUMN_RULES,
+    default_table_validation_policy, make_finding_id,
 )
 from app.services.tables.validator import (
     is_unit_header_label, iter_parameter_value_column_spans, parameter_value_header_label,
@@ -497,7 +498,7 @@ def match_pdf_value_columns(
     candidates = [(by_id[flag.cell_id], covered, make_finding_id(grid.table_id, flag, evidence))
                   for flag, evidence, covered in iter_parameter_value_column_spans(
                       result, policy, validator_version=version, legacy_value_column_replay=legacy_value_column_replay,
-                  ) if flag.severity == "blocker"
+                  ) if evidence.rule_id in REVIEWABLE_VALUE_COLUMN_RULES
                   and (evidence.source_row_index, evidence.source_cell_index) not in skip_cells]
     if not candidates:
         return (), ()

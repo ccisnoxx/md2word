@@ -8737,6 +8737,12 @@
             "title": "Fragment Id",
             "type": "string"
           },
+          "manual_review_required": {
+            "const": true,
+            "default": true,
+            "title": "Manual Review Required",
+            "type": "boolean"
+          },
           "source_page_index": {
             "anyOf": [
               {
@@ -8909,6 +8915,12 @@
             "pattern": "^[A-Za-z0-9_.:\\-]+$",
             "title": "Fragment Id",
             "type": "string"
+          },
+          "manual_review_required": {
+            "const": true,
+            "default": true,
+            "title": "Manual Review Required",
+            "type": "boolean"
           },
           "reason_code": {
             "enum": [
