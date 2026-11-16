@@ -13,7 +13,7 @@
 | 中文 OPA228 第 1 页 | `docjob_ab944caf1ae7` | `ch` | `ch` | `done`，`succeeded/completed` |
 | 英文 OPA228 第 1 页 | `docjob_8b745555c663` | `en` | `en` | `done`，`succeeded/completed` |
 
-两任务均有 MinerU 结果和渲染记录，翻译阶段、翻译批次、翻译启动和 Provider 调用均为零。通过任务下载接口获取两份 DOCX，每份包含原文正文与一张原生设备信息表。运行证据包含样本 SHA-256、批次 ID、阶段和文件指纹。 [实际请求与任务证据](../../../tests/tmp/direct-mineru-source-language-20261116/live-evidence.json)
+两任务均有 MinerU 结果和渲染记录，翻译阶段、翻译批次、翻译启动和 Provider 调用均为零。通过任务下载接口获取两份 DOCX，每份包含原文正文与一张原生设备信息表。运行证据包含样本 SHA-256、批次 ID、阶段和文件指纹。 [实际请求与任务证据](../../../../../tests/tmp/direct-mineru-source-language-20261116/live-evidence.json)
 
 ## WPS 重新打开验收
 
@@ -21,7 +21,7 @@
 
 | 样本 | 原文正文标记 | 原表格单元格 | 文件 |
 | --- | --- | --- | --- |
-| 中文 | “精密直流性能的应用。”后有 `[BODY-ZH]` | 第 1 行第 1 列为 `器件型号 [T-ZH]` | [原始 DOCX](../../../tests/tmp/direct-mineru-source-language-20261116/OPA228-zh-direct.docx) · [WPS 副本](../../../tests/tmp/direct-mineru-source-language-20261116/OPA228-zh-WPS-edit.docx) |
-| 英文 | “precision dc performance.” 后有 `[BODY-EN]` | 第 2 行第 2 列为 `Single [T-EN]` | [原始 DOCX](../../../tests/tmp/direct-mineru-source-language-20261116/OPA228-en-direct.docx) · [WPS 副本](../../../tests/tmp/direct-mineru-source-language-20261116/OPA228-en-WPS-edit.docx) |
+| 中文 | “精密直流性能的应用。”后有 `[BODY-ZH]` | 第 1 行第 1 列为 `器件型号 [T-ZH]` | [原始 DOCX](../../../../../tests/tmp/direct-mineru-source-language-20261116/OPA228-zh-direct.docx) · [WPS 副本](../../../../../tests/tmp/direct-mineru-source-language-20261116/OPA228-zh-WPS-edit.docx) |
+| 英文 | “precision dc performance.” 后有 `[BODY-EN]` | 第 2 行第 2 列为 `Single [T-EN]` | [原始 DOCX](../../../../../tests/tmp/direct-mineru-source-language-20261116/OPA228-en-direct.docx) · [WPS 副本](../../../../../tests/tmp/direct-mineru-source-language-20261116/OPA228-en-WPS-edit.docx) |
 
-WPS 提示本机缺少部分字体。保存后每份副本多一个空段落，原始 DOCX 指纹与初次下载一致。 [WPS 保存内容对照](../../../tests/tmp/direct-mineru-source-language-20261116/wps-edit-evidence.json)
+WPS 提示本机缺少部分字体。保存后每份副本多一个空段落，原始 DOCX 指纹与初次下载一致。 [WPS 保存内容对照](../../../../../tests/tmp/direct-mineru-source-language-20261116/wps-edit-evidence.json)
