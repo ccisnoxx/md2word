@@ -10,7 +10,7 @@
 | SN74AC244 重传 v4 | 整包无本规则命中。 | 原生 19×8 目标表，保留独立标注中的 21 处合法合并。两组对应数值均在 MIN，MAX 单元格独立且为空。 |
 | OPA228 第 7 页 | 6.7 表报告 23 个疑似项。两处验收值分别为源行 3 的 `±5 µV` 跨 MIN–TYP，以及源行 4 的 `±100 µV` 跨 MIN–MAX。 | 保留原生 32×8 目标表、77 处输入合并和两处指定值。独立 PDF 标注分别确认原件上的 TYP、MAX。 |
 
-[机器观测与产物指纹](../../../tests/tmp/parameter-table-value-columns.PMZ20U/artifacts/observations.json) · [SN74AC244 首轮 DOCX](../../../tests/tmp/parameter-table-value-columns.PMZ20U/artifacts/sn74-v4-ambiguous.docx) · [SN74AC244 重传 DOCX](../../../tests/tmp/parameter-table-value-columns.PMZ20U/artifacts/sn74-v4-matching.docx) · [OPA228 DOCX](../../../tests/tmp/parameter-table-value-columns.PMZ20U/artifacts/opa228-p7-location.docx)
+[机器观测与产物指纹](../../../../../tests/tmp/parameter-table-value-columns.PMZ20U/artifacts/observations.json) · [SN74AC244 首轮 DOCX](../../../../../tests/tmp/parameter-table-value-columns.PMZ20U/artifacts/sn74-v4-ambiguous.docx) · [SN74AC244 重传 DOCX](../../../../../tests/tmp/parameter-table-value-columns.PMZ20U/artifacts/sn74-v4-matching.docx) · [OPA228 DOCX](../../../../../tests/tmp/parameter-table-value-columns.PMZ20U/artifacts/opa228-p7-location.docx)
 
 三份包以外部输入身份回放。当前结果是离线结构与报告定位证据，正式部署、商业 Word 视觉签字和单元格几何归属未纳入本轮验证。
 

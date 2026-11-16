@@ -6,7 +6,7 @@
 
 ## 背景
 
-本任务承接 [Datasheet 质量基线、表格与状态合同的 Q3 / AC4](../11-11-datasheet-quality-baseline-contracts/prd.md)，发布行为沿用 Q4 的产物与有效批准绑定。OPA228 第 7 页的电气特性表中，源 PDF 将两条 `VOS` 值分别置于 TYP 和 MAX，保存的 MinerU HTML 却跨越 MIN–TYP 和 MIN–MAX。SN74AC244 同一 PDF 的两份 v4 结果分别有 27 和 21 处合并，首轮额外 6 处为 MIN/MAX 数值跨列。[OPA228 问题记录](../11-11-datasheet-quality-baseline-contracts/issues.md#优先核查的-p0-内容问题) · [固定输入与预期](research/samples.md)
+本任务承接 [Datasheet 质量基线、表格与状态合同的 Q3 / AC4](../../../11-11-datasheet-quality-baseline-contracts/prd.md)，发布行为沿用 Q4 的产物与有效批准绑定。OPA228 第 7 页的电气特性表中，源 PDF 将两条 `VOS` 值分别置于 TYP 和 MAX，保存的 MinerU HTML 却跨越 MIN–TYP 和 MIN–MAX。SN74AC244 同一 PDF 的两份 v4 结果分别有 27 和 21 处合并，首轮额外 6 处为 MIN/MAX 数值跨列。[OPA228 问题记录](../../../11-11-datasheet-quality-baseline-contracts/issues.md#优先核查的-p0-内容问题) · [固定输入与预期](research/samples.md)
 
 ## 需求
 

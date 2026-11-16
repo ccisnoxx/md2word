@@ -32,7 +32,7 @@
 - [x] AC3 / Q2。统一清单已复算六份历史观测。报告按运行、转换模式和证据层级保留独立口径。既有 P0 目标沿用清单，受保护技术 Token 完整率目标为 100%，新增阈值待校准。[基线清单](metrics-baseline.json)
 - [ ] AC4 / Q3。用独立标注分别核对网格和实际 OOXML。至少覆盖横纵合并、多级或重复表头、跨页续表、宽表和缺片段。缺片段报告定位与质量状态，并按现有规则阻断发布。合格样本保留单元格结构、可编辑性和技术内容归属。
   - [x] 对账独立标注、源 Grid、渲染投影和实际 OOXML，记录合并、多级表头、宽表、跨页续表、可编辑性及缺片段质量阻断的现有证据。[结构证据对账](validation.md#结构证据对账-ac4)
-  - [ ] [参数表数值列归属检查](../11-16-parameter-table-value-column-binding/prd.md)。固定 SN74AC244 两份 v4 回归输入，用 OPA228 第 7 页核对定位，验证内部 DOCX 与疑似项发布条件。
+  - [x] [参数表数值列归属检查](../archive/2026-11/11-16-parameter-table-value-column-binding/prd.md)。固定 SN74AC244 两份 v4 回归输入，用 OPA228 第 7 页核对定位，验证内部 DOCX 与疑似项发布条件。
   - [x] 在 hostdzire 隔离环境验证 SN74AC244 第 11–12 页 direct 缺片段负例。`1748f5ee` 上的 `docjob_530717cc627f` 可下载内部草稿，发布返回 `409 publication_quality_blocked`，发布记录前后均为 0。[隔离负例实测](validation.md#隔离负例实测)
   - [x] 在 hostdzire 生产环境验证 SN74AC244 第 11–12 页 direct 缺片段负例。`1748f5ee` 上的 `docjob_480ae546d66e` 使用默认模板 `default@1`，内部草稿可下载，发布返回 `409 publication_quality_blocked`，发布记录前后均为 0。验证后已关闭发布开关。[生产负例实测](validation.md#生产负例实测)
   - [x] 在 WPS 桌面版复核现有 DOCX 的目录刷新、两个公式书签、主表编辑和裁图显示，记录刷新后的版式观察。[AC4 实测与待办](validation.md#ac4-实测与待办)

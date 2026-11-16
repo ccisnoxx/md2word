@@ -428,7 +428,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 审核合同：`PATCH /review` 在批准当前主 DOCX 时接受 `acknowledged_table_semantics_report_sha256`，格式为 64 位小写十六进制，与 `report.report_sha256` 一致。既有授权、主件绑定与锁内提交复用这次确认。复核有效性、发布预检和原子发布共同消费主件与报告身份。
 - 边界：有疑似项且确认缺失或摘要变化时，批准分别以 `table_semantics_confirmation_required`、`table_semantics_confirmation_stale` 拒绝。确认凭据引用的报告无法验证时使用 `table_semantics_evidence_invalid`。此类拒绝保留内部草稿。已存在的其他质量阻断仍会阻止发布。
 - 基准与负例：合法跨列标题、空数值格和竖向合并可通过本规则。普通批准不能确认疑似项。审核员对照源 PDF 后用当前报告摘要确认，已有的风险记录保留。表格外框不足以确认单元格在 PDF 中的正确列。
-- 验证：`tests.test_parameter_table_value_column_binding` 检查规则与历史报告读取。通过 `scripts.dev.replay_parameter_table_value_columns` 校验三份固定 ZIP 指纹、质量项目与实际 Word 单元格合并。审批、下载和正式发布的权威回归在 Document Jobs 测试中验证。 [样本定位与回放入口](../../tasks/11-16-parameter-table-value-column-binding/research/samples.md)
+- 验证：`tests.test_parameter_table_value_column_binding` 检查规则与历史报告读取。通过 `scripts.dev.replay_parameter_table_value_columns` 校验三份固定 ZIP 指纹、质量项目与实际 Word 单元格合并。审批、下载和正式发布的权威回归在 Document Jobs 测试中验证。 [样本定位与回放入口](../../tasks/archive/2026-11/11-16-parameter-table-value-column-binding/research/samples.md)
 
 ### IMAGE-001 图片资产绑定、显示宽度和可见失败
 

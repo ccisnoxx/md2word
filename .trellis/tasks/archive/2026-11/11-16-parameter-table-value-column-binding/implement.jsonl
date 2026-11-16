@@ -3,4 +3,4 @@
 {"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "回归与质量证据实施约定"}
 {"file": ".trellis/spec/backend/error-handling.md", "reason": "复核和发布冲突的既有错误合同"}
 {"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "核对已选主件、复核和发布的跨层身份绑定"}
-{"file": ".trellis/tasks/11-16-parameter-table-value-column-binding/research/samples.md", "reason": "三份真实输入的指纹、定位、预期以及坐标证据边界"}
+{"file": ".trellis/tasks/archive/2026-11/11-16-parameter-table-value-column-binding/research/samples.md", "reason": "三份真实输入的指纹、定位、预期以及坐标证据边界"}

@@ -1,6 +1,6 @@
 # 参数表数值列归属检查实施计划
 
-实现和检查时从 [Word 生成规则](../../spec/backend/word-generation-rules.md) 定向读取 TABLE-001 至 TABLE-004、QUALITY-001、QUALITY-002 和 QUALITY-004。该文件超过 Trellis 自动注入的单文件上限，需直接读取这些章节。
+实现和检查时从 [Word 生成规则](../../../../spec/backend/word-generation-rules.md) 定向读取 TABLE-001 至 TABLE-004、QUALITY-001、QUALITY-002 和 QUALITY-004。该文件超过 Trellis 自动注入的单文件上限，需直接读取这些章节。
 
 ## 实施顺序
 
@@ -10,7 +10,7 @@
 4. [x] 在现有复核请求中接受明确确认的报告摘要，并随已验主件绑定写入原审核记录。复用 `review.py`、`use_cases/review_writer.py` 的锁内复核以及发布预检和提交重核。所有正式发布入口使用同一确认有效性。旧复核调用对涉及疑似项的主件无法绕过确认，未受影响请求、已发布快照与历史追加记录保持可读。
 5. [x] 完成定向回放和合同验证。独立复核了同一任务在读取质量报告、提交确认、发布提交之间的证据校验，以及重复表头和续表识别。已更新 Word 生成规则。 [验收记录](validation.md)
 
-证据消费涉及 [表格附件校验及读取](../../../app/domains/document_jobs/table_evidence.py)、[复核质量投影](../../../app/domains/document_jobs/quality_review_projection.py)、[基础质量汇总](../../../app/domains/document_jobs/base_quality.py)及 [发布预检](../../../app/domains/document_jobs/use_cases/publication.py)。先核对现有授权与摘要持久化位置，再选取同一权威字段。每次审核请求在拿锁前验证报告，锁内比较当前选定主件和报告身份；正式发布提交复查已认证身份。现有表格证据缺损时走现有失败边界，避免把无法验证的报告投影成空清单。
+证据消费涉及 [表格附件校验及读取](../../../../../app/domains/document_jobs/table_evidence.py)、[复核质量投影](../../../../../app/domains/document_jobs/quality_review_projection.py)、[基础质量汇总](../../../../../app/domains/document_jobs/base_quality.py)及 [发布预检](../../../../../app/domains/document_jobs/use_cases/publication.py)。先核对现有授权与摘要持久化位置，再选取同一权威字段。每次审核请求在拿锁前验证报告，锁内比较当前选定主件和报告身份；正式发布提交复查已认证身份。现有表格证据缺损时走现有失败边界，避免把无法验证的报告投影成空清单。
 
 ## 定向验证
 
