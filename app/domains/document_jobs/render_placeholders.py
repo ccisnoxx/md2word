@@ -50,6 +50,7 @@ class RenderPlaceholderSource:
     def ensure_file_current(self, job: DocumentJobRecord, file: DocumentFileRecord, error_code: str) -> None:
         """与 IR-206 相同：按 ID 重取并比较完整描述，不把有 file_id 当作当前可读。"""
         if (self.file_repository.get_document_file(file.id) != file or file.status != "uploaded"
+                or file.deletion_claim is not None
                 or file.expires_at is not None and file.expires_at <= utc_now()):
             raise TablePlaceholderError(error_code)
         self._ensure_attempt_current(job, error_code)
@@ -69,11 +70,18 @@ class RenderPlaceholderSource:
         return content
 
     def _get_source_file(self, job: DocumentJobRecord,
-                                      error_code: str = "table_placeholder_source_unavailable") -> DocumentFileRecord:
+                         error_code: str = "table_placeholder_source_unavailable", *,
+                         strict_identity: bool = False) -> DocumentFileRecord:
         """裁图或未完成 receipt 只认绑定源；clone 沿既有同源父链核验归属。"""
         file = self.file_repository.get_document_file(job.source_file_id)
-        if (file is None or file.file_type != "source_pdf" or file.status != "uploaded"
-                or (file.tenant_id, file.company_id) != (job.tenant_id, job.company_id)
+        if file is None:
+            raise TablePlaceholderError(error_code)
+        # 可选取证允许源文件暂不可用，明确的归属或类型冲突仍是完整性失败。
+        identity_error = "table_placeholder_integrity_failed" if strict_identity else error_code
+        if (file.file_type != "source_pdf" or file.mime_type != "application/pdf"
+                or (file.id, file.tenant_id, file.company_id) != (job.source_file_id, job.tenant_id, job.company_id)):
+            raise TablePlaceholderError(identity_error)
+        if (file.status != "uploaded" or file.deletion_claim is not None
                 or file.expires_at is not None and file.expires_at <= utc_now()
                 or not file.checksum_sha256):
             raise TablePlaceholderError(error_code)
@@ -81,16 +89,18 @@ class RenderPlaceholderSource:
         seen = set()
         while file.job_id != owner.id:
             if owner.id in seen or owner.source_job_id is None:
-                raise TablePlaceholderError(error_code)
+                raise TablePlaceholderError(identity_error)
             seen.add(owner.id)
             owner = self.job_repository.get_document_job(owner.source_job_id)
-            if (owner is None or owner.source_file_id != file.id
-                    or (owner.tenant_id, owner.company_id) != (job.tenant_id, job.company_id)):
+            if owner is None:
                 raise TablePlaceholderError(error_code)
+            if (owner.source_file_id != file.id
+                    or (owner.tenant_id, owner.company_id) != (job.tenant_id, job.company_id)):
+                raise TablePlaceholderError(identity_error)
         return file
 
-    def load_source(self, job: DocumentJobRecord) -> PdfCropSource:
-        file = self._get_source_file(job)
+    def load_source(self, job: DocumentJobRecord, *, strict_identity: bool = False) -> PdfCropSource:
+        file = self._get_source_file(job, strict_identity=strict_identity)
         content = self._read_current_file(job, file, "table_placeholder_source_unavailable")
         return PdfCropSource(file.id, file.checksum_sha256, content)
 

@@ -10,24 +10,28 @@ from pydantic_core import PydanticCustomError
 
 from app.services.document_ir.models import UpstreamTableCoverage
 from app.services.document_ir.table_header_review import TableHeaderReview
+from app.services.document_ir.table_value_column_review import LegacyValueColumnReplay
 from app.services.tables.measurement import (
     MAX_PARAMETER_UNIT_CHARS, MAX_PARAMETER_VALUE_CHARS, PARAMETER_VALUE, ValueColumnLabel, is_measurement_unit,
 )
 from app.services.tables.models import (
     CellId, FragmentId, NonNegativeInt, PositiveInt, RunId, RunType, Sha256,
-    VALUE_COLUMN_SPAN_AMBIGUOUS, TableQualityFlag, canonical_sha256, make_cell_id, make_run_id,
+    LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS, VALUE_COLUMN_SPAN_AMBIGUOUS, TableQualityFlag,
+    canonical_sha256, make_cell_id, make_run_id,
 )
 
 
 LEGACY_VALIDATOR_VERSION = "table-validator/v1"
 VALIDATOR_VERSION = "table-validator/v2"
-ValidatorVersion = Literal["table-validator/v1", "table-validator/v2"]
+BINDING_VALIDATOR_VERSION = "table-validator/v3"
+ValidatorVersion = Literal["table-validator/v1", "table-validator/v2", "table-validator/v3"]
 NORMALIZER_VERSION = "table-html/v1"
 POLICY_VERSION = "table-validation-policy/v1"
 GROUPS_VERSION = "logical-table-groups/v1"
 TableId = Annotated[str, Field(pattern=r"^logical-table:[0-9a-f]{64}$")]
 Severity = Literal["warning", "blocker"]
 ValidationErrorCode = Literal["table_validation_input", "table_validation_config", "table_validation_limit"]
+LEGACY_SHARED_LIMITS_RULE = LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS + ".shared_limits"
 
 RULE_DEFAULTS: dict[str, Severity] = {
     "table_html_missing": "blocker", "table_html_empty": "blocker", "table_html_no_rows": "blocker",
@@ -40,6 +44,8 @@ RULE_DEFAULTS: dict[str, Severity] = {
     "table_span_invalid": "warning", "table_html_removed_unsafe": "warning",
     "table_formula_unresolved": "warning", "table_nested_script": "warning",
     VALUE_COLUMN_SPAN_AMBIGUOUS: "warning",
+    LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS: "blocker",
+    LEGACY_SHARED_LIMITS_RULE: "warning",
 }
 HARD_BLOCKERS = frozenset({"table_html_missing", "table_html_empty", "table_html_no_rows", "table_zero_columns",
                            "table_span_collision", "table_span_out_of_bounds"})
@@ -51,6 +57,7 @@ Reason = Literal[
     "long_decimal", "column_mismatch", "header_mismatch", "missing_geometry", "geometry_mismatch",
     "page_not_adjacent", "page_body_boundary", "insufficient_evidence", "unreliable_columns",
     "invalid_span", "unsafe_removed", "formula_unresolved", "nested_script", "value_column_span_ambiguous",
+    "value_column_span", "shared_limit_value",
 ]
 RULE_REASONS = {
     "table_html_missing": {"missing"}, "table_html_empty": {"empty"}, "table_html_no_rows": {"no_rows"},
@@ -67,6 +74,8 @@ RULE_REASONS = {
     "table_span_invalid": {"invalid_span"}, "table_html_removed_unsafe": {"unsafe_removed"},
     "table_formula_unresolved": {"formula_unresolved"}, "table_nested_script": {"nested_script"},
     VALUE_COLUMN_SPAN_AMBIGUOUS: {"value_column_span_ambiguous"},
+    LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS: {"value_column_span"},
+    LEGACY_SHARED_LIMITS_RULE: {"shared_limit_value"},
 }
 
 
@@ -138,6 +147,12 @@ class TableValidationPolicy(_QualityModel):
         if rule_id not in RULE_DEFAULTS:
             raise TableValidationError("table_validation_config")
         return self.rule_severities.get(rule_id, self.code_severities.get(RULE_CODES[rule_id], RULE_DEFAULTS[rule_id]))
+
+
+def default_table_validation_policy(version: ValidatorVersion) -> TableValidationPolicy:
+    return TableValidationPolicy(rule_severities={
+        VALUE_COLUMN_SPAN_AMBIGUOUS: "blocker",
+    } if version == BINDING_VALIDATOR_VERSION else {})
 
 
 class TableFragmentReference(_QualityModel):
@@ -517,6 +532,12 @@ class TableValidationReport(_QualityModel):
                     cell.source_row_index + cell.rowspan <= fragment.row_count):
                 _invalid()
             if evidence.rule_id == "table_span_invalid" and evidence.attribute is None:
+                _invalid()
+            # expected 固定为 1 个数值列；actual 是该单元格列区间覆盖的数值列数。
+            if evidence.rule_id in {LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS, LEGACY_SHARED_LIMITS_RULE} and (
+                    self.validator_version != LEGACY_VALIDATOR_VERSION or cell is None or cell.is_header or
+                    (evidence.column, evidence.end_column) != (cell.column, cell.column + cell.colspan) or
+                    evidence.expected != 1 or evidence.actual is None or not 2 <= evidence.actual <= cell.colspan):
                 _invalid()
             if ((evidence.rule_id == "table_html_missing" and fragment.html_state != "missing") or
                     (evidence.rule_id == "table_html_empty" and

@@ -23,6 +23,7 @@ from app.services.renderer.template_conformance import (
 
 
 if TYPE_CHECKING:
+    from app.services.document_ir.table_value_column_review import LegacyValueColumnReplay
     from app.services.renderer.block_evidence import BlockRenderEvidence, WordRenderResult, _RenderOwnership
     from app.services.renderer.render_plan import RenderPlan
 
@@ -127,10 +128,14 @@ def _validate_persisted_image_targets(index, records, blocks, image_ids, *, pres
 def validate_persisted_render_evidence(document_ir: DocumentIR, word_content: bytes, *,
                                        render_plan: RenderPlan | dict[str, Any] | None,
                                        block_render_evidence: BlockRenderEvidence | dict[str, Any] | None,
+                                       legacy_value_column_replay: LegacyValueColumnReplay | None = None,
                                        ) -> tuple[RenderPlan, BlockRenderEvidence] | None:
     """消费历史可选 trace；坏 trace 不改变原主件恢复/下载合同。"""
     try:
-        return _validate_render_evidence(document_ir, word_content, render_plan, block_render_evidence)
+        return _validate_render_evidence(
+            document_ir, word_content, render_plan, block_render_evidence,
+            legacy_value_column_replay=legacy_value_column_replay,
+        )
     except DocumentIntegrityError:
         return None
 
@@ -139,7 +144,9 @@ def _validate_render_evidence(document_ir: DocumentIR, word_content: bytes,
                               plan_value: RenderPlan | dict[str, Any] | None,
                               trace_value: BlockRenderEvidence | dict[str, Any] | None,
                               *, ownership: _RenderOwnership | None = None,
-                              require_ownership: bool = False) -> tuple[RenderPlan, BlockRenderEvidence]:
+                              require_ownership: bool = False,
+                              legacy_value_column_replay: LegacyValueColumnReplay | None = None,
+                              ) -> tuple[RenderPlan, BlockRenderEvidence]:
     """共用最终包认证；持久化证明不重建同次运行期归属。"""
     from docx.oxml.ns import qn
     from app.services.renderer.block_evidence import (
@@ -175,8 +182,10 @@ def _validate_render_evidence(document_ir: DocumentIR, word_content: bytes,
         table_members = set()
         if v2:
             from app.services.renderer.content_contract import validate_v2_table_trace
-            table_members = validate_v2_table_trace(document_ir, plan, trace, index, ownership,
-                require_ownership=require_ownership)
+            table_members = validate_v2_table_trace(
+                document_ir, plan, trace, index, ownership, require_ownership=require_ownership,
+                legacy_value_column_replay=legacy_value_column_replay,
+            )
         if len(index.sections) != len(plan.sections):
             raise ValueError("ir_render_evidence:target_mismatch")
         for planned, actual in zip(plan.sections, index.sections, strict=True):

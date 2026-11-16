@@ -381,6 +381,11 @@ def verify_native_content(document, content: bytes, table_plan, formula_report, 
         for fragment in unit.fragments:
             if fragment.render is None:
                 continue
+            released = defaultdict(set)
+            if (review := fragment.source.value_column_review) is not None:
+                for correction in review.corrections:
+                    empty_columns = set(range(*correction.original_column_range)) - {correction.target_column}
+                    released[correction.source_row_index].update(empty_columns)
             for source_row, owners in iter_grid_rows(fragment.render.grid, block_index=fragment.block_index):
                 if source_row < fragment.removed_header_rows:
                     continue
@@ -408,6 +413,9 @@ def verify_native_content(document, content: bytes, table_plan, formula_report, 
                     if semantic_projection(paragraphs[0], include_fields=True) != expected:
                         raise content_failure("ir_render_evidence:target_mismatch")
                 for column, cell in logical.items():
+                    if column in released.get(source_row, ()) and any(
+                            node.tag not in {qn("w:tcPr"), qn("w:p")} for node in cell):
+                        raise content_failure("ir_render_evidence:target_mismatch")
                     if column not in used and any(semantic_projection(paragraph, include_fields=True)
                                                  for paragraph in cell.findall(qn("w:p"))):
                         raise content_failure("ir_render_evidence:target_mismatch")
@@ -436,7 +444,7 @@ def verify_native_content(document, content: bytes, table_plan, formula_report, 
 
 
 def build_v2_content_evidence(document, content, layout, *, coverage, formula_report, image_report,
-                              table_validator_version, expected_template_version_id=None,
+                              table_validator_version, legacy_value_column_replay=None, expected_template_version_id=None,
                               expected_generation_policy=None):
     """先认证全源覆盖，再进入原物理公式/图片门；不预先执行 legacy 表数或库存。"""
     from app.services.renderer.render_evidence import build_renderer_aggregate_evidence
@@ -449,7 +457,10 @@ def build_v2_content_evidence(document, content, layout, *, coverage, formula_re
         if not isinstance(image_report, dict) or not isinstance(formula_report, dict):
             raise content_failure()
         resolved = layout or build_layout_plan(document)
-        tables = build_content_table_plan(document, resolved)
+        tables = build_content_table_plan(
+            document, resolved, validator_version=table_validator_version,
+            legacy_value_column_replay=legacy_value_column_replay,
+        )
         validated = validate_formula_source_coverage(document, content, tables, formula_report, coverage)
         rendered = [entry["source"] for entry in validated["entries"] if entry["disposition"] == "rendered"]
         placeholders = decode_placeholders(document)
@@ -471,7 +482,8 @@ def build_v2_content_evidence(document, content, layout, *, coverage, formula_re
         if not evidence["blocking_quality_flags"]:
             verify_native_content(document, content, tables, formula_report, image_report, validated)
             evidence["table_evidence"] = _build_table_evidence(
-                document, content, evidence, validator_version=table_validator_version,
+                document, content, evidence, validator_version=table_validator_version, certified_plan=tables,
+                legacy_value_column_replay=legacy_value_column_replay,
             ).model_dump(mode="json", warnings=False)
         return evidence
     except DocumentIntegrityError:
@@ -480,14 +492,17 @@ def build_v2_content_evidence(document, content, layout, *, coverage, formula_re
         raise content_failure() from None
 
 
-def validate_v2_table_trace(document, plan, trace, index, ownership, *, require_ownership):
+def validate_v2_table_trace(document, plan, trace, index, ownership, *, require_ownership,
+                            legacy_value_column_replay=None):
     """纯计划确定期待的唯一表和行，真实 runtime 归属作为独立第二输入逐值对账。"""
     from app.services.renderer.block_evidence import TableRowsScope
     from app.services.renderer.layout_plan import build_layout_plan
     from app.services.renderer.logical_table_plan import build_content_table_plan, table_unit_contracts
     from app.services.document_ir.table_placeholder import decode_placeholders
     from app.services.renderer.table_placeholder_evidence import marker
-    tables = build_content_table_plan(document, build_layout_plan(document))
+    tables = build_content_table_plan(
+        document, build_layout_plan(document), legacy_value_column_replay=legacy_value_column_replay,
+    )
     contracts = table_unit_contracts(document, tables)
     if plan.table_units != contracts or [unit.unit_id for unit in trace.table_units] != [unit.unit_id for unit in contracts]:
         raise content_failure("ir_render_evidence:target_mismatch")

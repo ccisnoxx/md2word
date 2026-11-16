@@ -18,6 +18,7 @@ from app.services.document_ir.table_header_review import TableHeaderReview
 
 
 VALUE_COLUMN_SPAN_AMBIGUOUS = "table_semantics:value_column_span_ambiguous"
+LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS = "table_value_column_span_ambiguous"
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 FragmentId = Annotated[str, Field(pattern=r"^table-fragment:[0-9a-f]{64}$")]

@@ -40,6 +40,7 @@ from app.services.preview.page_quality import (
 from app.services.renderer.block_anchors import BLOCK_ANCHOR_V2_VERSION, validate_block_anchor_evidence
 from app.services.renderer.render_evidence import validate_persisted_renderer_content
 from app.services.renderer.render_evidence_validation import validate_persisted_render_evidence
+from app.services.tables.evidence import legacy_value_column_replay_for_report
 
 PREVIEW_FILE_TYPES = WORD_PREVIEW_FILE_TYPES
 _UNREAD_QUALITY_PLAN = object()
@@ -160,10 +161,11 @@ def mapping_source(source, content, file_repository, file_service, *, authentica
         document_ir = DocumentIR.model_validate_json(ir_bytes)
     except (ValidationError, ValueError):
         raise ValueError("主件的原始 IR 数据无法认证。") from None
-    validate_persisted_renderer_content(document_ir, content, metadata,
+    validated = validate_persisted_renderer_content(document_ir, content, metadata,
         expected_template_version_id=metadata.get("template_version_id"))
     verified = validate_persisted_render_evidence(document_ir, content,
-        render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"))
+        render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"),
+        legacy_value_column_replay=legacy_value_column_replay_for_report(validated.get("table_evidence")))
     if verified is None:
         return None, None, None
     plan, trace = verified

@@ -166,8 +166,6 @@ class MinerUClient:
         data = result.get("data") or {}
         if not isinstance(data, dict):
             raise MinerUError("查询批量解析结果失败: 响应 data 不是对象")
-        if not data.get("batch_id"):
-            data["batch_id"] = batch_id
         extract_result = data.get("extract_result") or []
         if not isinstance(extract_result, list):
             raise MinerUError("查询批量解析结果失败: extract_result 不是数组")

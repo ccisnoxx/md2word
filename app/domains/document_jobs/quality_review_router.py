@@ -220,7 +220,8 @@ def request_document_job_new_generation(job_id: str, payload: DocumentJobNewGene
     try:
         result, created = runtime.document_job_use_cases.publication.request_new_generation(job_id, user=user,
             request_id=payload.request_id, note=payload.note,
-            expected_source=ReviewExpectedSource.model_validate(payload.expected_source.model_dump()), trace_id=trace_id)
+            expected_source=ReviewExpectedSource.model_validate(payload.expected_source.model_dump()), trace_id=trace_id,
+            table_value_column_reviews=payload.table_value_column_reviews)
     except NewGenerationRequestUnavailable as error:
         return _new_generation_unavailable_response(request, error)
     response.status_code = 202 if created else 200

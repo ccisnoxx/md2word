@@ -5,15 +5,20 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, ValidationError, model_validator
 
-from app.services.tables.models import FragmentId, NonNegativeInt, PositiveInt, Sha256, canonical_json_bytes, canonical_sha256
+from app.services.tables.models import (
+    LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS, VALUE_COLUMN_SPAN_AMBIGUOUS, CellId, FragmentId, NonNegativeInt,
+    PositiveInt, Sha256, canonical_json_bytes, canonical_sha256,
+)
 from app.services.tables.quality import (
-    CODES, GROUPS_VERSION, TableId, TableQualityContribution, TableValidationPolicy, ValidatorVersion,
+    CODES, GROUPS_VERSION, LEGACY_SHARED_LIMITS_RULE, LEGACY_VALIDATOR_VERSION, LegacyValueColumnReplay,
+    TableId, TableQualityContribution, TableValidationPolicy, ValidatorVersion,
     TableValidationReport, _QualityModel, _invalid, aggregate_table_quality,
 )
 
 VERSION = "table-evidence/v1"
 MAX_REPORT_BYTES = 64 * 1024 * 1024
 SafeId = Annotated[str, Field(pattern=r"^[A-Za-z0-9_:.\-]{1,160}$")]
+TableOutputKey = Annotated[str, Field(pattern=r"^md2word-table-[0-9a-f]{32}$")]
 Checksum = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 Status = Literal["pending", "passed", "warning", "blocked"]
 NATIVE_BLOCKERS = frozenset({"table_fragment_missing", "table_render_layout_incompatible"})
@@ -47,7 +52,7 @@ class WordRowObservation(EvidenceModel):
 
 class WordTableObservation(EvidenceModel):
     table_index: NonNegativeInt
-    anchor: Annotated[str, Field(pattern=r"^md2word-table-[0-9a-f]{32}$")] | None
+    anchor: TableOutputKey | None
     grid_columns: NonNegativeInt
     rows: list[WordRowObservation]
 
@@ -72,6 +77,7 @@ class FragmentOutput(EvidenceModel):
     bookmark: SafeId | None
     status: Literal["rendered", "header_only", "empty", "missing"]
     upstream_covered_rows: list[NonNegativeInt] | None = Field(default=None, exclude_if=lambda value: value is None)
+    value_column_review_sha256: Sha256 | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _ranges(self) -> Self:
@@ -81,6 +87,8 @@ class FragmentOutput(EvidenceModel):
                 _invalid("table_evidence_input")
         covered = self.upstream_covered_rows
         if covered is not None and (self.status != "empty" or len(covered) != 2 or covered[0] >= covered[1]):
+            _invalid("table_evidence_input")
+        if self.value_column_review_sha256 is not None and (self.status != "rendered" or self.block_id is None):
             _invalid("table_evidence_input")
         if self.status in {"empty", "missing"}:
             if (self.source_rows != [0, 0] or self.output_rows != [0, 0] or self.block_id is not None
@@ -98,7 +106,7 @@ class FragmentOutput(EvidenceModel):
 
 
 class NativeOutput(EvidenceModel):
-    output_table_key: Annotated[str, Field(pattern=r"^md2word-table-[0-9a-f]{32}$")]
+    output_table_key: TableOutputKey
     anchor_block_id: SafeId
     actual: WordTableObservation
     fragments: list[FragmentOutput]
@@ -188,6 +196,25 @@ class EvidenceFlag(EvidenceModel):
         return self
 
 
+def table_validator_flags(report: TableValidationReport, *, resolved: set[str]) -> list[EvidenceFlag]:
+    return [EvidenceFlag(producer="table_validator", code=finding.flag.code, severity=finding.flag.severity,
+                         identity=finding.finding_id, fragment_id=finding.flag.fragment_id)
+            for finding in report.findings if finding.finding_id not in resolved]
+
+
+class ValueColumnCorrectionEvidence(EvidenceModel):
+    """记录一次实际 Word 已认证的修正，原表问题仍在 validation 中。"""
+
+    review_sha256: Sha256
+    source_cell_id: CellId
+    finding_id: Annotated[str, Field(pattern=r"^table-finding:[0-9a-f]{64}$")]
+    original_column_range: Annotated[list[NonNegativeInt], Field(min_length=2, max_length=2)]
+    target_column: NonNegativeInt
+    output_table_key: TableOutputKey
+    output_row: NonNegativeInt
+    pdf_binding_sha256: Sha256 | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
 class SourceGridSummary(EvidenceModel):
     rows: NonNegativeInt
     columns: NonNegativeInt
@@ -209,6 +236,62 @@ class TableEvidence(EvidenceModel):
     render_state: Literal["native", "placeholder", "mixed", "excluded_margin_artifact"]
     flags: list[EvidenceFlag]
     status: Status
+    value_column_corrections: Annotated[list[ValueColumnCorrectionEvidence], Field(min_length=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None)
+
+    def _resolved_value_column_findings(self) -> set[str]:
+        marked = [(output, fragment) for output in self.outputs for fragment in output.fragments
+                  if fragment.value_column_review_sha256 is not None]
+        corrections = self.value_column_corrections
+        if corrections is None and not marked:
+            return set()
+        if (corrections is None or len(marked) != 1 or len(self.outputs) != 1
+                or self.render_state != "native" or len(self.validation.fragments) != 1):
+            _invalid("table_evidence_input")
+        output, fragment = marked[0]
+        source = self.validation.fragments[0]
+        if (fragment.source_rows != [0, source.row_count] or fragment.retained_source_rows != fragment.source_rows
+                or output.actual.grid_columns != source.columns):
+            _invalid("table_evidence_input")
+        findings = {finding.finding_id: finding for finding in self.validation.findings}
+        cells = {cell.id: cell for cell in self.validation.cells}
+        resolved = set()
+        single_columns_by_row: dict[int, set[int]] = {}
+        for correction in corrections:
+            finding = findings.get(correction.finding_id)
+            cell = cells.get(correction.source_cell_id)
+            if (finding is None or cell is None or correction.finding_id in resolved
+                    or finding.evidence.rule_id not in {VALUE_COLUMN_SPAN_AMBIGUOUS, LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS}
+                    or finding.flag.severity != "blocker" or finding.flag.cell_id != cell.id
+                    or cell.fragment_id != fragment.fragment_id or cell.is_header or cell.rowspan != 1):
+                _invalid("table_evidence_input")
+            span = finding.evidence.value_column_span
+            if (span is None and finding.evidence.actual != cell.colspan or span is not None and (
+                    len(span.columns) != cell.colspan or len({item.group_start_column for item in span.columns}) != 1)):
+                _invalid("table_evidence_input")
+            start, end = correction.original_column_range
+            retained_start, retained_end = fragment.retained_source_rows
+            if (correction.review_sha256 != fragment.value_column_review_sha256
+                    or correction.output_table_key != output.output_table_key
+                    or (start, end) != (cell.column, cell.column + cell.colspan)
+                    or not start <= correction.target_column < end
+                    or not retained_start <= cell.source_row_index < retained_end
+                    or correction.output_row != fragment.output_rows[0] + cell.source_row_index - retained_start):
+                _invalid("table_evidence_input")
+            # OOXML 的格位由累计列跨度定位。原跨度内每一列均须落为独立的单格。
+            positions = single_columns_by_row.get(correction.output_row)
+            if positions is None:
+                positions = set()
+                column = 0
+                for observed in output.actual.rows[correction.output_row].cells:
+                    if observed.grid_span == 1 and observed.vertical_merge is None:
+                        positions.add(column)
+                    column += observed.grid_span
+                single_columns_by_row[correction.output_row] = positions
+            if not positions.issuperset(range(start, end)):
+                _invalid("table_evidence_input")
+            resolved.add(correction.finding_id)
+        return resolved
 
     @model_validator(mode="after")
     def _table(self) -> Self:
@@ -260,8 +343,7 @@ class TableEvidence(EvidenceModel):
         for identity in placeholder_ids:
             if fragments[identity].html_state == "present" or fragments[identity].upstream_coverage is not None:
                 _invalid("table_evidence_input")
-        source_flags = [EvidenceFlag(producer="table_validator", code=f.flag.code, severity=f.flag.severity,
-                                    identity=f.finding_id, fragment_id=f.flag.fragment_id) for f in report.findings]
+        source_flags = table_validator_flags(report, resolved=self._resolved_value_column_findings())
         if [f for f in self.flags if f.producer == "table_validator"] != source_flags:
             _invalid("table_evidence_input")
         expected_reference = []
@@ -440,6 +522,20 @@ def read_table_evidence(value) -> TableEvidenceReport:
         if isinstance(exc, TableEvidenceError):
             raise
         raise TableEvidenceError("table_evidence_integrity") from None
+
+
+def legacy_value_column_replay_for_report(
+    value: TableEvidenceReport | dict | None,
+) -> LegacyValueColumnReplay | None:
+    """两个历史分支共用 v1 版本号，按已认证规则区分精确回放。"""
+    if isinstance(value, dict) and value.get("validator_version") == LEGACY_VALIDATOR_VERSION:
+        value = read_table_evidence(value)
+    if not isinstance(value, TableEvidenceReport) or value.validator_version != LEGACY_VALIDATOR_VERSION:
+        return None
+    rules = {finding.evidence.rule_id for table in value.tables for finding in table.validation.findings}
+    if LEGACY_SHARED_LIMITS_RULE in rules:
+        return "shared_limits"
+    return "blocker" if LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS in rules else None
 
 
 def table_evidence_summary(report: TableEvidenceReport) -> dict:

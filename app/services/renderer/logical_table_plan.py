@@ -12,6 +12,11 @@ from app.services.document_ir.table_annotations import (
     annotation_items, continuation_caption, is_table_context_annotation, read_table_annotation_source,
 )
 from app.services.document_ir.table_header_review import TableHeaderReview
+from app.services.document_ir.table_value_column_review import (
+    TableValueColumnReview, TableValueColumnReviewError, resolve_table_value_column_review,
+)
+from app.services.tables.quality import LEGACY_VALIDATOR_VERSION, LegacyValueColumnReplay, ValidatorVersion
+from app.services.tables.validator import document_table_validator_version
 from app.services.renderer.layout_plan import LayoutPage, LayoutPlan, LayoutRegion, split_two_col_blocks
 from app.services.renderer.table_renderer import TableRenderError, iter_grid_rows
 from app.services.tables.grid_builder import RenderTableBuildResult, build_render_table_grid
@@ -46,6 +51,7 @@ class FragmentRenderPlan:
     bookmark: str | None
     bookmark_id: int | None
     upstream_covered_rows: tuple[int, int] | None = None
+    value_column_finding_ids: tuple[str, ...] = ()
 
     @property
     def status(self) -> str:
@@ -177,25 +183,69 @@ def _build_current(
     return result
 
 
+def _apply_value_column_review(
+    review: TableValueColumnReview, group: LogicalTableGroup, current: RenderTableBuildResult,
+    *, source_content_sha256: str, validator_version: ValidatorVersion, legacy_value_column_replay: LegacyValueColumnReplay | None,
+) -> tuple[RenderTableBuildResult, tuple[str, ...]]:
+    """保留真实源序和当前渲染身份，只在已占用的区间内收窄数值格。"""
+    original, findings = resolve_table_value_column_review(
+        review, group, source_content_sha256=source_content_sha256,
+        validator_version=validator_version, legacy_value_column_replay=legacy_value_column_replay,
+    )
+
+    def geometry(grid: TableGrid) -> tuple:
+        return (grid.rows, grid.columns, [
+            (cell.source_row_index, cell.source_cell_index, cell.row, cell.column, cell.rowspan, cell.colspan,
+             cell.is_header) for cell in grid.cells
+        ])
+
+    if geometry(original) != geometry(current.grid):
+        raise TableValueColumnReviewError("render_mismatch")
+
+    targets = {(item.source_row_index, item.source_cell_index): item.target_column for item in review.corrections}
+    cells = []
+    for cell in current.grid.cells:
+        position = (cell.source_row_index, cell.source_cell_index)
+        cells.append(cell.model_copy(update={"column": targets[position], "colspan": 1}) if position in targets else cell)
+    # 释放的列成为渲染空槽，由现有 writer 和内容认证分别写入、核对。
+    grid = current.grid.model_copy(update={"cells": cells})
+    fingerprint = canonical_sha256(["document-ir-table-value-column-review/v1", current.input_sha256, review.review_sha256])
+    return replace(current, input_sha256=fingerprint, grid=grid), tuple(item.finding_id for item in findings)
+
+
 def _build_group_current(
     group: LogicalTableGroup, indices: dict[str, int], document: DocumentIR, placeholder_ids: set[str],
-) -> list[tuple[TableFragment, int, RenderTableBuildResult]]:
+    *, validator_version: ValidatorVersion, legacy_value_column_replay: LegacyValueColumnReplay | None,
+) -> tuple[list[tuple[TableFragment, int, RenderTableBuildResult]], dict[str, tuple[str, ...]]]:
     """按删除前的完整组递增计费，超限即停止，不先持有超预算的整组 Grid。"""
     members = []
+    value_column_finding_ids = {}
     covered_owners = {fragment.render_owner_block_id for fragment in group.fragments
                       if fragment.upstream_coverage is not None}
     html_bytes = cells = slots = checks = 0
     for fragment in group.fragments:
+        review = fragment.value_column_review
         if fragment.block_id is None or fragment.fragment_id in placeholder_ids:
+            if review is not None:
+                raise TableValueColumnReviewError("render_mismatch")
             continue
         index = indices[fragment.block_id]
+        block = document.blocks[index]
+        if review is not None and (not is_visible_body_block(block) or block.html != fragment.raw_html):
+            # 首版仅在原排版视图应用记录，防止正文重排、译文或降级替代已校验的格。
+            raise TableValueColumnReviewError("render_mismatch")
         try:
-            html_bytes += len((document.blocks[index].html or "").encode("utf-8"))
+            html_bytes += len((block.html or "").encode("utf-8"))
         except UnicodeEncodeError:
             raise TableRenderError("table_html_encoding", block_index=index) from None
         if html_bytes > MAX_RAW_HTML_BYTES:
             raise TableRenderError("table_build_limit", block_index=index)
-        current = _build_current(document.blocks[index], index, fragment.header_review)
+        try:
+            current = _build_current(block, index, fragment.header_review)
+        except TableRenderError:
+            if review is None:
+                raise
+            raise TableValueColumnReviewError("render_mismatch") from None
         if fragment.block_id in covered_owners and document.blocks[index].html != fragment.raw_html:
             # 译文可改写单元格内容，覆盖区间仍须投影到相同的行列和合并坐标。
             source_block = document.blocks[index].model_copy(update={"html": fragment.raw_html})
@@ -209,12 +259,26 @@ def _build_group_current(
         checks += sum(cell.rowspan * cell.colspan for cell in current.grid.cells)
         if cells > MAX_CELLS or slots > MAX_GRID_SLOTS or checks > MAX_OCCUPANCY_CHECKS:
             raise TableRenderError("table_build_limit", block_index=index)
+        if review is not None:
+            validation = document.metadata.mineru_validation
+            if validation is None:
+                raise TableValueColumnReviewError("render_mismatch")
+            current, value_column_finding_ids[fragment.fragment_id] = _apply_value_column_review(
+                review, group, current, source_content_sha256=validation.content_list_sha256,
+                validator_version=validator_version, legacy_value_column_replay=legacy_value_column_replay,
+            )
         members.append((fragment, index, current))
-    return members
+    return members, value_column_finding_ids
 
 
-def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan) -> LogicalTableRenderPlan | None:
+def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan, *,
+                                    validator_version: ValidatorVersion | None = None,
+                                    legacy_value_column_replay: LegacyValueColumnReplay | None = None) -> LogicalTableRenderPlan | None:
     """仅消费经过 IR owner 复核的组合同；旧无组 IR 不改变输出。"""
+    legacy_value_column_replay = legacy_value_column_replay or document.metadata.legacy_value_column_replay
+    validator_version = validator_version or (
+        LEGACY_VALIDATOR_VERSION if legacy_value_column_replay is not None else document_table_validator_version(document)
+    )
     validate_logical_table_groups(document)
     if document.metadata.logical_table_groups_version is None:
         return None
@@ -229,7 +293,10 @@ def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan) ->
     consumed: set[str] = set()
     bookmark_index = 1_000_000
     for group in document.metadata.logical_table_groups:
-        present = _build_group_current(group, indices, document, placeholder_ids)
+        present, value_column_finding_ids = _build_group_current(
+            group, indices, document, placeholder_ids, validator_version=validator_version,
+            legacy_value_column_replay=legacy_value_column_replay,
+        )
         # 页边装饰不属于正文输出；其源表也不能被正文组消费。
         if not any(is_visible_body_block(document.blocks[index]) for _, index, _ in present):
             continue
@@ -296,7 +363,7 @@ def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan) ->
                 else:
                     bookmark, bookmark_id = main_bookmark, main_bookmark_id
                 fragment_plans.append(FragmentRenderPlan(fragment, index, current, removed, offset, end,
-                                                         bookmark, bookmark_id))
+                    bookmark, bookmark_id, value_column_finding_ids=value_column_finding_ids.get(fragment.fragment_id, ())))
                 offset = end
             owners = {item.source.block_id: item for item in fragment_plans}
             for fragment in group.fragments:
@@ -330,9 +397,13 @@ def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan) ->
     return LogicalTableRenderPlan(tuple(units), frozenset(consumed), fingerprint)
 
 
-def build_content_table_plan(document: DocumentIR, layout: LayoutPlan) -> LogicalTableRenderPlan:
+def build_content_table_plan(document: DocumentIR, layout: LayoutPlan, *,
+                             validator_version: ValidatorVersion | None = None,
+                             legacy_value_column_replay: LegacyValueColumnReplay | None = None) -> LogicalTableRenderPlan:
     """v2 的所有原生表共用源 grid；历史无组只建立内存 render-view 身份。"""
-    original = build_logical_table_render_plan(document, layout)
+    original = build_logical_table_render_plan(
+        document, layout, validator_version=validator_version, legacy_value_column_replay=legacy_value_column_replay,
+    )
     units = list(original.units) if original else []
     covered = {fragment.source.block_id for unit in units for fragment in unit.fragments}
     for index, block in enumerate(document.blocks):

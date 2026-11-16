@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/word-generation-rules.md","reason":"检查规则所有权、表格保真和生成证据"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"复核实际 DOCX、定向回归与结果登记"}
