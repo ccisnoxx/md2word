@@ -36,3 +36,32 @@ Datasheet Q3 / AC4 子项已归档。质量报告定位数值跨列歧义，保�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 62: 集中 API 启动初始化并复用 Celery Worker Runtime
+
+**Date**: 2026-11-16
+**Task**: 集中 API 启动初始化并复用 Celery Worker Runtime
+**Branch**: `main`
+
+### Summary
+
+完成并归档 11-16-api-bootstrap-worker-runtime。API 负责 schema 和 seed，Worker 等 API 健康后启动并按进程复用 Runtime，保留现有 MinerU 启动恢复。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dab58d26` | (see git log) |
+
+### Testing
+
+- [OK] 复用已通过的 63 项定向测试、真实 fork 检查及 dev/prod Compose 配置检查。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本次为本地收尾，未推送或部署生产。
