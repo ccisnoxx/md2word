@@ -7,8 +7,8 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-1.md`
-- **Total Sessions**: 60
+- **Active File**: `journal-2.md`
+- **Total Sessions**: 61
 - **Last Active**: 2026-11-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1985 | Active |
+| `journal-2.md` | ~32 | Active |
+| `journal-1.md` | ~1985 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 61 | 2026-11-16 | MinerU v4 语言映射和接入评估收尾 | `4db17ac33051fb04f75777ad25b65d0356364526` | `codex/production-cold-start-bootstrap` |
 | 60 | 2026-11-16 | 生产冷启动单一初始化 | `374403859b74242daa327491c7d085fb619eeed2` | `codex/production-cold-start-bootstrap` |
 | 59 | 2026-11-16 | 模板 YAML 绑定与正式页眉约束 | `7b64dd3` | `main` |
 | 58 | 2026-11-15 | 收尾 Datasheet 题注脚注翻译与 Word 上标 | `06650bd415e5675893d62519b90dc73801c4afde` | `main` |
