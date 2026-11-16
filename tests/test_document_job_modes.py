@@ -3,13 +3,18 @@
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 import io
+import json
 from pathlib import Path
 import tempfile
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
+from requests import Response
+from requests.adapters import HTTPAdapter
+
 from tests import test_fastapi_jobs_backend as fixtures
 
+from app.clients.mineru_client import MinerUClient
 from app.domains.translation import profiles_service
 from app.domains.jobs import resource_snapshots
 from app.domains.translation.modes import normalize_translation_mode
@@ -95,6 +100,138 @@ class DocumentJobModesTests(TestCase):
         response = client.post("/api/v1/document-jobs", headers=headers, json={"source_file_id": source["id"]})
         self.assertEqual(response.status_code, 201, response.json())
         return source, response.json()["job_id"]
+
+    def _run_parse_and_read_mineru_request(self, runtime, job_id):
+        """只替换 HTTP 传输，保留 Worker 和 MinerU 客户端的请求序列化。"""
+        execution = runtime.document_job_execution_service
+        mineru = MinerUClient(api_token="test-token", result_host_allowlist=("mineru.net",))
+        batch_id = f"batch-{job_id}"
+        upload_url = "https://mineru.test/upload"
+        responses = {
+            ("POST", f"{MinerUClient.API_BASE}/file-urls/batch"): {
+                "code": 0, "data": {"batch_id": batch_id, "file_urls": [upload_url]},
+            },
+            ("PUT", upload_url): {},
+            ("GET", f"{MinerUClient.API_BASE}/extract-results/batch/{batch_id}"): {
+                "code": 0, "data": {"batch_id": batch_id, "extract_result": []},
+            },
+        }
+
+        def send(request, **_options):
+            response = Response()
+            response.status_code = 200
+            response._content = json.dumps(responses.pop((request.method, request.url))).encode()
+            response.url = request.url
+            return response
+
+        with mineru.session, patch.object(execution.mineru, "mineru_client_factory", return_value=mineru), \
+                patch.object(HTTPAdapter, "send", side_effect=send) as transport:
+            result = execution.execute_job(job_id)
+        self.assertEqual((result.status, result.stage, result.mineru_batch_id), ("running", "parsing", batch_id))
+        self.assertFalse(responses)
+        post = transport.call_args_list[0].args[0]
+        self.assertEqual(post.method, "POST")
+        return json.loads(post.body)
+
+    def test_mineru_wire_language_matches_snapshot_for_five_modes(self):
+        with self._client_runtime(versioned=True) as (runtime, client, operator, _admin):
+            fixtures.publish_default_job_resources(runtime)
+            for mode, expected in (
+                ("en2zh", "en"), ("ru2zh", "east_slavic"), ("zh2en", "ch"), ("zh2ru", "ch"), ("direct", "latin"),
+            ):
+                with self.subTest(mode=mode):
+                    runtime.settings.mineru_language = "latin"
+                    source = self._upload_source_pdf(client, operator)
+                    response = client.post(
+                        "/api/v1/document-jobs", headers=operator,
+                        json={"source_file_id": source["id"], "translation_mode": mode},
+                    )
+                    self.assertEqual(response.status_code, 201, response.json())
+                    job = response.json()["job"]
+                    self.assertEqual(job["request_snapshot"]["resources"]["mineru"]["language"], expected)
+                    runtime.settings.mineru_language = "en"
+                    request = self._run_parse_and_read_mineru_request(runtime, job["id"])
+                    self.assertEqual(request["language"], expected)
+                    self.assertTrue(request["files"][0]["is_ocr"])
+
+    def test_mineru_job_and_clone_without_versioned_resources_keep_bound_language(self):
+        with self._client_runtime() as (runtime, client, operator, _admin):
+            runtime.settings.mineru_language = "zh"
+            _, job_id = self._create_direct(client, operator)
+            runtime.settings.mineru_language = "en"
+            clone = client.post(f"/api/v1/document-jobs/{job_id}/clone", headers=operator, json={})
+            self.assertEqual(clone.status_code, 201, clone.json())
+            for current_id in (job_id, clone.json()["job"]["id"]):
+                job = runtime.document_job_repository.get_document_job(current_id)
+                self.assertIsNone(job.request_snapshot["resources"])
+                self.assertEqual(job.request_snapshot["mineru_language"], "ch")
+                self.assertEqual(self._run_parse_and_read_mineru_request(runtime, current_id)["language"], "ch")
+
+    def test_mineru_legacy_snapshot_clone_and_retry_keep_existing_audit(self):
+        with self._client_runtime(versioned=True) as (runtime, client, operator, _admin):
+            _, job_id = self._create_direct(client, operator)
+            job = runtime.document_job_repository.get_document_job(job_id)
+            legacy = deepcopy(job.request_snapshot)
+            legacy["resources"]["mineru"]["language"] = "ru"
+            runtime.document_job_repository.update_document_job(
+                job_id, request_snapshot=legacy,
+                status="failed", stage="failed", failed_stage="parsing", error_code="mineru_failed",
+            )
+
+            clone = client.post(f"/api/v1/document-jobs/{job_id}/clone", headers=operator, json={})
+            self.assertEqual(clone.status_code, 201, clone.json())
+            cloned_job = clone.json()["job"]
+            cloned_resources = deepcopy(legacy["resources"])
+            cloned_resources["mineru"]["language"] = "east_slavic"
+            self.assertEqual(cloned_job["request_snapshot"]["resources"], cloned_resources)
+            self.assertEqual(self._run_parse_and_read_mineru_request(runtime, cloned_job["id"])["language"], "east_slavic")
+
+            retry = client.post(f"/api/v1/document-jobs/{job_id}/retry", headers=operator, json={})
+            self.assertEqual(retry.status_code, 200, retry.json())
+            self.assertEqual(self._run_parse_and_read_mineru_request(runtime, job_id)["language"], "east_slavic")
+            self.assertEqual(runtime.document_job_repository.get_document_job(job_id).request_snapshot, legacy)
+
+    def test_mineru_legacy_snapshot_without_language_uses_configured_fallback(self):
+        with self._client_runtime(versioned=True) as (runtime, client, operator, _admin):
+            _, job_id = self._create_direct(client, operator)
+            job = runtime.document_job_repository.get_document_job(job_id)
+            legacy = deepcopy(job.request_snapshot)
+            legacy["resources"]["mineru"].pop("language")
+            runtime.document_job_repository.update_document_job(job_id, request_snapshot=legacy)
+            runtime.settings.mineru_language = "zh"
+            clone = client.post(f"/api/v1/document-jobs/{job_id}/clone", headers=operator, json={})
+            self.assertEqual(clone.status_code, 201, clone.json())
+            cloned_job = clone.json()["job"]
+            self.assertEqual(cloned_job["request_snapshot"]["resources"]["mineru"]["language"], "ch")
+            runtime.settings.mineru_language = "en"
+            self.assertEqual(self._run_parse_and_read_mineru_request(runtime, cloned_job["id"])["language"], "ch")
+            runtime.settings.mineru_language = "zh"
+            self.assertEqual(self._run_parse_and_read_mineru_request(runtime, job_id)["language"], "ch")
+
+    def test_mineru_term_asset_rebind_preserves_existing_language(self):
+        with self._client_runtime(versioned=True) as (runtime, client, _operator, admin):
+            for unversioned_origin in (False, True):
+                with self.subTest(unversioned_origin=unversioned_origin):
+                    runtime.settings.mineru_language = "latin"
+                    _, job_id = self._create_direct(client, admin)
+                    job = runtime.document_job_repository.get_document_job(job_id)
+                    snapshot = deepcopy(job.request_snapshot)
+                    if unversioned_origin:
+                        snapshot["mineru_language"] = "latin"
+                        snapshot["resources"] = None
+                    runtime.document_job_repository.update_document_job(
+                        job_id, request_snapshot=snapshot,
+                        status="failed", stage="failed", failed_stage="parsing", error_code="mineru_failed",
+                    )
+                    runtime.settings.mineru_language = "en"
+                    retry = client.post(
+                        f"/api/v1/document-jobs/{job_id}/retry", headers=admin, json={"use_latest_term_assets": True},
+                    )
+                    self.assertEqual(retry.status_code, 200, retry.json())
+                    retried_snapshot = retry.json()["job"]["request_snapshot"]
+                    self.assertNotIn("mineru_language", retried_snapshot)
+                    self.assertEqual(retried_snapshot["resources"]["mineru"]["language"], "latin")
+                    self.assertEqual(self._run_parse_and_read_mineru_request(runtime, job_id)["language"], "latin")
 
     def _seed_historical_direct(self, runtime, job_id):
         """模拟已存在的惰性翻译元数据；所指资源故意不存在。"""
