@@ -68,7 +68,7 @@ def _ruled_table_package(
 
 @skipUnless(all(which(tool) for tool in ("pdfinfo", "pdftotext", "pdftocairo", "pdftohtml")), "需要实际 Poppler")
 class PdfValueColumnPopplerTests(TestCase):
-    def test_ruled_limits_bind_both_directions_and_keep_border_value_blocked(self) -> None:
+    def test_ruled_limits_bind_both_directions_and_keep_border_value_as_warning(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             package, source_pdf = _ruled_table_package(root)
@@ -84,8 +84,8 @@ class PdfValueColumnPopplerTests(TestCase):
             )
             report = read_table_evidence(metadata["table_evidence"])
             table_evidence, = report.tables
-            self.assertEqual(report.status, "blocked")
-            self.assertEqual(report.counts.blocker_count, 1)
+            self.assertEqual(report.status, "warning")
+            self.assertEqual(report.counts.blocker_count, 0)
             self.assertEqual(
                 [(item.output_row, item.target_column) for item in table_evidence.value_column_corrections],
                 [(1, 3), (2, 2)],
@@ -93,7 +93,8 @@ class PdfValueColumnPopplerTests(TestCase):
             self.assertTrue(all(item.pdf_binding_sha256 for item in table_evidence.value_column_corrections))
             remaining, = ir.metadata.pdf_value_column_unresolved
             self.assertEqual(remaining.source_row_index, 3)
-            self.assertIn(remaining.finding_id, {flag.identity for flag in table_evidence.flags})
+            active, = (flag for flag in table_evidence.flags if flag.identity == remaining.finding_id)
+            self.assertEqual(active.severity, "warning")
             word, = Document(result.output_docx_path).tables
             self.assertEqual([cell.text for cell in word.rows[0].cells][2:], ["LOW", "HIGH", "UNIT"])
             self.assertEqual(

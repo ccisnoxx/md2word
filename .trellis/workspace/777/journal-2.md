@@ -86,3 +86,32 @@ API 统一负责 SQL schema、内部账号导入和资源 seed。生产与开发
 ### Status
 
 [OK] **Completed**
+
+
+## Session 64: 参数表未决数值列以警告交付
+
+**Date**: 2026-11-17
+**Task**: 参数表未决数值列以警告交付
+**Branch**: `main`
+
+### Summary
+
+未决数值列以警告生成可下载的 DOCX。确认当前报告后可批准发布，无效人工核定保留上一代 DOCX。
+
+### Main Changes
+
+- 归档 [任务验收记录](../../tasks/archive/2026-11/11-17-table-value-column-warning-delivery/implement.md)。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6fa8664` | (see git log) |
+
+### Testing
+
+- [OK] 复用已执行的主回归结果，75 项通过、2 项因缺少样本路径跳过。补充回归 16 项通过，其中 1 项为历史 v3 下载复验。OpenAPI、Trellis 上下文和差异检查已通过。
+
+### Status
+
+[OK] **Completed**

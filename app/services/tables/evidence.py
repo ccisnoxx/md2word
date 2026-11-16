@@ -6,13 +6,13 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, ValidationError, model_validator
 
 from app.services.tables.models import (
-    LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS, VALUE_COLUMN_SPAN_AMBIGUOUS, CellId, FragmentId, NonNegativeInt,
+    LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS, CellId, FragmentId, NonNegativeInt,
     PositiveInt, Sha256, canonical_json_bytes, canonical_sha256,
 )
 from app.services.tables.quality import (
-    CODES, GROUPS_VERSION, LEGACY_SHARED_LIMITS_RULE, LEGACY_VALIDATOR_VERSION, LegacyValueColumnReplay,
-    TableId, TableQualityContribution, TableValidationPolicy, ValidatorVersion,
-    TableValidationReport, _QualityModel, _invalid, aggregate_table_quality,
+    CODES, GROUPS_VERSION, LEGACY_SHARED_LIMITS_RULE, LEGACY_VALIDATOR_VERSION, REVIEWABLE_VALUE_COLUMN_RULES,
+    LegacyValueColumnReplay, TableId, TableQualityContribution, TableValidationPolicy, TableValidationReport,
+    ValidatorVersion, _QualityModel, _invalid, aggregate_table_quality,
 )
 
 VERSION = "table-evidence/v1"
@@ -261,8 +261,8 @@ class TableEvidence(EvidenceModel):
             finding = findings.get(correction.finding_id)
             cell = cells.get(correction.source_cell_id)
             if (finding is None or cell is None or correction.finding_id in resolved
-                    or finding.evidence.rule_id not in {VALUE_COLUMN_SPAN_AMBIGUOUS, LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS}
-                    or finding.flag.severity != "blocker" or finding.flag.cell_id != cell.id
+                    or finding.evidence.rule_id not in REVIEWABLE_VALUE_COLUMN_RULES
+                    or finding.flag.cell_id != cell.id
                     or cell.fragment_id != fragment.fragment_id or cell.is_header or cell.rowspan != 1):
                 _invalid("table_evidence_input")
             span = finding.evidence.value_column_span

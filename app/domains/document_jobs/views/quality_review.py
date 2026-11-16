@@ -267,6 +267,7 @@ class DocumentQualityTableValueFindingResponse(QualityReviewModel):
     columns: list[DocumentQualityValueColumnResponse] = Field(min_length=2)
     value: str = Field(min_length=1, max_length=MAX_PARAMETER_VALUE_CHARS)
     unit: str | None = Field(max_length=MAX_PARAMETER_UNIT_CHARS)
+    manual_review_required: Literal[True] = True
 
 
 class DocumentQualityUnresolvedValueColumnResponse(QualityReviewModel):
@@ -286,6 +287,7 @@ class DocumentQualityUnresolvedValueColumnResponse(QualityReviewModel):
         "header_ambiguous", "row_ambiguous", "column_ambiguous", "value_ambiguous",
         "value_visibility_unverified", "span_contains_other_content", "unit_mismatch", "competing_pdf_binding",
     ]
+    manual_review_required: Literal[True] = True
 
 
 class DocumentQualityTableItemResponse(QualityReviewModel):

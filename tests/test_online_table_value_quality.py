@@ -78,7 +78,8 @@ class OnlineTableValueQualityTests(V2PublicationFixture, TestCase):
         ):
             _, pending = self._install_review(runtime, execution, job, repair_count=1)
             result = execution.execute_job(job.id)
-            self.assertEqual((result.status, result.quality_status), ("succeeded", "blocked"), result.error_message)
+            self.assertEqual((result.status, current_base(result).quality_status), ("succeeded", "warning"),
+                             result.error_message)
             response = client.get(f"/api/v1/document-jobs/{job.id}/quality/tables", headers=headers)
             self.assertEqual(response.status_code, 200, response.text)
             self.assertNotIn("fixture_private_machine_value", response.text)
@@ -93,6 +94,7 @@ class OnlineTableValueQualityTests(V2PublicationFixture, TestCase):
                 "source_row_index": pending.evidence.source_row_index,
                 "source_cell_index": pending.evidence.source_cell_index,
                 "reason_code": "pdf_observation_unavailable",
+                "manual_review_required": True,
             }])
 
     def test_unknown_unresolved_finding_cannot_become_a_selected_result(self):

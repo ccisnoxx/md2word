@@ -75,7 +75,7 @@ class PdfValueColumnBindingTests(unittest.TestCase):
         flag, evidence, _ = next(iter_parameter_value_column_spans(
             self.result, default_table_validation_policy(BINDING_VALIDATOR_VERSION),
         ))
-        self.assertEqual(flag.severity, "blocker")
+        self.assertEqual(flag.severity, "warning")
         self.assertEqual(item.finding_id, make_finding_id(self.result.grid.table_id, flag, evidence))
         self.assertEqual((item.source_row_index, item.source_cell_index, item.reason), (1, 2, reason))
 
@@ -93,7 +93,7 @@ class PdfValueColumnBindingTests(unittest.TestCase):
         self.assertEqual(binding.row_anchor_bboxes, tuple(word.bbox for word in self.page.words[5:7]))
         self.assertEqual(self.match(self.page, skip=frozenset({(1, 2)})), ((), ()))
 
-    def test_invisible_duplicate_boundary_and_extra_content_remain_blockers(self) -> None:
+    def test_invisible_duplicate_boundary_and_extra_content_remain_warnings(self) -> None:
         value = self.page.words[7]
         for changed, reason in (
             (replace(self.page, words=self.page.words[:7] + (replace(value, glyphs=()),) + self.page.words[8:]),

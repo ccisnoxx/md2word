@@ -251,11 +251,12 @@ def resolve_table_value_column_review(
     policy: TableValidationPolicy | None = None, validator_version: ValidatorVersion | None = None,
     legacy_value_column_replay: LegacyValueColumnReplay | None = None,
 ) -> tuple[TableGrid, tuple[TableFinding, ...]]:
-    """从原始 Grid 复算每条记录引用的跨列 blocker，顺序与核定记录相同。"""
+    """从原始 Grid 复算每条记录引用的跨列发现，顺序与核定记录相同。"""
     from app.services.tables.grid_builder import build_table_grid
     from app.services.tables.html_normalizer import TableBuildError
     from app.services.tables.quality import (
-        BINDING_VALIDATOR_VERSION, LEGACY_VALIDATOR_VERSION, TableFinding, default_table_validation_policy, make_finding_id,
+        BINDING_VALIDATOR_VERSION, LEGACY_VALIDATOR_VERSION, REVIEWABLE_VALUE_COLUMN_RULES,
+        TableFinding, default_table_validation_policy, make_finding_id,
     )
     from app.services.tables.validator import iter_parameter_value_column_spans
 
@@ -286,7 +287,7 @@ def resolve_table_value_column_review(
         for flag, evidence, covered in iter_parameter_value_column_spans(
             result, selected_policy, group=group, validator_version=validator_version,
             legacy_value_column_replay=legacy_value_column_replay,
-        )
+        ) if evidence.rule_id in REVIEWABLE_VALUE_COLUMN_RULES
     }
 
     findings = []
@@ -299,7 +300,7 @@ def resolve_table_value_column_review(
         if cell.rowspan != 1 or candidate is None:
             raise TableValueColumnReviewError("unsupported_shape")
         flag, evidence, covered = candidate
-        if flag.severity != "blocker" or len(covered) != cell.colspan:
+        if len(covered) != cell.colspan:
             raise TableValueColumnReviewError("unsupported_shape")
         if covered.get(correction.target_column) != correction.target_header.lower():
             raise TableValueColumnReviewError("target_column")

@@ -32,6 +32,7 @@ TableId = Annotated[str, Field(pattern=r"^logical-table:[0-9a-f]{64}$")]
 Severity = Literal["warning", "blocker"]
 ValidationErrorCode = Literal["table_validation_input", "table_validation_config", "table_validation_limit"]
 LEGACY_SHARED_LIMITS_RULE = LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS + ".shared_limits"
+REVIEWABLE_VALUE_COLUMN_RULES = frozenset({VALUE_COLUMN_SPAN_AMBIGUOUS, LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS})
 
 RULE_DEFAULTS: dict[str, Severity] = {
     "table_html_missing": "blocker", "table_html_empty": "blocker", "table_html_no_rows": "blocker",
@@ -151,7 +152,7 @@ class TableValidationPolicy(_QualityModel):
 
 def default_table_validation_policy(version: ValidatorVersion) -> TableValidationPolicy:
     return TableValidationPolicy(rule_severities={
-        VALUE_COLUMN_SPAN_AMBIGUOUS: "blocker",
+        VALUE_COLUMN_SPAN_AMBIGUOUS: "warning",
     } if version == BINDING_VALIDATOR_VERSION else {})
 
 

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 63
-- **Last Active**: 2026-11-16
+- **Total Sessions**: 64
+- **Last Active**: 2026-11-17
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~88 | Active |
+| `journal-2.md` | ~117 | Active |
 | `journal-1.md` | ~1989 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 64 | 2026-11-17 | 参数表未决数值列以警告交付 | `6fa8664` | `main` |
 | 63 | 2026-11-16 | 生产冷启动单一初始化 | `374403859b74242daa327491c7d085fb619eeed2` | `codex/production-cold-start-bootstrap` |
 | 62 | 2026-11-16 | 集中 API 启动初始化并复用 Celery Worker Runtime | `dab58d26` | `main` |
 | 61 | 2026-11-16 | 参数表数值列归属检查 | `f1fd5398c34881a56b1594e3496717436fed28a5` | `main` |

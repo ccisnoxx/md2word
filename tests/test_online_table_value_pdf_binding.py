@@ -1,6 +1,6 @@
 """通过正式 Worker、Word 实物和交付 API 验证线上原排版参数列核定。"""
 
-from contextlib import contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 from copy import deepcopy
 from hashlib import sha256
 from io import BytesIO
@@ -20,9 +20,10 @@ from pydantic import ValidationError
 from app.domains.document_jobs.base_quality import current_base
 from app.domains.document_jobs.table_evidence import verify_report
 from app.services.document_ir.models import DocumentIR
-from app.services.document_ir.pdf_value_column_observer import observe_pdf_value_column_page
+from app.services.document_ir.pdf_value_column_observer import PdfObservationUnavailable, observe_pdf_value_column_page
 from app.services.preview.models import PreviewPolicy
-from app.services.tables.quality import VALIDATOR_VERSION
+from app.services.tables.quality import BINDING_VALIDATOR_VERSION, VALIDATOR_VERSION, TableValidationPolicy
+from app.services.tables.models import VALUE_COLUMN_SPAN_AMBIGUOUS
 from tests.document_job_list_query_v2_publication_fixtures import RecordingPreviewProvider, V2PublicationFixture
 from tests.document_job_use_case_support import replace_dependency
 from tests.test_fastapi_jobs_backend import TestClient, build_auth_header, create_app
@@ -104,20 +105,18 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
         word = runtime.file_upload_service.read_file_content(file)
         return report, word
 
-    def check_blocked_delivery(self, client, owner, admin, job_id: str) -> None:
-        url = f"/api/v1/document-jobs/{job_id}"
-        ticket = client.get(f"{url}/download-url", headers=owner)
+    def check_warning_download(self, client, owner, job, word: bytes) -> None:
+        self.assertEqual((job.status, job.stage, job.quality_status), ("succeeded", "completed", "warning"))
+        self.assertEqual(current_base(job).counts.blocker_count, 0)
+        self.check_internal_download(client, owner, job.id, word)
+
+    def check_internal_download(self, client, owner, job_id: str, word: bytes) -> None:
+        ticket = client.get(f"/api/v1/document-jobs/{job_id}/download-url", headers=owner)
         self.assertEqual(ticket.status_code, 200, ticket.text)
         self.assertEqual(ticket.json()["classification"], "internal_only")
-        self.assertEqual(ticket.json()["warning_code"], "quality_blocked_not_deliverable")
-        approval = client.patch(f"{url}/review", headers=owner, json={
-            "status": "approved", "expected_source": self.review_source(client, owner, url),
-        })
-        self.assertEqual(approval.status_code, 409, approval.text)
-        self.assertEqual(approval.json()["error"]["reason_code"], "review_quality_blocked")
-        result = self.try_publish(client, admin, url)
-        self.assertEqual(result.status_code, 409, result.text)
-        self.assertEqual(result.json()["error"]["reason_code"], "publication_quality_blocked")
+        downloaded = client.get(ticket.json()["download_url"])
+        self.assertEqual(downloaded.status_code, 200, downloaded.text)
+        self.assertEqual(downloaded.content, word)
 
     def review_source(self, client, headers, url: str) -> dict:
         response = client.get(f"{url}/review", headers=headers)
@@ -145,52 +144,105 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
             last_row,
         ])
 
-    def test_ruled_table_keeps_the_unresolved_cell_blocked_in_review_and_publication(self) -> None:
+    def test_row_ambiguous_word_can_be_downloaded_approved_and_published_with_warning(self) -> None:
         with TemporaryDirectory() as directory:
-            package, source = _ruled_table_package(Path(directory))
+            package, source = _ruled_table_package(Path(directory), manual_review_case=True)
             with self.worker_case(package.read_bytes(), source.read_bytes(), echoed_data_id=False) as (
                 runtime, _, job, client, owner, admin,
             ):
                 report, word = self.read_verified_word(runtime, job)
                 self.assertIsNone(report.document.metadata.pdf_value_column_page_equivalence)
                 self._check_ruled_word(report, word, last_row=[("48", 2), ("48", 2), ("ms", 1)])
-                quality = current_base(job)
-                self.assertEqual((quality.quality_status, quality.counts.blocker_count), ("blocked", 1))
+                self.check_warning_download(client, owner, job, word)
                 ir_waiting, = report.document.metadata.pdf_value_column_unresolved
                 table, = report.envelope.report.tables
+                self.assertEqual(table.validation.validator_version, BINDING_VALIDATOR_VERSION)
                 self.assertEqual(len(table.validation.findings), 3)
+                self.assertEqual({finding.flag.severity for finding in table.validation.findings}, {"warning"})
                 self.assertEqual(len(table.value_column_corrections), 2)
-                self.assertEqual({flag.identity for flag in table.flags if flag.severity == "blocker"},
-                                 {ir_waiting.finding_id})
+                self.assertTrue(all(item.pdf_binding_sha256 for item in table.value_column_corrections))
+                self.assertEqual({(flag.identity, flag.severity) for flag in table.flags if flag.code == VALUE_COLUMN_SPAN_AMBIGUOUS},
+                                 {(ir_waiting.finding_id, "warning")})
                 response = client.get(f"/api/v1/document-jobs/{job.id}/quality/tables", headers=owner)
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(response.json()["source"]["generation"], job.retry_count)
+                self.assertEqual(response.json()["report"]["status"], "warning")
                 item, = response.json()["items"]
                 waiting, = item["unresolved_value_columns"]
                 finding, = item["value_column_findings"]
+                self.assertIs(finding["manual_review_required"], True)
+                self.assertIs(waiting["manual_review_required"], True)
                 self.assertEqual(finding["finding_id"], waiting["finding_id"])
                 self.assertEqual(waiting["finding_id"], ir_waiting.finding_id)
                 self.assertEqual(waiting["fragment_id"], ir_waiting.fragment_id)
                 self.assertEqual((waiting["source_page_index"], waiting["source_row_index"], waiting["source_cell_index"]),
                                  (0, 3, 2))
+                self.assertEqual(waiting["reason_code"], "row_ambiguous")
                 self.assertEqual(waiting["reason_code"], ir_waiting.reason)
-                self.assertIn(waiting["reason_code"], {"column_ambiguous", "value_visibility_unverified"})
-                self.check_blocked_delivery(client, owner, admin, job.id)
                 url = f"/api/v1/document-jobs/{job.id}"
-                acknowledged = client.patch(f"{url}/review", headers=owner, json={
+                review_payload = {
                     "status": "approved", "expected_source": self.review_source(client, owner, url),
+                }
+                for fields, reason in (
+                    ({}, "table_semantics_confirmation_required"),
+                    ({"acknowledged_table_semantics_report_sha256": "0" * 64}, "table_semantics_confirmation_stale"),
+                ):
+                    rejected = client.patch(f"{url}/review", headers=owner, json={**review_payload, **fields})
+                    self.assertEqual(rejected.status_code, 409, rejected.text)
+                    self.assertEqual(rejected.json()["error"]["reason_code"], reason)
+                acknowledged = client.patch(f"{url}/review", headers=owner, json={
+                    **review_payload,
                     "acknowledged_table_semantics_report_sha256": response.json()["report"]["report_sha256"],
                 })
-                self.assertEqual(acknowledged.status_code, 409, acknowledged.text)
-                self.assertEqual(acknowledged.json()["error"]["reason_code"], "review_quality_blocked")
+                self.assertEqual(acknowledged.status_code, 200, acknowledged.text)
+                self.assertEqual(acknowledged.json()["review"]["status"], "approved")
+                published = self.try_publish(client, admin, url)
+                self.assertEqual(published.status_code, 201, published.text)
+                current = runtime.document_job_repository.get_document_job(job.id)
+                self.assertEqual((current.quality_status, current.delivery_status), ("warning", "published"))
+
+    def test_unavailable_pdf_observation_keeps_all_findings_as_downloadable_warnings(self) -> None:
+        with TemporaryDirectory() as directory:
+            package, source = _ruled_table_package(Path(directory))
+            with (
+                patch("app.services.document_ir.pdf_value_column_observer.observe_pdf_value_column_page",
+                      side_effect=PdfObservationUnavailable()) as observation,
+                self.worker_case(package.read_bytes(), source.read_bytes()) as (runtime, _, job, client, owner, _),
+            ):
+                observation.assert_called_once()
+                report, word = self.read_verified_word(runtime, job)
+                self.check_warning_download(client, owner, job, word)
+                self.assertEqual({item.reason for item in report.document.metadata.pdf_value_column_unresolved},
+                                 {"pdf_observation_unavailable"})
+                table, = report.envelope.report.tables
+                self.assertIsNone(table.value_column_corrections)
+                self.assertEqual([flag.severity for flag in table.flags if flag.code == VALUE_COLUMN_SPAN_AMBIGUOUS],
+                                 ["warning"] * 3)
+
+    def test_persisted_v3_blocker_report_revalidates_with_its_original_policy(self) -> None:
+        with TemporaryDirectory() as directory, ExitStack() as stack:
+            package, source = _ruled_table_package(Path(directory), manual_review_case=True)
+            historical_policy = TableValidationPolicy(rule_severities={VALUE_COLUMN_SPAN_AMBIGUOUS: "blocker"})
+            with patch("app.services.tables.validator.default_table_validation_policy", return_value=historical_policy):
+                runtime, _, job, client, owner, _ = stack.enter_context(
+                    self.worker_case(package.read_bytes(), source.read_bytes()))
+            report, word = self.read_verified_word(runtime, job)
+            table, = report.envelope.report.tables
+            self.assertEqual(table.validation.validator_version, BINDING_VALIDATOR_VERSION)
+            self.assertEqual(report.envelope.report.policy, historical_policy)
+            self.assertEqual(report.envelope.report.status, "blocked")
+            self.assertEqual(len(table.value_column_corrections), 2)
+            self._check_ruled_word(report, word, last_row=[("48", 2), ("48", 2), ("ms", 1)])
+            self.check_internal_download(client, owner, job.id, word)
+            details = client.get(f"/api/v1/document-jobs/{job.id}/quality/tables", headers=owner)
+            self.assertEqual(details.status_code, 200, details.text)
+            self.assertEqual(details.json()["report"]["report_sha256"], report.envelope.report.report_sha256)
 
     def test_clipped_ruled_edges_keep_original_bbox_and_certify_actual_word(self) -> None:
         for side, bounds in (("left", (50.5, 70, 450, 230)), ("right", (50, 70, 449.5, 230))):
             with self.subTest(side=side), TemporaryDirectory() as directory:
                 package, source = _ruled_table_package(Path(directory), point_box=bounds)
-                with self.worker_case(package.read_bytes(), source.read_bytes()) as (
-                    runtime, _, job, client, owner, admin,
-                ):
+                with self.worker_case(package.read_bytes(), source.read_bytes()) as (runtime, _, job, client, owner, _):
                     report, word = self.read_verified_word(runtime, job)
                     self._check_ruled_word(report, word, last_row=[("48", 2), ("48", 2), ("ms", 1)])
                     fragment, = report.document.metadata.logical_table_groups[0].fragments
@@ -206,7 +258,7 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                         self.assertEqual(binding.table_edge.corrected_bbox, (50, 70, 450, 230))
                         self.assertLessEqual(len(binding.table_edge.horizontal_lines), 4)
                         self.assertEqual(len(binding.table_edge.vertical_lines), 1)
-                    self.check_blocked_delivery(client, owner, admin, job.id)
+                    self.check_warning_download(client, owner, job, word)
 
                     for field, shift in (("corrected_bbox", -2 if side == "left" else 2),
                                          ("layout_bbox", -0.5 if side == "left" else 0.5)):
@@ -291,7 +343,7 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
         package = Path(getenv("MD2WORD_TABLE_VALUE_P7_ZIP")).read_bytes()
         self.assertEqual(sha256(source).hexdigest(), "24f724cf0e795f6afeb6fec5c72ff8f144085c59d57fbf0a5c9efbf1808b1eb3")
         self.assertEqual(sha256(package).hexdigest(), "5de05d59fdacea166361bde14625ff8045350b0aefc894a923ff181a030fe033")
-        with self.worker_case(package, source, filename="OPA228_P7.pdf") as (runtime, _, job, client, owner, admin):
+        with self.worker_case(package, source, filename="OPA228_P7.pdf") as (runtime, _, job, client, owner, _):
             report, word = self.read_verified_word(runtime, job)
             self.assertIsNotNone(report.document.metadata.pdf_value_column_page_equivalence)
             table, = report.envelope.report.tables
@@ -317,10 +369,10 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                 binding = correction.pdf_binding
                 self.assertAlmostEqual(binding.table_bbox[2], 554.472)
                 self.assertAlmostEqual(binding.table_edge.corrected_bbox[2], 555.480469, places=4)
-            self.check_blocked_delivery(client, owner, admin, job.id)
+            self.check_warning_download(client, owner, job, word)
 
     @skipUnless(which("pdftoppm"), "逐页比对需要 Poppler 栅格渲染")
-    def test_changed_page_value_or_table_line_remains_blocked(self) -> None:
+    def test_changed_page_value_or_table_line_preserves_warnings(self) -> None:
         with TemporaryDirectory() as directory:
             package, source = _ruled_table_package(Path(directory))
             pdf = source.read_bytes()
@@ -359,15 +411,16 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                 self.assertIsNone(job.result_file_id)
 
     def _assert_missing_page_proof(self, runtime, job, client, owner, admin, pdf: bytes) -> None:
-        report, _ = self.read_verified_word(runtime, job)
+        report, word = self.read_verified_word(runtime, job)
         table, = report.envelope.report.tables
         self.assertIsNone(report.document.metadata.pdf_value_column_page_equivalence)
         self.assertFalse(table.value_column_corrections)
         unresolved = report.document.metadata.pdf_value_column_unresolved
         self.assertEqual(len(unresolved), 3)
         self.assertEqual({item.reason for item in unresolved}, {"source_pair_unverified"})
-        self.assertEqual(current_base(job).counts.blocker_count, 3)
-        self.check_blocked_delivery(client, owner, admin, job.id)
+        self.assertEqual([flag.severity for flag in table.flags if flag.code == VALUE_COLUMN_SPAN_AMBIGUOUS],
+                         ["warning"] * 3)
+        self.check_warning_download(client, owner, job, word)
         waiting = next(item for item in unresolved if item.source_row_index == 3)
         url = f"/api/v1/document-jobs/{job.id}"
         payload = self._last_value_review_request(report, waiting, pdf, self.review_source(client, admin, url))
@@ -429,7 +482,7 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
         self._check_ruled_word(report, first_word, last_row=[("48", 2), ("48", 2), ("ms", 1)])
         waiting, = report.document.metadata.pdf_value_column_unresolved
         self.assertEqual(waiting.reason, "row_ambiguous")
-        self.check_blocked_delivery(client, owner, admin, first.id)
+        self.check_warning_download(client, owner, first, first_word)
         table, = report.envelope.report.tables
         url = f"/api/v1/document-jobs/{first.id}"
         payload = self._last_value_review_request(report, waiting, pdf, self.review_source(client, admin, url))
@@ -441,11 +494,15 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
         self.assertEqual(outside_pilot.status_code, 409, outside_pilot.text)
         self.assertEqual(outside_pilot.json()["error"]["reason_code"], "table_value_column_review_disabled")
         runtime.settings.document_table_value_pdf_binding_company_allowlist = companies
-        stale = deepcopy(payload)
-        stale["table_value_column_reviews"][0]["source_pdf_sha256"] = "0" * 64
-        rejected = client.post(f"{url}/new-generation", headers=admin, json=stale)
+        invalid = deepcopy(payload)
+        invalid["table_value_column_reviews"][0]["corrections"][0]["target_header"] = "LOW"
+        rejected = client.post(f"{url}/new-generation", headers=admin, json=invalid)
         self.assertEqual(rejected.status_code, 409, rejected.text)
-        self.assertEqual(runtime.document_job_repository.get_document_job(first.id).retry_count, first.retry_count)
+        self.assertEqual(rejected.json()["error"]["reason_code"], "table_value_column_review_invalid")
+        after_rejection = runtime.document_job_repository.get_document_job(first.id)
+        self.assertEqual((after_rejection.retry_count, after_rejection.result_file_id),
+                         (first.retry_count, first.result_file_id))
+        self.check_warning_download(client, owner, after_rejection, first_word)
 
         uploads = len(execution.fake_mineru_client.calls)
         downloads = len(execution.fake_mineru_client.download_calls)
@@ -487,6 +544,7 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
         self.assertEqual(second_table.validation.findings, table.validation.findings)
         self.assertEqual({item.finding_id for item in second_table.value_column_corrections},
                          {finding.finding_id for finding in table.validation.findings})
+        self.assertFalse(any(flag.code == VALUE_COLUMN_SPAN_AMBIGUOUS for flag in second_table.flags))
         self.assertEqual([item.finding_id for item in second_table.value_column_corrections if not item.pdf_binding_sha256],
                          [waiting.finding_id])
         quality = current_base(second)

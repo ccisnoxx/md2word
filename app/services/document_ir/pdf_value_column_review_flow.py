@@ -30,7 +30,8 @@ from app.services.document_ir.table_value_column_review import (
 from app.services.tables.grid_builder import build_table_grid
 from app.services.tables.html_normalizer import TableBuildError
 from app.services.tables.quality import (
-    BINDING_VALIDATOR_VERSION, LEGACY_VALIDATOR_VERSION, default_table_validation_policy, make_finding_id,
+    BINDING_VALIDATOR_VERSION, LEGACY_VALIDATOR_VERSION, REVIEWABLE_VALUE_COLUMN_RULES,
+    default_table_validation_policy, make_finding_id,
 )
 from app.services.tables.validator import iter_parameter_value_column_spans
 
@@ -316,7 +317,7 @@ def _propose_reviews(
             findings = [
                 (flag, evidence) for flag, evidence, _ in iter_parameter_value_column_spans(
                     result, policy, group=group, validator_version=version, legacy_value_column_replay=replay,
-                ) if flag.severity == "blocker" and (
+                ) if evidence.rule_id in REVIEWABLE_VALUE_COLUMN_RULES and (
                     evidence.fragment_id != fragment.fragment_id
                     or (evidence.source_row_index, evidence.source_cell_index) not in skip
                 )

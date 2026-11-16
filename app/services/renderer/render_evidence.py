@@ -34,9 +34,10 @@ from app.services.renderer.template_conformance import (
     verify_template_conformance_report,
 )
 from app.services.tables.evidence import TableEvidenceError, legacy_value_column_replay_for_report
+from app.services.tables.models import VALUE_COLUMN_SPAN_AMBIGUOUS
 from app.services.tables.quality import (
     BINDING_VALIDATOR_VERSION, LEGACY_VALIDATOR_VERSION, VALIDATOR_VERSION,
-    LegacyValueColumnReplay, ValidatorVersion,
+    LegacyValueColumnReplay, TableValidationPolicy, ValidatorVersion,
 )
 from app.services.tables.validator import document_table_validator_version
 
@@ -323,6 +324,7 @@ def build_renderer_evidence(document_ir: DocumentIR, word_content: bytes, layout
                             formula_source_coverage: Any = _UNSET,
                             template_conformance: Any = _UNSET,
                             _table_validator_version: ValidatorVersion | None = None,
+                            _table_validation_policy: TableValidationPolicy | None = None,
                             _legacy_value_column_replay: LegacyValueColumnReplay | None = None) -> dict[str, Any]:
     """原内容认证保持严格；恢复时只消费已存 trace，可选锚点失败局部降级。"""
     if render_result is not None:
@@ -349,6 +351,7 @@ def build_renderer_evidence(document_ir: DocumentIR, word_content: bytes, layout
             formula_report=formula_report, image_report=image_layout_report,
             expected_template_version_id=expected_template_version_id, expected_generation_policy=expected_generation_policy,
             table_validator_version=_table_validator_version or document_table_validator_version(document_ir),
+            table_validation_policy=_table_validation_policy,
             legacy_value_column_replay=_legacy_value_column_replay)
     else:
         if formula_source_coverage is not _UNSET or _has_value_column_reviews(document_ir):
@@ -426,6 +429,7 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
     from app.services.renderer.content_contract import CONTENT_VERSION, content_failure
     from app.services.renderer import image_evidence
     table_validator_version = document_table_validator_version(document_ir)
+    table_validation_policy = None
     legacy_value_column_replay = None
     if "table_evidence" in metadata:
         stored = metadata["table_evidence"]
@@ -441,6 +445,11 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
                 legacy_value_column_replay = legacy_value_column_replay_for_report(stored)
             except TableEvidenceError:
                 raise content_failure("ir_render_evidence:binding_mismatch") from None
+        elif table_validator_version == BINDING_VALIDATOR_VERSION:
+            # 历史 v3 仅接受原正式策略，报告仍须与重算结果逐值一致。
+            legacy_policy = TableValidationPolicy(rule_severities={VALUE_COLUMN_SPAN_AMBIGUOUS: "blocker"})
+            if stored.get("policy") == legacy_policy.model_dump(mode="json"):
+                table_validation_policy = legacy_policy
     v2 = "renderer_content_contract_version" in metadata
     if not v2 and ("formula_source_coverage" in metadata or _has_value_column_reviews(document_ir)):
         raise content_failure()
@@ -455,7 +464,8 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
             render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"),
             block_anchor_evidence=metadata.get("block_anchor_evidence"),
             template_conformance=metadata.get("template_conformance", _UNSET),
-            _table_validator_version=table_validator_version, _legacy_value_column_replay=legacy_value_column_replay)
+            _table_validator_version=table_validator_version, _table_validation_policy=table_validation_policy,
+            _legacy_value_column_replay=legacy_value_column_replay)
         _restore_legacy_docx_quality(actual, word_content, metadata)
         ensure_renderer_integrity(actual)
         optional = {"render_trace_status", "render_plan", "block_render_evidence", "block_anchor_evidence", "block_anchor_summary"}
@@ -493,6 +503,7 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
         if "table_evidence" in metadata and not actual["blocking_quality_flags"]:
             actual["table_evidence"] = _build_table_evidence(
                 document_ir, word_content, actual, validator_version=table_validator_version,
+                policy=table_validation_policy,
                 legacy_value_column_replay=legacy_value_column_replay,
             ).model_dump(mode="json", warnings=False)
     _restore_legacy_docx_quality(actual, word_content, metadata)

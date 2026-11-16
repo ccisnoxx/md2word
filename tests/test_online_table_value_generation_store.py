@@ -38,7 +38,7 @@ class OnlineTableValueGenerationStoreTests(V2PublicationFixture, TestCase):
             ),
         ):
             current = execution.execute_job(job.id)
-            self.assertEqual((current.status, current.quality_status), ("succeeded", "blocked"), current.error_message)
+            self.assertEqual(current.status, "succeeded", current.error_message)
             jobs = runtime.document_job_repository
             files = runtime.document_file_repository
             result = files.get_document_file(current.result_file_id)
@@ -46,6 +46,7 @@ class OnlineTableValueGenerationStoreTests(V2PublicationFixture, TestCase):
             raw = files.get_document_file(current.mineru_raw_result_file_id)
             verified = verify_report(current, result, file_repository=files, job_repository=jobs,
                                      file_service=runtime.file_upload_service)
+            self.assertEqual(verified.envelope.report.status, "warning")
             original, = (table.validation for table in verified.envelope.report.tables)
             fragment, = original.fragments
             finding = next(item for item in original.findings if item.flag.code == VALUE_COLUMN_SPAN_AMBIGUOUS)
