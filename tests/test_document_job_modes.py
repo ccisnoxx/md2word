@@ -154,6 +154,37 @@ class DocumentJobModesTests(TestCase):
                     self.assertEqual(request["language"], expected)
                     self.assertTrue(request["files"][0]["is_ocr"])
 
+    def test_new_direct_binds_source_language_or_configured_mineru_default(self):
+        for versioned in (False, True):
+            with self._client_runtime(versioned=versioned) as (runtime, client, operator, _admin):
+                for document_language, expected in (
+                    ("zh", "ch"), ("en", "en"), ("ru", "east_slavic"), ("auto", "latin"),
+                ):
+                    with self.subTest(versioned=versioned, document_language=document_language):
+                        runtime.settings.mineru_language = "latin"
+                        source = self._upload_source_pdf(client, operator)
+                        response = client.post(
+                            "/api/v1/document-jobs",
+                            headers=operator,
+                            json={
+                                "source_file_id": source["id"],
+                                "translation_mode": "direct",
+                                "document_language": document_language,
+                            },
+                        )
+                        self.assertEqual(response.status_code, 201, response.json())
+                        job_id = response.json()["job_id"]
+                        snapshot = runtime.document_job_repository.get_document_job(job_id).request_snapshot
+                        if versioned:
+                            self.assertEqual(snapshot["resources"]["mineru"]["language"], expected)
+                            self.assertNotIn("mineru_language", snapshot)
+                        else:
+                            self.assertIsNone(snapshot["resources"])
+                            self.assertEqual(snapshot["mineru_language"], expected)
+                        runtime.settings.mineru_language = "korean"
+                        request = self._run_parse_and_read_mineru_request(runtime, job_id)
+                        self.assertEqual(request["language"], expected)
+
     def test_mineru_job_and_clone_without_versioned_resources_keep_bound_language(self):
         with self._client_runtime() as (runtime, client, operator, _admin):
             runtime.settings.mineru_language = "zh"
