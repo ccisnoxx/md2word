@@ -17,6 +17,8 @@ from app.services.document_ir.models import RepeatedHeaderHint, SourceSpan, Upst
 from app.services.document_ir.table_header_review import TableHeaderReview
 
 
+VALUE_COLUMN_SPAN_AMBIGUOUS = "table_semantics:value_column_span_ambiguous"
+
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 FragmentId = Annotated[str, Field(pattern=r"^table-fragment:[0-9a-f]{64}$")]
 CellId = Annotated[str, Field(pattern=r"^table-cell:[0-9a-f]{64}$")]
@@ -103,7 +105,7 @@ class _TableModel(BaseModel):
 class TableQualityFlag(_TableModel):
     """只保存有界机器码和对象定位，空列表不表示任务质量通过。"""
 
-    code: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
+    code: Annotated[str, Field(pattern=rf"^(?:[a-z][a-z0-9_]{{0,63}}|{VALUE_COLUMN_SPAN_AMBIGUOUS})$")]
     severity: Literal["warning", "blocker"]
     fragment_id: FragmentId | None = None
     cell_id: CellId | None = None

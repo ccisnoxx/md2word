@@ -12,8 +12,10 @@ from app.domains.document_jobs.models import (
     DocumentJobQualityStatus,
     DocumentJobReviewStatus,
 )
+from app.domains.document_jobs.review import TableSemanticsReviewConflict
 from app.domains.document_jobs.views.jobs import DocumentJobActionId, DocumentJobAvailableActionResponse
 from app.domains.document_jobs.views.translation import DocumentJobTableReferenceResponse
+from app.services.tables.measurement import MAX_PARAMETER_UNIT_CHARS, MAX_PARAMETER_VALUE_CHARS, ValueColumnLabel
 
 
 # 新复核 API 使用独立严格 DTO；不改变旧 QA 和任务详情的序列化合同。
@@ -116,6 +118,7 @@ class DocumentReviewBindingResponse(QualityReviewModel):
     result_sha256: QualityChecksum | None
     file_review_source_revision: QualityCount | None
     receipt_sha256: QualityChecksum | None
+    acknowledged_table_semantics_report_sha256: QualityHash | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class DocumentReviewQualityResponse(QualityReviewModel):
@@ -134,7 +137,7 @@ class DocumentReviewResponse(QualityReviewModel):
     reviewed_by: QualityId | None
     reviewed_at: datetime | None
     binding: DocumentReviewBindingResponse | None
-    validity_reason: Literal["legacy_unbound", "source_changed", "artifact_missing", "artifact_unavailable", "integrity_conflict", "quality_blocked"] | None
+    validity_reason: Literal["legacy_unbound", "source_changed", "artifact_missing", "artifact_unavailable", "integrity_conflict", "quality_blocked"] | TableSemanticsReviewConflict | None
     quality: DocumentReviewQualityResponse | None
 
 
@@ -244,6 +247,28 @@ class DocumentQualityTableFlagResponse(QualityReviewModel):
     fragment_id: QualityId | None
 
 
+class DocumentQualityValueColumnResponse(QualityReviewModel):
+    column: QualityCount
+    label: ValueColumnLabel
+    group_start_column: QualityCount
+
+
+class DocumentQualityTableValueFindingResponse(QualityReviewModel):
+    """数值跨列的内部复核定位，行列索引从零开始，结束列不含在范围内。"""
+
+    finding_id: QualityId
+    code: Literal["table_semantics:value_column_span_ambiguous"]
+    fragment_id: QualityId
+    cell_id: QualityId
+    source_page_index: QualityCount | None
+    source_row_index: QualityCount
+    column: QualityCount
+    end_column: QualityCount
+    columns: list[DocumentQualityValueColumnResponse] = Field(min_length=2)
+    value: str = Field(min_length=1, max_length=MAX_PARAMETER_VALUE_CHARS)
+    unit: str | None = Field(max_length=MAX_PARAMETER_UNIT_CHARS)
+
+
 class DocumentQualityTableItemResponse(QualityReviewModel):
     table_id: QualityId
     logical_group_id: QualityId
@@ -258,6 +283,9 @@ class DocumentQualityTableItemResponse(QualityReviewModel):
     flags: list[DocumentQualityTableFlagResponse]
     unknown_flag_count: QualityCount
     status: DocumentJobQualityStatus
+    value_column_findings: list[DocumentQualityTableValueFindingResponse] | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
 
 
 class DocumentQualityTableReportResponse(QualityReviewModel):

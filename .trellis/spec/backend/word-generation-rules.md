@@ -421,6 +421,15 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 样本证据：2026-10-30 旧线上镜像实测两个 CLI 均缺失，真实 PDF 裁图报 `table_placeholder_crop_failed`；补齐依赖的隔离镜像实际裁得 400×200 PNG，完成 MinerU→IR→候选 Word，保留来源 checksum、完整 trace 和非编辑质量阻塞。同日 23:26 已部署 `md2word-table-crop:12188b04b7b4`，实际线上 Worker 再次完成真实裁图、候选 Word 与质量阻塞校验。该探针使用合成 PDF，不代替其他文档或 Word/WPS 视觉验收。
 - 来源/取代：实际原生表格/占位实现与本轮布局回归；取代将无效 HTML 与有来源占位合并描述为 `_render_table` 未来缺口的旧说明。
 
+### TABLE-005 参数表数值列归属与复核
+
+- 触发条件及 owner：`app/services/tables/validator.py` 检查源 Grid 中同一组独立 MIN/TYP/MAX、MIN/MAX、LOW/NOM/HIGH 或最小/典型/最大。只含 `td` 的表可从首部独立标签识别该规则的数值列。已核验同宽无表头续片复用上一片的列义，位置和值取自本地片段。跨越组内多个值列的技术数值生成 `table_semantics:value_column_span_ambiguous`。
+- 证据合同：`table-validator/v2` 在 finding 中绑定片段、单元格和行列位置。内部 `GET /quality/tables` 返回 `value_column_findings` 及报告摘要。历史 `table-validator/v1` 严格按原算法复验并省略该字段。数值文本只投影到受权详情。新写入仍按 TABLE-001 使用源 span 生成可编辑 Word 表格。
+- 审核合同：`PATCH /review` 在批准当前主 DOCX 时接受 `acknowledged_table_semantics_report_sha256`，格式为 64 位小写十六进制，与 `report.report_sha256` 一致。既有授权、主件绑定与锁内提交复用这次确认。复核有效性、发布预检和原子发布共同消费主件与报告身份。
+- 边界：有疑似项且确认缺失或摘要变化时，批准分别以 `table_semantics_confirmation_required`、`table_semantics_confirmation_stale` 拒绝。确认凭据引用的报告无法验证时使用 `table_semantics_evidence_invalid`。此类拒绝保留内部草稿。已存在的其他质量阻断仍会阻止发布。
+- 基准与负例：合法跨列标题、空数值格和竖向合并可通过本规则。普通批准不能确认疑似项。审核员对照源 PDF 后用当前报告摘要确认，已有的风险记录保留。表格外框不足以确认单元格在 PDF 中的正确列。
+- 验证：`tests.test_parameter_table_value_column_binding` 检查规则与历史报告读取。通过 `scripts.dev.replay_parameter_table_value_columns` 校验三份固定 ZIP 指纹、质量项目与实际 Word 单元格合并。审批、下载和正式发布的权威回归在 Document Jobs 测试中验证。 [样本定位与回放入口](../../tasks/11-16-parameter-table-value-column-binding/research/samples.md)
+
 ### IMAGE-001 图片资产绑定、显示宽度和可见失败
 
 - 状态：`implemented-gap`（RND-503结构/内容与历史fallback测试已补，真实Word/部署预览仍独立待验）。
@@ -646,6 +655,7 @@ RND-502 补充：`formula_text_fallback` 是内容完整、可见、可审计的
 | 模板绝对样式 vs 源版式 | STYLE-001 | 模板决定纸张/边距/字体；源 IR 决定内容语义、相对布局和方向 | 模板版本测试 + PAGE/COL/FLOW 共同回归 |
 | 模板/自定义 decoration vs 源 decoration | STYLE-002 | 配置禁用保留模板；显式自定义 footer 高于源 footer；同 section 逐页源 decoration 及源 header 覆盖配置 header 是已知缺口 | 模板继承、自定义 footer PAGE field、同向页不同 header 缺口样本 |
 | 可编辑结构 vs 源像素外观 | TABLE-001、FIELD-001、FIELD-002 | 原生 table/TOC/SEQ/REF 优先，但不得改变内容顺序或静默丢失 | OOXML 结构 + Word/WPS 视觉检查 |
+| 源 span 保真与参数列归属风险 | TABLE-001、TABLE-005 | 保留原生可编辑 span，报告疑似项并要求对当前结果和证据确认 | SN74AC244 双包与 OPA228 P7 的 Grid/OOXML、当前和过期确认 |
 | 数学归一化 vs 普通正文保真 | TEXT-003 | 所有共享文本入口都会归一化，但只允许证据充分的 TeX 模式改写；OMML 限于数学边界/整段公式，普通路径/UNC 保持，失败按 MATH-003 可见 | CM4112 公式矩阵 + 普通反斜杠正文 |
 | 富文本题注 vs 多条真实 annotation | TEXT-004 | flat rich-node list 是一条逻辑题注；string list/多个 nested groups 保持多条，renderer 不重猜边界 | v2 rich chart/table caption + 多题注负例 + COL-003 + WPS 图 33 |
 | 正式入口默认配置 vs 版本化配置 | STYLE-004 | 本地 adapter 省略参数时使用 Settings 当前默认；线上只用固化 Template Version，renderer 无全局 fallback | local 缺省/显式/no-template + 线上模板版本 + STYLE-003 四槽 |
@@ -666,6 +676,7 @@ RND-502 补充：`formula_text_fallback` 是内容完整、可见、可审计的
 | IR-002、PAGE-001、PAGE-002 | layout signals、section setup | converter/renderer layout | OPA228 PDF 仅作为输入资产 | CM4112 external | 没有当前真实纵横向/页数视觉基线 |
 | IR-003、IR-004、QUALITY-004 | integrity、converter、renderer evidence、正式发布边界 | converter/IR contract/renderer/formal adapter/document job | 无 | CM4112 当前 external 对账 | 无 committed 含 chart 的 MinerU fixture；实际分页不属于阻断计数 |
 | TABLE-004 | 原生表规划、placeholder 来源/crop、typed table evidence | 无效 HTML/缺源拒绝、续表/方向、三类资产消费 | 合成 MinerU 表格包与有效 PDF | 线上基底缺 CLI 实证；隔离镜像实际 Poppler 裁图 | 非编辑占位仍质量阻塞；合成探针不代替 Word/WPS 视觉验收 |
+| TABLE-005 | table validator、表格质量投影、复核与发布 | 受控定位、旧报告复验、内部草稿及确认有效性 | OPA228 P7 PDF | SN74AC244 两份 v4 ZIP、OPA228 保存包 | 真实样本缺可信单元格 bbox；本规则覆盖跨列歧义 |
 | FLOW-001、FLOW-002 | renderer page loop、semantic break | renderer layout | 无 | SC2167、CM4112 external | 无跨客户端实际落页自动断言；完整文字栏流已覆盖实际分页目标，混合区域组合仍需视觉验收 |
 | FLOW-003、TABLE-001、TABLE-002、TABLE-003 | layout signals、table renderer | converter/renderer table tests | OPA228 P6/P7 PDF 未执行 | CM4112、SC2167 external | continuation height 无消费者；无表格挤压/跨页视觉门禁 |
 | COL-001、COL-002 | layout plan、renderer columns | renderer layout | OPA228 P1/P2 PDF 未执行 | CM4112 当前 LibreOffice/WPS、SC2167 external | 无自动 Word/WPS 栏平衡断言；WPS 分页仍与 LibreOffice 不同 |

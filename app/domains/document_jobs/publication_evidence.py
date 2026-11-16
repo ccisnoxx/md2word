@@ -18,6 +18,7 @@ from app.domains.resources.models import utc_now
 from app.domains.templates.layout_config_schema import TemplateConfigPackage
 from app.domains.templates.package_validator import external_logo_field
 from app.domains.translation.modes import spec_for_document_job_mode
+from app.services.tables.evidence import TableEvidenceError
 
 
 @dataclass(frozen=True)
@@ -71,8 +72,13 @@ def prepare_publication_evidence(job, *, file_repository, file_service, job_repo
         files[file.id] = file
     if job.document_ir_file_id not in {file.id for file in preview.authentication_files}:
         raise PublicationConflict("publication_snapshot_unavailable")
-    verified = verify_report(job, result, file_repository=file_repository, file_service=file_service,
-                             job_repository=job_repository)
+    try:
+        verified = verify_report(job, result, file_repository=file_repository, file_service=file_service,
+                                 job_repository=job_repository)
+    except FileNotFoundError:
+        raise PublicationConflict("publication_result_unavailable") from None
+    except TableEvidenceError:
+        raise PublicationConflict("publication_snapshot_mismatch") from None
     if verified is not None:
         for file in verified.files:
             files[file.id] = file

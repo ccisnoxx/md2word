@@ -18,6 +18,7 @@ from app.services.tables.evidence import (
     TableEvidenceError, WordTableObservation, aggregate_table_evidence, flags_status, source_grid_summary,
 )
 from app.services.tables.models import canonical_sha256
+from app.services.tables.quality import VALIDATOR_VERSION, ValidatorVersion
 from app.services.tables.validator import validate_document_tables
 from app.services.document_ir.table_reference_assets import decode_table_references
 from app.services.document_ir.table_placeholder import decode_placeholders
@@ -177,9 +178,10 @@ def _table_rendering_evidence(
     return result, list(dict.fromkeys(flags))
 
 
-def _build_table_evidence(document: DocumentIR, content: bytes, evidence: dict):
+def _build_table_evidence(document: DocumentIR, content: bytes, evidence: dict, *,
+                          validator_version: ValidatorVersion = VALIDATOR_VERSION):
     """唯一编排点连接来源、当前渲染视图和实际 OOXML；纯层不感知 IR 或 renderer。"""
-    source = validate_document_tables(document)
+    source = validate_document_tables(document, validator_version=validator_version)
     references = {item.fragment.fragment_id: item for item in decode_table_references(document)}
     native = evidence.get("table_rendering", {})
     proof = evidence.get("table_placeholder_rendering")

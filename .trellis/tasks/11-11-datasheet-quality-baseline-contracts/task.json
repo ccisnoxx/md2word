@@ -18,7 +18,9 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "11-16-parameter-table-value-column-binding"
+  ],
   "parent": "10-12-datasheet-docx-delivery-quality",
   "relatedFiles": [],
   "notes": "",

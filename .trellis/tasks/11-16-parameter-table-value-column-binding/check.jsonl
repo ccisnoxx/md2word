@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/word-generation-rules.md", "reason": "核对正式表格输出、只读检查与证据等级"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "用定向测试和离线回放验证受影响行为"}
+{"file": ".trellis/spec/backend/document-job-mode-contract.md", "reason": "核对内部下载及已授权发布的状态投影"}
+{"file": ".trellis/tasks/11-16-parameter-table-value-column-binding/research/samples.md", "reason": "用独立标注和固定包身份检验误报、漏报和定位"}

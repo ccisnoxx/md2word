@@ -12,7 +12,7 @@ from app.domains.document_jobs.list_query_facts import (
 )
 from app.domains.document_jobs.models import DocumentJobRecord, DocumentJobTranslationQaStatus
 from app.domains.document_jobs.quality_state import effective_quality_status
-from app.domains.document_jobs.review import effective_review_job, receipt_identity
+from app.domains.document_jobs.review import effective_review_job, receipt_identity, table_semantics_approval_conflict
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.result_registration import review_source_descriptor
 from app.domains.resources.models import utc_now
@@ -117,7 +117,8 @@ def document_job_list_projection(job: DocumentJobRecord) -> dict[str, Any]:
             except (ValueError, TypeError, OverflowError) as error:
                 projection["binding_error"] = _error_code(error)
                 identity_matches = False
-            projection["review_path"] = ("invalid" if not identity_matches else
+            semantics_valid = job.review_status != "approved" or table_semantics_approval_conflict(job, binding) is None
+            projection["review_path"] = ("invalid" if not identity_matches or not semantics_valid else
                                          "verified" if binding.binding_state == "verified" else "unbound")
         if projection["review_path"] == "verified":
             projection["binding_revision"] = equality_key(binding.file_review_source_revision)[0]

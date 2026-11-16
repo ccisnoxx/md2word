@@ -8469,6 +8469,20 @@
             "minimum": 0.0,
             "title": "Unknown Flag Count",
             "type": "integer"
+          },
+          "value_column_findings": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DocumentQualityTableValueFindingResponse"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Column Findings"
           }
         },
         "required": [
@@ -8632,6 +8646,106 @@
         "title": "DocumentQualityTableReportResponse",
         "type": "object"
       },
+      "DocumentQualityTableValueFindingResponse": {
+        "additionalProperties": false,
+        "description": "数值跨列的内部复核定位，行列索引从零开始，结束列不含在范围内。",
+        "properties": {
+          "cell_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:\\-]+$",
+            "title": "Cell Id",
+            "type": "string"
+          },
+          "code": {
+            "const": "table_semantics:value_column_span_ambiguous",
+            "title": "Code",
+            "type": "string"
+          },
+          "column": {
+            "minimum": 0.0,
+            "title": "Column",
+            "type": "integer"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentQualityValueColumnResponse"
+            },
+            "minItems": 2,
+            "title": "Columns",
+            "type": "array"
+          },
+          "end_column": {
+            "minimum": 0.0,
+            "title": "End Column",
+            "type": "integer"
+          },
+          "finding_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:\\-]+$",
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "fragment_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:\\-]+$",
+            "title": "Fragment Id",
+            "type": "string"
+          },
+          "source_page_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page Index"
+          },
+          "source_row_index": {
+            "minimum": 0.0,
+            "title": "Source Row Index",
+            "type": "integer"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding_id",
+          "code",
+          "fragment_id",
+          "cell_id",
+          "source_page_index",
+          "source_row_index",
+          "column",
+          "end_column",
+          "columns",
+          "value",
+          "unit"
+        ],
+        "title": "DocumentQualityTableValueFindingResponse",
+        "type": "object"
+      },
       "DocumentQualityTablesResponse": {
         "additionalProperties": false,
         "properties": {
@@ -8706,6 +8820,43 @@
           "next_cursor"
         ],
         "title": "DocumentQualityTablesResponse",
+        "type": "object"
+      },
+      "DocumentQualityValueColumnResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "column": {
+            "minimum": 0.0,
+            "title": "Column",
+            "type": "integer"
+          },
+          "group_start_column": {
+            "minimum": 0.0,
+            "title": "Group Start Column",
+            "type": "integer"
+          },
+          "label": {
+            "enum": [
+              "MIN",
+              "TYP",
+              "MAX",
+              "LOW",
+              "NOM",
+              "HIGH",
+              "最小",
+              "典型",
+              "最大"
+            ],
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "column",
+          "label",
+          "group_start_column"
+        ],
+        "title": "DocumentQualityValueColumnResponse",
         "type": "object"
       },
       "DocumentReviewBatchResponse": {
@@ -8958,6 +9109,18 @@
       "DocumentReviewBindingResponse": {
         "additionalProperties": false,
         "properties": {
+          "acknowledged_table_semantics_report_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged Table Semantics Report Sha256"
+          },
           "binding_state": {
             "enum": [
               "verified",
@@ -10098,6 +10261,14 @@
                 "type": "string"
               },
               {
+                "enum": [
+                  "table_semantics_confirmation_required",
+                  "table_semantics_confirmation_stale",
+                  "table_semantics_evidence_invalid"
+                ],
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -10380,6 +10551,19 @@
       "DocumentReviewUpdateRequest": {
         "additionalProperties": false,
         "properties": {
+          "acknowledged_table_semantics_report_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "批准时确认已核对该表格报告中的疑似数值列归属。填写当前表格质量详情的 report_sha256。",
+            "title": "Acknowledged Table Semantics Report Sha256"
+          },
           "expected_source": {
             "$ref": "#/components/schemas/ReviewExpectedSourceRequest"
           },

@@ -1,9 +1,9 @@
 """消费已验证来源与既有 builder，只输出确定性标记，不修表或接线生产状态。"""
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 from typing import get_args
 
@@ -12,11 +12,15 @@ from pydantic import ValidationError
 from app.services.document_ir.models import DocumentIR, LogicalTableGroup, TableFragment
 from app.services.tables.grid_builder import TableBuildResult, build_table_grid
 from app.services.tables.html_normalizer import DiagnosticCode, TableDiagnostic
-from app.services.tables.models import TableCell, TableGrid, TableQualityFlag
+from app.services.tables.measurement import (
+    MEASUREMENT_UNITS, ValueColumnLabel, is_measurement_unit, split_parameter_value,
+)
+from app.services.tables.models import VALUE_COLUMN_SPAN_AMBIGUOUS, TableCell, TableGrid, TableQualityFlag
 from app.services.tables.quality import (
-    GROUPS_VERSION, NORMALIZER_VERSION, RULE_CODES, TableCellReference, TableFinding, TableFindingEvidence,
-    TableFragmentReference, TableQualityContribution, TableRunRange, TableRunReference, TableValidationError,
-    TableValidationPolicy, TableValidationReport, aggregate_table_quality, make_finding_id, make_table_report,
+    GROUPS_VERSION, LEGACY_VALIDATOR_VERSION, NORMALIZER_VERSION, RULE_CODES, VALIDATOR_VERSION, TableCellReference,
+    TableFinding, TableFindingEvidence, TableFragmentReference, TableQualityContribution, TableRunRange,
+    TableRunReference, TableValidationError, TableValidationPolicy, TableValidationReport, ValidatorVersion,
+    ValueColumn, ValueColumnSpan, aggregate_table_quality, make_finding_id, make_table_report,
 )
 
 
@@ -27,14 +31,7 @@ _DIAGNOSTIC_REASONS = {
     "table_span_invalid": "invalid_span", "table_html_removed_unsafe": "unsafe_removed",
     "table_formula_unresolved": "formula_unresolved", "table_nested_script": "nested_script",
 }
-_UNITS = frozenset({
-    "ps", "ns", "µs", "μs", "us", "ms", "s", "Hz", "kHz", "MHz", "GHz", "THz",
-    "pA", "nA", "µA", "μA", "uA", "mA", "A", "pV", "nV", "µV", "μV", "uV", "mV", "V", "kV",
-    "Ω", "mΩ", "kΩ", "MΩ", "F", "pF", "nF", "µF", "uF", "H", "nH", "µH", "mH",
-    "W", "mW", "µW", "kW", "VA", "kVA", "MVA", "var", "°C", "K", "dB", "dBm", "ppm", "%",
-    "C", "pC", "nC", "µC", "mC", "J", "mJ", "S", "mS", "B", "bit", "bits", "bps", "kbps", "Mbps",
-})
-_UNIT_ORDER = tuple(sorted(_UNITS, key=lambda unit: (-len(unit), unit)))
+_UNIT_ORDER = tuple(sorted(MEASUREMENT_UNITS, key=lambda unit: (-len(unit), unit)))
 MAX_UNIT_TOKEN_CHARS = 4096
 _UNIT_WORD = re.compile(r"(?<![\wµμΩ°])(?:[0-9]+(?:\.[0-9]+)\s*)?([A-Za-zµμΩ°%]+)(?![\wµμΩ°])")
 _NUMBER = re.compile(r"(?<![\w.])[+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?(?![\w.])")
@@ -44,6 +41,16 @@ _VALUE_HEADERS = frozenset({"min", "min.", "minimum", "typ", "typ.", "typical", 
                             "最小", "最小值", "典型", "典型值", "最大", "最大值"})
 _UNIT_HEADERS = frozenset({"unit", "units", "单位"})
 _SYMBOL_HEADERS = frozenset({"symbol", "symbols", "符号", "信号"})
+_VALUE_COLUMN_LABELS: dict[str, ValueColumnLabel] = {
+    "min": "MIN", "minimum": "MIN", "typ": "TYP", "typical": "TYP", "max": "MAX", "maximum": "MAX",
+    "low": "LOW", "nom": "NOM", "nominal": "NOM", "high": "HIGH",
+    "最小": "最小", "最小值": "最小", "典型": "典型", "典型值": "典型", "最大": "最大", "最大值": "最大",
+}
+_VALUE_COLUMN_ORDERS: tuple[tuple[ValueColumnLabel, ...], ...] = (
+    ("MIN", "TYP", "MAX"), ("MIN", "MAX"), ("LOW", "NOM", "HIGH"), ("最小", "典型", "最大"),
+)
+# MinerU 可把表头全部写成 td。首部三行涵盖标题、器件分组和最末级数值列。
+_IMPLICIT_VALUE_HEADER_ROWS = 3
 
 
 def _source_grid_signature(grid: TableGrid) -> dict:
@@ -122,9 +129,64 @@ def _cell_text(cell: TableCell) -> str:
     return "".join(run.source for run in cell.runs).strip()
 
 
+@dataclass(frozen=True)
+class _ParameterHeader:
+    row: int
+    columns: dict[int, ValueColumn]
+    unit_column: int | None
+
+
+def _parameter_header(rows: list[list[TableCell]]) -> _ParameterHeader | None:
+    group_titles: set[tuple[int, int]] = set()
+    unit_columns: set[int] = set()
+    implicit = None
+    for row in rows:
+        source_row = row[0].source_row_index
+        labels = {}
+        explicit = set()
+        row_titles = set()
+        for cell in row:
+            text = " ".join(_cell_text(cell).casefold().split())
+            if cell.colspan > 1:
+                if text:
+                    row_titles.add((cell.column, cell.column + cell.colspan))
+                continue
+            if text in _UNIT_HEADERS:
+                unit_columns.add(cell.column)
+            label = _VALUE_COLUMN_LABELS.get(text.removesuffix("."))
+            if label is not None:
+                labels[cell.column] = label
+                if cell.is_header:
+                    explicit.add(cell.column)
+        groups = []
+        for start in labels:
+            for label_order in _VALUE_COLUMN_ORDERS:
+                if all(labels.get(start + index) == label for index, label in enumerate(label_order)):
+                    groups.append((start, label_order))
+                    break
+        if groups and (len(groups) == 1 or all(
+            (start, start + len(label_order)) in group_titles for start, label_order in groups
+        )):
+            columns = {
+                start + index: ValueColumn(column=start + index, label=label, group_start_column=start)
+                for start, label_order in groups for index, label in enumerate(label_order)
+            }
+            unit_column, = unit_columns if len(unit_columns) == 1 else (None,)
+            header = _ParameterHeader(source_row, columns, unit_column)
+            if columns.keys() <= explicit:
+                # 同一数值列布局的重复表头继续使用首部定位，覆盖中间的数据行。
+                if implicit is not None and implicit.columns == columns:
+                    return implicit
+                return header
+            if implicit is None and source_row < _IMPLICIT_VALUE_HEADER_ROWS:
+                implicit = header
+        group_titles.update(row_titles)
+    return implicit
+
+
 def _unit_count(token: str) -> int:
     """完整合法 token 优先；最长 token 贪心扫描，不分配随组合数增长的路径。"""
-    if token in _UNITS:
+    if token in MEASUREMENT_UNITS:
         return 1
     if len(token) > MAX_UNIT_TOKEN_CHARS:
         raise TableValidationError("table_validation_limit")
@@ -145,7 +207,7 @@ def _unit_list_count(text: str) -> int:
     if len(tokens) < 2:
         return 0
     # 复合单位保留分隔符作为合法边界，绝不去掉 '/' 后再判断粘连。
-    if all(all(part in _UNITS for part in re.split(r"[/·⋅*√]+", token) if part)
+    if all(all(part in MEASUREMENT_UNITS for part in re.split(r"[/·⋅*√]+", token) if part)
            and any(character.isalpha() for character in token) for token in tokens):
         return len(tokens)
     return 0
@@ -319,6 +381,58 @@ class _TableValidator:
                         else:
                             self.emit("table_abnormal_long_number", "long_decimal", identity, **location)
 
+    def value_column_spans(self) -> None:
+        rows_by_fragment: dict[str, list[list[TableCell]]] = defaultdict(list)
+        for (identity, _), row in self.row_cells.items():
+            rows_by_fragment[identity].append(row)
+        preceding = {relation.to_fragment_id: relation.from_fragment_id for relation in self.group.continuation_relations
+                     if relation.kind == "verified_continuation"}
+        headers: dict[str, _ParameterHeader] = {}
+        for fragment in self.fragments:
+            identity = fragment.fragment_id
+            rows = rows_by_fragment.get(identity)
+            if not rows:
+                continue
+            header = _parameter_header(rows)
+            previous = preceding.get(identity)
+            if (header is None and previous is not None and previous in headers
+                    and self.by_fragment[previous].columns == fragment.columns
+                    and not any(cell.is_header for cell in rows[0])):
+                # 同宽且已核验的无头续片从本地首行起检查，继承列义。
+                header = replace(headers[previous], row=-1)
+            if header is None:
+                continue
+            headers[identity] = header
+            unit_cell = None
+            for row in rows:
+                source_row = row[0].source_row_index
+                if source_row <= header.row:
+                    continue
+                unit_cell = next(
+                    (cell for cell in row if cell.column == header.unit_column and cell.colspan == 1), unit_cell,
+                )
+                unit = None
+                if unit_cell is not None and source_row < unit_cell.source_row_index + unit_cell.rowspan:
+                    text = _cell_text(unit_cell)
+                    if is_measurement_unit(text):
+                        unit = text
+                for cell in row:
+                    if cell.is_header or cell.colspan < 2:
+                        continue
+                    end = cell.column + cell.colspan
+                    covered = [header.columns[column] for column in range(cell.column, end) if column in header.columns]
+                    counts = Counter(item.group_start_column for item in covered)
+                    columns = tuple(item for item in covered if counts[item.group_start_column] >= 2)
+                    if not columns:
+                        continue
+                    value = split_parameter_value(" ".join(_cell_text(cell).split()))
+                    if value is None:
+                        continue
+                    token, inline_unit = value
+                    self.emit(VALUE_COLUMN_SPAN_AMBIGUOUS, "value_column_span_ambiguous", identity, cell=cell,
+                              end_column=end, value_column_span=ValueColumnSpan(value=token, unit=inline_unit or unit,
+                                                                            columns=columns))
+
     def continuations(self) -> None:
         all_fragments = {item.fragment_id: item for item in (*self.fragments, *self.related)}
         emitted_pairs = set()
@@ -347,9 +461,11 @@ class _TableValidator:
             else:
                 self.emit("table_continuation_uncertain", diagnostic.reason, after.fragment_id, related_fragment_id=before.fragment_id)
 
-    def validate(self) -> TableValidationReport:
+    def validate(self, validator_version: ValidatorVersion) -> TableValidationReport:
         self.structures()
         self.contents()
+        if validator_version == VALIDATOR_VERSION:
+            self.value_column_spans()
         self.continuations()
         return make_table_report(table_id=self.result.grid.table_id,
                                  source_content_sha256=self.result.grid.source_content_sha256,
@@ -358,15 +474,17 @@ class _TableValidator:
                                      item for item in self.related if any(
                                          finding.evidence.related_fragment_id == item.fragment_id
                                          for finding in self.findings.values())), cells=self.cell_references,
-                                 findings=tuple(self.findings.values()))
+                                 findings=tuple(self.findings.values()), validator_version=validator_version)
 
 
 def validate_table(result: TableBuildResult, group: LogicalTableGroup, *, policy: TableValidationPolicy | None = None,
                    related_fragments: Mapping[str, TableFragment] | None = None,
                    source_content_sha256: str | None = None,
+                   validator_version: ValidatorVersion = VALIDATOR_VERSION,
                    _remaining_findings: int | None = None) -> TableValidationReport:
     """重新校验可变输入；构建事实复用原 builder，译文与既有 flags 不参与检查。"""
-    if (not isinstance(result, TableBuildResult) or not isinstance(result.grid, TableGrid) or
+    if (validator_version not in (LEGACY_VALIDATOR_VERSION, VALIDATOR_VERSION)
+            or not isinstance(result, TableBuildResult) or not isinstance(result.grid, TableGrid) or
             not isinstance(group, LogicalTableGroup)):
         raise TableValidationError("table_validation_input")
     if policy is not None and not isinstance(policy, TableValidationPolicy):
@@ -403,10 +521,11 @@ def validate_table(result: TableBuildResult, group: LogicalTableGroup, *, policy
     budget = selected.max_findings if _remaining_findings is None else _remaining_findings
     if type(budget) is not int or not 0 <= budget <= selected.max_findings:
         raise TableValidationError("table_validation_input")
-    return _TableValidator(checked, checked_group, selected, checked_related, budget).validate()
+    return _TableValidator(checked, checked_group, selected, checked_related, budget).validate(validator_version)
 
 
-def validate_document_tables(document: DocumentIR, *, policy: TableValidationPolicy | None = None) -> TableQualityContribution:
+def validate_document_tables(document: DocumentIR, *, policy: TableValidationPolicy | None = None,
+                             validator_version: ValidatorVersion = VALIDATOR_VERSION) -> TableQualityContribution:
     """正式 DocumentIR 来源账本的显式 producer；旧 IR 返回未评估。"""
     if not isinstance(document, DocumentIR):
         raise TableValidationError("table_validation_input")
@@ -421,7 +540,8 @@ def validate_document_tables(document: DocumentIR, *, policy: TableValidationPol
     source_hash = metadata.mineru_validation.content_list_sha256 if metadata.mineru_validation is not None else None
     if metadata.logical_table_groups_version is None:
         return aggregate_table_quality((), expected_table_ids=(), source_content_sha256=source_hash,
-                                       source_groups_version=None, expected_fragment_count=None, policy=selected)
+                                       source_groups_version=None, expected_fragment_count=None, policy=selected,
+                                       validator_version=validator_version)
     if metadata.logical_table_groups_version != GROUPS_VERSION or source_hash is None:
         raise TableValidationError("table_validation_input")
     fragments = {fragment.fragment_id: fragment for group in metadata.logical_table_groups for fragment in group.fragments}
@@ -430,6 +550,7 @@ def validate_document_tables(document: DocumentIR, *, policy: TableValidationPol
     for group in metadata.logical_table_groups:
         report = validate_table(build_table_grid(group, source_content_sha256=source_hash), group, policy=selected,
                                 related_fragments=fragments, source_content_sha256=source_hash,
+                                validator_version=validator_version,
                                 _remaining_findings=selected.max_findings - count)
         reports.append(report)
         count += len(report.findings)
@@ -437,4 +558,5 @@ def validate_document_tables(document: DocumentIR, *, policy: TableValidationPol
             raise TableValidationError("table_validation_limit")
     return aggregate_table_quality(reports, expected_table_ids=[group.logical_group_id for group in metadata.logical_table_groups],
                                    source_content_sha256=source_hash, source_groups_version=GROUPS_VERSION,
-                                   expected_fragment_count=metadata.logical_table_group_counts["fragment_count"], policy=selected)
+                                   expected_fragment_count=metadata.logical_table_group_counts["fragment_count"], policy=selected,
+                                   validator_version=validator_version)

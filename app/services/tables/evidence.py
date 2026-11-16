@@ -7,7 +7,7 @@ from pydantic import Field, ValidationError, model_validator
 
 from app.services.tables.models import FragmentId, NonNegativeInt, PositiveInt, Sha256, canonical_json_bytes, canonical_sha256
 from app.services.tables.quality import (
-    CODES, GROUPS_VERSION, TableId, TableQualityContribution, TableValidationPolicy,
+    CODES, GROUPS_VERSION, TableId, TableQualityContribution, TableValidationPolicy, ValidatorVersion,
     TableValidationReport, _QualityModel, _invalid, aggregate_table_quality,
 )
 
@@ -319,7 +319,7 @@ class TableEvidenceReport(EvidenceModel):
     ir_model_sha256: Sha256
     docx_sha256: Sha256
     source_groups_version: Literal["logical-table-groups/v1"] | None
-    validator_version: Literal["table-validator/v1"]
+    validator_version: ValidatorVersion
     normalizer_version: Literal["table-html/v1"]
     policy: TableValidationPolicy
     policy_sha256: Sha256
@@ -361,7 +361,8 @@ class TableEvidenceReport(EvidenceModel):
                 _invalid("table_evidence_input")
         aggregate_table_quality([table.validation for table in self.tables], expected_table_ids=self.expected_table_ids,
             source_content_sha256=self.source_content_sha256, source_groups_version=self.source_groups_version,
-            expected_fragment_count=len(all_fragments) if self.source_groups_version else None, policy=self.policy)
+            expected_fragment_count=len(all_fragments) if self.source_groups_version else None, policy=self.policy,
+            validator_version=self.validator_version)
         if (bool(self.placeholder_version) != any(table.placeholders for table in self.tables)
                 or (self.rendering_version is None) != (self.rendering_policy_version is None)
                 or self.tables and self.components["native"] == "available" and self.rendering_version is None):

@@ -51,13 +51,20 @@ def preview_result(policy, *, pages=None):
                          profile_sha256=policy.profile_sha256, pages=tuple(pages if pages is not None else (
                              [PreviewPage(page_index=0, content=png_bytes(), width=1, height=1)] if policy.render_pages else [])))
 
-def natural_package(*, formula=False, table=False):
+PARAMETER_TABLE_WITH_AMBIGUOUS_SPAN = (
+    "<table><tr><th>Parameter</th><th>MIN</th><th>TYP</th><th>MAX</th></tr>"
+    "<tr><td>Input offset voltage</td><td colspan='2'>±5</td><td>10</td></tr></table>"
+)
+
+
+def natural_package(*, formula=False, table=False, table_html=None):
     blocks = [{"type": "text", "text": "The document describes a stable design with clear behavior under normal use.", "page_idx": 0, "bbox": [40, 50 + index * 80, 550, 100 + index * 80]}
               for index in range(3)]
     if formula:
         blocks.append({"type": "equation", "latex": r"\unknown{VOUT}", "page_idx": 0, "bbox": [40, 350, 550, 400]})
-    if table:
-        blocks.append({"type": "table", "html": "<table><tr><th>Symbol</th><th>Value</th></tr><tr><td>X</td><td>12</td></tr></table>",
+    if table or table_html is not None:
+        blocks.append({"type": "table", "html": table_html if table_html is not None else
+                       "<table><tr><th>Symbol</th><th>Value</th></tr><tr><td>X</td><td>12</td></tr></table>",
                        "page_idx": 0, "bbox": [40, 350, 250, 400]})
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -112,8 +119,11 @@ class V2PublicationFixture:
     @contextmanager
     def publication_runtime(
         self, *, kind="file", pages=True, complete=True, approved=True, legacy_base=True, configure_layout=None,
+        source_package=None,
     ):
-        with self.runtime(kind=kind, pages=pages, quality="passed") as (runtime, execution, provider, job, user, client, headers):
+        with self.runtime(kind=kind, pages=pages, quality="passed", source_package=source_package) as (
+            runtime, execution, provider, job, user, client, headers,
+        ):
             job = self.install_publication_resources(
                 runtime, execution, job, complete=complete, configure_layout=configure_layout,
             )
