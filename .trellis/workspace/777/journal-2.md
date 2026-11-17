@@ -147,3 +147,34 @@ API 统一负责 SQL schema、内部账号导入和资源 seed。生产与开发
 ### Status
 
 [OK] **Completed**
+
+
+## Session 66: 提高参数值列的行取证覆盖率
+
+**Date**: 2026-11-17
+**Task**: 提高参数值列的行取证覆盖率
+**Branch**: `codex/table-value-row-evidence`
+
+### Summary
+
+完整 gs-008 的 23 项中 17 项通过自动取证和 Word 实物认证，覆盖率 73.91%，自动错修 0 项，6 项保留 warning，DOCX 下载返回 200。
+
+### Main Changes
+
+- 纳入精确值反查、组合行签名、跨行一致性与唯一单调对齐，并更新 7 个 API 未决原因。
+- 实际 Word 中 ±5 µV 只占 TYP，±100 µV 只占 MAX，两格均为 gridSpan=1。
+- [归档验收记录](../../tasks/archive/2026-11/11-17-table-value-row-evidence/validation.md)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0b1c688526e02e9d2647f396e15837d7577f4ca5` | (see git log) |
+
+### Testing
+
+- [OK] 复用已通过的 54 项定向测试、最后修复后 12 项复验以及 OpenAPI 快照检查。本次收尾未重跑测试。
+
+### Status
+
+[OK] **Completed**

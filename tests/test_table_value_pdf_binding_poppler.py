@@ -20,13 +20,13 @@ def _ruled_table_package(
     root: Path, *, manual_review_case: bool = False,
     point_box: tuple[float, float, float, float] = (50, 70, 450, 230),
 ) -> tuple[Path, Path]:
-    """默认第三个值压列界。人工核定场景的列明确，但独立条件跨两行。"""
+    """默认第三个值压列界。人工核定场景的列明确，但 MinerU 条件含额外词。"""
     column_edges = (50, 140, 200, 280, 380, 450)
     row_edges = (430, 390, 350, 310, 270)
     drawing = ["0 G 0.35 w 1 J"]
     drawing.extend(f"{x} 270 m {x} 430 l S" for x in column_edges)
     drawing.extend(f"50 {y} m 450 {y} l S" for y in row_edges)
-    last_condition = "on standby" if manual_review_case else "idle"
+    last_condition = "on standby mode" if manual_review_case else "idle"
     for y, words in (
         (406, ((60, "Parameter"), (147, "Mode"), (209, "LOW"), (289, "HIGH"), (390, "UNIT"))),
         (366, ((60, "Reset dwell"), (147, "active"), (320, "7.2e-4"), (390, "s"))),

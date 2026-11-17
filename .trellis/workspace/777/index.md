@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 65
+- **Total Sessions**: 66
 - **Last Active**: 2026-11-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~149 | Active |
+| `journal-2.md` | ~180 | Active |
 | `journal-1.md` | ~1989 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 66 | 2026-11-17 | 提高参数值列的行取证覆盖率 | `0b1c688526e02e9d2647f396e15837d7577f4ca5` | `codex/table-value-row-evidence` |
 | 65 | 2026-11-17 | 坏表结构的可复核回退交付 | `e03815a3` | `main` |
 | 64 | 2026-11-17 | 参数表未决数值列以警告交付 | `6fa8664` | `main` |
 | 63 | 2026-11-16 | 生产冷启动单一初始化 | `374403859b74242daa327491c7d085fb619eeed2` | `codex/production-cold-start-bootstrap` |
