@@ -1,5 +1,9 @@
 # Datasheet 质量基线与验收证据
 
+## 当前缺陷状态
+
+2026-11-17 核对 `main@96e7aca2`。`gs-004` 修订历史缺项、RS2G04 英文脚注残留和脚注公式降级均为 `closed`。`gs-008` 参数值列合并为 `mitigated`，留存 P7 的 18 个发现中 5 项自动核定通过，13 项 `row_ambiguous` 随内部 DOCX 交付复核。`source_pair_unverified`、可信表头语义及实际人工修改工时仍有覆盖或取证缺口。 [当前状态总表](issues.md#当前状态总表)
+
 ## 样本与范围
 
 本地回放使用正式 MinerU → DocumentIR → Word 适配器，解析输入是已有 MinerU 缓存。首轮扩展样本使用用户提供的 TI SN54AC244/SN74AC244 SCAS514H，以及本地既有的 RS2G04 RevA.4。原 PDF、MinerU JSON、图像和 DOCX 均留在本地。首轮清单保留身份指纹、来源页段和独立标注。[首轮本地回放清单](../../../tests/fixtures/datasheet_quality/local_baseline_manifest.json)
@@ -28,6 +32,8 @@
 [原始观测](observations.json)可由 `scripts/ops/datasheet_quality_metrics.py` 重新聚合。旧 P0 目标仍为 100%，技术 Token 完整率要求仍为 100%。本轮的样本规模和证据层级只支持建立初始分布。
 
 ## 根因、修改与保留边界
+
+本节保留首轮本地回放的定位及当时处置。SN74AC244 目录公式后续已验证 118/118 写入，客户端刷新与公式书签复核见本页 AC4。 [目录公式复验](toc-formula-verification.md#整份样本结果) · [AC4 结构证据](#结构证据对账-ac4)
 
 - **页级脚注**。真实输入包含 24 个 v2 `page_footnote`。修复复用正文 runs 解析，保留其源类型、页号、bbox 和顺序。合成用例验证 Word 中恰好出现一次以及畸形、空载荷被拒绝。
 - **分数 PDF 页框**。原件第 12 页是零原点、未旋转且 MediaBox 等于 CropBox 的 A4 页面。MinerU 声明 841×595 点，Poppler 实测框为 841.89×595.28 点。裁图仅在声明尺寸与 Poppler 报告的点框相等时进行。若来源是已确认的归一化坐标，声明尺寸也可严格逐轴向下取整匹配。真实 Poppler 回归验证两种输入坐标生成相同 PNG，并拒绝不匹配框。局部正式 adapter 在显式且已核验的 PDF 来源存在时走同一裁图链路。
@@ -69,8 +75,8 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 | 原生表格结构准确率 | 原排版三张标注表原始 0/3，校核后 3/3。RS2G04 实时英译中原始 0/1，使用同源校核的渲染复验 1/1。 |
 | 技术 Token 保留率 | 原排版三张标注表 8/8。RS2G04 完整链路与校核版各为 3/3。 |
 | 页面视觉偏差 | 原排版已配对 3 个标注区域。扩展组 2 个区域的归一化偏差均值为 0.1150，P95 为 0.1200。英译中缺少批准的同模式版式基准。 |
-| 人工修改次数 | 缺测，待按实际修正的独立缺陷计数。 |
-| 人工验收耗时 | 缺测，待按绑定产物指纹的实际审核区间汇总。 |
+| 人工修改次数 | 缺测，待按实际修正的独立缺陷计数，并记录实际编辑耗时。 |
+| 人工验收耗时 | RS2G04 专项 Word 人工验收结论已登记。耗时缺测，待按绑定产物指纹的实际审核区间汇总。 |
 | 单文档成本和延迟 | RS2G04 英译中完整链路成功样本 1 个。成本估算 USD 0.001626756，任务提交口径 32.234 秒，含 PDF 提交 32.245 秒。 |
 
 `canonical-table/v1` 的现有覆盖以独立标注、源 Grid、渲染投影和 Word 实物为准。下表列出已取得的证据和下一项覆盖缺口。[Grid 合同](design.md#3-canonical-table-grid)
@@ -89,10 +95,10 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 ## 验收进度
 
 - AC1。正式扩展清单 v1 已完成准入，覆盖三份非 OPA228 源手册的四个样本项。[扩展清单](extended-sample-manifest.json) · [样本对账](#样本对账-ac1)
-- AC2。指标可从保存的观测复算，人工修改次数、验收耗时和签字等待实际审阅记录。英译中视觉指标需要同模式批准基准。[人工验收记录](en2zh-human-review.md)
+- AC2。指标可从保存的观测复算。RS2G04 专项 Word 人工验收已记录，实际修改次数、编辑及验收耗时和正式签字仍待补。英译中视觉指标需要同模式批准基准。 [人工验收记录](en2zh-human-review.md)
 - AC3。六份历史观测已统一复算，保留每次运行及其证据层级。[基线清单](metrics-baseline.json)
 - AC4 已验收。复用 hostdzire 隔离和生产环境的缺片段负例、WPS 桌面实测和独立表格结构对照，并纳入用户确认的 Microsoft Word 四项结果。P0/P1 管理员签字继续按正式验收跟踪。[AC4 结构证据](#结构证据对账-ac4) · [Word 人工复核](#microsoft-word-人工复核) · [正式验收待办](#正式验收与人工签字待办)
-- AC5。本地 file/SQLite 状态合同定向通过，正式发布验收待取得目标环境证据。[状态合同](#根因修改与保留边界)
+- AC5。本地 file/SQLite 状态合同定向通过。留存 P7 已补警告交付下的报告确认、批准及发布 API 回放，目标环境验收待补。 [状态合同](#根因修改与保留边界) · [P7 本地回放](../archive/2026-11/11-17-table-value-column-warning-delivery/implement.md#真实-p7-审批发布本地回放)
 - AC6。现有合同和证据已对账，正式运行及签字继续跟踪。[合同对账](#合同对账-ac6)
 
 ### 样本对账 AC1
@@ -117,7 +123,9 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 | 缺片段和发布阻断 | SN74AC244 第 11–12 页负例的 `/1/0` 保留可追溯的源 PDF 裁图，质量为 `blocked`。hostdzire 隔离和生产环境均已验证内部草稿下载、发布拒绝及发布记录前后均为 0。[来源绑定负例](upstream-table-coverage-validation.md) · [隔离负例实测](#隔离负例实测) · [生产负例实测](#生产负例实测) |
 | Word/WPS 实物复核 | SN74AC244 已有 118/118 个源公式和 LibreOffice 目录刷新证据。WPS 桌面实物已复核，用户确认 Microsoft Word 的四项复核均通过。[目录公式复验](toc-formula-verification.md#整份样本结果) · [WPS 桌面实测](#ac4-实测与待办) · [Word 人工复核](#microsoft-word-人工复核) |
 
-OPA228 第 7 页的参数列归属复用已归档的验证。补充比对用户提供的 `mineru_raw_result`，其内容列表 v2 指纹与归档包不同，6.7 节目标表 HTML 的 SHA-256 同为 `c5cfc86947e81ae9e8b832f36f96f08aadb37a4c4261e4c3fb5235b8677f2485`。`±5 µV` 跨 MIN–TYP、`±100 µV` 跨 MIN–MAX。此比对记录为 OPA228 上游证据。[参数数值列归属归档](../archive/2026-11/11-16-parameter-table-value-column-binding/validation.md)
+OPA228 第 7 页的参数值列合并目前为 `mitigated`。留存真实 MinerU 包已验证 PDF 几何自动核定、未决定位、内部 DOCX 下载及确认报告后的批准和发布 API。管理员逐格核定生成新一代 DOCX 的证据来自 LOW/HIGH 对照。 [当前处理路径与证据](issues.md#gs-008-参数值列合并)
+
+历史上游对照记录如下。OPA228 第 7 页的参数列归属复用已归档的验证。补充比对用户提供的 `mineru_raw_result`，其内容列表 v2 指纹与归档包不同，6.7 节目标表 HTML 的 SHA-256 同为 `c5cfc86947e81ae9e8b832f36f96f08aadb37a4c4261e4c3fb5235b8677f2485`。`±5 µV` 跨 MIN–TYP、`±100 µV` 跨 MIN–MAX。此比对记录为 OPA228 上游证据。[参数数值列归属归档](../archive/2026-11/11-16-parameter-table-value-column-binding/validation.md)
 
 ### AC4 实测与待办
 
@@ -191,7 +199,8 @@ OPA228 第 7 页的参数列归属复用已归档的验证。补充比对用户�
 
 - [ ] 补 AC5 的生产审核与正式交付证据，并将正式 P0/P1 门禁结论绑定对应发布版本和运行。AC4 缺片段负例的草稿下载和发布拒绝已通过。[生产负例实测](#生产负例实测) · [状态合同实施](implement.md#3-明确并验证状态合同ac5ac6) · [正式验收流程](../../../docs/deploy/online-first-validation-workflow.md)
 - [ ] 补 P0/P1 管理员签字。P0 隔离实链自动结果为 4/4，该次仍待签字。RS2G04 第 6 页隔离英译中实测继续作为对应运行的证据。[P0 实链记录](metrics-implementation.md#固定清单隔离实链验收) · [英译中实测](en2zh-validation.md#rs2g04-完整链路复验)
-- [ ] 补 RS2G04 人工审核记录，绑定实际审阅稿 SHA-256、审核轮次和结论，回填有效审核时间及实际修正的独立缺陷数。英译中视觉偏差继续等待同模式版式基准批准。[人工验收记录](en2zh-human-review.md)
+- [x] RS2G04 第 6 页同源校核稿已于 2026-11-15 通过 Microsoft Word 专项人工验收 10/10，已登记审核稿 SHA-256。 [人工验收记录](en2zh-human-review.md)
+- [ ] 补 RS2G04 实际修正的独立缺陷数、实际编辑耗时和有效审核时间，按审阅稿 SHA-256 与轮次记录。英译中视觉偏差继续等待同模式版式基准批准。 [人工数据回填](en2zh-human-review.md)
 - [ ] 补可归因的正式费用凭据。P0 隔离实链费用 4/4 缺测，RS2G04 记录保留为实测用量估算。[费用与延迟](metrics-implementation.md)
 
 ### 既有定向验证记录
