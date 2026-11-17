@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.services.document_ir.artifact_validator import MinerUValidationReport
 from app.services.document_ir.mineru_package import DEFAULT_POLICY
+from app.services.document_ir.table_placeholder import TableStructureReason
 from app.services.renderer.docx_quality import validate_formula_report
 from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
 from app.services.tables.evidence import ISSUE_CODES, read_table_evidence
@@ -44,7 +45,19 @@ class DegradedPageSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     page_number: Annotated[int, Field(ge=1)]
     trigger: Literal["validation", "render"]
-    reason_codes: list[Literal["invalid_table_html", "missing_image_asset", "invalid_image_asset", "render_failed"]]
+    reason_codes: list[Literal["invalid_table_html", "invalid_table_merge", "empty_table_html",
+                               "missing_image_asset", "invalid_image_asset", "render_failed"]]
+
+
+class TableStructureReviewSummary(BaseModel):
+    """本代已保留表格的人工复核定位，页码从一开始。"""
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    source_pointer: Annotated[str, Field(max_length=160, pattern=r"^/(?:content_list/)?[0-9]+(?:/[0-9]+)?$")]
+    page_number: Annotated[int, Field(ge=1)] | None
+    reason: TableStructureReason
+    preserved_as: Literal["native", "reference_image", "pdf_crop", "pdf_page"]
+    severity: Literal["warning"] = "warning"
+    manual_review_required: Literal[True] = True
 
 
 class SourcePageCounts(BaseModel):
@@ -74,6 +87,8 @@ class BaseQualityContribution(BaseModel):
     degraded_pages: list[DegradedPageSummary] = Field(default_factory=list, exclude_if=lambda value: not value)
     # 旧结果没有统计时不序列化，不伪造页数。
     page_counts: SourcePageCounts | None = Field(default=None, exclude_if=lambda value: value is None)
+    table_structure_reviews: list[TableStructureReviewSummary] = Field(
+        default_factory=list, exclude_if=lambda value: not value)
 
 
 def fresh_quality_summary(generation: int) -> dict:
@@ -112,8 +127,9 @@ def project_base_quality(value: Any, *, generation: int | None = None) -> dict:
         return {"quality_status": "blocked" if isinstance(value, dict) and value.get("quality_status") == "blocked" else "pending",
                 "evaluation_state": "incomplete"}
     public = contribution.model_dump(mode="json")
+    recovery_codes = {review.reason for review in contribution.table_structure_reviews}
     public["warning_codes"] = [code for code in contribution.warning_codes
-        if code in ISSUE_CODES or code == "formula_text_fallback"]
+        if code in ISSUE_CODES or code == "formula_text_fallback" or code in recovery_codes]
     return public
 
 
@@ -167,6 +183,13 @@ def derive_base_quality(job: Any) -> dict | None:
     blockers = warnings = 0
     codes: set[str] = set()
     source = metadata.get("source_integrity", {})
+    table_structure_reviews = [
+        TableStructureReviewSummary(source_pointer=item["source_pointer"],
+            page_number=item["page_index"] + 1 if item["page_index"] is not None else None,
+            reason=item["reason"], preserved_as=item["preserved_as"])
+        for item in source.get("table_structure_reviews", ())
+    ]
+    codes.update(review.reason for review in table_structure_reviews)
     source_count = source.get("expected_source_block_count")
     if (type(source_count) is not int or source_count < 0 or source_count != source.get("ir_main_block_count")
             or source.get("source_block_count_delta") != 0
@@ -246,6 +269,21 @@ def derive_base_quality(job: Any) -> dict | None:
         warnings += table.counts.warning_count
         codes.update(flag.code for item in table.tables for flag in item.flags)
         if complete:
+            # 只有本代已写入 Word 的回退表可核销该表自身的几何候选。
+            retained_tables = {item["block_id"]: item["preserved_as"]
+                               for item in source.get("table_structure_reviews", ()) if item.get("block_id")}
+            for record in trace.block_render_map:
+                preservation = retained_tables.get(record.block_id)
+                if preservation is None or record.disposition != "rendered":
+                    continue
+                role = "table" if preservation == "native" else "image_fallback"
+                if any(target.role == role and target.part == "word/document.xml" for target in record.targets):
+                    compared_layout_hints.update((
+                        f"layout_bbox_missing:{record.block_id}",
+                        f"layout_wide_table:{record.block_id}",
+                        f"layout_two_column_candidate:{record.block_id}:left",
+                        f"layout_two_column_candidate:{record.block_id}:right",
+                    ))
             # 已逐格认证的修正片段可核销分栏提示。未决数值列若完整写入原生表，
             # 同片段的宽表分类仅作诊断，数值归属风险仍由活动警告保留。
             verified_value_table_blocks: set[str] = set()
@@ -291,4 +329,5 @@ def derive_base_quality(job: Any) -> dict | None:
         evaluation_state="complete" if complete else "incomplete",
         reason_code="base_checks_complete" if complete else "base_risk_unclassified" if unknown_count else "base_evidence_incomplete",
         report_sha256=canonical_sha256(metadata), receipt_sha256=receipt_identity(job), counts=counts,
-        warning_codes=sorted(codes), degraded_pages=degraded_pages, page_counts=page_counts).model_dump(mode="json")
+        warning_codes=sorted(codes), degraded_pages=degraded_pages, page_counts=page_counts,
+        table_structure_reviews=table_structure_reviews).model_dump(mode="json")

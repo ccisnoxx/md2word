@@ -525,7 +525,7 @@ class WordTableRendererMixin:
     def _render_table_placeholders(self, document, fragment_ids, assets, image_loader, context, config):
         """占位证明的固定 marker 保持，来源 owner 仍捕获真实诊断和图片段。"""
         import io
-        from app.services.document_ir.table_placeholder import LABEL, TablePlaceholderError, checksum, source_label, validate_image
+        from app.services.document_ir.table_placeholder import TablePlaceholderError, checksum, placeholder_label, source_label, validate_image
         from app.services.renderer.table_placeholder_evidence import marker
         for index, binding in enumerate(context.placeholders):
             if binding.fragment_id not in fragment_ids:
@@ -540,7 +540,7 @@ class WordTableRendererMixin:
             start.set(qn("w:id"), str(2_000_000 + index))
             start.set(qn("w:name"), marker(binding))
             paragraph._p.append(start)
-            paragraph.add_run(LABEL + "\n" + source_label(binding) + "\n")
+            paragraph.add_run(placeholder_label(binding) + "\n" + source_label(binding) + "\n")
             try:
                 shape = paragraph.add_run().add_picture(io.BytesIO(content), width=self._available_table_width(document))
                 shape._inline.docPr.set("descr", binding.placeholder_id)

@@ -10,13 +10,15 @@ from typing import Callable, Literal, Protocol
 import warnings
 
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.services.failure_context import attach_failure_context
 
 VERSION = "table-placeholder/v1"
 BLOCKER = "table_noneditable_placeholder"
 LABEL = "表格非编辑占位；质量阻塞，不可交付"
+REVIEW_LABEL = "已按来源图像保留表格；该表格不可编辑，请人工复核"
+TableStructureReason = Literal["invalid_table_html", "invalid_table_merge", "empty_table_html"]
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
 MAX_PIXELS = 16_000_000
 MAX_PLACEHOLDERS = 64
@@ -51,7 +53,8 @@ class TablePlaceholderBinding(BaseModel):
     owner_block_id: str
     content_list_sha256: str
     fragment_sha256: str = Field(pattern=HASH_PATTERN)
-    html_state: Literal["missing", "empty"]
+    html_state: Literal["missing", "empty", "present"]
+    structure_recovery: TableStructureReason | None = Field(default=None, exclude_if=lambda value: value is None)
     asset_ref: str
     asset_sha256: str = Field(pattern=HASH_PATTERN)
     source_kind: Literal["mineru_reference", "source_pdf_crop"]
@@ -61,6 +64,24 @@ class TablePlaceholderBinding(BaseModel):
     bbox: tuple[float, float, float, float] | None = Field(default=None, strict=False)
     frame: tuple[float, float] | None = Field(default=None, strict=False)
     provider: str
+
+    @model_validator(mode="after")
+    def _validate_structure_recovery(self):
+        if not placeholder_recovery_matches_state(self.html_state, self.structure_recovery):
+            raise TablePlaceholderError("table_placeholder_integrity_failed")
+        return self
+
+
+def placeholder_recovery_matches_state(html_state: str, reason: TableStructureReason | None) -> bool:
+    """非空原表只允许因已识别的 HTML 或合并格问题改用图像。"""
+    if html_state == "present":
+        return reason in {"invalid_table_html", "invalid_table_merge"}
+    return reason in {None, "invalid_table_html"}
+
+
+def placeholder_label(binding: TablePlaceholderBinding) -> str:
+    """历史绑定继续核对保存时的原始提示文本。"""
+    return REVIEW_LABEL if binding.structure_recovery is not None else LABEL
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,7 +158,9 @@ def binding_identity(binding: TablePlaceholderBinding) -> str:
 
 
 def prepare_placeholders(document, references, *, source_loader: Callable[[], PdfCropSource] | None,
-                         crop_provider: PdfTableCropProvider | None) -> list[PlaceholderAsset]:
+                         crop_provider: PdfTableCropProvider | None,
+                         unavailable_fragments: list[str] | None = None,
+                         reviewable_fragments: frozenset[str] = frozenset()) -> list[PlaceholderAsset]:
     """仅为仍缺少数据的片段准备占位绑定。"""
     from app.services.document_ir.integrity import build_page_counts
     from app.services.document_ir.models import DocumentIRAsset
@@ -220,6 +243,7 @@ def prepare_placeholders(document, references, *, source_loader: Callable[[], Pd
                 placeholder_id="pending", job_id=document.metadata.job_id, fragment_id=fragment.fragment_id, logical_group_id=item.logical_group_id,
                 owner_block_id=item.block_id, content_list_sha256=document.metadata.mineru_validation.content_list_sha256,
                 fragment_sha256=canonical_hash(fragment.raw_fragment), html_state=fragment.html_state,
+                structure_recovery=fragment.structure_recovery,
                 asset_ref=asset_ref, asset_sha256=checksum(content), source_kind=source_kind,
                 source_file_id=document.metadata.source_file_id, source_pdf_sha256=pdf_hash,
                 page_index=span.page_index, bbox=span.bbox, frame=frame, provider=provider,
@@ -227,14 +251,23 @@ def prepare_placeholders(document, references, *, source_loader: Callable[[], Pd
             binding.placeholder_id = binding_identity(binding)
             bindings.append(binding)
         except TablePlaceholderError as error:
+            if (unavailable_fragments is not None
+                    and fragment.fragment_id in reviewable_fragments
+                    and item.asset is None and total <= MAX_TOTAL_BYTES and error.code in {
+                        "table_placeholder_source_unavailable", "table_placeholder_geometry_invalid",
+                        "table_placeholder_crop_failed",
+                    }):
+                unavailable_fragments.append(fragment.fragment_id)
+                continue
             # 跨页片段的 render owner 可能在首页，定位必须取实际来源 span。
             attach_failure_context(error, **{**document_context, "block_ids": [item.block_id],
                                              "source_page_index": span.page_index})
             raise
-    document.metadata.table_placeholders_version = VERSION
+    document.metadata.table_placeholders_version = VERSION if bindings else None
     document.metadata.table_placeholders = bindings
     try:
-        decode_placeholders(document)
+        if not unavailable_fragments:
+            decode_placeholders(document)
     except TablePlaceholderError as error:
         attach_failure_context(error, **document_context)
         raise
@@ -269,6 +302,7 @@ def decode_placeholders(document, *, require_bound: bool = False) -> list[TableP
         asset = assets.get(binding.asset_ref)
         if (binding.placeholder_id != binding_identity(binding) or binding.job_id != metadata.job_id or binding.owner_block_id != item.block_id
                 or binding.logical_group_id != item.logical_group_id or binding.html_state != fragment.html_state
+                or binding.structure_recovery != fragment.structure_recovery
                 or binding.content_list_sha256 != metadata.mineru_validation.content_list_sha256
                 or binding.fragment_sha256 != canonical_hash(fragment.raw_fragment)
                 or binding.source_file_id != metadata.source_file_id or binding.page_index != fragment.source_span.page_index

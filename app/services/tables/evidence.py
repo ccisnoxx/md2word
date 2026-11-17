@@ -5,6 +5,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, ValidationError, model_validator
 
+from app.services.document_ir.table_placeholder import TableStructureReason, placeholder_recovery_matches_state
 from app.services.tables.models import (
     LEGACY_VALUE_COLUMN_SPAN_AMBIGUOUS, CellId, FragmentId, NonNegativeInt,
     PositiveInt, Sha256, canonical_json_bytes, canonical_sha256,
@@ -169,6 +170,7 @@ class PlaceholderEvidence(EvidenceModel):
     source_label_sha256: Checksum
     proof_sha256: Checksum
     issue_code: Literal["table_noneditable_placeholder"]
+    structure_recovery: TableStructureReason | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _media(self) -> Self:
@@ -190,8 +192,7 @@ class EvidenceFlag(EvidenceModel):
                    "table_reference": REFERENCE_WARNINGS, "table_placeholder": {"table_noneditable_placeholder"}}
         if (self.code not in allowed[self.producer]
                 or self.producer == "table_rendering" and self.severity != ("blocker" if self.code in NATIVE_BLOCKERS else "warning")
-                or self.producer == "table_reference" and self.severity != "warning"
-                or self.producer == "table_placeholder" and self.severity != "blocker"):
+                or self.producer == "table_reference" and self.severity != "warning"):
             _invalid("table_evidence_input")
         return self
 
@@ -340,8 +341,10 @@ class TableEvidence(EvidenceModel):
                 offset = primary.output_rows[0] - primary.retained_source_rows[0]
                 if item.upstream_covered_rows != [offset + coverage.row_start, offset + coverage.row_end]:
                     _invalid("table_evidence_input")
-        for identity in placeholder_ids:
-            if fragments[identity].html_state == "present" or fragments[identity].upstream_coverage is not None:
+        for item in self.placeholders:
+            fragment = fragments[item.fragment_id]
+            if (fragment.upstream_coverage is not None
+                    or not placeholder_recovery_matches_state(fragment.html_state, item.structure_recovery)):
                 _invalid("table_evidence_input")
         source_flags = table_validator_flags(report, resolved=self._resolved_value_column_findings())
         if [f for f in self.flags if f.producer == "table_validator"] != source_flags:
@@ -354,7 +357,8 @@ class TableEvidence(EvidenceModel):
                     identity="table-observation:" + canonical_sha256(["table_reference", code, reference.fragment_id]),
                     fragment_id=reference.fragment_id))
         expected_placeholder = [EvidenceFlag(producer="table_placeholder", code="table_noneditable_placeholder",
-            severity="blocker", identity=item.placeholder_id, fragment_id=item.fragment_id) for item in self.placeholders]
+            severity="warning" if item.structure_recovery is not None else "blocker",
+            identity=item.placeholder_id, fragment_id=item.fragment_id) for item in self.placeholders]
         if ([f for f in self.flags if f.producer == "table_reference"] != expected_reference
                 or [f for f in self.flags if f.producer == "table_placeholder"] != expected_placeholder):
             _invalid("table_evidence_input")

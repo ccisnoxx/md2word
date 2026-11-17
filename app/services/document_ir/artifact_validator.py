@@ -412,7 +412,7 @@ class MinerUArtifactValidator:
             raise MinerUArtifactValidationError(self.report)
 
     def complete_validation(self, effective_blocks: list[dict[str, Any]], *, package_root: Path,
-                            content_list_path: Path) -> None:
+                            content_list_path: Path, reviewable_table_structure: bool = False) -> None:
         """既有归一化完成后验证保留对象；原始安全问题始终在此前阻断。"""
         filtered = {source["json_pointer"] for source in self.report.normalization.get("filtered_blocks", [])}
         degradable_tables: set[str] = set()
@@ -421,7 +421,7 @@ class MinerUArtifactValidator:
             # 旧空表判据只读取可识别 HTML；非空坏 HTML 不能借合并回执获得空表豁免。
             if issue.code == "invalid_table_html" and issue.json_pointer not in filtered and not issue.stops_conversion:
                 # 只推迟仍在有效块中的坏表格；已被归一化移除的块无从降级，必须照旧中止。
-                if issue.page_index is not None and issue.json_pointer in effective_pointers:
+                if (issue.page_index is not None or reviewable_table_structure) and issue.json_pointer in effective_pointers:
                     # 第三批 C1：有页码的坏表格先推迟，由 converter 决定整页降级或恢复中止。
                     degradable_tables.add(issue.json_pointer)
                     continue
@@ -477,6 +477,29 @@ class MinerUArtifactValidator:
             return
         self.check_report_limits()
 
+    def mark_preserved_table(self, json_pointer: str, reason: str, *, page_index: int | None) -> None:
+        """仅在原生或图像已保留时调整同一片段的来源问题。"""
+        if reason not in {"empty_table_html", "invalid_table_html", "invalid_table_merge"}:
+            raise ValueError("未知的表格保留原因。")
+        issues = [item for item in self.report.blockers if item.json_pointer == json_pointer
+                  and item.code in {"empty_table_html", "invalid_table_html"} and not item.stops_conversion]
+        if not any(item.code == reason for item in issues):
+            self.add_issue(reason, MinerUSourceLocator(json_pointer=json_pointer, page_index=page_index),
+                           severity="warning", stops_conversion=False, field="html")
+        for issue in issues:
+            self.report.blockers.remove(issue)
+            counts = self.report.issue_counts["blocker"]
+            counts[issue.code] -= 1
+            if not counts[issue.code]:
+                del counts[issue.code]
+            self.report.blocker_count -= 1
+            issue.severity = "warning"
+            self.report.warnings.append(issue)
+            counts = self.report.issue_counts["warning"]
+            counts[issue.code] = counts.get(issue.code, 0) + 1
+            self.report.warning_count += 1
+        self.check_report_limits()
+
     def restore_deferred_fatal(self, json_pointer: str) -> None:
         """把推迟的非中止问题（回退图片或可降级表格）恢复为中止错误。"""
         issue = next((item for item in self.report.blockers if item.json_pointer == json_pointer
@@ -493,7 +516,8 @@ class MinerUArtifactValidator:
         self.add_issue(error.code, field=field, facts=error.facts)
 
     def validate(self, payload: Any, *, package_root: Path, content_list_path: Path,
-                 merged_paragraphs: dict[MinerUBlockKey, MergedParagraphEvidence] | None = None) -> MinerUValidatedContent:
+                 merged_paragraphs: dict[MinerUBlockKey, MergedParagraphEvidence] | None = None,
+                 reviewable_table_structure: bool = False) -> MinerUValidatedContent:
         # JSON 解码已把合法 surrogate pair 合成字符；残留码位不能进入正文或 UTF-8 报告。
         pending = [payload]
         while pending:
@@ -638,7 +662,8 @@ class MinerUArtifactValidator:
                                 and (figure_path := select_table_figure(block)) is not None
                                 and [(field, value) for field, value in self._asset_paths(block, locator) if value]
                                 == [(f"{pointer}/content/image_source/path", figure_path)]
-                                and _word_supported(asset.content)):
+                                and _word_supported(asset.content)
+                                and (not reviewable_table_structure or self._has_valid_figure_table_structure(block))):
                             # 只改 validator 的消费视图，locator 继续记录原始 table。
                             copied["type"] = "image"
                             copied["_mineru_table_figure"] = True
@@ -669,6 +694,16 @@ class MinerUArtifactValidator:
         if not self.report.can_convert:
             raise MinerUArtifactValidationError(self.report)
         return MinerUValidatedContent(blocks=normalized, report=self.report, table_references=table_references)
+
+    @staticmethod
+    def _has_valid_figure_table_structure(block: dict[str, Any]) -> bool:
+        """只有原规则已命中的图表才补验结构，坏表交回普通转换的保留路径。"""
+        from app.services.document_ir.models import DocumentIRBlock
+        from app.services.document_ir.table_structure_recovery import inspect_structure
+
+        source = DocumentIRBlock(id="table-figure-source", type="table", order=0, html=select_mineru_table_html(block))
+        reason, _ = inspect_structure(source, 0, invalid_html=False)
+        return reason is None
 
     @staticmethod
     def _page_index(value: Any) -> int | None:

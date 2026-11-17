@@ -75,6 +75,7 @@ from app.services.document_ir.table_placeholder import (
     prepare_placeholders, validate_geometry, validate_image,
 )
 from app.services.document_ir.table_upstream_coverage import attach_upstream_table_coverage
+from app.services.document_ir.table_structure_recovery import preserve_table_structures
 
 PDF_FALLBACK_SOURCE_PATH = "derived/pdf-region-crop.png"
 
@@ -134,6 +135,8 @@ class MinerUToDocumentIRService:
         placeholder_source_loader: Callable[[], PdfCropSource] | None = None,
         table_header_reviews: tuple[TableHeaderReview, ...] = (),
         translation_item_scope: AnnotationTranslationScope | None = None,
+        reviewable_table_structure: bool = False,
+        table_structure_source_loader: Callable[[], PdfCropSource] | None = None,
         table_value_column_reviews: tuple[TableValueColumnReview, ...] = (),
         legacy_value_column_replay: LegacyValueColumnReplay | None = None,
         auto_table_value_columns: bool = False,
@@ -161,6 +164,7 @@ class MinerUToDocumentIRService:
                 payload, _checksum = read_json_payload(content_list_path, policy=self.policy)
                 same_document_layout = read_same_document_layout(content_list_path, policy=self.policy)
                 validated = validator.validate(payload, package_root=package_root, content_list_path=content_list_path,
+                                               reviewable_table_structure=reviewable_table_structure,
                                                merged_paragraphs=find_merged_paragraphs(
                                                    same_document_layout[0] if same_document_layout is not None else None))
                 table_sources = capture_table_sources(payload, validated.blocks, checksum=report.content_list_sha256)
@@ -185,6 +189,8 @@ class MinerUToDocumentIRService:
                     value_column_frozen_page_equivalence=value_column_frozen_page_equivalence,
                     same_document_layout=same_document_layout,
                     translation_item_scope=translation_item_scope,
+                    reviewable_table_structure=reviewable_table_structure,
+                    table_structure_source_loader=table_structure_source_loader,
                 )
             except MinerUPackageError as error:
                 validator.add_package_error(error)
@@ -213,6 +219,8 @@ class MinerUToDocumentIRService:
         value_column_frozen_page_equivalence: PdfValueColumnPageEquivalence | None,
         same_document_layout: tuple[Any, str] | None,
         translation_item_scope: AnnotationTranslationScope | None,
+        reviewable_table_structure: bool,
+        table_structure_source_loader: Callable[[], PdfCropSource] | None,
     ) -> MinerUToDocumentIRResult:
         """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
         validation_report = validator.report
@@ -241,7 +249,15 @@ class MinerUToDocumentIRService:
         validator.record_normalization(before_merge, raw_blocks, filtered_page_index=filtered_page_index,
                                        filtered_block_count=before_filter_count - len(before_merge),
                                        merge_evidence=merge_evidence, filtered_sources=filtered_sources)
-        validator.complete_validation(raw_blocks, package_root=package_root, content_list_path=content_list_path)
+        validator.complete_validation(raw_blocks, package_root=package_root, content_list_path=content_list_path,
+                                      reviewable_table_structure=reviewable_table_structure)
+        recoverable_table_pointers = {
+            issue.json_pointer for issue in validation_report.blockers
+            if reviewable_table_structure and issue.code == "invalid_table_html" and not issue.stops_conversion
+        }
+        legacy_degradation_blocks = [
+            block for block in raw_blocks if block.get("_mineru_degradable") not in recoverable_table_pointers
+        ]
         try:
             reconciled = reconcile_captions(raw_blocks)
         except DocumentIntegrityError as error:
@@ -263,11 +279,11 @@ class MinerUToDocumentIRService:
         source_loader = functools.cache(placeholder_source_loader) if placeholder_source_loader is not None else None
         fallback_crops = self._crop_image_fallbacks(raw_blocks, pages, validator, source_loader,
                                                     source_file_id=source_file_id)
-        degradable_pages = {parse_page_index(block) for block in raw_blocks if block.get("_mineru_degradable")}
+        degradable_pages = {parse_page_index(block) for block in legacy_degradation_blocks if block.get("_mineru_degradable")}
         if degradable_pages and (None in degradable_pages or self.page_rasterizer is None or source_loader is None
                                  or not self.degradation_policy.allows(len(degradable_pages), len(pages))):
             # 降级前提不满足时在构建 IR 之前中止，不产生半合法 IR。
-            self._abort_deferred(raw_blocks, validator)
+            self._abort_deferred(legacy_degradation_blocks, validator)
 
         inserted_sections = 0
         for index, raw_block in enumerate(raw_blocks):
@@ -438,7 +454,7 @@ class MinerUToDocumentIRService:
             assets=ir_assets,
             quality_flags=quality_flags,
         )
-        table_sources = self._degrade_pages(document, raw_blocks, table_sources, validator, source_loader,
+        table_sources = self._degrade_pages(document, legacy_degradation_blocks, table_sources, validator, source_loader,
                                             image_assets, source_file_id=source_file_id)
         # 在来源账本/ref owner 上准备事实，再一次验证最终模型与源清单；不输出半合法 IR。
         attach_logical_table_groups(document, table_sources)
@@ -447,6 +463,27 @@ class MinerUToDocumentIRService:
             attach_table_header_reviews(document, table_header_reviews, table_sources.checksum, source_loader)
         if same_document_layout is not None and content_list_path.name.endswith("content_list_v2.json"):
             attach_upstream_table_coverage(document, *same_document_layout)
+        if reviewable_table_structure:
+            reference_assets = attach_table_references(document, table_references)
+            structure_source = functools.cache(table_structure_source_loader) if table_structure_source_loader else source_loader
+            try:
+                placeholder_assets, removed, preserved_pages = preserve_table_structures(
+                    document, table_references, invalid_html_pointers=recoverable_table_pointers,
+                    source_loader=structure_source, crop_provider=self.pdf_crop_provider, page_rasterizer=self.page_rasterizer,
+                )
+                image_assets[:] = [item for item in image_assets if item.block_id not in removed]
+                image_assets.extend(MinerUImageAsset(
+                    asset_id=item.asset_id, block_id=item.block_id, source_path=PAGE_RASTER_SOURCE_PATH,
+                    mime_type="image/png", content=item.content, page_raster=item.page_raster,
+                ) for item in preserved_pages)
+                asset_ids = {asset.id for asset in document.assets}
+                reference_assets = [item for item in reference_assets if item.asset_id in asset_ids]
+                for review in document.metadata.table_structure_reviews:
+                    validator.mark_preserved_table(review.source_pointer, review.reason, page_index=review.page_index)
+                validation_report.sort_details()
+            except TablePlaceholderError as error:
+                error.mineru_validation_report = validation_report
+                raise
         if auto_table_value_columns:
             from app.services.document_ir.pdf_value_column_review_flow import attach_automatic_table_value_column_reviews
 
@@ -460,13 +497,14 @@ class MinerUToDocumentIRService:
             )
         elif table_value_column_reviews:
             attach_table_value_column_reviews(document, table_value_column_reviews, table_sources.checksum, source_loader)
-        reference_assets = attach_table_references(document, table_references)
-        try:
-            placeholder_assets = prepare_placeholders(document, table_references,
-                source_loader=source_loader, crop_provider=self.pdf_crop_provider)
-        except TablePlaceholderError as error:
-            error.mineru_validation_report = validation_report
-            raise
+        if not reviewable_table_structure:
+            reference_assets = attach_table_references(document, table_references)
+            try:
+                placeholder_assets = prepare_placeholders(document, table_references,
+                    source_loader=source_loader, crop_provider=self.pdf_crop_provider)
+            except TablePlaceholderError as error:
+                error.mineru_validation_report = validation_report
+                raise
         if translation_item_scope is not None:
             # 布局筛选完成后，只登记有效的注释源位置和派生关系。
             document.metadata.translation_item_scope = translation_item_scope

@@ -87,6 +87,13 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 样本证据：RND-503依赖集成174项通过；component/direct/真实客户端以本轮validation分层记录，不借历史结果声称新样本通过。
 - 来源/取代：已接受IR-201/IR-204最终17cde1f的有边界集成，见RND-503 dependency-integration记录；不由本条推导未接入的其它Worker事件/仓储能力。
 
+普通直转的表格结构恢复覆盖坏表 HTML、非法合并格和空表占位失败。按可认证的原生表、片段参考图或源 PDF 裁图、原 PDF 整页依次保留内容。原始表片段和内容摘要照常保存。只有选定的结果通过来源和 Word 实物校验时，才将相应问题投影为警告。
+
+- 同代基础质量贡献保存复核定位。现有 `GET /api/v1/document-jobs/{job_id}/quality` 的 `document_base` 生产者按需返回 `table_structure_reviews`，包含 `source_pointer`、一基 `page_number`（未知时为 null）、`reason`、`preserved_as`、`severity="warning"`、`manual_review_required=true`。旧结果无该字段。
+- 整页回退允许此类表格的单页文档和超过常规降级比例的页面，继续核验跨页依赖、来源身份和资源硬上限。图像回退在 Word 标注不可编辑。没有可靠回退时使用带定位的失败，资产错绑、摘要不符及 Word 实物断言继续失败。
+- 坏 HTML 的可确定闭合可继续保留可编辑单元格。不能可靠写成原生表时可以保存同一片段的已核验图像。禁止拿空白占位充当表格保留，或把质检实物不一致转成普通警告。
+- 定向验收见 `tests/test_reviewable_table_structure_fallback.py`。覆盖三类警告的内部签发、实际下载和 Word 内容，以及无可靠回退、摘要不符和 Word 漏表负例。
+
 ### INPUT-003 最终宣传页保守过滤
 
 - 状态：`enforced-tested`

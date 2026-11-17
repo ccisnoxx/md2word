@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domains.document_jobs.base_quality import TableStructureReviewSummary
 from app.domains.document_jobs.models import (
     DocumentJobDeliveryStatus,
     DocumentJobQualityStatus,
@@ -97,6 +98,8 @@ class DocumentQualityProducerResponse(QualityReviewModel):
     counts: DocumentQualityCountsResponse
     flags: list[str] = Field(default_factory=list)
     unknown_flag_count: QualityCount = 0
+    table_structure_reviews: list[TableStructureReviewSummary] = Field(
+        default_factory=list, exclude_if=lambda value: not value)
 
 
 class DocumentQualityProducersResponse(QualityReviewModel):
