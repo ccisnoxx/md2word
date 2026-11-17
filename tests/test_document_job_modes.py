@@ -133,26 +133,44 @@ class DocumentJobModesTests(TestCase):
         self.assertEqual(post.method, "POST")
         return json.loads(post.body)
 
-    def test_mineru_wire_language_matches_snapshot_for_five_modes(self):
-        with self._client_runtime(versioned=True) as (runtime, client, operator, _admin):
-            fixtures.publish_default_job_resources(runtime)
-            for mode, expected in (
-                ("en2zh", "en"), ("ru2zh", "east_slavic"), ("zh2en", "ch"), ("zh2ru", "ch"), ("direct", "latin"),
-            ):
-                with self.subTest(mode=mode):
-                    runtime.settings.mineru_language = "latin"
-                    source = self._upload_source_pdf(client, operator)
-                    response = client.post(
-                        "/api/v1/document-jobs", headers=operator,
-                        json={"source_file_id": source["id"], "translation_mode": mode},
-                    )
-                    self.assertEqual(response.status_code, 201, response.json())
-                    job = response.json()["job"]
-                    self.assertEqual(job["request_snapshot"]["resources"]["mineru"]["language"], expected)
-                    runtime.settings.mineru_language = "en"
-                    request = self._run_parse_and_read_mineru_request(runtime, job["id"])
-                    self.assertEqual(request["language"], expected)
-                    self.assertTrue(request["files"][0]["is_ocr"])
+    def _assert_mineru_snapshot_language(self, snapshot, expected, *, versioned):
+        if versioned:
+            self.assertEqual(snapshot["resources"]["mineru"]["language"], expected)
+            self.assertNotIn("mineru_language", snapshot)
+        else:
+            self.assertIsNone(snapshot["resources"])
+            self.assertEqual(snapshot["mineru_language"], expected)
+
+    def test_translation_create_and_clone_freeze_mineru_source_language(self):
+        for versioned in (False, True):
+            with self._client_runtime(versioned=versioned) as (runtime, client, operator, _admin):
+                for mode, document_language, expected in (
+                    ("en2zh", "en", "en"), ("ru2zh", "ru", "east_slavic"),
+                    ("zh2en", "zh", "ch"), ("zh2ru", "zh", "ch"),
+                ):
+                    with self.subTest(versioned=versioned, mode=mode):
+                        runtime.settings.mineru_language = "latin"
+                        source = self._upload_source_pdf(client, operator)
+                        create = client.post(
+                            "/api/v1/document-jobs", headers=operator,
+                            json={"source_file_id": source["id"], "translation_mode": mode},
+                        )
+                        self.assertEqual(create.status_code, 201, create.json())
+                        source_id = create.json()["job_id"]
+                        clone = client.post(
+                            f"/api/v1/document-jobs/{source_id}/clone", headers=operator,
+                            json={"config_strategy": "use_current_defaults", "document_language": document_language},
+                        )
+                        self.assertEqual(clone.status_code, 201, clone.json())
+                        jobs = ((source_id, "auto"), (clone.json()["job_id"], document_language))
+                        runtime.settings.mineru_language = "korean"
+                        for job_id, saved_document_language in jobs:
+                            job = runtime.document_job_repository.get_document_job(job_id)
+                            self.assertEqual(job.document_language, saved_document_language)
+                            self._assert_mineru_snapshot_language(job.request_snapshot, expected, versioned=versioned)
+                            request = self._run_parse_and_read_mineru_request(runtime, job_id)
+                            self.assertEqual(request["language"], expected)
+                            self.assertTrue(request["files"][0]["is_ocr"])
 
     def test_new_direct_binds_source_language_or_configured_mineru_default(self):
         for versioned in (False, True):
@@ -175,28 +193,76 @@ class DocumentJobModesTests(TestCase):
                         self.assertEqual(response.status_code, 201, response.json())
                         job_id = response.json()["job_id"]
                         snapshot = runtime.document_job_repository.get_document_job(job_id).request_snapshot
-                        if versioned:
-                            self.assertEqual(snapshot["resources"]["mineru"]["language"], expected)
-                            self.assertNotIn("mineru_language", snapshot)
-                        else:
-                            self.assertIsNone(snapshot["resources"])
-                            self.assertEqual(snapshot["mineru_language"], expected)
+                        self._assert_mineru_snapshot_language(snapshot, expected, versioned=versioned)
                         runtime.settings.mineru_language = "korean"
                         request = self._run_parse_and_read_mineru_request(runtime, job_id)
                         self.assertEqual(request["language"], expected)
+                        self.assertTrue(request["files"][0]["is_ocr"])
 
-    def test_mineru_job_and_clone_without_versioned_resources_keep_bound_language(self):
-        with self._client_runtime() as (runtime, client, operator, _admin):
-            runtime.settings.mineru_language = "zh"
-            _, job_id = self._create_direct(client, operator)
-            runtime.settings.mineru_language = "en"
-            clone = client.post(f"/api/v1/document-jobs/{job_id}/clone", headers=operator, json={})
-            self.assertEqual(clone.status_code, 201, clone.json())
-            for current_id in (job_id, clone.json()["job"]["id"]):
-                job = runtime.document_job_repository.get_document_job(current_id)
-                self.assertIsNone(job.request_snapshot["resources"])
-                self.assertEqual(job.request_snapshot["mineru_language"], "ch")
-                self.assertEqual(self._run_parse_and_read_mineru_request(runtime, current_id)["language"], "ch")
+    def test_keep_source_snapshot_requires_same_document_language_and_inherits_mineru_binding(self):
+        for versioned in (False, True):
+            with (
+                self.subTest(versioned=versioned),
+                self._client_runtime(versioned=versioned) as (runtime, client, operator, _admin),
+            ):
+                runtime.settings.mineru_language = "zh"
+                source, job_id = self._create_direct(client, operator)
+                url = f"/api/v1/document-jobs/{job_id}/clone"
+                runtime.settings.mineru_language = "en"
+                before = self._mutation_state(runtime, source["id"])
+                queue = replace_dependency(runtime.document_job_use_cases, "task_queue", Mock())
+                conflict = client.post(url, headers=operator, json={"document_language": "zh"})
+                queue.enqueue.assert_not_called()
+                self._assert_api_error(conflict, 409, "conflict")
+                self.assertEqual(conflict.json()["error"]["reason_code"], "clone_document_language_conflicts_with_snapshot")
+                self.assertEqual(self._mutation_state(runtime, source["id"]), before)
+
+                clone = client.post(url, headers=operator, json={"document_language": "auto"})
+                self.assertEqual(clone.status_code, 201, clone.json())
+                cloned = runtime.document_job_repository.get_document_job(clone.json()["job_id"])
+                self.assertEqual(cloned.document_language, "auto")
+                self.assertEqual(cloned.request_snapshot["document_language"], "auto")
+                self._assert_mineru_snapshot_language(cloned.request_snapshot, "ch", versioned=versioned)
+                self.assertEqual(self._run_parse_and_read_mineru_request(runtime, cloned.id)["language"], "ch")
+
+    def test_direct_clone_reselected_config_freezes_mineru_language(self):
+        for versioned in (False, True):
+            with self._client_runtime(versioned=versioned) as (runtime, client, _operator, admin):
+                runtime.settings.mineru_language = "japan"
+                _, auto_source_id = self._create_direct(client, admin)
+                source = self._upload_source_pdf(client, admin)
+                explicit = client.post(
+                    "/api/v1/document-jobs", headers=admin,
+                    json={"source_file_id": source["id"], "document_language": "en"},
+                )
+                self.assertEqual(explicit.status_code, 201, explicit.json())
+                explicit_source_id = explicit.json()["job_id"]
+                if versioned:
+                    fixtures.publish_template_resource_version(
+                        runtime, version="1", content=b"template-v1", make_default=False,
+                    )
+                for strategy in ("use_current_defaults", "select_published_versions"):
+                    for document_language, expected in (
+                        ("zh", "ch"), ("en", "en"), ("ru", "east_slavic"), ("auto", "latin"),
+                    ):
+                        with self.subTest(versioned=versioned, strategy=strategy, document_language=document_language):
+                            runtime.settings.mineru_language = "latin"
+                            source_id = explicit_source_id if document_language == "auto" else auto_source_id
+                            payload = {"config_strategy": strategy, "document_language": document_language}
+                            if versioned and strategy == "select_published_versions":
+                                payload["template_version_id"] = "default@1"
+                            clone = client.post(f"/api/v1/document-jobs/{source_id}/clone", headers=admin, json=payload)
+                            self.assertEqual(clone.status_code, 201, clone.json())
+                            cloned = runtime.document_job_repository.get_document_job(clone.json()["job_id"])
+                            self.assertEqual(cloned.document_language, document_language)
+                            self.assertEqual(cloned.request_snapshot["document_language"], document_language)
+                            self._assert_mineru_snapshot_language(cloned.request_snapshot, expected, versioned=versioned)
+                            if "template_version_id" in payload:
+                                template = cloned.request_snapshot["resources"]["template"]
+                                self.assertEqual((template["resource_id"], template["version"]), ("default", "1"))
+                            runtime.settings.mineru_language = "korean"
+                            request = self._run_parse_and_read_mineru_request(runtime, cloned.id)
+                            self.assertEqual(request["language"], expected)
 
     def test_mineru_legacy_snapshot_clone_and_retry_keep_existing_audit(self):
         with self._client_runtime(versioned=True) as (runtime, client, operator, _admin):
@@ -223,21 +289,35 @@ class DocumentJobModesTests(TestCase):
             self.assertEqual(runtime.document_job_repository.get_document_job(job_id).request_snapshot, legacy)
 
     def test_mineru_legacy_snapshot_without_language_uses_configured_fallback(self):
-        with self._client_runtime(versioned=True) as (runtime, client, operator, _admin):
-            _, job_id = self._create_direct(client, operator)
-            job = runtime.document_job_repository.get_document_job(job_id)
-            legacy = deepcopy(job.request_snapshot)
-            legacy["resources"]["mineru"].pop("language")
-            runtime.document_job_repository.update_document_job(job_id, request_snapshot=legacy)
-            runtime.settings.mineru_language = "zh"
-            clone = client.post(f"/api/v1/document-jobs/{job_id}/clone", headers=operator, json={})
-            self.assertEqual(clone.status_code, 201, clone.json())
-            cloned_job = clone.json()["job"]
-            self.assertEqual(cloned_job["request_snapshot"]["resources"]["mineru"]["language"], "ch")
-            runtime.settings.mineru_language = "en"
-            self.assertEqual(self._run_parse_and_read_mineru_request(runtime, cloned_job["id"])["language"], "ch")
-            runtime.settings.mineru_language = "zh"
-            self.assertEqual(self._run_parse_and_read_mineru_request(runtime, job_id)["language"], "ch")
+        for versioned in (False, True):
+            with (
+                self.subTest(versioned=versioned),
+                self._client_runtime(versioned=versioned) as (runtime, client, operator, _admin),
+            ):
+                source = self._upload_source_pdf(client, operator)
+                create = client.post(
+                    "/api/v1/document-jobs", headers=operator,
+                    json={"source_file_id": source["id"], "document_language": "en"},
+                )
+                self.assertEqual(create.status_code, 201, create.json())
+                job_id = create.json()["job_id"]
+                job = runtime.document_job_repository.get_document_job(job_id)
+                legacy = deepcopy(job.request_snapshot)
+                if versioned:
+                    legacy["resources"]["mineru"].pop("language")
+                else:
+                    legacy.pop("mineru_language")
+                runtime.document_job_repository.update_document_job(job_id, request_snapshot=legacy)
+                runtime.settings.mineru_language = "zh"
+                clone = client.post(f"/api/v1/document-jobs/{job_id}/clone", headers=operator, json={})
+                self.assertEqual(clone.status_code, 201, clone.json())
+                cloned = runtime.document_job_repository.get_document_job(clone.json()["job_id"])
+                self.assertEqual(cloned.document_language, "en")
+                self._assert_mineru_snapshot_language(cloned.request_snapshot, "ch", versioned=versioned)
+                runtime.settings.mineru_language = "en"
+                self.assertEqual(self._run_parse_and_read_mineru_request(runtime, cloned.id)["language"], "ch")
+                runtime.settings.mineru_language = "zh"
+                self.assertEqual(self._run_parse_and_read_mineru_request(runtime, job_id)["language"], "ch")
 
     def test_mineru_term_asset_rebind_preserves_existing_language(self):
         with self._client_runtime(versioned=True) as (runtime, client, _operator, admin):

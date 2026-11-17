@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/index.md","reason":"后端落点和定向验证约定"}
+{"file":".trellis/spec/backend/document-job-mode-contract.md","reason":"任务模式、语言与两种快照的兼容合同"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"应用层 conflict 及原因码的 HTTP 映射"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用现有模式和语言别名解析"}

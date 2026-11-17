@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/index.md","reason":"后端检查范围"}
+{"file":".trellis/spec/backend/document-job-mode-contract.md","reason":"复核任务模式、快照与历史兼容合同"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"复核 409 及原因码"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"定向测试与验收证据边界"}
