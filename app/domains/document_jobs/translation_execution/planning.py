@@ -17,6 +17,7 @@ from app.domains.translation.document_ir_translator import (
 )
 from app.domains.translation.models import TranslationProfileSnapshot
 from app.domains.translation.modes import spec_for_document_job_mode
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import DocumentIR
 
 
@@ -59,7 +60,10 @@ class TranslationPlanner:
         translation = record.metadata.get("translation")
         if not isinstance(translation, dict) or translation.get("role") != "source" or translation.get("applied") is not False:
             raise DocumentIRTranslationError("翻译 source IR 角色不一致。", code="translation_integrity_evidence_mismatch")
-        document_ir = DocumentIR.model_validate_json(content)
+        try:
+            document_ir = DocumentIR.model_validate_json(content)
+        except DocumentIntegrityError as error:
+            raise DocumentIRTranslationError.from_source_integrity(error) from error
         if (document_ir.metadata.job_id != job.id or document_ir.metadata.source_file_id != job.source_file_id
                 or document_ir.metadata.translation_items_applied is not None):
             raise DocumentIRTranslationError("翻译 source IR 文档来源不一致。", code="translation_integrity_evidence_mismatch")

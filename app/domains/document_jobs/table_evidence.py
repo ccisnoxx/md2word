@@ -14,6 +14,7 @@ from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.result_registration import ensure_result_descriptor_matches, retained_file_expiry
 from app.domains.resources.models import utc_now
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.table_value_column_review import PdfValueColumnUnresolved
 from app.services.renderer.render_evidence import validate_persisted_renderer_content
@@ -321,7 +322,7 @@ def verify_report(job, result, *, file_repository, file_service, job_repository)
             expected_template_version_id=result.metadata.get("template_version_id"))
         if actual.get("table_evidence") != core.model_dump(mode="json", warnings=False):
             raise TableEvidenceError("table_evidence_integrity")
-    except (ValueError, TypeError, KeyError):
+    except (DocumentIntegrityError, ValueError, TypeError, KeyError):
         raise TableEvidenceError("table_evidence_integrity") from None
     unresolved = _unresolved_value_columns(document, envelope.report)
     current()

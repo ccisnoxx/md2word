@@ -331,6 +331,7 @@ class TranslationBatchRunner:
                 error_message="翻译批次计划校验失败。",
                 trace_id=trace_id,
                 formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
+                failure_evidence=failure_policy.worker_failure_evidence(exc),
             )
             return None
         if summary is not None and summary.outcome in {"failed", "completed", "canceled", "validating"}:

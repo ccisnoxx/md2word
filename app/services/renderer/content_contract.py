@@ -12,6 +12,8 @@ from lxml import etree
 
 from app.conversion.docx_rules.formula import content_math_spans, formula_block_span, replay_formula_output, sha256_text
 from app.services.document_ir.integrity import DocumentIntegrityError, is_visible_body_block
+from app.services.document_ir.table_annotations import preserves_annotation_positions
+from app.services.renderer.layout_plan import text_annotation_style, text_annotations
 from app.services.renderer.render_plan import canonical_bytes, content_hash, document_ir_hash
 
 CONTENT_VERSION = "renderer-content/v2"
@@ -21,12 +23,18 @@ MAX_FORMULA_SOURCE_BYTES = 8 * 1024 * 1024
 MAX_CONTENT_SCOPES = 100_000
 MAX_CONTENT_SCOPE_BYTES = 8 * 1024 * 1024
 _SOURCE_KEYS = ("block_id", "field", "start", "end", "boundary", "source_sha256")
+_TEXT_ANNOTATION_MARKER_PREFIX = "md2w_ann_"
 
 
 def content_failure(code: str = "ir_render_evidence:invalid_contract") -> DocumentIntegrityError:
     """新必需内容错误有固定类型/版本，消费者不按异常正文猜分类。"""
     return DocumentIntegrityError("DocumentIR→DOCX", {
         "renderer_content_contract_version": CONTENT_VERSION, "blocking_quality_flags": [code]})
+
+
+def text_annotation_marker(block_id: str, field: str, index: int) -> str:
+    """正文注释在 Word 中的强制实物定位，由块、字段和原下标确定。"""
+    return _TEXT_ANNOTATION_MARKER_PREFIX + content_hash([block_id, field, index])[:28]
 
 
 def validate_scope_budget(value: Any) -> None:
@@ -113,7 +121,7 @@ def formula_sources(document, table_plan) -> list[FormulaSource]:
                     item.representative_block_id, f"{item.representative_field}/{item.representative_item_index}",
                     "table_annotation_coalesced")
     result = []
-    preserve_positions = document.metadata.translation_item_scope is not None
+    preserve_positions = preserves_annotation_positions(document)
 
     def add(block_id, field, text, *, formula=False, spans=None):
         values = spans if spans is not None else [(span.start, span.end, span) for span in
@@ -158,7 +166,7 @@ def formula_sources(document, table_plan) -> list[FormulaSource]:
                     if chosen != field:
                         aliases[block.id, field] = (block.id, chosen, "annotation_duplicate")
                     add(block.id, field, text.strip())
-        elif block.type != "table" or not preserve_positions or block.caption_text_alias_index is None:
+        elif not preserve_positions or block.caption_text_alias_index is None:
             add(block.id, "text", block.text or "")
         if block.type == "table":
             for field in ("captions", "footnotes"):
@@ -172,6 +180,9 @@ def formula_sources(document, table_plan) -> list[FormulaSource]:
                         aliases[block.id, name] = (block.id, seen[text], "annotation_duplicate")
                     seen.setdefault(text, name)
                     add(block.id, name, text)
+        else:
+            for field, index, text in text_annotations(block):
+                add(block.id, f"{field}/{index}", text)
     lookup = {source.key: source for source in result}
     if len(lookup) != len(result):
         raise content_failure()
@@ -440,7 +451,43 @@ def verify_native_content(document, content: bytes, table_plan, formula_report, 
                 raise content_failure("ir_render_evidence:target_mismatch")
             bindings.append((item.block_id, item.field, item.item_index, index.paths[paragraph][1]))
         annotations[unit.key] = tuple(bindings)
+    _verify_text_annotations(document, body, writer, config, replay_leaf)
     return index, native, annotations
+
+
+def _verify_text_annotations(document, body, writer, config, replay_leaf) -> None:
+    """不依赖可选导航证据，逐源位置复算正文注释的实际 Word 段落。"""
+    groups = [(block, items) for block in document.blocks if (items := text_annotations(block))]
+    if not groups:
+        return
+    markers = defaultdict(list)
+    for start in body.iter(qn("w:bookmarkStart")):
+        name = start.get(qn("w:name"), "")
+        if name.startswith(_TEXT_ANNOTATION_MARKER_PREFIX):
+            markers[name].append(start)
+    matched, paragraphs = set(), set()
+    for block, items in groups:
+        previous = None
+        for field, index, text in items:
+            name = text_annotation_marker(block.id, field, index)
+            if len(markers[name]) != 1:
+                raise content_failure("ir_render_evidence:target_mismatch")
+            start = markers[name][0]
+            actual, end = start.getparent(), start.getnext()
+            if (actual.tag != qn("w:p") or actual.getparent() is not body or actual in paragraphs
+                    or end is None or end.tag != qn("w:bookmarkEnd") or end.get(qn("w:id")) != start.get(qn("w:id"))
+                    or previous is not None and actual.getprevious() is not previous):
+                raise content_failure("ir_render_evidence:target_mismatch")
+            with replay_leaf(actual, (block.id, f"{field}/{index}")) as paragraph:
+                writer._fill_paragraph(paragraph, text, getattr(config, text_annotation_style(block, field, index)),
+                                       terminology=config.terminology)
+                if semantic_projection(paragraph._p, include_fields=True) != semantic_projection(actual, include_fields=True):
+                    raise content_failure("ir_render_evidence:target_mismatch")
+            matched.add(name)
+            paragraphs.add(actual)
+            previous = actual
+    if matched != markers.keys():
+        raise content_failure("ir_render_evidence:target_mismatch")
 
 
 def build_v2_content_evidence(document, content, layout, *, coverage, formula_report, image_report,

@@ -86,6 +86,8 @@ def worker_failure_message(error: Exception) -> str:
 def worker_failure_evidence(error: Exception) -> dict[str, Any]:
     """提取原异常拥有的结构化报告，不读取可能已换代的任务状态。"""
 
+    if isinstance(error, DocumentIRTranslationError) and isinstance(error.__cause__, DocumentIntegrityError):
+        error = error.__cause__
     evidence: dict[str, Any] = {}
     if isinstance(error, MinerUArtifactValidationError):
         evidence["mineru_validation"] = error.report.model_dump(mode="json")

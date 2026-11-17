@@ -74,7 +74,7 @@ Provider JSON/传输/截断保留 `translation_provider_invalid_response/failed/
 
 ### 1. 适用范围
 
-修改照片、图表和表格的注释抽取、翻译批次、表格上下文、译后 IR 或审核投影时适用。direct 不建立翻译范围，沿原资源与渲染合同。
+修改注释抽取、翻译批次、表格上下文、译后 IR 或审核投影时适用。direct 按来源账本决定注释位置渲染，仍不建立翻译范围。
 
 ### 2. 接口
 
@@ -87,6 +87,7 @@ Provider JSON/传输/截断保留 `translation_provider_invalid_response/failed/
 - 对非空数组项按原下标生成 `block_0017.captions.0000` 或 `block_0017.footnotes.0000`。跳过空位时保留后续下标。真实正文、列表、HTML 目标继续使用旧 ID 和顺序。
 - `caption_text_alias_index` 由转换器实际派生分支产生。该范围内的派生 `text` 使用同一题注译文。同文的独立段落仍有自己的目标。源 Artifact 保留原文和源关系。
 - Codec 和 Validator 核验整个批次，fan-in 按源范围核对预期集合。完成回填的目标声明 `translation_items_applied=true`。源 Artifact 读取拒绝目标声明。旧源件的批次、重试和审核继续沿旧范围。
+- 新账本的列表项和注释沿用已有 `block_id.field.index` ID。翻译计划与回填将有序目标对齐冻结账本，确认每个位置恰好有一个已核验非空结果，再用该结果登记目标摘要。目标正文重新计算 SHA-256 后与登记值比对。只更新目标摘要，列表源序列、注释源映射、题注别名和续表代表保持稳定。Worker 在登记译后 IR 与发布证据之前从已核验的批次结果重新核对实际译文与其摘要，防止两者一起漂移。[来源项账本合同](./word-generation-rules.md#来源项账本合同)
 - 审核 `/review/blocks/{block_id}` 将注释原译文及匹配批次证据绑定到 `unit_id`。恢复摘要读取未裁剪的真实回填值。新范围的已完成目标在翻译 QA 中仅用该译后 IR 绑定的调试档案对照原译文，仅用已采用调用日志的术语证据。同代迟到的调用仍可在诊断列表查看。权限及脱敏沿用原合同。
 
 ### 4. 错误矩阵
@@ -97,6 +98,7 @@ Provider JSON/传输/截断保留 `translation_provider_invalid_response/failed/
 | fan-in 缺少注释或有多余 item | `translation_fan_in_mismatch`，无法登记成功译后 IR。 |
 | 数字、单位或公式占位符丢失、交换或被修改 | 沿已有完整性专码拒绝，无法使用部分译文。 |
 | 源字节、范围、别名或审核证据错绑 | 沿输入和审核的既有完整性校验拒绝。 |
+| 新账本与源计划、目标位置或实际译文不一致 | 以 `source_ir_integrity` 标记阻断。Worker 保留 `translation_failed` 业务码并投影账本阻断原因，当前代不登记成功目标件。 |
 
 ### 5. 实例
 

@@ -11,6 +11,8 @@ from app.conversion.runtime.table_html_parser import parse_html_table
 from app.services.document_ir.integrity import build_source_integrity, is_visible_body_block
 from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.caption_reconciler import RULE_VERSION as CAPTION_RULE_VERSION
+from app.services.document_ir.source_item_ledger import validate_source_item_ledgers
+from app.services.document_ir.table_annotations import preserves_annotation_positions
 from app.services.renderer.docx_quality import (
     DOCX_QUALITY_VERSION,
     LITERAL_IDENTIFIER_RE,
@@ -19,7 +21,7 @@ from app.services.renderer.docx_quality import (
     validate_formula_report,
     verify_docx_formula_report,
 )
-from app.services.renderer.layout_plan import LayoutPlan, build_layout_plan, image_annotations
+from app.services.renderer.layout_plan import LayoutPlan, build_layout_plan, image_annotations, text_annotations
 from app.services.renderer.image_evidence import verify_image_report
 from app.services.renderer.render_evidence_validation import (
     ensure_renderer_integrity,
@@ -255,7 +257,7 @@ def _binding_key(binding: dict[str, Any]) -> tuple[Any, ...]:
 def formula_source_inventory(document_ir: DocumentIR, *, _literal_identifiers: set[str] | None = None) -> list[dict[str, Any]]:
     """从权威 IR 重建公式源绑定；字面标识符只采集共享数学边界之外的整词。"""
     sources: list[dict[str, Any]] = []
-    preserve_positions = document_ir.metadata.translation_item_scope is not None
+    preserve_positions = preserves_annotation_positions(document_ir)
 
     def add(block_id: str, field: str, text: str, *, formula: bool = False) -> None:
         spans = (formula_block_span(text),) if formula else content_math_spans(text)
@@ -286,7 +288,7 @@ def formula_source_inventory(document_ir: DocumentIR, *, _literal_identifiers: s
         elif block.type == "list":
             for index, text in enumerate(block.list_items or []):
                 add(block.id, f"list_items/{index}", text)
-        elif block.type != "image":
+        elif block.type != "image" and block.caption_text_alias_index is None:
             add(block.id, "text", block.text or "")
         if block.type == "image":
             annotations = image_annotations(block, preserve_positions=preserve_positions)
@@ -304,6 +306,9 @@ def formula_source_inventory(document_ir: DocumentIR, *, _literal_identifiers: s
                 if text.strip() and (preserve_positions or key not in seen):
                     seen.add(key)
                     add(block.id, field, text.strip())
+        else:
+            for field, index, text in text_annotations(block):
+                add(block.id, f"{field}/{index}", text)
     return sources
 
 
@@ -428,6 +433,7 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
     from copy import deepcopy
     from app.services.renderer.content_contract import CONTENT_VERSION, content_failure
     from app.services.renderer import image_evidence
+    validate_source_item_ledgers(document_ir)
     table_validator_version = document_table_validator_version(document_ir)
     table_validation_policy = None
     legacy_value_column_replay = None
@@ -451,7 +457,8 @@ def validate_persisted_renderer_content(document_ir: DocumentIR, word_content: b
             if stored.get("policy") == legacy_policy.model_dump(mode="json"):
                 table_validation_policy = legacy_policy
     v2 = "renderer_content_contract_version" in metadata
-    if not v2 and ("formula_source_coverage" in metadata or _has_value_column_reviews(document_ir)):
+    if not v2 and (document_ir.metadata.source_item_ledger_scope is not None
+                   or "formula_source_coverage" in metadata or _has_value_column_reviews(document_ir)):
         raise content_failure()
     if v2:
         if metadata["renderer_content_contract_version"] != CONTENT_VERSION:

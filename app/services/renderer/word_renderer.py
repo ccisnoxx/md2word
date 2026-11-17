@@ -21,21 +21,23 @@ from app.domains.resources.integrity import content_sha256
 from app.services.failure_context import FAILURE_CONTEXT_ATTRIBUTE, attach_failure_context
 from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
-from app.services.document_ir.table_annotations import table_placeholder_text
+from app.services.document_ir.table_annotations import preserves_annotation_positions, table_placeholder_text
 from app.services.renderer.formula_renderer import WordFormulaRendererMixin
 from app.services.renderer.image_renderer import WordImageRendererMixin
 from app.services.renderer.list_numbering import WordListNumberingMixin
 from app.services.renderer.native_table_renderer import WordNativeTableRendererMixin
 from app.services.renderer.page_layout_renderer import WordPageLayoutMixin
 from app.services.renderer.image_evidence import caption_bookmark_inventory, new_image_report, finish_image_report
-from app.services.renderer.layout_plan import build_image_plan
+from app.services.renderer.layout_plan import TEXT_ANNOTATION_ROLES, build_image_plan, text_annotations
 from app.services.renderer.block_evidence import RenderCollector, WordRenderResult, ItemEvidence, paragraph_target
 from app.services.renderer.block_anchors import bookmark_inventory, materialize_block_anchors
 from app.services.renderer.table_renderer import WordTableRendererMixin
 from app.services.renderer.template_config import TemplateConfigPackage
 from app.services.renderer.template_conformance import build_template_conformance_report
 from app.services.renderer.text_renderer import WordTextRendererMixin
-from app.services.renderer.content_contract import CONTENT_VERSION, build_formula_source_coverage, formula_sources, content_failure
+from app.services.renderer.content_contract import (
+    CONTENT_VERSION, build_formula_source_coverage, content_failure, formula_sources, text_annotation_marker,
+)
 from app.services.renderer.render_evidence_validation import render_contract_failure
 from app.services.renderer.resource_identity import RenderResourceInputs, normalized_resource_identity
 from app.services.renderer.render_preparation import PreparedRender, _source_page_context, prepare_render
@@ -84,7 +86,7 @@ class _RenderContext:
     consumed_images: set[str] = field(default_factory=set)
     image_bookmark_ids: dict[str, int] = field(default_factory=dict)
     source_blocks: list[DocumentIRBlock] = field(default_factory=list)
-    fragment_markers: list[tuple[str, Any]] = field(default_factory=list)
+    content_markers: list[tuple[str, Any]] = field(default_factory=list)
     placeholders: list[Any] = field(default_factory=list)
     assets: dict[str, Any] = field(default_factory=dict)
     image_loader: Any = None
@@ -235,7 +237,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
         """实体化锚点、保存 DOCX，并冻结块级证据与公式覆盖。"""
 
         table_plan, plan, collector = prepared.table_plan, prepared.plan, prepared.collector
-        self._materialize_fragment_markers(document, render_context, reserved_bookmarks)
+        self._materialize_content_markers(document, render_context, reserved_bookmarks)
         collector.created_anchors, collector.block_anchor_counts = materialize_block_anchors(
             document, collector.records, collector.targets, reserved_bookmarks)
         buffer = io.BytesIO()
@@ -313,13 +315,13 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
         return _RenderContext(caption_bookmarks=caption_bookmark_inventory(document_ir, table_contracts=contracts,
                 primary_table_block_ids={document_ir.blocks[unit.anchor_block_index].id
                                          for unit in table_plan.units if unit.is_group_primary}),
-            preserve_annotation_positions=document_ir.metadata.translation_item_scope is not None,
+            preserve_annotation_positions=preserves_annotation_positions(document_ir),
             formula_sources=[source.binding for source in formula_sources(document_ir, table_plan) if source.representative is None],
             placeholders=placeholders,
             image_bookmark_ids={f"reserved-placeholder:{index}": 2_000_000 + index for index in range(len(placeholders))})
 
-    def _materialize_fragment_markers(self, document, context, reserved):
-        """全部固定公式完成后分配 TAB 数字 ID，通用 block 锚点随后读取实际占用集。"""
+    def _materialize_content_markers(self, document, context, reserved):
+        """固定公式完成后分配表格和注释的书签 ID，通用块锚点再读取实际占用集。"""
         if len(context.used_formula_sources) != len(context.formula_sources):
             raise content_failure("ir_render_evidence:target_mismatch")
         names, ids = bookmark_inventory(document)
@@ -328,9 +330,9 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
         names.update(reserved[0])
         ids.update(reserved[1])
         next_id = max(max(ids, default=-1), 1_000_000 + len(context.formula_entries)) + 1
-        if next_id + len(context.fragment_markers) > 2_147_483_647:
+        if next_id + len(context.content_markers) > 2_147_483_647:
             raise content_failure("ir_render_evidence:target_mismatch")
-        for name, paragraph in context.fragment_markers:
+        for name, paragraph in context.content_markers:
             if name in names:
                 raise content_failure("ir_render_evidence:target_mismatch")
             start, end = OxmlElement("w:bookmarkStart"), OxmlElement("w:bookmarkEnd")
@@ -423,7 +425,12 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
     ) -> None:
         collector = render_context.collector
         if decision.mode == "native_text":
-            texts = block.list_items or [] if block.type == "list" else [block.latex or block.text or "" if block.type == "formula" else block.text or ""]
+            if block.caption_text_alias_index is not None:
+                texts = []
+            else:
+                texts = block.list_items or [] if block.type == "list" else [
+                    block.latex or block.text or "" if block.type == "formula" else block.text or "",
+                ]
             for index, (text, policy) in enumerate(zip(texts, decision.text_policies, strict=True)):
                 if policy.mode == "coalesced":
                     collector.records[block.id].items.append(ItemEvidence(item_index=index, disposition="coalesced",
@@ -451,6 +458,22 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordFormulaRendererMixin, Wo
                     collector.records[block.id].items.append(ItemEvidence(item_index=index, disposition="rendered"))
             if block.type == "list" and not texts:
                 collector.records[block.id].reason_code = "empty_list"
+            for (field, index, text), style_group in zip(
+                text_annotations(block), decision.annotation_styles, strict=True,
+            ):
+                paragraph = document.add_paragraph()
+                self._set_formula_source(document, block.id, f"{field}/{index}")
+                if field == "captions" and index == block.caption_text_alias_index and block.type == "heading":
+                    self._fill_heading_paragraph(paragraph, text, block.level, template_config)
+                    if decision.keep_with_next:
+                        paragraph.paragraph_format.keep_with_next = True
+                    if decision.page_break_before:
+                        paragraph.paragraph_format.page_break_before = True
+                else:
+                    self._fill_paragraph(paragraph, text, getattr(template_config, style_group),
+                                         terminology=template_config.terminology)
+                collector.add(block.id, [paragraph_target(paragraph, TEXT_ANNOTATION_ROLES[field], index)])
+                render_context.content_markers.append((text_annotation_marker(block.id, field, index), paragraph._p))
         elif decision.table_strategy is not None:
             preserve_positions = render_context.preserve_annotation_positions
             placeholders = [item for item in render_context.placeholders if item.owner_block_id == block.id]

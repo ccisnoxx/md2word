@@ -10,10 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from app.conversion.docx_rules.formula import content_math_spans
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
-from app.services.document_ir.table_annotations import annotation_items, read_table_annotation_source
+from app.services.document_ir.table_annotations import (
+    annotation_items, preserves_annotation_positions, read_table_annotation_source,
+)
 from app.services.document_ir.table_figure import FIGURE_SECTION_ROLE
 from app.services.renderer.layout_plan import (
-    LayoutPage, LayoutPlan, LayoutRegion, build_image_plan, complete_two_column_tails, image_annotations, is_exclusive_degraded_block, is_exclusive_page, split_two_col_blocks,
+    LayoutPage, LayoutPlan, LayoutRegion, build_image_plan, complete_two_column_tails, image_annotations,
+    is_exclusive_degraded_block, is_exclusive_page, split_two_col_blocks, text_annotation_style, text_annotations,
 )
 from app.services.renderer.semantic_text import (
     infer_heading_level, is_list_item_text, is_toc_title_text, looks_like_heading_text, parse_toc_entry_text,
@@ -360,7 +363,7 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
     if len(ids) != len(set(ids)) or any(not value for value in ids):
         raise ValueError("ir_render_evidence:block_coverage_mismatch")
     config = effective_config
-    scoped_annotations = document_ir.metadata.translation_item_scope is not None
+    scoped_annotations = preserves_annotation_positions(document_ir)
     if table_strategies is None:
         from app.services.renderer.table_renderer import prepare_table_input
         prepared = {block.id: prepare_table_input(block, effective_config) for block in document_ir.blocks if block.type == "table"}
@@ -528,6 +531,8 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
                         "generation_policy": IMAGE_GENERATION_POLICY, "span_id": spans[block.id].id, "planned_mode": spans[block.id].mode}
                 else:
                     decision.mode = "native_text"
+                    decision.annotation_styles = [text_annotation_style(block, field, index)
+                                                  for field, index, _ in text_annotations(block)]
             for block in ordered:
                 if block is not None and block.type == "image":
                     if block.id in consumed_images:
@@ -564,7 +569,12 @@ def _build_render_plan_v1(document_ir: DocumentIR, *, layout_plan: LayoutPlan, e
             continue
         block = blocks_by_id[operation.block_ids[0]]
         decision = decisions[block.id]
-        if block.type == "heading":
+        if decision.mode == "native_text" and (alias := block.caption_text_alias_index) is not None:
+            policies = []
+            decision.style_group = text_annotation_style(block, "captions", alias)
+            decision.named_style = (config.heading_word_style_name_for_level(block.level)
+                                    if block.type == "heading" else config.normal.word_style_name)
+        elif block.type == "heading":
             level = max(1, min(block.level or 1, 3))
             policies = [TextPolicy(mode="heading", style_group=f"heading{level}", heading_level=level)]
         elif block.type == "formula":

@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 
+from app.services.document_ir.integrity import is_visible_body_block
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock, DocumentIRPage
 
 
@@ -33,7 +34,7 @@ class ImageSpan:
 
 
 def image_annotations(block: DocumentIRBlock, *, preserve_positions: bool = False) -> tuple[tuple[str, str], ...]:
-    """新翻译按原位置呈现，历史渲染仍按第一个同文注释定位。"""
+    """按原位置呈现有身份的注释，历史无范围件沿用同文去重。"""
 
     values = [(f"captions/{i}", text) for i, text in enumerate(block.captions)]
     if isinstance(block.metadata.get("caption"), str) and (
@@ -48,6 +49,25 @@ def image_annotations(block: DocumentIRBlock, *, preserve_positions: bool = Fals
             result.append((field_name, text))
             seen.add(text)
     return tuple(result)
+
+
+TEXT_ANNOTATION_ROLES = {"captions": "caption", "footnotes": "note"}
+TEXT_ANNOTATION_STYLES = {"captions": "caption", "footnotes": "table_note"}
+
+
+def text_annotations(block: DocumentIRBlock) -> tuple[tuple[str, int, str], ...]:
+    """仅投影带账本的正文块注释，保持字段内的源位置。"""
+    if block.type in {"table", "image"} or "annotation_ledger" not in block.metadata or not is_visible_body_block(block):
+        return ()
+    return tuple((field, index, text.strip()) for field in TEXT_ANNOTATION_ROLES
+                 for index, text in enumerate(getattr(block, field)))
+
+
+def text_annotation_style(block: DocumentIRBlock, field: str, index: int) -> str:
+    """正文若确由该题注派生，复用其原正文样式且只写一次。"""
+    if field == "captions" and index == block.caption_text_alias_index:
+        return f"heading{max(1, min(block.level or 1, 3))}" if block.type == "heading" else "normal"
+    return TEXT_ANNOTATION_STYLES[field]
 
 
 def image_row_metrics(blocks: list[DocumentIRBlock], height: float) -> dict[str, float]:

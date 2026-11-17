@@ -2,13 +2,16 @@ from __future__ import annotations
 
 # tests/test_document_ir_translation.py: 覆盖 P1 DocumentIR 翻译 provider、术语版本和结构不变性。
 
+import hashlib
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock, patch
 from zipfile import ZipFile
 from bs4 import BeautifulSoup
 
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import (
     DocumentIR,
     DocumentIRAsset,
@@ -16,6 +19,10 @@ from app.services.document_ir.models import (
     DocumentIRBlockLayout,
     DocumentIRMetadata,
     DocumentIRPage,
+    SourceItemLedgerScope,
+)
+from app.services.document_ir.source_item_ledger import (
+    build_annotation_ledger, build_list_item_ledger, validate_ledger_source_identity,
 )
 from app.domains.translation.models import (
     TermVersionSnapshot,
@@ -324,6 +331,68 @@ class DocumentIRTranslationTests(unittest.TestCase):
         self.assertEqual(translated.blocks[5].footnotes, ["译文 Image note"])
         self.assertEqual(document.model_dump_json(), source_bytes)
         self.assertIs(translated.metadata.translation_items_applied, True)
+
+    def test_source_ledgers_bind_changed_translations_to_independent_positions(self) -> None:
+        document = self._ledger_document()
+        provider = Mock()
+        provider.translate.side_effect = lambda request: TranslationProviderResult(tuple(
+            TranslationTextItem(item.id, "译文 " + item.text) for item in request.items
+        ))
+        source = document.model_dump_json()
+        result = DocumentIRTranslationService(provider).translate(document, term_version=None)
+        translated = DocumentIR.model_validate_json(result.model_dump_json())
+        table, listing = translated.blocks
+        notes = ["译文 Same note", "译文 Same note"]
+        self.assertEqual(table.footnotes, notes)
+        self.assertEqual(listing.list_items, ["译文 Low noise", "译文 High slew rate"])
+        self.assertEqual([item.id for item in provider.translate.call_args.args[0].items if ".footnotes." in item.id],
+                         [f"{table.id}.footnotes.0000", f"{table.id}.footnotes.0001"])
+        annotations = table.metadata["annotation_ledger"]["items"]
+        for index, entry in enumerate(entry for entry in annotations if entry["field"] == "footnotes"):
+            self.assertEqual((entry["source_index"], entry["target_index"]), (index, index))
+            self.assertEqual(entry["target_sha256"], "sha256:" + hashlib.sha256(notes[index].encode()).hexdigest())
+            self.assertNotEqual(entry["target_sha256"], entry["source_sha256"])
+        self.assertEqual(listing.metadata["list_item_ledger"]["sequence_sha256"],
+                         document.blocks[1].metadata["list_item_ledger"]["sequence_sha256"])
+        self.assertEqual(document.model_dump_json(), source)
+
+    def test_ledger_target_missing_duplicated_reordered_or_misbound_fails_before_write(self) -> None:
+        service = DocumentIRTranslationService(Mock())
+        document = self._ledger_document()
+        targets, items = service.extract_translation_items(document)
+        replacements = {item.id: "译文 " + item.text for item in items}
+        source = document.model_dump_json()
+        last = targets[-1]
+        for name, damaged in (
+            ("缺项", targets[:-1]),
+            ("重复", [*targets, last]),
+            ("换位", [*targets[:-2], targets[-1], targets[-2]]),
+            ("错绑", [*targets[:-1], replace(last, index=0)]),
+        ):
+            with self.subTest(name=name), self.assertRaises(DocumentIntegrityError) as context:
+                service.apply_replacements(document, damaged, replacements)
+            self.assertEqual(context.exception.evidence["blocking_quality_flags"],
+                             ["source_ir_integrity:list_item_ledger_mismatch"])
+            self.assertEqual(document.model_dump_json(), source)
+
+    def _ledger_document(self) -> DocumentIR:
+        document = self._make_document_ir()
+        table, listing = document.blocks[2:4]
+        document.blocks = [table, listing]
+        document.assets = []
+        document.metadata.translation_item_scope = "annotations-v1"
+        document.metadata.source_item_ledger_scope = SourceItemLedgerScope(
+            version="source-item-ledger-scope/v1", annotation_block_ids=(table.id,),
+        )
+        table.footnotes = ["Same note", "Same note"]
+        table.metadata["annotation_ledger"] = build_annotation_ledger([
+            (table.id, "captions", 0, table.captions[0]),
+            *((table.id, "footnotes", index, note) for index, note in enumerate(table.footnotes)),
+        ])
+        listing.metadata["list_item_ledger"] = build_list_item_ledger(
+            "items", "legacy_items", [(text, [text]) for text in listing.list_items],
+        )
+        return document
 
     def test_annotation_scope_rejects_unknown_versions_and_non_boolean_applied_flag(self) -> None:
         source = self._make_document_ir()
@@ -637,9 +706,14 @@ class DocumentIRTranslationTests(unittest.TestCase):
         self.assertEqual(translated.pages, document.pages)
         self.assertEqual(translated.assets, document.assets)
         self.assertEqual(translated.quality_flags, document.quality_flags)
-        for old, new in zip(document.blocks, translated.blocks):
-            unchanged = {key: value for key, value in old.model_dump(mode="json").items() if key not in {"text", "html", "list_items"}}
-            self.assertEqual({key: value for key, value in new.model_dump(mode="json").items() if key not in {"text", "html", "list_items"}}, unchanged)
+        validate_ledger_source_identity(document, translated)
+        translated_fields = {"text", "html", "list_items", "captions", "footnotes", "metadata"}
+        ledger_keys = {"list_item_ledger", "annotation_ledger"}
+        for old, new in zip(document.blocks, translated.blocks, strict=True):
+            self.assertEqual(new.model_dump(mode="json", exclude=translated_fields),
+                             old.model_dump(mode="json", exclude=translated_fields))
+            self.assertEqual({key: value for key, value in new.metadata.items() if key not in ledger_keys},
+                             {key: value for key, value in old.metadata.items() if key not in ledger_keys})
             if old.type == "formula":
                 self.assertEqual(new, old)
             if old.html:

@@ -9,7 +9,8 @@ from app.services.document_ir.logical_table_group import VERSION as LOGICAL_TABL
 from app.services.document_ir.logical_table_group import validate_logical_table_groups
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock, LogicalTableGroup, TableFragment
 from app.services.document_ir.table_annotations import (
-    annotation_items, continuation_caption, is_table_context_annotation, read_table_annotation_source,
+    annotation_items, continuation_caption, is_table_context_annotation, preserves_annotation_positions,
+    read_table_annotation_source,
 )
 from app.services.document_ir.table_header_review import TableHeaderReview
 from app.services.document_ir.table_value_column_review import (
@@ -287,7 +288,7 @@ def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan, *,
     from app.services.document_ir.table_placeholder import decode_placeholders
     placeholder_ids = {item.fragment_id for item in decode_placeholders(document)}
     indices = {block.id: index for index, block in enumerate(document.blocks)}
-    scoped = document.metadata.translation_item_scope is not None
+    scoped = preserves_annotation_positions(document)
     positions = _layout_positions(layout)
     units: list[TableRenderUnit] = []
     consumed: set[str] = set()
@@ -432,7 +433,7 @@ def table_unit_contracts(document: DocumentIR, plan: LogicalTableRenderPlan):
     """逐源记录行与注释选择；复用原 header/续题裁决，不删除 consumed 成员。"""
     from app.services.renderer.render_plan import TableAnnotationPlan, TableFragmentPlan, TableUnitPlan
     result = []
-    scoped = document.metadata.translation_item_scope is not None
+    scoped = preserves_annotation_positions(document)
     for unit in plan.units:
         members = list(dict.fromkeys(fragment.source.render_owner_block_id for fragment in unit.fragments))
         anchor = document.blocks[unit.anchor_block_index]

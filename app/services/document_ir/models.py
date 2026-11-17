@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import (
+    BaseModel, ConfigDict, Field, JsonValue, ValidationError, ValidatorFunctionWrapHandler, field_validator,
+    model_validator,
+)
 
 from app.services.document_ir.artifact_validator import MinerUValidationReport
 from app.services.document_ir.table_header_review import TableHeaderReview
@@ -176,6 +179,14 @@ class TableStructureReview(BaseModel):
     preserved_as: Literal["native", "reference_image", "pdf_crop", "pdf_page"]
 
 
+class SourceItemLedgerScope(BaseModel):
+    """声明新账本版本与必须具有注释账本的主块。"""
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    version: Literal["source-item-ledger-scope/v1"]
+    annotation_block_ids: tuple[Annotated[str, Field(min_length=1)], ...]
+
+
 class DocumentIRMetadata(BaseModel):
     """文档追溯、解析信息及受控 Artifact 内的原始表格来源账本。"""
 
@@ -209,6 +220,22 @@ class DocumentIRMetadata(BaseModel):
     translation_items_applied: Literal[True] | None = Field(default=None, exclude_if=lambda value: value is None)
     # 第三批 C1：整页降级记录（页码、原因、问题指针、移除的源块计数与指针、页面图像资产、源 PDF sha256）。
     degraded_pages: list[dict[str, Any]] = Field(default_factory=list)
+    source_item_ledger_scope: SourceItemLedgerScope | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @field_validator("source_item_ledger_scope", mode="wrap")
+    @classmethod
+    def _validate_source_item_ledger_scope(
+        cls, value: Any, handler: ValidatorFunctionWrapHandler,
+    ) -> SourceItemLedgerScope | None:
+        from app.services.document_ir.integrity import DocumentIntegrityError
+        from app.services.document_ir.source_item_ledger import ANNOTATION_LEDGER_MISMATCH
+
+        try:
+            return handler(value)
+        except ValidationError:
+            raise DocumentIntegrityError("DocumentIR 来源账本", {
+                "blocking_quality_flags": [ANNOTATION_LEDGER_MISMATCH],
+            }) from None
 
     @field_validator("translation_items_applied", mode="before")
     @classmethod
@@ -290,19 +317,27 @@ class DocumentIR(BaseModel):
     def _validate_logical_tables(self) -> DocumentIR:
         # 同一 owner 校验首次构建和 Artifact 重读，避免损坏新合同被静默接受。
         from app.services.document_ir.logical_table_group import validate_logical_table_groups
-        from app.services.document_ir.table_annotations import validate_table_annotation_sources
+        from app.services.document_ir.source_item_ledger import validate_source_item_ledgers
+        from app.services.document_ir.table_annotations import (
+            preserves_annotation_positions, validate_table_annotation_sources,
+        )
         from app.services.document_ir.table_figure import validate_table_figure_bindings
         from app.services.document_ir.table_reference_assets import decode_table_references
 
+        validate_source_item_ledgers(self)
         if self.metadata.translation_item_scope is None and self.metadata.translation_items_applied is not None:
             raise ValueError("译后注释缺少翻译范围。")
+        position_annotations = preserves_annotation_positions(self)
         for block in self.blocks:
             if "caption_text_alias_index" in block.metadata:
                 index = block.caption_text_alias_index
-                if (self.metadata.translation_item_scope is None or block.type not in {"image", "table"}
+                supported_type = block.type in {"image", "table"} or (
+                    self.metadata.source_item_ledger_scope is not None and block.type in {"paragraph", "heading"}
+                )
+                if (not position_annotations or not supported_type
                         or type(index) is not int or not 0 <= index < len(block.captions)
                         or not block.captions[index].strip() or block.text != block.captions[index]):
-                    raise ValueError("注释翻译的派生题注位置不一致。")
+                    raise ValueError("派生题注位置与正文不一致。")
         validate_logical_table_groups(self)
         validate_table_annotation_sources(self)
         validate_table_figure_bindings(self)

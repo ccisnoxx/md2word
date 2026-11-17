@@ -214,7 +214,8 @@ def paragraph_target(paragraph, role="body", item_index=None):
 
 def toc_representative_target(targets: list[WordTarget], item_index: int | None) -> WordTarget:
     """归并项只共享原生字段，含公式的独立段仍由来源 item 单独拥有。"""
-    own = [target for target in targets if target.item_index == item_index and target.role != "toc_representative"]
+    own = [target for target in targets if target.item_index == item_index
+           and target.role not in {"toc_representative", "caption", "note"}]
     field = [target for target in own if target.role == "toc_field"]
     representative = field or own
     if len(representative) != 1:
@@ -471,7 +472,9 @@ class RenderCollector:
         decisions = {decision.block_id: decision for decision in plan.decisions}
         for record in self.records.values():
             if decisions[record.block_id].text_policies:
-                record.targets.sort(key=lambda target: target.item_index if target.item_index is not None else -1)
+                # 正文按 item 排列，附注保持写入顺序而不与同下标的正文 item 混排。
+                record.targets.sort(key=lambda target: (True, -1) if target.role in {"caption", "note"}
+                                    else (False, target.item_index if target.item_index is not None else -1))
             names = list(dict.fromkeys(name for t in record.targets for name in t.bookmark_names))
             record.bookmark_name = names[0] if names else None
         counts = {state: sum(r.disposition == state for r in self.records.values()) for state in ("rendered", "coalesced", "suppressed", "superseded", "not_emitted")}

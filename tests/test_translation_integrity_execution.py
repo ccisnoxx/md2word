@@ -43,7 +43,8 @@ class TranslationIntegrityExecutionTests(TestCase):
         self.root = Path(self.temp.name)
         self.counter = 0
 
-    def make_case(self, *, defer_planning=False, source_blocks=None, annotation_scope=None):
+    def make_case(self, *, defer_planning=False, source_blocks=None, annotation_scope="annotations-v1",
+                  legacy_source=False):
         self.counter += 1
         runtime = build_test_runtime(self.root / str(self.counter), jobs_artifact_storage_backend="local_object")
         execution = runtime.document_job_execution_service
@@ -72,8 +73,14 @@ class TranslationIntegrityExecutionTests(TestCase):
         zip_path.write_bytes(buffer.getvalue())
         document = execution.document_ir_service.convert_zip(
             zip_path, job_id=job.id, source_file_id=job.source_file_id, document_language="en",
-            translation_item_scope=annotation_scope,
+            translation_item_scope=None if legacy_source else annotation_scope,
         ).document
+        if legacy_source:
+            # 重建旧件创建时的注释和证据形状，由正常 Worker 读取与回填。
+            document.metadata.source_item_ledger_scope = None
+            for block in document.blocks:
+                for key in ("annotation_ledger", "caption_text_alias_index", "table_annotation_source"):
+                    block.metadata.pop(key, None)
         planning = (
             patch.object(execution.translation_batches.installer, "install_and_enqueue", side_effect=lambda job, document, **kwargs: job)
             if defer_planning else nullcontext()
@@ -120,7 +127,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         self.assertEqual(self.payload(runtime, logs[0])["integrity"], result["integrity"])
 
     def test_legacy_source_reuses_installed_results_and_keeps_original_retry_plan(self):
-        runtime, execution, provider, job, batch, source, _raw = self.make_case(source_blocks=[{
+        runtime, execution, provider, job, batch, source, _raw = self.make_case(legacy_source=True, source_blocks=[{
             "type": "table", "page_idx": 0, "table_caption": "Table 1. Ratings",
             "table_body": "<table><tr><td>Voltage</td></tr></table>", "table_footnote": "(1) Supply 5 V",
         }])
@@ -179,6 +186,85 @@ class TranslationIntegrityExecutionTests(TestCase):
         self.assertTrue(target.metadata.translation_items_applied)
         self.assertEqual(target.blocks[0].text, target.blocks[0].captions[0])
         self.assertEqual(target.blocks[0].footnotes, ["译文：(1) Supply 5 V", "译文：(2) Keep 25°C"])
+
+    def test_fan_in_rejects_target_and_digest_that_drift_together(self):
+        runtime, execution, _provider, job, batch, _source, _raw = self.make_case(source_blocks=[{
+            "type": "list", "page_idx": 0, "items": ["Low noise", "High slew rate"],
+        }])
+        self.assertEqual(self.persist_batch(runtime, execution, batch).status, "succeeded")
+        service = execution.translation_batches.deps.document_ir_translation_service
+        apply = service.apply_replacements
+
+        def replace_after_verified_write(document, targets, replacements):
+            apply(document, targets, replacements)
+            block = document.blocks[0]
+            wrong = "已验证回填后的错误值"
+            block.list_items[1] = wrong
+            block.metadata["list_item_ledger"]["items"][1]["target_sha256"] = (
+                "sha256:" + hashlib.sha256(wrong.encode()).hexdigest()
+            )
+
+        with patch.object(service, "apply_replacements", side_effect=replace_after_verified_write):
+            execution.translation_batches.finalize_generation(job.id, generation=0, trace_id=None)
+        final = runtime.document_job_repository.get_document_job(job.id)
+        self.assertEqual((final.status, final.failed_stage, final.error_code),
+                         ("failed", "translation_validating", "translation_failed"))
+        self.assertIsNone(final.document_ir_file_id)
+        self.assertEqual(len(self.files(runtime, "document_ir")), 1)
+        self.assertEqual(self.files(runtime, "quality_report"), [])
+        self.assertEqual(self.files(runtime, "generated_word"), [])
+        failures = [event for event in runtime.document_job_event_repository.list_document_job_events(job.id)
+                    if event.event_type == "stage_failed"]
+        self.assertEqual(failures[-1].payload["blocking_quality_flags"],
+                         ["source_ir_integrity:list_item_ledger_mismatch"])
+
+    def test_fan_in_recovers_actual_value_from_verified_replacement(self):
+        runtime, execution, _provider, job, batch, _source, _raw = self.make_case(source_blocks=[{
+            "type": "list", "page_idx": 0, "items": ["Low noise", "High slew rate"],
+        }])
+        self.assertEqual(self.persist_batch(runtime, execution, batch).status, "succeeded")
+        service = execution.translation_batches.deps.document_ir_translation_service
+        apply = service.apply_replacements
+
+        def drop_after_verified_write(document, targets, replacements):
+            apply(document, targets, replacements)
+            document.blocks[0].list_items.pop()
+
+        with (patch.object(service, "apply_replacements", side_effect=drop_after_verified_write),
+              patch.object(execution.rendering, "render_and_save_word", side_effect=lambda job, **kwargs: job)):
+            execution.translation_batches.finalize_generation(job.id, generation=0, trace_id=None)
+        final = runtime.document_job_repository.get_document_job(job.id)
+        self.assertEqual(final.stage, "rendering")
+        record = runtime.document_file_repository.get_document_file(final.document_ir_file_id)
+        target = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(record))
+        self.assertEqual(target.blocks[0].list_items, ["译文：Low noise", "译文：High slew rate"])
+        self.assertIn("source_ir_integrity:ledger_recovered", target.quality_flags)
+
+    def test_fan_in_rejects_switching_frozen_caption_alias(self):
+        runtime, execution, _provider, job, batch, _source, _raw = self.make_case(source_blocks=[{
+            "type": "table", "page_idx": 0, "table_caption": ["Table 1. Ratings", "Independent caption"],
+            "table_body": "<table><tr><td>Voltage</td></tr></table>",
+        }])
+        self.assertEqual(self.persist_batch(runtime, execution, batch).status, "succeeded")
+        service = execution.translation_batches.deps.document_ir_translation_service
+        apply = service.apply_replacements
+
+        def change_frozen_alias(document, targets, replacements):
+            apply(document, targets, replacements)
+            block = document.blocks[0]
+            self.assertEqual(block.caption_text_alias_index, 0)
+            block.metadata["caption_text_alias_index"] = 1
+            block.text = block.captions[1]
+
+        with patch.object(service, "apply_replacements", side_effect=change_frozen_alias):
+            execution.translation_batches.finalize_generation(job.id, generation=0, trace_id=None)
+        final = runtime.document_job_repository.get_document_job(job.id)
+        self.assertEqual((final.status, final.failed_stage), ("failed", "translation_validating"))
+        self.assertIsNone(final.document_ir_file_id)
+        failures = [event for event in runtime.document_job_event_repository.list_document_job_events(job.id)
+                    if event.event_type == "stage_failed"]
+        self.assertEqual(failures[-1].payload["blocking_quality_flags"],
+                         ["source_ir_integrity:annotation_ledger_mismatch"])
 
     def test_scoped_annotation_missing_or_changed_token_never_applies_partial_replacements(self):
         cases = {

@@ -3,9 +3,11 @@
 import hashlib
 import json
 from copy import deepcopy
+from types import SimpleNamespace
 from unittest import TestCase
+from unittest.mock import Mock
 
-from app.domains.document_jobs.preview_evidence import read_current_preview_evidence
+from app.domains.document_jobs.preview_evidence import mapping_source, read_current_preview_evidence
 from app.services.document_ir.models import (
     DocumentIR,
     DocumentIRBlock,
@@ -27,6 +29,31 @@ def mapping_digest(mapping: dict) -> str:
 
 
 class PreviewPageMappingTests(TestCase):
+    def test_read_rejects_damaged_annotation_ledger_as_evidence_conflict(self) -> None:
+        payload = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="job", source_file_id="pdf", document_language="zh"),
+            blocks=[DocumentIRBlock(id="body", type="paragraph", order=0, text="正文")],
+        ).model_dump(mode="json")
+        payload["metadata"]["source_item_ledger_scope"] = {
+            "version": "source-item-ledger-scope/v1", "annotation_block_ids": ["body"],
+        }
+        # 字节仍与文件描述一致，损坏的是附注和账本一起缺失的 IR 内容。
+        ir_bytes = json.dumps(payload).encode()
+        ir_file = SimpleNamespace(id="ir", status="uploaded", file_type="document_ir",
+                                  tenant_id="tenant", company_id="company", job_id="job",
+                                  deletion_claim=None, expires_at=None, size_bytes=len(ir_bytes),
+                                  checksum_sha256=sha256(ir_bytes))
+        source = SimpleNamespace(tenant_id="tenant", company_id="company", job_id="job", metadata={
+            "document_ir_file_id": ir_file.id, "render_trace_status": "complete",
+        })
+        repository = Mock()
+        repository.get_document_file.return_value = ir_file
+        repository.is_document_file_protected.return_value = False
+        service = Mock()
+        service.read_file_content.return_value = ir_bytes
+        with self.assertRaisesRegex(ValueError, "原始 IR 或渲染证据无法认证"):
+            mapping_source(source, b"", repository, service)
+
     def test_read_historical_v1_mapping(self) -> None:
         binding = MappingBinding(
             source_pdf_file_id="source-v1",

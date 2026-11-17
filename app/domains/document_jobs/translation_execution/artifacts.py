@@ -7,6 +7,7 @@ import sqlite3
 import time
 from uuid import uuid4
 
+from app.domains.document_jobs import _failure_policy as failure_policy
 from app.domains.document_jobs.execution_support import document_ir_layout_metadata
 from app.domains.document_jobs.models import DocumentJobRecord, DocumentJobTranslationBatchRecord
 from app.domains.document_jobs.publication_provenance import save_translation_publication_provenance
@@ -32,6 +33,7 @@ from app.domains.translation.integrity import (
 from app.domains.translation.models import TranslationProviderResult
 from app.domains.translation.modes import spec_for_document_job_mode
 from app.domains.translation.provider import TranslationProviderResponseError
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.table_reference_assets import decode_table_references
 
 
@@ -133,10 +135,11 @@ class TranslationArtifactStore:
                 job,
                 failed_stage="translation_validating",
                 error_code="translation_failed",
-                error_message=f"翻译 source 校验失败: {translation_batch_error_code(exc)}",
+                error_message=f"翻译源件校验失败：{translation_batch_error_code(exc)}",
                 trace_id=trace_id,
                 formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
                 duration_ms=int((time.perf_counter() - started_at) * 1000),
+                failure_evidence=failure_policy.worker_failure_evidence(exc),
             )
         except (FileNotFoundError, OSError) as exc:
             return self.deps.lifecycle.mark_failed(
@@ -180,7 +183,20 @@ class TranslationArtifactStore:
                 trace_id=trace_id,
                 duration_ms=int((time.perf_counter() - started_at) * 1000),
             )
-        self.deps.document_ir_translation_service.apply_replacements(translated, targets, replacements)
+        try:
+            service = self.deps.document_ir_translation_service
+            service.apply_replacements(translated, targets, replacements)
+            service.confirm_ledger_result(source_document_ir, translated, replacements)
+        except DocumentIntegrityError as error:
+            return self.deps.lifecycle.mark_failed(
+                job,
+                failed_stage="translation_validating",
+                error_code="translation_failed",
+                error_message=failure_policy.worker_failure_message(error),
+                trace_id=trace_id,
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+                failure_evidence=failure_policy.worker_failure_evidence(error),
+            )
         spec = spec_for_document_job_mode(job.mode)
         if spec.language_pair is None:
             raise DocumentIRTranslationError("当前任务不是翻译任务。")

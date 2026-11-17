@@ -21,7 +21,9 @@ from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileEr
 from app.conversion.docx_rules.formula import canonical_sha256, output_sha256, replay_formula_output, sha256_text
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.document_ir.models import DocumentIR
-from app.services.document_ir.table_annotations import annotation_items, read_table_annotation_source
+from app.services.document_ir.table_annotations import (
+    annotation_items, preserves_annotation_positions, read_table_annotation_source,
+)
 from app.services.renderer.layout_plan import IMAGE_GROUP_VERSION, IMAGE_GROUP_THRESHOLDS, build_image_plan, build_layout_plan, image_annotations
 from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
 from app.services.renderer.formula_renderer import WordFormulaRendererMixin
@@ -63,7 +65,7 @@ def caption_bookmark_inventory(document_ir: DocumentIR, *, table_contracts=None,
     from collections import Counter
     text_renderer = _AnnotationTextRenderer()
     keys = []
-    preserve_positions = document_ir.metadata.translation_item_scope is not None
+    preserve_positions = preserves_annotation_positions(document_ir)
     members = {identity for unit in table_contracts or [] for identity in unit.member_block_ids}
     selected = {(item.block_id, item.item_index) for unit in table_contracts or [] for item in unit.annotations
                 if item.field == "captions" and item.disposition == "rendered"
@@ -429,7 +431,7 @@ def _verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, 
                 available = slots[index]["inner_width"] if slots else single_image_width(block, pages[decision.page_index].width if not legacy_layout and decision.page_index in pages else None, image_geometry)
                 expected_size = image_dimensions(decoded.px_width, decoded.px_height, available, image_available_height(block, image_geometry))
                 _check(actual_size == expected_size == (image["width"], image["height"]), "图片显示尺寸或比例")
-                annotations = image_annotations(block, preserve_positions=document_ir.metadata.translation_item_scope is not None)
+                annotations = image_annotations(block, preserve_positions=preserves_annotation_positions(document_ir))
                 _check(len(image["annotations"]) == len(annotations), "注释覆盖")
                 paragraphs = list(container)
                 start_index = paragraphs.index(paragraph)

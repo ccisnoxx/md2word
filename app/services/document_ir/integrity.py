@@ -6,8 +6,10 @@ from collections import Counter
 from collections.abc import Mapping
 from typing import Any
 
-from app.conversion.docx_rules.mineru_content import LIST_ITEM_LEDGER_VERSION
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
+from app.services.document_ir.source_item_ledger import (
+    LIST_ITEM_COUNT_MISMATCH, LIST_ITEM_LEDGER_V1, source_item_ledger_evidence,
+)
 
 
 FILTERED_PAGE_FLAG_PREFIX = "final_promotional_page_filtered:"
@@ -90,7 +92,8 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
                        "reason_codes": list(record.get("reason_codes") or [])}
                       for record in document_ir.metadata.degraded_pages]
     page_counts = build_page_counts(document_ir)
-    flags: list[str] = []
+    versioned_ledgers = source_item_ledger_evidence(document_ir)
+    flags = list(versioned_ledgers.pop("blocking_quality_flags", []))
 
     # 旧 IR 没有 inventory，无法可靠重建 source 合同；仅正式 converter 产物执行对账。
     if expected_total is None and not expected_types:
@@ -104,7 +107,8 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
             "source_block_count_delta": None,
             "expected_source_type_counts": {},
             "ir_source_type_counts": dict(sorted(actual_types.items())),
-            "blocking_quality_flags": [],
+            "blocking_quality_flags": flags,
+            **versioned_ledgers,
         }
 
     if expected_total is not None and expected_total != accounted_count:
@@ -141,9 +145,12 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
         ):
             flags.append(f"source_ir_integrity:payload_missing:{source_type}")
 
-    ledger_summary = _list_item_ledger_summary(main_blocks)
+    ledger_summary = (
+        _legacy_list_item_ledger_summary(main_blocks)
+        if document_ir.metadata.source_item_ledger_scope is None and not versioned_ledgers else None
+    )
     if ledger_summary is not None and ledger_summary["mismatch_block_ids"]:
-        flags.append("source_ir_integrity:list_item_count_mismatch")
+        flags.append(LIST_ITEM_COUNT_MISMATCH)
 
     unique_flags = list(dict.fromkeys(flags))
     evidence = {
@@ -157,6 +164,7 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
         "expected_source_type_counts": expected_types,
         "ir_source_type_counts": dict(sorted(actual_types.items())),
         "blocking_quality_flags": unique_flags,
+        **versioned_ledgers,
     }
     if document_ir.metadata.table_structure_reviews:
         evidence["table_structure_reviews"] = [item.model_dump(mode="json")
@@ -167,11 +175,10 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
     return evidence
 
 
-def _list_item_ledger_summary(main_blocks: list[DocumentIRBlock]) -> dict[str, Any] | None:
+def _legacy_list_item_ledger_summary(main_blocks: list[DocumentIRBlock]) -> dict[str, Any] | None:
     """对账转换时冻结的列表项数；只输出块 ID 与计数，不含正文。
 
-    任一主列表块带账本即视为新产物，此时所有主列表块都必须带账本且项数一致；
-    全部缺失视为历史 IR，返回 None 跳过。翻译按下标原位替换，项数应保持不变。
+    有 v1 账本的旧件延用原计数规则和证据形状，无账本的旧件不新增证据。
     """
 
     list_blocks = [block for block in main_blocks if block.type == "list"]
@@ -181,11 +188,11 @@ def _list_item_ledger_summary(main_blocks: list[DocumentIRBlock]) -> dict[str, A
     mismatched = []
     for block in list_blocks:
         ledger = ledgers[block.id]
-        if (not isinstance(ledger, dict) or ledger.get("version") != LIST_ITEM_LEDGER_VERSION
+        if (not isinstance(ledger, dict) or ledger.get("version") != LIST_ITEM_LEDGER_V1
                 or type(ledger.get("item_count")) is not int or ledger["item_count"] != len(block.list_items or [])):
             mismatched.append(block.id)
     return {
-        "version": LIST_ITEM_LEDGER_VERSION,
+        "version": LIST_ITEM_LEDGER_V1,
         "block_count": len(list_blocks),
         "item_count": sum(len(block.list_items or []) for block in list_blocks),
         "mismatch_block_ids": mismatched,

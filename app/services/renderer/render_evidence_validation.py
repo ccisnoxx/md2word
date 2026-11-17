@@ -7,8 +7,12 @@ from typing import TYPE_CHECKING, Any
 
 from app.services.document_ir.integrity import DocumentIntegrityError, is_visible_body_block
 from app.services.document_ir.models import DocumentIR
-from app.services.document_ir.table_annotations import annotation_items, table_placeholder_text
-from app.services.renderer.layout_plan import image_annotations
+from app.services.document_ir.table_annotations import (
+    annotation_items, preserves_annotation_positions, table_placeholder_text,
+)
+from app.services.renderer.layout_plan import (
+    TEXT_ANNOTATION_ROLES, image_annotations, text_annotation_style, text_annotations,
+)
 from app.services.renderer.render_event_summary import (
     RENDER_EVIDENCE_CODES,
     build_renderer_event_summary,
@@ -156,6 +160,7 @@ def _validate_render_evidence(document_ir: DocumentIR, word_content: bytes,
         RenderPlan, TOC_FORMULA_POLICY_VERSION, content_hash, document_ir_hash, read_render_plan,
     )
     from app.services.renderer.block_evidence import read_block_render_evidence, resolve_table_scope
+    from app.services.renderer.content_contract import text_annotation_marker
     from app.services.renderer.text_renderer import TOC_FIELD_INSTRUCTION
     try:
         plan = read_render_plan(plan_value)
@@ -195,7 +200,7 @@ def _validate_render_evidence(document_ir: DocumentIR, word_content: bytes,
         records = {record.block_id: record for record in trace.block_render_map}
         decisions = {decision.block_id: decision for decision in plan.decisions}
         blocks = {block.id: block for block in document_ir.blocks}
-        preserve_positions = document_ir.metadata.translation_item_scope is not None
+        preserve_positions = preserves_annotation_positions(document_ir)
         owners = {}
         decoration_ops = {block_id: operation for operation in plan.operations if operation.kind == "decoration" for block_id in operation.block_ids}
         for record in trace.block_render_map:
@@ -216,6 +221,14 @@ def _validate_render_evidence(document_ir: DocumentIR, word_content: bytes,
                         expected.append((i, "toc_field"))
                     if policy.mode != "coalesced":
                         expected.append((i, role))
+                annotations = text_annotations(block)
+                if decision.annotation_styles != [text_annotation_style(block, field, item)
+                                                  for field, item, _ in annotations]:
+                    raise ValueError("ir_render_evidence:target_mismatch")
+                if any(text_annotation_marker(block.id, field, item) not in target.bookmark_names
+                       for (field, item, _), target in zip(annotations, own_targets[len(expected):])):
+                    raise ValueError("ir_render_evidence:target_mismatch")
+                expected.extend((item, TEXT_ANNOTATION_ROLES[field]) for field, item, _ in annotations)
                 if [(target.item_index, target.role) for target in own_targets] != expected or any(target.element_kind != "paragraph" for target in own_targets):
                     raise ValueError("ir_render_evidence:target_mismatch")
                 if any(own_targets[i].child_path >= own_targets[i + 1].child_path
@@ -324,7 +337,7 @@ def _validate_render_evidence(document_ir: DocumentIR, word_content: bytes,
                     if (shared.part, shared.child_path) != (target.part, target.child_path):
                         raise ValueError("ir_render_evidence:target_mismatch")
                     continue
-                if (toc_formula_policy and decision.mode == "native_text" and
+                if (toc_formula_policy and decision.mode == "native_text" and target.role not in {"caption", "note"} and
                         (target.role == "toc_field" or decision.text_policies[target.item_index].mode == "toc")):
                     node = index.nodes[target.part, tuple(target.child_path)]
                     if ([leaf.text for leaf in node.iter(qn("w:instrText"))] != [TOC_FIELD_INSTRUCTION]

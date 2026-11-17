@@ -27,6 +27,7 @@ from app.domains.files.result_registration import (
     retained_file_expiry,
 )
 from app.domains.resources.models import utc_now
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import DocumentIR
 from app.services.preview.models import PreviewFailure, PreviewPolicy, PreviewResult, sha256, validate_result
 from app.services.preview.page_mapping import MappingBinding, read_page_mapping
@@ -159,10 +160,10 @@ def mapping_source(source, content, file_repository, file_service, *, authentica
         return None, None, None
     try:
         document_ir = DocumentIR.model_validate_json(ir_bytes)
-    except (ValidationError, ValueError):
-        raise ValueError("主件的原始 IR 数据无法认证。") from None
-    validated = validate_persisted_renderer_content(document_ir, content, metadata,
-        expected_template_version_id=metadata.get("template_version_id"))
+        validated = validate_persisted_renderer_content(document_ir, content, metadata,
+            expected_template_version_id=metadata.get("template_version_id"))
+    except (ValueError, DocumentIntegrityError):
+        raise ValueError("主件的原始 IR 或渲染证据无法认证。") from None
     verified = validate_persisted_render_evidence(document_ir, content,
         render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"),
         legacy_value_column_replay=legacy_value_column_replay_for_report(validated.get("table_evidence")))

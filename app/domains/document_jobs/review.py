@@ -13,6 +13,7 @@ from app.domains.document_jobs.quality_state import effective_quality_status
 from app.domains.files.models import DocumentFileRecord
 from app.domains.users.models import InternalUserRole
 from app.domains.files.result_registration import review_source_descriptor
+from app.services.document_ir.source_item_ledger import ANNOTATION_LEDGER_MISMATCH, LEDGER_RECOVERED, LIST_ITEM_LEDGER_MISMATCH
 
 if TYPE_CHECKING:
     from app.domains.document_jobs.models import DocumentJobRecord
@@ -119,7 +120,8 @@ _SAFE_FLAGS = frozenset({
     "docx_image_only_suspected", "formula_text_fallback", "image_group_uncertain",
     "caption_binding_uncertain", "empty_content_list",
     "source_ir_integrity:block_count_mismatch", "source_ir_integrity:type_count_mismatch",
-    "source_ir_integrity:list_item_count_mismatch", "ir_docx_integrity:toc_coalesced_outside_region",
+    "source_ir_integrity:list_item_count_mismatch", LIST_ITEM_LEDGER_MISMATCH, ANNOTATION_LEDGER_MISMATCH, LEDGER_RECOVERED,
+    "ir_docx_integrity:toc_coalesced_outside_region",
     "ir_layout_integrity:missing_blocks", "ir_layout_integrity:duplicate_blocks",
     "ir_docx_integrity:image_asset_missing", "ir_docx_integrity:inline_shape_count_mismatch",
     "ir_docx_integrity:table_count_mismatch", "ir_docx_integrity:heading_count_mismatch",
