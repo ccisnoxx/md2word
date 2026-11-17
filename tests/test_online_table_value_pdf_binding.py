@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from app.domains.document_jobs.base_quality import current_base
 from app.domains.document_jobs.table_evidence import verify_report
 from app.services.document_ir.models import DocumentIR
+from app.services.document_ir.pdf_value_column_binding import match_pdf_value_columns
 from app.services.document_ir.pdf_value_column_observer import PdfObservationUnavailable, observe_pdf_value_column_page
 from app.services.preview.models import PreviewPolicy
 from app.services.tables.quality import BINDING_VALIDATOR_VERSION, VALIDATOR_VERSION, TableValidationPolicy
@@ -29,6 +30,9 @@ from tests.document_job_use_case_support import replace_dependency
 from tests.test_fastapi_jobs_backend import TestClient, build_auth_header, create_app
 from tests.test_pdf_value_column_observer import make_pdf
 from tests.test_table_value_pdf_binding_poppler import _ruled_table_package
+
+
+_GS008_EXPECTED = Path(__file__).parent / "fixtures" / "datasheet_quality" / "gs008_value_column_expected.json"
 
 
 @skipUnless(all(which(tool) for tool in ("pdfinfo", "pdftotext", "pdftocairo", "pdftohtml")), "需要实际 Poppler")
@@ -144,7 +148,7 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
             last_row,
         ])
 
-    def test_row_ambiguous_word_can_be_downloaded_approved_and_published_with_warning(self) -> None:
+    def test_unverified_row_word_can_be_downloaded_approved_and_published_with_warning(self) -> None:
         with TemporaryDirectory() as directory:
             package, source = _ruled_table_package(Path(directory), manual_review_case=True)
             with self.worker_case(package.read_bytes(), source.read_bytes(), echoed_data_id=False) as (
@@ -177,7 +181,7 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                 self.assertEqual(waiting["fragment_id"], ir_waiting.fragment_id)
                 self.assertEqual((waiting["source_page_index"], waiting["source_row_index"], waiting["source_cell_index"]),
                                  (0, 3, 2))
-                self.assertEqual(waiting["reason_code"], "row_ambiguous")
+                self.assertEqual(waiting["reason_code"], "row_anchor_missing")
                 self.assertEqual(waiting["reason_code"], ir_waiting.reason)
                 url = f"/api/v1/document-jobs/{job.id}"
                 review_payload = {
@@ -220,10 +224,17 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
                                  ["warning"] * 3)
 
     def test_persisted_v3_blocker_report_revalidates_with_its_original_policy(self) -> None:
+        def historical_match(*args, **kwargs):
+            corrections, waiting = match_pdf_value_columns(*args, **kwargs)
+            return corrections, tuple(item.model_copy(update={"reason": "row_ambiguous"}) for item in waiting)
+
         with TemporaryDirectory() as directory, ExitStack() as stack:
             package, source = _ruled_table_package(Path(directory), manual_review_case=True)
             historical_policy = TableValidationPolicy(rule_severities={VALUE_COLUMN_SPAN_AMBIGUOUS: "blocker"})
-            with patch("app.services.tables.validator.default_table_validation_policy", return_value=historical_policy):
+            with (
+                patch("app.services.tables.validator.default_table_validation_policy", return_value=historical_policy),
+                patch("app.services.document_ir.pdf_value_column_binding.match_pdf_value_columns", side_effect=historical_match),
+            ):
                 runtime, _, job, client, owner, _ = stack.enter_context(
                     self.worker_case(package.read_bytes(), source.read_bytes()))
             report, word = self.read_verified_word(runtime, job)
@@ -237,6 +248,9 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
             details = client.get(f"/api/v1/document-jobs/{job.id}/quality/tables", headers=owner)
             self.assertEqual(details.status_code, 200, details.text)
             self.assertEqual(details.json()["report"]["report_sha256"], report.envelope.report.report_sha256)
+            table_details, = details.json()["items"]
+            waiting, = table_details["unresolved_value_columns"]
+            self.assertEqual(waiting["reason_code"], "row_ambiguous")
 
     def test_clipped_ruled_edges_keep_original_bbox_and_certify_actual_word(self) -> None:
         for side, bounds in (("left", (50.5, 70, 450, 230)), ("right", (50, 70, 449.5, 230))):
@@ -331,10 +345,110 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
     @skipUnless(which("pdftoppm") and getenv("MD2WORD_TABLE_VALUE_LOW_HIGH_DIR"), "需要隔离验收的嵌字体划线夹具")
     def test_embedded_low_high_package_replays_with_different_origin_digest(self) -> None:
         directory = Path(getenv("MD2WORD_TABLE_VALUE_LOW_HIGH_DIR"))
+        package = BytesIO()
+        with ZipFile(directory / "qualification-embedded.zip") as original, ZipFile(package, "w") as modified:
+            for name in original.namelist():
+                content = original.read(name)
+                if name.endswith(("_content_list_v2.json", "layout.json")):
+                    self.assertIn(b">on standby</td>", content)
+                    content = content.replace(b">on standby</td>", b">on standby mode</td>")
+                modified.writestr(name, content)
         self._assert_page_equivalent_replay(
-            (directory / "qualification-embedded.zip").read_bytes(),
+            package.getvalue(),
             (directory / "qualification-embedded.pdf").read_bytes(),
         )
+
+    def _check_gs008_matches_source(self, report, word: bytes, client, owner, job, *, retained: bool) -> set[int]:
+        fixture = json.loads(_GS008_EXPECTED.read_text(encoding="utf-8"))
+        expected = {(row, cell): (value, column, y) for row, cell, value, column, y in fixture["findings"]
+                    if not retained or row not in {3, 5, 9, 15, 17}}
+        table, = report.envelope.report.tables
+        self.assertEqual(len(table.validation.findings), len(expected))
+        output, = table.outputs
+        fragment_output, = output.fragments
+        fragment, = report.document.metadata.logical_table_groups[0].fragments
+        rows = Document(BytesIO(word)).tables[output.actual.table_index].rows
+        header = [cell.text.strip() for cell in rows[0].cells]
+        certified = {item.finding_id: item for item in table.value_column_corrections}
+        bindings = {(c.source_row_index, c.source_cell_index): c.pdf_binding
+                    for c in fragment.value_column_review.corrections}
+        waiting = {item.finding_id: item for item in report.document.metadata.pdf_value_column_unresolved}
+        remaining_flags = {flag.identity: flag.severity for flag in table.flags if flag.code == VALUE_COLUMN_SPAN_AMBIGUOUS}
+        self.assertTrue(waiting)
+        self.assertEqual(remaining_flags, {finding_id: "warning" for finding_id in waiting})
+        self.assertFalse(certified.keys() & waiting.keys())
+        self.assertEqual(certified.keys() | waiting.keys(), {finding.finding_id for finding in table.validation.findings})
+
+        observed = set()
+        certified_rows = set()
+        for finding in table.validation.findings:
+            evidence = finding.evidence
+            source_position = evidence.source_row_index, evidence.source_cell_index
+            value, column, y = expected[source_position]
+            observed.add(source_position)
+            with self.subTest(source_cell=source_position, value=value):
+                self.assertEqual(evidence.value_column_span.value, value)
+                output_row = fragment_output.output_rows[0] + source_position[0] - fragment_output.retained_source_rows[0]
+                cells = rows[output_row].cells
+                start, end = evidence.column, evidence.end_column
+                if finding.finding_id in certified:
+                    certified_rows.add(source_position[0])
+                    correction = certified[finding.finding_id]
+                    binding = bindings[source_position]
+                    self.assertEqual(correction.pdf_binding_sha256, binding.binding_sha256)
+                    self.assertEqual(correction.output_row, output_row)
+                    self.assertEqual(correction.target_column, header.index(column))
+                    self.assertAlmostEqual(binding.value_bbox[1], y, places=2)
+                    self.assertEqual([(cells[i].text.strip(), cells[i].grid_span) for i in range(start, end)],
+                                     [(value if i == correction.target_column else "", 1) for i in range(start, end)])
+                else:
+                    self.assertNotIn(source_position, bindings)
+                    self.assertEqual([(cells[i].text.strip(), cells[i].grid_span) for i in range(start, end)],
+                                     [(value, end - start)] * (end - start))
+        self.assertEqual(observed, expected.keys())
+        self.assertEqual(len(bindings), len(certified))
+
+        for value, column in (("±5", "TYP"), ("±100", "MAX")):
+            hits = [(index, cell.grid_span, row.cells[header.index("UNIT")].text.strip().replace("μ", "µ"))
+                    for row in rows[1:] for index, cell in enumerate(row.cells) if cell.text.strip() == value]
+            self.assertEqual(hits, [(header.index(column), 1, "µV")])
+
+        response = client.get(f"/api/v1/document-jobs/{job.id}/quality/tables", headers=owner)
+        self.assertEqual(response.status_code, 200, response.text)
+        item, = response.json()["items"]
+        self.assertCountEqual(
+            [(row["finding_id"], row["fragment_id"], row["source_row_index"], row["source_cell_index"],
+              row["reason_code"], row["manual_review_required"]) for row in item["unresolved_value_columns"]],
+            [(row.finding_id, row.fragment_id, row.source_row_index, row.source_cell_index, row.reason, True)
+             for row in waiting.values()],
+        )
+        self.assertFalse({row.reason for row in waiting.values()} & {"row_ambiguous", "unit_mismatch"})
+        return certified_rows
+
+    @skipUnless(getenv("MD2WORD_TABLE_VALUE_GS008_DIR"), "需要完整 gs-008 同源缓存")
+    def test_full_gs008_certifies_row_evidence_and_word(self) -> None:
+        directory = Path(getenv("MD2WORD_TABLE_VALUE_GS008_DIR"))
+        fixture = json.loads(_GS008_EXPECTED.read_text(encoding="utf-8"))
+        self.assertEqual(len(fixture["findings"]), 23)
+        origin, = directory.glob("*_origin.pdf")
+        content_v2, = directory.glob("*_content_list_v2.json")
+        source = origin.read_bytes()
+        self.assertEqual(sha256(source).hexdigest(), fixture["pdf_sha256"])
+        self.assertEqual(sha256(content_v2.read_bytes()).hexdigest(), fixture["content_list_v2_sha256"])
+        package = BytesIO()
+        with ZipFile(package, "w") as archive:
+            for path in sorted(directory.rglob("*")):
+                if path.is_file():
+                    archive.write(path, path.relative_to(directory))
+        with self.worker_case(package.getvalue(), source, filename="OPA228_P7.pdf") as (runtime, _, job, client, owner, _):
+            report, word = self.read_verified_word(runtime, job)
+            self.check_warning_download(client, owner, job, word)
+            table, = report.envelope.report.tables
+            self.assertEqual(table.validation.source_content_sha256, fixture["content_list_v2_sha256"])
+            self.assertIsNone(report.document.metadata.pdf_value_column_page_equivalence)
+            certified_rows = self._check_gs008_matches_source(report, word, client, owner, job, retained=False)
+            self.assertGreaterEqual(len(certified_rows), 14)
+            self.assertLessEqual({2, 3, 4, 5, 10, 14, 15, 16, 17}, certified_rows)
 
     @skipUnless(which("pdftoppm") and getenv("MD2WORD_TABLE_VALUE_P7_PDF") and getenv("MD2WORD_TABLE_VALUE_P7_ZIP"),
                 "需要隔离验收保留的真实 P7 提交及原包")
@@ -345,38 +459,10 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
         self.assertEqual(sha256(package).hexdigest(), "5de05d59fdacea166361bde14625ff8045350b0aefc894a923ff181a030fe033")
         with self.worker_case(package, source, filename="OPA228_P7.pdf") as (runtime, _, job, client, owner, _):
             report, word = self.read_verified_word(runtime, job)
-            with self.subTest("下载主 DOCX"):
-                self.check_internal_download(client, owner, job.id, word)
-            with self.subTest("整体质量"):
-                self.assertEqual(job.quality_status, "warning", job.quality_summary["checks_v1"])
-                self.assertEqual(current_base(job).counts.blocker_count, 0)
+            self.check_warning_download(client, owner, job, word)
             self.assertIsNotNone(report.document.metadata.pdf_value_column_page_equivalence)
-            table, = report.envelope.report.tables
-            output, = table.outputs
-            rows = Document(BytesIO(word)).tables[output.actual.table_index].rows
-            header = [cell.text.strip() for cell in rows[0].cells]
-            for value, column in (("±5", "TYP"), ("±100", "MAX")):
-                hits = [(index, cell.grid_span, row.cells[header.index("UNIT")].text.strip().replace("μ", "µ"))
-                        for row in rows[1:] for index, cell in enumerate(row.cells) if cell.text.strip() == value]
-                self.assertEqual(hits, [(header.index(column), 1, "µV")])
-            self.assertEqual(len(table.validation.findings), 18)
-            self.assertEqual(len(table.value_column_corrections), 5)
-            waiting = report.document.metadata.pdf_value_column_unresolved
-            self.assertEqual(len(waiting), 13)
-            self.assertEqual({item.reason for item in waiting}, {"row_ambiguous"})
-            response = client.get(f"/api/v1/document-jobs/{job.id}/quality/tables", headers=owner)
-            self.assertEqual(response.status_code, 200, response.text)
-            item, = response.json()["items"]
-            self.assertCountEqual(
-                [(row["finding_id"], row["fragment_id"], row["source_row_index"], row["source_cell_index"],
-                  row["reason_code"], row["manual_review_required"]) for row in item["unresolved_value_columns"]],
-                [(row.finding_id, row.fragment_id, row.source_row_index, row.source_cell_index, "row_ambiguous", True)
-                 for row in waiting],
-            )
-            certified = {item.finding_id for item in table.value_column_corrections}
-            self.assertEqual({item.finding_id for item in waiting},
-                             {item.finding_id for item in table.validation.findings} - certified)
-            self.assertEqual({flag.identity for flag in table.flags if flag.identity in certified}, set())
+            certified_rows = self._check_gs008_matches_source(report, word, client, owner, job, retained=True)
+            self.assertLessEqual({2, 4, 10, 14, 16}, certified_rows)
             fragment, = report.document.metadata.logical_table_groups[0].fragments
             self.assertEqual(fragment.source_span.bbox, (89, 122, 906, 657))
             for correction in fragment.value_column_review.corrections:
@@ -494,7 +580,7 @@ class OnlineTableValuePdfBindingTests(V2PublicationFixture, TestCase):
         report, first_word = self.read_verified_word(runtime, first)
         self._check_ruled_word(report, first_word, last_row=[("48", 2), ("48", 2), ("ms", 1)])
         waiting, = report.document.metadata.pdf_value_column_unresolved
-        self.assertEqual(waiting.reason, "row_ambiguous")
+        self.assertEqual(waiting.reason, "row_anchor_missing")
         self.check_warning_download(client, owner, first, first_word)
         table, = report.envelope.report.tables
         url = f"/api/v1/document-jobs/{first.id}"

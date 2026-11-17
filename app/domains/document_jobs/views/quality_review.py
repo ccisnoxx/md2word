@@ -288,6 +288,8 @@ class DocumentQualityUnresolvedValueColumnResponse(QualityReviewModel):
         "pdf_source_unavailable", "pdf_geometry_unverified", "pdf_text_unavailable",
         "pdf_observation_unavailable", "pdf_observation_budget_exhausted",
         "header_ambiguous", "row_ambiguous", "column_ambiguous", "value_ambiguous",
+        "row_anchor_missing", "row_anchor_nonunique", "rowspan_context_unresolved", "value_word_nonunique",
+        "unit_row_mismatch", "source_row_band_count_mismatch", "row_sequence_ambiguous",
         "value_visibility_unverified", "span_contains_other_content", "unit_mismatch", "competing_pdf_binding",
     ]
     manual_review_required: Literal[True] = True

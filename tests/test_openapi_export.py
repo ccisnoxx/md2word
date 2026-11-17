@@ -44,6 +44,15 @@ class OpenAPIExportTests(TestCase):
         self.assertIn("/api/v1/document-jobs/{job_id}/review", payload["paths"])
         self.assertIn("/api/v1/mineru-config", payload["paths"])
         self.assertIn("DocumentJobResponse", payload["components"]["schemas"])
+        unresolved_fields = payload["components"]["schemas"]["DocumentQualityUnresolvedValueColumnResponse"]["properties"]
+        self.assertLessEqual(
+            {
+                "row_ambiguous", "unit_mismatch", "row_anchor_missing", "row_anchor_nonunique",
+                "rowspan_context_unresolved", "value_word_nonunique", "unit_row_mismatch",
+                "source_row_band_count_mismatch", "row_sequence_ambiguous",
+            },
+            set(unresolved_fields["reason_code"]["enum"]),
+        )
         action_schema = payload["components"]["schemas"]["DocumentJobResponse"]["properties"]["available_actions"]
         self.assertEqual(
             set(action_schema["propertyNames"]["enum"]),
