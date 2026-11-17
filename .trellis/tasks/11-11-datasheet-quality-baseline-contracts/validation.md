@@ -2,7 +2,7 @@
 
 ## 当前缺陷状态
 
-2026-11-17 核对 `main@96e7aca2`。`gs-004` 修订历史缺项、RS2G04 英文脚注残留和脚注公式降级均为 `closed`。`gs-008` 参数值列合并为 `mitigated`，留存 P7 的 18 个发现中 5 项自动核定通过，13 项 `row_ambiguous` 随内部 DOCX 交付复核。`source_pair_unverified`、可信表头语义及实际人工修改工时仍有覆盖或取证缺口。 [当前状态总表](issues.md#当前状态总表)
+2026-11-17 核对本地 `main@9b537b3a`。`gs-004` 修订历史缺项、RS2G04 注释翻译遗漏和脚注上标缺陷均为 `closed`。`gs-008` 参数值列合并为 `mitigated`。行取证覆盖率、`source_pair_unverified`、可信表头语义及实际人工修改工时仍有证据缺口。 [当前状态总表](issues.md#当前状态总表)
 
 ## 样本与范围
 
@@ -123,7 +123,7 @@ task_dir=.trellis/tasks/11-11-datasheet-quality-baseline-contracts
 | 缺片段和发布阻断 | SN74AC244 第 11–12 页负例的 `/1/0` 保留可追溯的源 PDF 裁图，质量为 `blocked`。hostdzire 隔离和生产环境均已验证内部草稿下载、发布拒绝及发布记录前后均为 0。[来源绑定负例](upstream-table-coverage-validation.md) · [隔离负例实测](#隔离负例实测) · [生产负例实测](#生产负例实测) |
 | Word/WPS 实物复核 | SN74AC244 已有 118/118 个源公式和 LibreOffice 目录刷新证据。WPS 桌面实物已复核，用户确认 Microsoft Word 的四项复核均通过。[目录公式复验](toc-formula-verification.md#整份样本结果) · [WPS 桌面实测](#ac4-实测与待办) · [Word 人工复核](#microsoft-word-人工复核) |
 
-OPA228 第 7 页的参数值列合并目前为 `mitigated`。留存真实 MinerU 包已验证 PDF 几何自动核定、未决定位、内部 DOCX 下载及确认报告后的批准和发布 API。管理员逐格核定生成新一代 DOCX 的证据来自 LOW/HIGH 对照。 [当前处理路径与证据](issues.md#gs-008-参数值列合并)
+行取证改进后的本地 Worker 回放中，OPA228 第 7 页完整同源样本有 17/23 项自动修正通过，留存 MinerU 包有 12/18 项通过。两份产物各保留 6 项警告，DOCX 下载均返回 200。真实 P7 的批准及发布 API 已在早期隔离回放验证。管理员逐格核定生成新一代 DOCX 的证据来自 LOW/HIGH 对照。 [行取证验收](../archive/2026-11/11-17-table-value-row-evidence/validation.md) · [当前处理路径与证据](issues.md#gs-008-参数值列合并)
 
 历史上游对照记录如下。OPA228 第 7 页的参数列归属复用已归档的验证。补充比对用户提供的 `mineru_raw_result`，其内容列表 v2 指纹与归档包不同，6.7 节目标表 HTML 的 SHA-256 同为 `c5cfc86947e81ae9e8b832f36f96f08aadb37a4c4261e4c3fb5235b8677f2485`。`±5 µV` 跨 MIN–TYP、`±100 µV` 跨 MIN–MAX。此比对记录为 OPA228 上游证据。[参数数值列归属归档](../archive/2026-11/11-16-parameter-table-value-column-binding/validation.md)
 

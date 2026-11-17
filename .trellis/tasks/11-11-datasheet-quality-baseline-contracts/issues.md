@@ -1,27 +1,31 @@
-# 转换质量问题清单
+# 当前质量问题状态
 
-截至 2026-11-17，状态以 `main@96e7aca2` 及下列验收记录为准。
+截至 2026-11-17，代码状态以本地 `main@9b537b3a` 为准。各项验收结论沿用对应记录的输入、版本和环境。
 
-- `open` 表示仍有质量问题或验收数据缺口。
-- `mitigated` 表示已有检测、修正或人工处理路径，部分输入仍需复核。
-- `closed` 表示已关闭列明的具体缺陷。样本、版本和验收覆盖见各项记录。
+## 状态定义
+
+- `open` 表示仍有质量问题或证据缺口待解决。
+- `mitigated` 表示已有检测、修正或人工处理路径，覆盖仍有限。
+- `closed` 表示列明的具体缺陷已修复，且有对应回归证据。
+- `historical` 表示指定旧产物和原观察作为复现证据保留。
 
 ## 当前状态总表
 
-| 问题 | 状态 | 当前证据 |
-| --- | --- | --- |
-| `gs-004` OPA228 第 2 页修订历史缺项 | `closed` | 已限制 TOC 合并范围并加列表项账本。 [修订历史](#gs-004-修订历史缺项) |
-| RS2G04 第 6 页英文脚注残留 | `closed` | 五条额定值脚注、一条使用说明、两条 JEDEC 脚注通过 Word 人工验收。 [英文脚注](#rs2g04-英文脚注残留) |
-| RS2G04 第 6 页脚注公式降级 | `closed` | `(1)(2)` 在原位置显示为原生 Word 上标。 [脚注上标](#rs2g04-脚注公式降级) |
-| `gs-008` OPA228 第 7 页参数值列合并 | `mitigated` | 可定位、按证据核定或带警告交付。 [数值列合并](#gs-008-参数值列合并) |
-| `row_ambiguous` 自动证据覆盖率 | `open` | 留存 P7 的 18 个原跨列发现中仍有 13 项待人工复核。 [覆盖缺口](#当前开放问题) |
-| `source_pair_unverified` | `open` | 同源证据不足时保留原跨度和告警。 [来源缺口](#当前开放问题) |
-| 缺少可信表头语义 | `open` | 已有同源校核，自动识别覆盖仍有限。 [表头缺口](#当前开放问题) |
-| 实际人工修改工时数据 | `open` | 缺少与具体 DOCX 和轮次绑定的修改次数、编辑耗时和审核用时。 [人工数据](en2zh-human-review.md) |
+| ID / 问题 | 状态 | 当前结论 | 剩余风险或待补证据 | 修复或复现证据 |
+| --- | --- | --- | --- | --- |
+| `gs-004` OPA228 第 2 页修订历史被 TOC 吸收 | `closed` | 区域外列表保留在正文，列表项有来源账本。 | 整页 P2 新 DOCX 缺少带指纹的验收记录。 | [修订历史回归](#gs-004-修订历史缺项) |
+| RS2G04 第 6 页题注和英文脚注翻译遗漏 | `closed` | 题注和脚注纳入翻译。八组注释通过 Word 专项验收。 | 8.1 表前温度条件的译词待复核。 | [注释翻译验收](#rs2g04-英文脚注残留) |
+| RS2G04 第 6 页脚注公式降级 | `closed` | `(1)(2)` 在原位置显示为 Word 原生上标。 | 其他不受支持的公式仍可降级。 | [脚注上标验收](#rs2g04-脚注公式降级) |
+| `gs-008` OPA228 第 7 页参数值列合并 | `mitigated` | 完整同源样本自动修正 17/23，留存包自动修正 12/18。 | 两份输入各有 6 项带警告交付，仍需复核。 | [数值列合并验收](#gs-008-参数值列合并) |
+| `row_ambiguous` 自动证据覆盖率 | `open` | 行取证可按缺失证据给出更具体的诊断。 | 多样本覆盖率待测。 | [覆盖缺口](#当前开放问题) |
+| `source_pair_unverified` | `open` | 同源证据不足时保留原跨度和告警。 | 缺少提交证明或逐页对照失败的输入无法自动核定。 | [来源缺口](#当前开放问题) |
+| 缺少可信表头语义 | `open` | 同源校核可补足有证据的表头。 | 部分输入仍缺少可信表头。 | [表头缺口](#当前开放问题) |
+| 实际人工修改工时数据 | `open` | RS2G04 已有专项验收结论。 | 待补绑定 DOCX 和轮次的修正次数、编辑耗时及审核用时。 | [人工数据](en2zh-human-review.md) |
+| `gs-004`、`gs-008` 的 2026-11-14 预审 DOCX | `historical` | 原产物分别复现修订历史缺项和数值跨列。 | 原缺陷随旧产物保留。 | [原观察、文件名及 SHA-256](#2026-11-14-审核副本预审) |
 
 ## 当前开放问题
 
-- **`row_ambiguous` 自动证据覆盖率。** 留存 P7 自动核定并通过 Word 实物检查 5/18，其余 13 项缺少足以确认同行归属的证据。多样本的自动核定覆盖率待测。 [P7 隔离验收](../archive/2026-11/11-15-table-value-pdf-binding-rollout/validation-table-edge.md#最终候选及真实-p7)
+- **`row_ambiguous` 自动证据覆盖率。** 历史报告仍可读取该原因。行取证新增更具体的原因码。两份 P7 固定输入各有六项未决，零基源行 21–24 缺少可靠单位证据（`unit_row_mismatch`），27–28 缺少可靠的跨行公式上下文（`rowspan_context_unresolved`）。多样本自动核定覆盖率待测。 [行取证验收](../archive/2026-11/11-17-table-value-row-evidence/validation.md)
 - **`source_pair_unverified`。** 上传 PDF 与解析包的原件可按指纹匹配，符合来源要求的异指纹包可逐页核对。来源证明缺失或逐页结果不一致时，相关单元格保留为未决，可按警告交付合同处理。 [来源与未决回归](../../../tests/test_online_table_value_pdf_binding.py)
 - **缺少可信表头语义。** RS2G04 第 6 页留存的 MinerU HTML 未声明 ESD 表首行，绑定同源校核后可生成重复表头。TPLD2001 两段完整 HTML 仍缺可信表头，四行标题保留，`w:tblHeader` 为空。 [表头来源合同](table-header-review.md) · [续表对照](continuation-contract-validation.md)
 - **实际人工修改工时数据。** RS2G04 的专项 Word 验收已有结论。仍需按实际审阅的 DOCX 指纹和轮次，记录修正的独立缺陷数、实际编辑耗时及有效审核区间。 [人工记录](en2zh-human-review.md)
@@ -30,24 +34,24 @@
 
 ### gs-008 参数值列合并
 
-- **状态与提交。** `mitigated`。跨数值列检测 `3833fc7b`，人工核定 `1a416493`，PDF 自动核定 `2669e9b0`，Worker 同包新代 `e00fc24b`，表框取证修正 `8034ead5`。未决警告交付 `6fa8664e`（合并 `5bdea79e`），Word 布局证据对账 `4f80f3c7`（合并 `74157997`）。
-- **当前行为。** 已检测数值格跨越同组独立的 MIN/TYP/MAX 等列。质量表格接口可输出具体表或片段、源页、行、单元格、数值、单位和候选列。来源、行列和数值可由 PDF 几何证实时，可自动修正对应单元格并用 Word 实物核验。符合接纳条件的管理员可在同源解析包上逐格核定，生成新一代 DOCX。仍为 `unresolved` 的项（包括 `row_ambiguous`）保留原跨度与定位，仍可生成并下载带警告的内部 DOCX，交给用户在 Word 中修改副本。系统正式批准须确认当前表格报告摘要，发布还须满足其余发布条件。 [数值列合同](../../spec/backend/word-generation-rules.md#table-005-参数表数值列归属与复核)
-- **对应回归。** `test_parameter_table_value_column_binding.py` 验证跨列识别及历史报告；`OnlineTableValuePdfBindingTests` 下的 `test_retained_p7_real_package_certifies_word_after_table_edge_recovery`、`test_row_ambiguous_word_can_be_downloaded_approved_and_published_with_warning`、`test_admin_replays_the_same_package_and_publishes_after_actual_word_certification` 分别覆盖真实 P7 实物、未决交付和管理员同包新代。 [跨列检测回归](../../../tests/test_parameter_table_value_column_binding.py) · [Worker 与交付回归](../../../tests/test_online_table_value_pdf_binding.py)
-- **新验收记录。** 真实 P7 留存包回放确认 18 个原跨列发现中 5 项通过修正与实物核验，13 项为 `row_ambiguous`。`±5 µV` 仅占 TYP，`±100 µV` 在该输入中保持单列 MAX。内部 DOCX 下载返回 200。另一次 `main@74157997` 隔离回放中，未确认报告时批准返回 409，确认后批准返回 200，管理员发布返回 201，质量仍为 `warning`。该次主 DOCX SHA-256 为 `dc64c2d32272e8e19d2e05a4cc8ffd1a98058f7a5bccb8ee933f25eb02e06280`。 [P7 实物和新代对照](../archive/2026-11/11-15-table-value-pdf-binding-rollout/validation-table-edge.md) · [P7 下载定向复验](../archive/2026-11/11-17-table-value-column-warning-delivery/implement.md#pr-80-后续补验与-p7-基础质量修复) · [P7 批准与发布回放](../archive/2026-11/11-17-table-value-column-warning-delivery/implement.md#真实-p7-审批发布本地回放)
-- **剩余风险。** 自动修正只覆盖有充分同源与几何证据的格子。历史包、来源不足及行归属不清仍需逐格对照原 PDF。上述新策略的 P7 验收使用本地 Worker 和留存回包，生产新提交、线上 Worker、发布后最终件下载及 Word/WPS 视觉效果待验证。 [本地回放边界](../archive/2026-11/11-17-table-value-column-warning-delivery/implement.md#更新后的未验证范围)
+- **状态与提交。** `mitigated`。跨数值列检测 `3833fc7b`，人工核定 `1a416493`，PDF 自动核定 `2669e9b0`，Worker 同包新代 `e00fc24b`，表框取证修正 `8034ead5`。未决警告交付 `6fa8664e`（合并 `5bdea79e`），Word 布局证据对账 `4f80f3c7`（合并 `74157997`），行取证覆盖改进 `0b1c6885`（合并 `57772613`）。
+- **当前行为。** 已检测数值格跨越同组独立的 MIN/TYP/MAX 等列。质量表格接口可输出具体表或片段、源页、行、单元格、数值、单位和候选列。来源、行列和数值可由 PDF 几何证实时，可自动修正对应单元格并用 Word 实物核验。符合开关、名单及同源接纳条件的管理员可在原解析包上逐格核定，生成新一代 DOCX。仍为 `unresolved` 的项（包括历史报告中的 `row_ambiguous`）保留原跨度与定位，仍可生成并下载带警告的内部 DOCX，交给用户在 Word 中修改副本。系统正式批准须确认当前表格报告摘要，发布还须满足其余发布条件。 [数值列合同](../../spec/backend/word-generation-rules.md#table-005-参数表数值列归属与复核)
+- **对应回归。** `test_parameter_table_value_column_binding.py` 覆盖跨列识别及历史报告。`test_full_gs008_certifies_row_evidence_and_word` 和 `test_retained_p7_real_package_certifies_word_after_table_edge_recovery` 核对两份 P7 输入的源列和实际 DOCX。`test_unverified_row_word_can_be_downloaded_approved_and_published_with_warning` 和 `test_admin_replays_the_same_package_and_publishes_after_actual_word_certification` 覆盖未决交付和管理员同包新代。 [跨列检测回归](../../../tests/test_parameter_table_value_column_binding.py) · [Worker 与交付回归](../../../tests/test_online_table_value_pdf_binding.py)
+- **新验收记录。** 行取证改进后的本地 Worker 回放，完整同源样本通过 17/23，DOCX SHA-256 为 `f346f139e4ae655c5ba1ef0e117fd5f37084f5f277e38d00acb020174bb294b5`。18 项留存包通过 12/18，DOCX SHA-256 为 `a14ceb7de147a45659cb9dc6d056ef08e3690f47f2f298a966dc384094017f35`。两份 DOCX 均按独立 PDF 标注逐格核对，观察到 0 项自动错修，各保留 6 项 warning，下载均返回 200。批准及发布 API 的真实 P7 证据来自较早的隔离回放。 [行取证验收](../archive/2026-11/11-17-table-value-row-evidence/validation.md) · [先前批准与发布回放](#gs-008-早期隔离回放)
+- **剩余风险。** 自动修正覆盖有充分同源与几何证据的格子。未决格仍需逐格对照原 PDF。已验收的自动修正比例限于两份本地固定输入，生产新提交、线上 Worker、发布后最终件下载及 Word/WPS 视觉效果待验证。 [本地回放边界](../archive/2026-11/11-17-table-value-column-warning-delivery/implement.md#更新后的未验证范围)
 
 ## 已关闭问题
 
 ### gs-004 修订历史缺项
 
-- **状态与提交。** `closed`。`5b353439`（合并 `ea16ebdd`）将 TOC 合并限制在目录区，新增 `list-item-ledger/v1` 并在生成期拒绝区域外的目录合并。修复前对账已确认 MinerU 和 IR 都保留 14 条 Revision B → C，丢失发生在渲染阶段。 [根因对账](../archive/2026-11/11-15-toc-region-list-item-ledger/prd.md#背景与证据)
-- **对应回归。** `test_toc_like_items_after_body_heading_stay_visible` 检查带点引导符的修订项仍在正文且仅生成一个 TOC 域；`test_generation_rejects_toc_policy_outside_toc_region` 检查越区合并被拒绝；`test_list_item_ledger_blocks_item_count_drift` 检查列表项数漂移。 [Word 渲染回归](../../../tests/test_document_ir_word_renderer_layout.py) · [列表合同回归](../../../tests/test_document_ir_layout_contract.py)
+- **状态与提交。** `closed`。`5b353439`（合并 `ea16ebdd`）将 TOC 合并限制在目录区，新增 `list-item-ledger/v1` 并在生成期拒绝区域外的目录合并。修复前对账已确认 MinerU 和 IR 都保留 14 条 Revision B → C，丢失发生在渲染阶段。`29592706`（合并 `192cf195`）后续用 v2 账本核对真实顺序和逐项摘要。 [根因对账](../archive/2026-11/11-15-toc-region-list-item-ledger/prd.md#背景与证据) · [v2 账本定向验收](../archive/2026-11/11-17-source-item-annotation-ledger/validation.md)
+- **对应回归。** `test_toc_like_items_after_body_heading_stay_visible` 检查带点引导符的修订项仍在正文且仅生成一个 TOC 域。`test_generation_rejects_toc_policy_outside_toc_region` 检查越区合并被拒绝。`test_list_item_ledger_blocks_item_count_drift` 检查列表项数漂移，`test_v2_list_ledger_checks_content_order_expansion_empty_slots_and_identity` 覆盖 v2 的逐项校验。 [Word 渲染回归](../../../tests/test_document_ir_word_renderer_layout.py) · [列表合同回归](../../../tests/test_document_ir_layout_contract.py)
 - **新验收记录。** 本次核对 `main` 上的实物回归断言。测试以包含 `Added CDM in ESD Ratings` 和 `Changed format of thermal information tables` 的最小修订列表生成 DOCX，核对两项在正文可见、两个策略均为 `bullet`，目录仍为一个原生域。2026-11-15 留存的本地回归日志中，相关模块用例由 182 增至 188，修复前后的失败和错误项相同。 [合并回归](../../../tests/test_document_ir_word_renderer_layout.py)
 - **剩余风险。** 归档实施计划列出整页实物验收标准，包括 B → C 全部 14 条、A → B 段落及唯一 TOC 域。当前未找到满足该标准且有新 DOCX 指纹的验收记录。旧预审产物保留原结论，目录刷新及版式仍按桌面客户端验收。 [原验收标准](../archive/2026-11/11-15-toc-region-list-item-ledger/prd.md#验收标准)
 
 ### RS2G04 英文脚注残留
 
-- **状态与提交。** `closed`。`06650bd4`（合并 `318f91cb`）把题注和脚注纳入翻译批次、回填及审核证据。
+- **状态与提交。** `closed`。`06650bd4`（合并 `318f91cb`）把题注和脚注纳入翻译批次、回填及审核证据。`29592706`（合并 `192cf195`）补充按来源位置和摘要核对译文的定向回归。 [注释账本定向验收](../archive/2026-11/11-17-source-item-annotation-ledger/validation.md)
 - **对应回归。** `test_annotation_source_positions_and_alias_survive_round_trip_and_apply` 检查源位置和回填；`test_scoped_annotations_split_and_reassemble_in_original_positions` 和 `test_scoped_annotation_missing_or_changed_token_never_applies_partial_replacements` 检查批次重组及技术内容完整性。 [IR 回归](../../../tests/test_document_ir_translation.py) · [翻译完整性回归](../../../tests/test_translation_integrity_execution.py)
 - **新验收产物。** 2026-11-15 同源表头校核稿 SHA-256 为 `1e29bc39ae1a8a5496a919a1f88cbbbfec1dbb718df9641c63e0653315bea9bb`。实际翻译响应覆盖八组注释，Microsoft Word 人工验收第 1–8 项全部通过。 [实译与 Word 验收](../archive/2026-11/11-15-datasheet-annotation-translation-superscript/validation.md#microsoft-word-人工验收)
 - **剩余风险。** 8.1 表前温度条件中的工作状态与自由空气限定仍有独立译词差异待复核。实译证据使用留存解析包，其他三个翻译方向只有确定性回归。 [译词差异](../archive/2026-11/11-15-datasheet-annotation-translation-superscript/validation.md#温度范围译词差异)
@@ -62,6 +66,10 @@
 ## 历史复现记录
 
 以下保留各次运行的原观察、待核查项和当时的验收结论。
+
+### gs-008 早期隔离回放
+
+真实 P7 留存包回放确认 18 个原跨列发现中 5 项通过修正与实物核验，13 项为 `row_ambiguous`。`±5 µV` 仅占 TYP，`±100 µV` 在该输入中保持单列 MAX。内部 DOCX 下载返回 200。另一次 `main@74157997` 隔离回放中，未确认报告时批准返回 409，确认后批准返回 200，管理员发布返回 201，质量仍为 `warning`。该次主 DOCX SHA-256 为 `dc64c2d32272e8e19d2e05a4cc8ffd1a98058f7a5bccb8ee933f25eb02e06280`。 [P7 实物和新代对照](../archive/2026-11/11-15-table-value-pdf-binding-rollout/validation-table-edge.md) · [P7 下载定向复验](../archive/2026-11/11-17-table-value-column-warning-delivery/implement.md#pr-80-后续补验与-p7-基础质量修复) · [P7 批准与发布回放](../archive/2026-11/11-17-table-value-column-warning-delivery/implement.md#真实-p7-审批发布本地回放)
 
 ### 2026-11-14 审核副本预审
 
