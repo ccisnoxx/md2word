@@ -47,6 +47,20 @@ def _located_failure(document: DocumentIR, fragment: TableFragment, *, page_inde
     return error
 
 
+def _uncertain_caption_block_ids(document: DocumentIR) -> set[str]:
+    """收集题注不确定状态涉及的源块、候选及绑定的两端。"""
+    block_ids: set[str] = set()
+    for block in document.blocks:
+        evidence = block.metadata.get("caption_reconciliation")
+        if not isinstance(evidence, dict) or evidence.get("status") != "uncertain":
+            continue
+        block_ids.add(block.id)
+        block_ids.update(evidence.get("members", ()))
+        for receipt in [*evidence.get("bindings", ()), *evidence.get("candidates", ())]:
+            block_ids.update((receipt["donor_block_id"], receipt["target_block_id"]))
+    return block_ids
+
+
 def _preserve_pages(document: DocumentIR, fallback_fragments: list[TableFragment], *, source_loader, rasterizer):
     """按跨页表闭包一次处理，所有依赖页均须可靠保留。"""
     fragment = fallback_fragments[0]
@@ -83,12 +97,21 @@ def _preserve_pages(document: DocumentIR, fallback_fragments: list[TableFragment
         total_bytes += len(rasters[page])
         if total_bytes > MAX_TOTAL_BYTES:
             raise _located_failure(document, fragment, page_index=page, code="table_structure_recovery_limit")
+    # 更早的整页回退可能已移除题注证据，无法用本次剩余块确认全局提示的完整来源。
+    caption_blocks = (_uncertain_caption_block_ids(document)
+                      if "caption_binding_uncertain" in document.quality_flags and not document.metadata.degraded_pages
+                      else set())
     removed, pending = replace_degraded_pages(document, rasters, reasons, source_pdf_sha256=source.checksum_sha256,
                                                dpi=getattr(rasterizer, "DPI", None), trigger="validation")
     drop_degraded_table_groups(document, removed, prune_removed_diagnostics=True)
+    # removed 对应本次已栅格化的原页。任何仍在正文中的题注关联块都保留该提示。
+    captions_preserved = bool(caption_blocks) and caption_blocks <= removed
     document.quality_flags = [
         flag for flag in document.quality_flags
-        if not (flag.startswith("layout_two_column_candidate:") and flag.split(":")[1] in removed)
+        if not (
+            captions_preserved and flag == "caption_binding_uncertain"
+            or flag.startswith("layout_two_column_candidate:") and flag.split(":")[1] in removed
+        )
     ]
     return closure, removed, pending
 
