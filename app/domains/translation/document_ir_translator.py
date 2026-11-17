@@ -12,7 +12,17 @@ from bs4 import BeautifulSoup
 from bs4.element import NavigableString
 
 from app.conversion.docx_rules.formula import scan_math_spans
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
+from app.services.document_ir.source_item_ledger import (
+    ANNOTATION_LEDGER_MISMATCH,
+    LEDGER_RECOVERED,
+    LIST_ITEM_LEDGER_MISMATCH,
+    apply_target_digests,
+    ledger_positions,
+    validate_ledger_source_identity,
+    validate_source_item_ledgers,
+)
 from app.services.document_ir.table_annotations import freeze_table_annotation_sources
 from app.domains.translation.models import (
     TRANSLATION_ANNOTATION_FIELDS,
@@ -58,6 +68,12 @@ class DocumentIRTranslationError(RuntimeError):
         self.code = code
         self.evidence = evidence
         self.formula_protection = formula_protection
+
+    @classmethod
+    def from_source_integrity(cls, error: DocumentIntegrityError) -> DocumentIRTranslationError:
+        """将 IR 认证失败交给现有翻译失败收口，调用方以异常链保留结构化证据。"""
+        flags = error.evidence["blocking_quality_flags"]
+        return cls("翻译来源账本校验失败。", code=flags[0])
 
 
 class TranslationCallRecorder(Protocol):
@@ -162,6 +178,7 @@ class DocumentIRTranslationService:
     ) -> DocumentIR:
         """返回翻译后的 DocumentIR 副本；blocks/assets 数量和顺序保持不变。"""
 
+        source = document_ir
         translated = document_ir.model_copy(deep=True)
         if translated.metadata.translation_item_scope is None:
             translated.metadata.translation_item_scope = "annotations-v1"
@@ -210,6 +227,7 @@ class DocumentIRTranslationService:
                 call_recorder.record_success(request, result, duration_ms=duration_ms, integrity=validated.evidence)
             replacements.update(validated.replacements)
         self.apply_replacements(translated, targets, replacements)
+        self.confirm_ledger_result(source, translated, replacements)
         translated.metadata.document_language = self._target_document_language(language_pair)
         return translated
 
@@ -228,6 +246,11 @@ class DocumentIRTranslationService:
         """按页数、实际编码字符和 item 数生成确定性计划；char_count 仍表示源文。"""
 
         targets, items = self.extract_translation_items(document_ir)
+        if document_ir.metadata.source_item_ledger_scope is not None:
+            try:
+                self._verified_ledger_targets(document_ir, targets)
+            except DocumentIntegrityError as error:
+                raise DocumentIRTranslationError.from_source_integrity(error) from error
         if not items:
             return targets, items, []
         targets_by_id = {target.item_id: target for target in targets}
@@ -575,7 +598,10 @@ class DocumentIRTranslationService:
                 cls._append_block_text(block, targets, items)
             cls._append_list_items(block, targets, items)
             cls._append_table_text_nodes(block, targets, items)
-            if include_annotations and block.type in {"image", "table"}:
+            if include_annotations and (
+                block.type in {"image", "table"}
+                or document_ir.metadata.source_item_ledger_scope is not None
+            ):
                 for annotation_field in TRANSLATION_ANNOTATION_FIELDS:
                     for index, value in enumerate(getattr(block, annotation_field)):
                         if not cls._has_text(value):
@@ -700,6 +726,26 @@ class DocumentIRTranslationService:
         if unprotected_count:
             DocumentIRTranslationService._raise_formula_boundary_error(formula_count, unprotected_count)
 
+    @staticmethod
+    def _verified_ledger_targets(
+        document_ir: DocumentIR,
+        targets: list[DocumentIRTranslationTarget],
+    ) -> tuple[tuple[str, str, int, str], ...]:
+        """先核对源件，再把翻译计划中的 ID、位置及顺序与账本对齐。"""
+
+        validate_source_item_ledgers(document_ir)
+        expected = tuple((block_id, field, index, f"{block_id}.{field}.{index:04d}")
+                         for block_id, field, index in ledger_positions(document_ir))
+        selected = [target for target in targets if target.field in {"list_items", *TRANSLATION_ANNOTATION_FIELDS}]
+        actual = tuple((target.block_id, target.field, target.index, target.item_id) for target in selected)
+        if (actual != expected or document_ir.metadata.translation_items_applied
+                or len({target.item_id for target in targets}) != len(targets)):
+            list_mismatch = ([position for position in actual if position[1] == "list_items"]
+                             != [position for position in expected if position[1] == "list_items"])
+            code = LIST_ITEM_LEDGER_MISMATCH if list_mismatch else ANNOTATION_LEDGER_MISMATCH
+            raise DocumentIntegrityError("翻译回填", {"blocking_quality_flags": [code]})
+        return expected
+
     def apply_replacements(
         self,
         document_ir: DocumentIR,
@@ -707,6 +753,17 @@ class DocumentIRTranslationService:
         replacements: dict[str, str],
     ) -> None:
         blocks_by_id = {block.id: block for block in document_ir.blocks}
+        tracked_values: dict[tuple[str, str, int], str] = {}
+        if document_ir.metadata.source_item_ledger_scope is not None:
+            ledger_targets = self._verified_ledger_targets(document_ir, targets)
+            for block_id, field, index, item_id in ledger_targets:
+                value = replacements.get(item_id)
+                if not isinstance(value, str) or not value.strip():
+                    code = LIST_ITEM_LEDGER_MISMATCH if field == "list_items" else ANNOTATION_LEDGER_MISMATCH
+                    raise DocumentIntegrityError("翻译回填", {"blocking_quality_flags": [code]})
+                tracked_values[block_id, field, index] = value
+            # 预期摘要只取自已获准的结果，实际写入值在回填后另行对账。
+            apply_target_digests(document_ir, tracked_values)
         html_replacements: dict[str, dict[int, str]] = {}
         for target in targets:
             block = blocks_by_id[target.block_id]
@@ -727,6 +784,48 @@ class DocumentIRTranslationService:
             block.html = self._replace_html_text_nodes(block.html or "", replacements_by_index)
         if document_ir.metadata.translation_item_scope == "annotations-v1":
             document_ir.metadata.translation_items_applied = True
+        self._confirm_ledger_values(document_ir, tracked_values)
+
+    @staticmethod
+    def _confirm_ledger_values(
+        document_ir: DocumentIR, values: dict[tuple[str, str, int], str],
+    ) -> None:
+        """用已验证的译文恢复字段，再核对原有账本是否仍认证这些值。"""
+
+        ledger_fields: dict[tuple[str, str], list[str]] = {}
+        for (block_id, field, _index), value in values.items():
+            ledger_fields.setdefault((block_id, field), []).append(value)
+        blocks_by_id = {block.id: block for block in document_ir.blocks}
+        recovered = False
+        for (block_id, field), expected_values in ledger_fields.items():
+            block = blocks_by_id.get(block_id)
+            if block is None:
+                code = LIST_ITEM_LEDGER_MISMATCH if field == "list_items" else ANNOTATION_LEDGER_MISMATCH
+                raise DocumentIntegrityError("翻译回填", {"blocking_quality_flags": [code]})
+            if getattr(block, field) != expected_values:
+                setattr(block, field, expected_values)
+                recovered = True
+            if field == "captions" and (index := block.caption_text_alias_index) is not None:
+                if type(index) is not int or not 0 <= index < len(expected_values):
+                    raise DocumentIntegrityError("翻译回填", {"blocking_quality_flags": [ANNOTATION_LEDGER_MISMATCH]})
+                if block.text != expected_values[index]:
+                    block.text = expected_values[index]
+                    recovered = True
+        validate_source_item_ledgers(document_ir)
+        if recovered and LEDGER_RECOVERED not in document_ir.quality_flags:
+            document_ir.quality_flags.append(LEDGER_RECOVERED)
+
+    @classmethod
+    def confirm_ledger_result(
+        cls, source: DocumentIR, target: DocumentIR, replacements: dict[str, str],
+    ) -> None:
+        """登记前重新以检验过的批次结果为准核对译文和冻结源身份。"""
+
+        cls._confirm_ledger_values(target, {
+            (block_id, field, index): replacements[f"{block_id}.{field}.{index:04d}"]
+            for block_id, field, index in ledger_positions(source)
+        })
+        validate_ledger_source_identity(source, target)
 
     @staticmethod
     def _block_page_number(block: DocumentIRBlock) -> int | None:

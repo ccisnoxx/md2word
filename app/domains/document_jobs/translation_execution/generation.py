@@ -134,10 +134,12 @@ class TranslationGenerationCoordinator:
                 error_message=f"翻译批次计划校验失败: {translation_batch_error_code(exc)}",
                 trace_id=trace_id,
                 formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
+                failure_evidence=failure_policy.worker_failure_evidence(exc),
             )
         if summary is None:
             error_code = "translation_batch_tree_invalid"
             formula_protection = None
+            failure_evidence = None
             batch_source_ids = {batch.source_document_ir_file_id for batch in batches}
             if batches and job.source_document_ir_file_id not in batch_source_ids:
                 # 当前任务指针与本代批次绑定不一致，属于完整性/代次错误，不是对象存储缺失。
@@ -151,6 +153,7 @@ class TranslationGenerationCoordinator:
                 except DocumentIRTranslationError as exc:
                     error_code = "translation_failed"
                     formula_protection = exc.formula_protection
+                    failure_evidence = failure_policy.worker_failure_evidence(exc)
                 except (TranslationIntegrityError, ValueError):
                     error_code = "translation_failed"
             return self.deps.lifecycle.mark_failed(
@@ -160,6 +163,7 @@ class TranslationGenerationCoordinator:
                 error_message="翻译批次无法由当前 source/config 重建权威计划。",
                 trace_id=trace_id,
                 formula_protection=formula_protection,
+                failure_evidence=failure_evidence,
             )
         leaf_batches = [batch for batch in batches if batch.status != "split"]
         if summary.outcome == "failed":

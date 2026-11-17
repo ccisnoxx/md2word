@@ -8,6 +8,7 @@ from typing import Any
 
 from app.services.document_ir.integrity import build_page_counts
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
+from app.services.document_ir.source_item_ledger import validate_source_item_ledgers
 from app.services.failure_context import attach_failure_context
 from app.services.renderer.block_evidence import RenderCollector
 from app.services.renderer.layout_plan import LayoutPlan, _block_page_index, build_layout_plan
@@ -55,6 +56,7 @@ def prepare_render(document_ir: DocumentIR, template_config: TemplateConfigPacka
                    resources: ResourceIdentity) -> PreparedRender:
     """依次构建布局计划、内容表格计划、表格输入和 RenderPlan；每一步失败都带计划阶段定位后原样抛出。"""
 
+    validate_source_item_ledgers(document_ir)
     try:
         layout_plan = build_layout_plan(document_ir)
     except Exception as error:

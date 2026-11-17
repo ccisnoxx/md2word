@@ -113,7 +113,8 @@ class WordResultFinalizer:
                 error_code="render_failed" if isinstance(exc, (TablePlaceholderError, DocumentIntegrityError, TableEvidenceError)) else "oss_failed",
                 error_message=(failure_policy.worker_failure_message(exc) if isinstance(exc, (TablePlaceholderError, TableEvidenceError, DocumentIntegrityError)) or
                     "table_placeholder_rendering" not in receipt.file.metadata else "表格占位结果文件读取或完整性校验失败。"),
-                trace_id=trace_id, expected_prepared_result_file_id=receipt.file.id)
+                trace_id=trace_id, expected_prepared_result_file_id=receipt.file.id,
+                failure_evidence=failure_policy.worker_failure_evidence(exc))
         if completed is None:
             current = self.job_repository.get_document_job(job.id) or job
             return self.lifecycle.mark_timed_out_if_needed(current, trace_id=trace_id) or current

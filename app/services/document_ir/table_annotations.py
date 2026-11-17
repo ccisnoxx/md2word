@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import TYPE_CHECKING, Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -36,12 +37,17 @@ _ItemIndex = Annotated[int, Field(ge=0, strict=True)]
 
 
 class TableAnnotationSource(BaseModel):
-    """译前冻结的表前条件和跨片段注释位置，目标内容仍由批次负责。"""
+    """从源表冻结的表前条件及跨片段注释代表位置。"""
 
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     context_indices: list[_ItemIndex] = Field(default_factory=list)
     captions: dict[str, _ItemIndex] = Field(default_factory=dict)
     footnotes: dict[str, _ItemIndex] = Field(default_factory=dict)
+
+
+def preserves_annotation_positions(document: DocumentIR) -> bool:
+    """新账本件及既有注释翻译范围均按位置渲染，历史直转维持原行为。"""
+    return document.metadata.source_item_ledger_scope is not None or document.metadata.translation_item_scope is not None
 
 
 def continuation_caption(text: str, primary: tuple[str, ...]) -> bool:
@@ -101,7 +107,9 @@ def _annotation_groups(document: DocumentIR) -> dict[str, tuple[DocumentIRBlock,
     return groups
 
 
-def _match_annotation_indices(values: list[str], representatives: list[str], *, caption: bool) -> dict[str, int]:
+def _match_annotation_indices(
+    values: list[str], representatives: list[str], *, caption: bool, ledgered: bool,
+) -> dict[str, int]:
     candidates = annotation_items(representatives, preserve_positions=True)
     result = {}
     for index, text in annotation_items(values, preserve_positions=True).items():
@@ -109,11 +117,15 @@ def _match_annotation_indices(values: list[str], representatives: list[str], *, 
         matches = exact or [key for key, value in candidates.items() if caption and continuation_caption(text, (value,))]
         if len(matches) == 1:
             result[str(index)] = matches[0]
+    if ledgered:
+        # 同一来源块的两个独立位置匹配同一代表时，无法证明其中哪一条是续表别名。
+        usage = Counter(result.values())
+        return {index: representative for index, representative in result.items() if usage[representative] == 1}
     return result
 
 
 def _table_annotation_source(
-    block: DocumentIRBlock, owners: tuple[DocumentIRBlock, DocumentIRBlock] | None,
+    block: DocumentIRBlock, owners: tuple[DocumentIRBlock, DocumentIRBlock] | None, *, ledgered: bool,
 ) -> TableAnnotationSource:
     contexts = [index for index, text in enumerate(block.captions) if is_table_context_annotation(text)]
     if owners is None:
@@ -121,17 +133,20 @@ def _table_annotation_source(
     first, last = owners
     return TableAnnotationSource(
         context_indices=contexts,
-        captions=_match_annotation_indices(block.captions, first.captions, caption=True) if block is not first else {},
-        footnotes=_match_annotation_indices(block.footnotes, last.footnotes, caption=False) if block is not last else {},
+        captions=_match_annotation_indices(block.captions, first.captions, caption=True, ledgered=ledgered)
+        if block is not first else {},
+        footnotes=_match_annotation_indices(block.footnotes, last.footnotes, caption=False, ledgered=ledgered)
+        if block is not last else {},
     )
 
 
 def freeze_table_annotation_sources(document: DocumentIR) -> None:
-    """只从送译前的有效源表计算代表，避免按译文字面反推源身份。"""
+    """从有效源表计算代表，避免按渲染文本或译文反推源身份。"""
     groups = _annotation_groups(document)
     for block in document.blocks:
         if block.type == "table":
-            source = _table_annotation_source(block, groups.get(block.id))
+            source = _table_annotation_source(block, groups.get(block.id),
+                                              ledgered=document.metadata.source_item_ledger_scope is not None)
             payload = source.model_dump(exclude_defaults=True)
             if payload:
                 block.metadata[_ANNOTATION_SOURCE_KEY] = payload
@@ -142,21 +157,22 @@ def read_table_annotation_source(block: DocumentIRBlock) -> TableAnnotationSourc
 
 
 def validate_table_annotation_sources(document: DocumentIR) -> None:
-    if document.metadata.translation_item_scope is None:
+    if not preserves_annotation_positions(document):
         if any(_ANNOTATION_SOURCE_KEY in block.metadata for block in document.blocks):
-            raise ValueError("表格注释来源需要绑定翻译范围。")
+            raise ValueError("表格注释来源需要绑定来源账本或注释翻译范围。")
         return
     groups = _annotation_groups(document)
+    ledgered = document.metadata.source_item_ledger_scope is not None
     for block in document.blocks:
         if block.type != "table":
             if _ANNOTATION_SOURCE_KEY in block.metadata:
-                raise ValueError("表格注释来源仅适用于对应的翻译表格。")
+                raise ValueError("表格注释来源仅适用于对应的表格。")
             continue
         owners = groups.get(block.id)
         source = read_table_annotation_source(block)
         if not document.metadata.translation_items_applied:
-            if source != _table_annotation_source(block, owners):
-                raise ValueError("表格注释与翻译源位置不一致。")
+            if source != _table_annotation_source(block, owners, ledgered=ledgered):
+                raise ValueError("表格注释与源位置不一致。")
             continue
         if (len(source.context_indices) != len(set(source.context_indices))
                 or any(index >= len(block.captions) or not block.captions[index].strip() for index in source.context_indices)):
@@ -170,21 +186,9 @@ def validate_table_annotation_sources(document: DocumentIR) -> None:
                 raise ValueError("表格注释源代表不在已验证的续表片段中。")
             values = {str(index) for index in annotation_items(getattr(block, field), preserve_positions=True)}
             representatives = annotation_items(getattr(owner, field), preserve_positions=True)
-            if any(key not in values or index not in representatives for key, index in mappings.items()):
+            if (ledgered and len(set(mappings.values())) != len(mappings)
+                    or any(key not in values or index not in representatives for key, index in mappings.items())):
                 raise ValueError("表格注释源代表位置无效。")
-
-
-def split_table_annotation_texts(texts: list[str]) -> tuple[list[str], list[str]]:
-    """按已确定的逻辑组区分表题和条件，不猜测句内边界。"""
-
-    captions: list[str] = []
-    contexts: list[str] = []
-    for text in texts:
-        if is_table_context_annotation(text):
-            contexts.append(text)
-        else:
-            captions.append(text)
-    return captions, contexts
 
 
 def is_table_context_annotation(text: str | None) -> bool:

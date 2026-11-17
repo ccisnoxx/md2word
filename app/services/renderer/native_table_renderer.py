@@ -218,7 +218,7 @@ class WordNativeTableRendererMixin:
             collector.add(fragment.source.block_id, [target])
             collector.records[fragment.source.block_id].reason_code = "table_fragment_rows"
             scopes.append((fragment.source.block_id, target))
-            context.fragment_markers.append((fragment.bookmark, first))
+            context.content_markers.append((fragment.bookmark, first))
         if context.placeholders:
             self._render_table_placeholders(document, {fragment.source.fragment_id for fragment in unit.fragments},
                 context.assets, context.image_loader, context, config)

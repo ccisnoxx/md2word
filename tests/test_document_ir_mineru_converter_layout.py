@@ -87,7 +87,7 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                     {"type": "chart", "content": {"image_source": {"path": "images/chart.png"}, "chart_caption": []},
                      "bbox": [10, 80, 170, 220]},
                     {"type": "chart", "content": {"image_source": {"path": "images/chart.png"},
-                                                       "chart_caption": ["图 5 响应", "图 6 增益"]},
+                                                       "chart_caption": ["图 6 增益", "图 5 响应"]},
                      "bbox": [210, 80, 370, 220]},
                 ]],
                 layout={"pdf_info": [{"page_idx": 0, "page_size": [400, 300]}]},
@@ -97,6 +97,103 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
             )
         self.assertEqual([block.captions for block in result.document.blocks], [["图 5 响应"], ["图 6 增益"]])
         self.assertEqual([block.text for block in result.document.blocks], ["图 5 响应", "图 6 增益"])
+        first, second = result.document.blocks
+        for target, source_index in ((first, 1), (second, 0)):
+            item, = target.metadata["annotation_ledger"]["items"]
+            self.assertEqual((item["block_id"], item["source_index"], item["target_index"]),
+                             (second.id, source_index, 0))
+
+    def test_direct_render_and_persist_keep_identical_annotations_in_distinct_positions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "annotation-ledger.zip"
+            self._write_zip(path, blocks=[[{
+                "type": "table",
+                "table_body": "<table><tr><td>Pin</td><td>Value</td></tr></table>",
+                "table_caption": ["Electrical Characteristics", "Electrical Characteristics"],
+                "table_footnote": ["Typical values apply.", "Typical values apply."],
+                "bbox": [10, 60, 190, 250],
+            }]], layout={"pdf_info": [{"page_idx": 0, "page_size": [200, 300]}]})
+            result = MinerUToDocumentIRService().convert_zip(
+                path, job_id="annotations", source_file_id="source", document_language="en",
+            )
+
+        document = DocumentIR.model_validate_json(result.document.model_dump_json())
+        block, = document.blocks
+        self.assertEqual(document.metadata.source_item_ledger_scope.annotation_block_ids, (block.id,))
+        ledger = block.metadata["annotation_ledger"]
+        self.assertEqual(ledger["version"], "annotation-ledger/v1")
+        self.assertEqual([
+            (item["block_id"], item["field"], item["source_index"], item["target_index"])
+            for item in ledger["items"]
+        ], [(block.id, field, index, index) for field in ("captions", "footnotes") for index in (0, 1)])
+        rendered = DocumentIRWordRenderer().render_to_result(
+            document, template_path=None, config_path=None, image_loader=lambda _asset: None,
+        )
+        paragraphs = [paragraph.text for paragraph in Document(io.BytesIO(rendered.content)).paragraphs]
+        self.assertEqual(paragraphs.count("Electrical Characteristics"), 2)
+        self.assertEqual(paragraphs.count("Typical values apply."), 2)
+        metadata = build_renderer_evidence(document, rendered.content, render_result=rendered)
+        ensure_renderer_integrity(metadata)
+        validate_persisted_renderer_content(document, rendered.content, metadata)
+
+        damaged_payload = document.model_dump(mode="json")
+        damaged_block, = damaged_payload["blocks"]
+        damaged_block["captions"] = []
+        damaged_block["footnotes"] = []
+        damaged_block["metadata"].pop("annotation_ledger")
+        with self.assertRaises(DocumentIntegrityError) as caught:
+            DocumentIR.model_validate(damaged_payload)
+        self.assertIn("source_ir_integrity:annotation_ledger_mismatch", caught.exception.evidence["blocking_quality_flags"])
+
+    def test_caption_assembly_recovers_a_dropped_caption_and_its_alias(self) -> None:
+        reconcile = caption_reconciler.reconcile_captions
+
+        def omit_caption(raw_blocks):
+            assignments = reconcile(raw_blocks)
+            assignments[0].captions.clear()
+            return assignments
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "restore-caption.zip"
+            self._write_zip(path, blocks=[[{
+                "type": "chart", "img_path": "images/chart.png", "chart_caption": ["图 5 响应"],
+            }]], layout=None)
+            with patch("app.services.document_ir.mineru_converter.reconcile_captions", side_effect=omit_caption):
+                result = MinerUToDocumentIRService().convert_zip(
+                    path, job_id="restore-caption", source_file_id="source", document_language="zh",
+                )
+
+        block, = result.document.blocks
+        self.assertEqual((block.captions, block.text, block.caption_text_alias_index), (["图 5 响应"], "图 5 响应", 0))
+        self.assertIn("source_ir_integrity:ledger_recovered", result.document.quality_flags)
+
+    def test_caption_only_paragraph_derives_body_but_same_text_explicit_body_stays_independent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "body-caption.zip"
+            self._write_zip(path, blocks=[[
+                {"type": "text", "caption": ["The only content in this block", "Second caption"]},
+                {"type": "text", "caption": "Another caption", "content": {"captions": ["Nested caption"]}},
+                {"type": "text", "text": "Independently repeated", "caption": "Independently repeated"},
+            ]], layout=None)
+            result = MinerUToDocumentIRService().convert_zip(
+                path, job_id="caption-only", source_file_id="source", document_language="en",
+            )
+
+        document = DocumentIR.model_validate_json(result.document.model_dump_json())
+        self.assertEqual([(block.text, block.caption_text_alias_index) for block in document.blocks], [
+            ("The only content in this block", 0), ("Another caption", 0), ("Independently repeated", None),
+        ])
+        rendered = DocumentIRWordRenderer().render_to_result(
+            document, template_path=None, config_path=None, image_loader=lambda _asset: None,
+        )
+        paragraphs = [paragraph.text for paragraph in Document(io.BytesIO(rendered.content)).paragraphs]
+        self.assertEqual(paragraphs, [
+            "The only content in this block", "Second caption", "Another caption", "Nested caption",
+            "Independently repeated", "Independently repeated",
+        ])
+        metadata = build_renderer_evidence(document, rendered.content, render_result=rendered)
+        ensure_renderer_integrity(metadata)
+        validate_persisted_renderer_content(document, rendered.content, metadata)
 
 
     def test_caption_sequences_preserve_sources_and_render_unique_native_fields(self) -> None:
@@ -1143,7 +1240,11 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                         DocumentIR.model_validate(corrupt)
                     corrupt = document.model_dump(mode="json")
                     corrupt["blocks"][1]["captions"] = ["Figure 3-2. Other schematic"]
-                    with self.assertRaisesRegex(ValueError, "MinerU 图表题注绑定无效"):
+                    with self.assertRaisesRegex(DocumentIntegrityError, "source_ir_integrity:annotation_ledger_mismatch"):
+                        DocumentIR.model_validate(corrupt)
+                    corrupt = document.model_dump(mode="json")
+                    corrupt["blocks"][1]["text"] = "Figure 3-2. Other schematic"
+                    with self.assertRaisesRegex(ValueError, "派生题注位置与正文不一致"):
                         DocumentIR.model_validate(corrupt)
                     corrupt = document.model_dump(mode="json")
                     corrupt["assets"][0]["checksum_sha256"] = "sha256:" + "0" * 64
@@ -1174,7 +1275,7 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
 
                     corrupt = translated.model_dump(mode="json")
                     corrupt["metadata"].pop("translation_items_applied")
-                    with self.assertRaisesRegex(ValueError, "MinerU 图表题注绑定无效"):
+                    with self.assertRaisesRegex(DocumentIntegrityError, "source_ir_integrity:annotation_ledger_mismatch"):
                         DocumentIR.model_validate(corrupt)
                     corrupt = translated.model_dump(mode="json")
                     corrupt["blocks"][1]["metadata"]["caption_reconciliation"]["originals"][0]["value"][-1]["content"] = (

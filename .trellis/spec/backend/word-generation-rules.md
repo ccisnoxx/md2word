@@ -114,7 +114,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 预期输出：保留 inline equation 数学边界；多行列表拆成独立 item，未标记续行仍保留在同一 item；目录样式文本仅在足够高比例点线项时拆分；脚注按明确连续信号合并。`paragraph` 且 `role=body` 的正文按权威 text/runs 保留显式换行和连续空行，仍保持 paragraph 类型；数学源串内部的空白与 CRLF 原样保留，普通文本行尾 CRLF 归一为 LF。
 - 页级脚注：MinerU v2 `page_footnote.content.page_footnote_content` 使用正文 runs 的校验与解析，按原页位置作为 body paragraph 一次写入。源类型、源指针、页号及 bbox 保留。空 runs、错误容器、非法 typed run 及无法消费的语义旁支仍失败关闭。页级脚注与页脚或表注分别消费。回归见 `tests.test_mineru_artifact_validator` 的页级脚注用例。
 - 正文行结构 owner：`mineru_converter._text_for_block` 只对上述正文调用 `_raw_text(..., preserve_line_breaks=True)`；共享 `mineru_content.clean_text`、`clean_markdown_document`、`mineru_raw_text_preserving_lines` 的保留参数默认关闭，标题、页眉页脚、题注与表注不因此改变清洗语义。Word writer 的 `_apply_document_settings` 在正文存在显式换行时，为新件设置 `w:compat/w:doNotExpandShiftReturn=true`，使两端对齐段落的手动换行行不被拉满词距；保留其他兼容节点和原模板字节，不修改 normal alignment。该行为依据 [OOXML 官方定义](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.donotexpandshiftreturn?view=openxml-3.0.1)，仍需以真客户端验证显示。
-- 列表项账本：`mineru_content.py::mineru_list_item_ledger` 在转换时为每个主列表块写入 `metadata["list_item_ledger"]`（`list-item-ledger/v1`：`selected_field`、`mode`、`source_item_count`、`empty_item_count`、`item_count`）。`v2_items` 与纯字符串 legacy 项必须满足 `source_item_count = item_count + empty_item_count`，否则构建 IR 前报 `source_ir_integrity:list_item_count_mismatch`；legacy dict 展开项和按行拆分文本的源计数记为 `null`。`integrity.py::build_source_integrity` 在转换出口和渲染元数据（翻译之后）对账：任一主列表块带账本时，全部主列表块都必须带账本且 `len(list_items) == item_count`。账本放在块 metadata，不进 `DocumentIRMetadata`，以免改变历史 render-plan/v2 的 IR 身份；无账本的历史 IR 跳过对账，`source_integrity` 不新增 `list_item_ledger` 键。回归见 `tests.test_document_ir_layout_contract.test_list_item_ledger_blocks_item_count_drift` 与 `tests.test_mineru_artifact_validator` 的 `test_v2_list_ledger_accounts_for_empty_items`、`test_list_consumer_dropping_non_empty_item_fails_closed`。
+- 列表项和注释账本由 MinerU 正式转换写入，生成和重读共用来源账本校验。字段、错误和兼容边界见[来源项账本合同](#来源项账本合同)。
 - 冲突/例外：普通多行正文不拆列表；单行负温度或减号文本不得当作列表。
 - 禁止：对所有换行统一空格化；只保留列表第一行；在普通正文全局执行无差别或破坏性的 TeX 清理。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_structures_v2_multiline_lists_and_preserves_math_sources`、`.test_convert_zip_accepts_nested_v2_pages_and_rich_content_fields`；`tests.test_parameter_paragraph_line_breaks` 覆盖字符串/runs 的 17 个实际 DOCX 换行、组间空行、4 个原生公式、普通正文与负温度不误分列表、权威空 runs 缺正文仍失败、兼容节点唯一性/顺序及模板字节保持。历史件恢复继续使用冻结计划与实际字节，不重算新 settings 策略。
@@ -198,6 +198,16 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_maps_nested_v2_chart_to_image_and_records_source_inventory`、`.test_convert_zip_fails_closed_when_declared_formula_payload_is_missing`；`tests.test_document_ir_layout_contract.DocumentIRLayoutContractTests.test_v1_payload_defaults_layout_fields_to_empty`。
 - 样本证据：CM4112 当前 external 样本对账为 196 个归一化 source blocks，其中 38 chart + 15 image → 53 image blocks/assets；最终 DOCX 为 53 drawings，阻断标记为空。完整记录见本任务 `research/cm4112-validation.md`。
 - 来源/取代：任务 `08-18-fix-formal-word-structural-regressions`；补足 IR-001 与 IMAGE-001 未覆盖的跨边界完整性合同。
+
+### 来源项账本合同
+
+1. **触发范围。** 正式 MinerU 转换记录主列表项及 `captions`、`footnotes`。表格单元格由现有表格证据负责，正文及标题继续按原规则。整页降级只从账本范围移除已认证替换的块，保留页继续对账。
+2. **入口。** `app/services/document_ir/source_item_ledger.py` 的 `build_list_item_ledger`、`build_annotation_ledger` 使用源结构投影写摘要。`validate_source_item_ledgers(document)` 在 IR 读写和回填边界校验。持久化重读结合原 IR 与 DOCX 字节绑定复算质量证据。
+3. **持久化字段。** 新件的 `metadata.source_item_ledger_scope` 声明 `source-item-ledger-scope/v1` 和有注释的块 ID。主列表块的 `list-item-ledger/v2` 记录 `source_index`、`source_sha256`、`empty`、`output_index`、`normalized_sha256` 和有序 `sequence_sha256`。legacy 展开用左闭右开区间和有序摘要数组。注释块的 `annotation-ledger/v1` 记录来源块、字段、源下标和摘要、目标下标和摘要。账本不存正文副本。旧 v1 只对数，无账本旧件保持原序列化及渲染证据。
+4. **错误矩阵。** 列表项数变化报 `source_ir_integrity:list_item_count_mismatch`。列表位置、顺序或摘要不符报 `source_ir_integrity:list_item_ledger_mismatch`。注释位置、顺序、摘要或必须存在的账本不符报 `source_ir_integrity:annotation_ledger_mismatch`。可信冻结值恢复后重新通过对账时登记 `source_ir_integrity:ledger_recovered` warning。参数列 `row_ambiguous` 沿表格 warning 路径处理。
+5. **位置示例。** 两条同文脚注各有源下标及目标下标，新 direct 件逐项渲染并取证。同一脚注的富文本 runs 仍按明确的连续关系拼接，显式分列的字符串槽分别保留。正文块的附注也按位置写入 Word。正文完全派生自该题注时按别名只写一次，显式独立正文即使同文也保留。表前条件等已核验的角色转换沿原规则登记。删除第二条同文脚注、换位不同项，或连同数组删除新件必需的账本均失败。
+6. **回归。** `tests.test_document_ir_layout_contract` 检查新旧对账和历史 JSON 形状。`tests.test_mineru_artifact_validator` 检查空项、legacy 展开与可信恢复。`tests.test_document_ir_mineru_converter_layout` 和 `tests.test_formal_mineru_render_evidence` 覆盖题注绑定、同文注释的 Word 输出及持久化重读。
+7. **摘要来源。** 从权威源项或已核验的译文预先冻结摘要，随后用实际 IR 字段核对。不能从待检查的结果回写预期值来消除不一致。[翻译侧合同](./translation-integrity-validator.md#题注脚注的翻译与审核)
 
 ### PAGE-001 模板绝对页面设置与源方向分工
 

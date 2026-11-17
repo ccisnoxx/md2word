@@ -1,14 +1,16 @@
-"""只读整理 MinerU 题注；严格修复与原文证据共享唯一的消费结果。"""
+"""按源结构整理 MinerU 注释，并为题注重绑保留可核验的来源。"""
 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.conversion.docx_rules.mineru_content import (
     append_footnote_fragment, classify_mineru_block, clean_text, coerce_text_list, mineru_raw_text_preserving_lines,
+    merge_footnote_fragments,
 )
 from app.services.document_ir.artifact_validator import parse_valid_bbox
 from app.services.document_ir.integrity import DocumentIntegrityError
@@ -54,6 +56,8 @@ class _CaptionGroup:
 class ReconciledCaption:
     captions: list[str] = field(default_factory=list)
     evidence: dict[str, Any] | None = None
+    # 题注重绑后的目标顺序，仍保留 donor 块与重绑前的源序号。
+    source_items: tuple[tuple[int, int, str], ...] = ()
 
 
 def _source_type(block: dict[str, Any]) -> str:
@@ -72,8 +76,8 @@ def _pointer(parent: str, key: str | int) -> str:
     return f"{parent}/{str(key).replace('~', '~0').replace('/', '~1')}"
 
 
-def _caption_fields(block: dict[str, Any], keys: list[str], root: str) -> list[tuple[str, Any]]:
-    """保留旧字段优先级，但不进入内部证据或重复扫描已选题注值。"""
+def _annotation_fields(block: dict[str, Any], keys: list[str], root: str) -> list[tuple[str, Any]]:
+    """保留字段优先级，跳过内部证据及已选字段内的嵌套字段。"""
 
     fields: list[tuple[str, Any]] = []
     for key in keys:
@@ -112,6 +116,24 @@ def _groups(value: Any, pointer: str, donor_index: int) -> list[_CaptionGroup]:
         return [group for key, child in value.items() if key not in {"type", "path", "img_path", "image_path"}
                 for group in _groups(child, _pointer(pointer, key), donor_index)]
     return []
+
+
+def extract_footnotes(block: dict[str, Any], source_type: str) -> list[str]:
+    """在一个源组内按连续性合并脚注 runs，保留不同源组的出现次数。"""
+
+    keys = ["footnote", "footnotes"]
+    if source_type in {"table", "chart", "image", "figure"}:
+        keys.insert(0, f"{source_type}_footnote")
+    notes = []
+    for pointer, value in _annotation_fields(block, keys, ""):
+        for group in _groups(value, pointer, 0):
+            fragments = [
+                fragment
+                for _, text, node in group.runs
+                for fragment in coerce_text_list(text if node is None else node)
+            ]
+            notes.extend(merge_footnote_fragments(fragments))
+    return [normalized for note in notes if (normalized := clean_text(note))]
 
 
 def _render_spans(group: _CaptionGroup, spans: tuple[tuple[str, int, int], ...]) -> str:
@@ -273,6 +295,9 @@ def _reconcile_group(indices: list[int], blocks: list[dict[str, Any]], groups_by
                 captions = [piece.text for piece in local_pieces]
                 _validate_repair(local_groups, [local_pieces], [captions])
                 results[index].captions = captions
+                results[index].source_items = tuple(
+                    (piece.donor_index, source_index, piece.text) for source_index, piece in enumerate(local_pieces)
+                )
                 results[index].evidence["status"] = "rebound"
                 results[index].evidence["bindings"] = [_binding(piece, index, blocks, "explicit_annotation_boundary/v1")
                                                        for piece in local_pieces]
@@ -314,6 +339,11 @@ def _reconcile_group(indices: list[int], blocks: list[dict[str, Any]], groups_by
         for index in indices:
             _uncertain(results[index], reasons)
         return
+    source_indices: dict[CaptionFragment, int] = {}
+    source_counts: Counter[int] = Counter()
+    for piece in pieces:
+        source_indices[piece] = source_counts[piece.donor_index]
+        source_counts[piece.donor_index] += 1
     ordered = sorted(pieces, key=lambda piece: _number(piece.text)[1])
     assignments = [[piece] for piece in ordered]
     captions_by_target = [[piece.text for piece in fragments] for fragments in assignments]
@@ -321,6 +351,9 @@ def _reconcile_group(indices: list[int], blocks: list[dict[str, Any]], groups_by
     group_id = f"{RULE_VERSION}:{blocks[indices[0]]['_mineru_source']['json_pointer']}"
     for index, fragments, captions in zip(indices, assignments, captions_by_target, strict=True):
         results[index].captions = captions
+        results[index].source_items = tuple(
+            (piece.donor_index, source_indices[piece], piece.text) for piece in fragments
+        )
         evidence = results[index].evidence
         evidence.update(status="rebound", group_id=group_id,
                         bindings=[_binding(piece, index, blocks, "strict_numbered_group/v1") for piece in fragments])
@@ -395,6 +428,7 @@ def reconcile_captions(raw_blocks: list[dict[str, Any]]) -> list[ReconciledCapti
             value = block["content"]["table_caption"]
             _sections, figure = split_table_figure_caption(value)
             result.captions = [figure]
+            result.source_items = ((index, 0, figure),)
             result.evidence = {
                 "rule_version": RULE_VERSION, "status": "unchanged", "bindings": [], "reasons": [],
                 "originals": [{"json_pointer": pointer, "value": deepcopy(value), "groups": [pointer]}],
@@ -402,18 +436,22 @@ def reconcile_captions(raw_blocks: list[dict[str, Any]]) -> list[ReconciledCapti
             results.append(result)
             groups_by_block.append([])
             continue
-        keys = ([f"{_source_type(block)}_caption", "caption"]
-                if _source_type(block) in {"table", "image", "chart", "figure"} else ["caption"])
+        keys = ([f"{_source_type(block)}_caption", "caption", "captions"]
+                if _source_type(block) in {"table", "image", "chart", "figure"} else ["caption", "captions"])
         originals: list[dict[str, Any]] = []
-        for pointer, value in _caption_fields(block, keys, source.get("json_pointer", "")):
+        logical_captions: list[str] = []
+        for pointer, value in _annotation_fields(block, keys, source.get("json_pointer", "")):
             field_groups = _groups(value, pointer, index)
             if field_groups:
                 originals.append({"json_pointer": pointer, "value": deepcopy(value),
                                   "groups": [group.pointer for group in field_groups]})
-            groups.extend(group for group in field_groups if _fragment(group, 0, sum(len(run[1]) for run in group.runs)).text)
-        result.captions = list(dict.fromkeys(
-            _fragment(group, 0, sum(len(run[1]) for run in group.runs)).text for group in groups
-        ))
+            for group in field_groups:
+                piece = _fragment(group, 0, sum(len(run[1]) for run in group.runs))
+                if piece.text:
+                    groups.append(group)
+                    logical_captions.append(piece.text)
+        result.source_items = tuple((index, position, text) for position, text in enumerate(logical_captions))
+        result.captions = logical_captions
         if family:
             result.evidence = {"rule_version": RULE_VERSION, "status": "unchanged", "originals": originals,
                                "bindings": [], "reasons": []}

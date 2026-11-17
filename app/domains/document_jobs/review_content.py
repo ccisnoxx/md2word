@@ -37,8 +37,11 @@ from app.domains.translation.document_ir_translator import DocumentIRTranslation
 from app.domains.translation.integrity import items_sha256
 from app.domains.translation.models import TRANSLATION_ANNOTATION_FIELDS, TranslationTextItem, annotation_item_id
 from app.domains.translation.modes import is_translation_document_job_mode, spec_for_document_job_mode
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.layout_signals import pdf_point_bbox
 from app.services.document_ir.models import DocumentIR
+from app.services.document_ir.source_item_ledger import validate_ledger_source_identity
+from app.services.document_ir.table_annotations import preserves_annotation_positions
 from app.services.preview.models import PreviewPolicy
 from app.services.preview.page_mapping import PageMapping
 from app.services.renderer.render_event_summary import controlled_quality_flags
@@ -159,7 +162,7 @@ class _Read:
             raise _ContentLimit()
         try:
             document = DocumentIR.model_validate_json(raw)
-        except (ValueError, TypeError):
+        except (DocumentIntegrityError, ValueError, TypeError):
             raise _conflict() from None
         if (document.metadata.job_id, document.metadata.source_file_id) != (self.job.id, self.job.source_file_id):
             raise _conflict()
@@ -220,7 +223,7 @@ def _preview(read):
         with _storage():
             evidence = read_current_preview_evidence(read.job, read.service.file_repository,
                 read.service.file_upload_service, include_mapping=True)
-    except ValueError:
+    except (DocumentIntegrityError, ValueError):
         raise _conflict() from None
     for record in evidence.observation.files:
         read.observed[record.id] = record
@@ -253,6 +256,10 @@ def _translation(read):
         if scope != final_metadata.translation_item_scope or (
                 scope is not None and final_metadata.translation_items_applied is not True):
             raise _conflict()
+        try:
+            validate_ledger_source_identity(read.source_ir, read.final_ir)
+        except DocumentIntegrityError:
+            raise _conflict() from None
     read.source_units = _units(read.source_ir)
     read.target_units = _units(read.final_ir)
     if read.final_ir is not None:
@@ -579,7 +586,7 @@ def _parts(read, block):
         if current is None:
             continue
         units = read.source_units if side == "source" else read.target_units
-        has_caption_alias = document.metadata.translation_item_scope is not None and current.caption_text_alias_index is not None
+        has_caption_alias = preserves_annotation_positions(document) and current.caption_text_alias_index is not None
         if current.text and not has_caption_alias:
             unit = f"{block.id}.text"
             yield from _text_parts("text", side, "text", current.text, unit_id=unit if unit in units else None)

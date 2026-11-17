@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from app.domains.resources.integrity import RENDER_RESOURCE_ERROR_CODES
+from app.services.document_ir.source_item_ledger import ANNOTATION_LEDGER_MISMATCH, LEDGER_RECOVERED, LIST_ITEM_LEDGER_MISMATCH
 from app.services.renderer.logical_table_plan import (
     TABLE_RENDERING_VERSION, QUALITY_BLOCKERS, QUALITY_WARNINGS, SAFE_COUNT_KEYS,
 )
@@ -23,7 +24,12 @@ RENDER_EVIDENCE_CODES = frozenset({
 
 CONTROLLED_SOURCE_TYPES = frozenset({"text", "paragraph", "para", "title", "heading", "header", "footer", "page_header", "page_footer", "page_number", "table", "table_placeholder", "image", "chart", "figure", "list", "index", "equation", "formula", "interline_equation", "inline_equation", "equation_interline", "unsupported", "invalid", "unknown"})
 FIXED_FLAGS = frozenset({"formula_text_fallback", "image_group_uncertain", "caption_binding_uncertain", "docx_quality_unavailable", "docx_analysis_error", "docx_no_editable_content", "docx_image_only_suspected", "middle_json_missing", "empty_content_list",
-    "source_ir_integrity:block_count_mismatch", "source_ir_integrity:type_count_mismatch", "source_ir_integrity:list_item_count_mismatch", "ir_docx_integrity:toc_coalesced_outside_region", "ir_layout_integrity:missing_blocks", "ir_layout_integrity:duplicate_blocks", "ir_docx_integrity:image_asset_missing", "ir_docx_integrity:inline_shape_count_mismatch", "ir_docx_integrity:table_count_mismatch", "ir_docx_integrity:heading_count_mismatch",
+    "source_ir_integrity:block_count_mismatch", "source_ir_integrity:type_count_mismatch",
+    "source_ir_integrity:list_item_count_mismatch", LIST_ITEM_LEDGER_MISMATCH, ANNOTATION_LEDGER_MISMATCH, LEDGER_RECOVERED,
+    "ir_docx_integrity:toc_coalesced_outside_region", "ir_layout_integrity:missing_blocks",
+    "ir_layout_integrity:duplicate_blocks", "ir_docx_integrity:image_asset_missing",
+    "ir_docx_integrity:inline_shape_count_mismatch", "ir_docx_integrity:table_count_mismatch",
+    "ir_docx_integrity:heading_count_mismatch",
     "ir_docx_integrity:table_anchor_mismatch", "ir_docx_integrity:table_row_count_mismatch", "ir_docx_integrity:table_header_mismatch",
     "ir_docx_integrity:table_geometry_mismatch", "ir_docx_integrity:table_fragment_anchor_mismatch",
     "ir_docx_integrity:table_fragment_map_mismatch", "table_placeholder_integrity_failed", "table_noneditable_placeholder"

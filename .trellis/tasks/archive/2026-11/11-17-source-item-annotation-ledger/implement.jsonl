@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/index.md","reason":"后端分层指南和开发前检查。"}
+{"file":".trellis/spec/backend/word-generation-rules.md","reason":"MinerU 权威字段、列表与注释归一化、Word 证据和历史重读合同。"}
+{"file":".trellis/spec/backend/translation-integrity-validator.md","reason":"注释范围、位置型 ID、回填和现有翻译错误。"}
+{"file":".trellis/spec/backend/translation-batch-lifecycle.md","reason":"源件绑定、批次汇合与成功发布边界。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"完整性失败隔离、Worker 证据投影及错误合同。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"定向验证和历史版本兼容检查。"}

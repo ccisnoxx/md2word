@@ -32,6 +32,7 @@ from app.domains.resources.models import utc_now
 from app.domains.translation.models import TRANSLATION_ANNOTATION_FIELDS, annotation_item_id
 from app.domains.translation.modes import is_translation_document_job_mode
 from app.services.auth.models import AuthenticatedUser
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import DocumentIR
 
 
@@ -239,7 +240,7 @@ class DocumentJobTranslationQa:
     def _read_document_ir(self, file: DocumentFileRecord) -> DocumentIR | None:
         try:
             return DocumentIR.model_validate_json(self.file_upload_service.read_file_content(file))
-        except (OSError, ValueError, json.JSONDecodeError):
+        except (DocumentIntegrityError, OSError, ValueError):
             return None
 
     def _read_ai_call_log_summaries(

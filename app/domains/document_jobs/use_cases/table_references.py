@@ -17,6 +17,7 @@ from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.resources.models import utc_now
 from app.services.auth.models import AuthenticatedUser
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir.models import DocumentIR, TableReferenceProvenance
 from app.services.document_ir.table_reference_assets import (
     CHECKSUM_RE,
@@ -132,7 +133,7 @@ class DocumentJobTableReferences:
         self._check_table_reference_bytes(file, content)
         try:
             document = DocumentIR.model_validate_json(content)
-        except (ValueError, TypeError, KeyError) as error:
+        except (DocumentIntegrityError, ValueError, TypeError, KeyError) as error:
             raise ApplicationError("conflict", "当前文档的表格参考资产合同无效。") from error
         return self.table_reference_snapshot(job, file, document)
 

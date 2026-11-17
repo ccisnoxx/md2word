@@ -752,26 +752,69 @@ class MinerUArtifactValidatorTests(unittest.TestCase):
         ]}}]])
         block = next(block for block in result.document.blocks if block.type == "list")
         self.assertEqual(block.list_items, ["First"])
-        self.assertEqual(block.metadata["list_item_ledger"], {
-            "version": "list-item-ledger/v1", "selected_field": "content/list_items", "mode": "v2_items",
-            "source_item_count": 2, "empty_item_count": 1, "item_count": 1})
+        ledger = block.metadata["list_item_ledger"]
+        self.assertEqual(ledger["version"], "list-item-ledger/v2")
+        self.assertEqual((ledger["selected_field"], ledger["mode"]), ("content/list_items", "v2_items"))
+        self.assertEqual((ledger["source_item_count"], ledger["empty_item_count"], ledger["item_count"]), (2, 1, 1))
+        first, empty = ledger["items"]
+        self.assertEqual((first["source_index"], first["output_index"], first["empty"]), (0, 0, False))
+        self.assertEqual(first["normalized_sha256"], "sha256:" + hashlib.sha256(b"First").hexdigest())
+        self.assertEqual((empty["source_index"], empty["output_index"], empty["empty"]), (1, None, True))
+        self.assertNotEqual(first["source_sha256"], empty["source_sha256"])
+        self.assertRegex(ledger["sequence_sha256"], r"^sha256:[0-9a-f]{64}$")
 
-    def test_list_consumer_dropping_non_empty_item_fails_closed(self):
+    def test_legacy_list_dict_projects_in_order_to_multiple_outputs(self):
+        result = self.convert([[{"type": "list", "items": [{"content": ["First", "Second"]}, "First"]}]])
+        block, = result.document.blocks
+        self.assertEqual(block.list_items, ["First", "Second", "First"])
+        expanded, repeated = block.metadata["list_item_ledger"]["items"]
+        self.assertEqual((expanded["source_index"], expanded["output_start"], expanded["output_end"]), (0, 0, 2))
+        self.assertEqual((repeated["source_index"], repeated["output_index"]), (1, 2))
+        self.assertEqual(expanded["normalized_sha256s"], [
+            "sha256:" + hashlib.sha256(b"First").hexdigest(),
+            "sha256:" + hashlib.sha256(b"Second").hexdigest(),
+        ])
+        self.assertEqual(repeated["normalized_sha256"], expanded["normalized_sha256s"][0])
+
+    def test_list_consumer_dropping_non_empty_item_recovers_from_frozen_source(self):
         from unittest import mock
-        from app.conversion.docx_rules import mineru_content
-        from app.services.document_ir.integrity import DocumentIntegrityError
+        from app.services.document_ir import mineru_converter
 
-        original = mineru_content.mineru_list_items
         payload = [[{"type": "list", "content": {"list_items": [
             {"item_content": [{"type": "text", "content": "First"}]},
             {"item_content": [{"type": "text", "content": "Second"}]},
         ]}}]]
-        # 模拟消费函数回归：非空项被静默丢弃，账本平衡式必须在构建 IR 前失败关闭。
-        with mock.patch.object(mineru_content, "mineru_list_items", lambda block: original(block)[:1]):
+        with mock.patch.object(mineru_converter, "mineru_list_items", return_value=["First"]):
+            result = self.convert(payload)
+        block, = result.document.blocks
+        self.assertEqual((block.list_items, block.text), (["First", "Second"], "First\nSecond"))
+        self.assertIn("source_ir_integrity:ledger_recovered", result.document.quality_flags)
+
+    def test_list_consumer_dropping_non_empty_item_fails_closed(self):
+        from unittest import mock
+        from app.services.document_ir import mineru_converter
+        from app.services.document_ir.integrity import DocumentIntegrityError
+
+        build_ledger = mineru_converter.build_list_item_ledger
+
+        def damaged_source_ledger(*args):
+            ledger = build_ledger(*args)
+            ledger["items"].pop()
+            return ledger
+
+        payload = [[{"type": "list", "content": {"list_items": [
+            {"item_content": [{"type": "text", "content": "First"}]},
+            {"item_content": [{"type": "text", "content": "Second"}]},
+        ]}}]]
+        # 源位置的冻结证据也损坏，恢复出的文本无法通过独立复核。
+        with (
+            mock.patch.object(mineru_converter, "mineru_list_items", return_value=["First"]),
+            mock.patch.object(mineru_converter, "build_list_item_ledger", side_effect=damaged_source_ledger),
+        ):
             with self.assertRaises(DocumentIntegrityError) as caught:
                 self.convert(payload)
         self.assertEqual(caught.exception.evidence["blocking_quality_flags"],
-                         ["source_ir_integrity:list_item_count_mismatch"])
+                         ["source_ir_integrity:list_item_ledger_mismatch"])
 
     def test_empty_authoritative_rich_runs_do_not_consume_sibling_description(self):
         for source_type in ("paragraph", "custom"):

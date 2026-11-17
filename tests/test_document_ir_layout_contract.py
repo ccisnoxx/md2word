@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-# tests/test_document_ir_layout_contract.py: 覆盖 DocumentIR v1/v2 布局合同兼容性。
+# tests/test_document_ir_layout_contract.py: 覆盖布局、来源账本及 DocumentIR v1/v2 兼容性。
 
+from copy import deepcopy
 import unittest
 import json
 import tempfile
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from app.services.document_ir import MinerUToDocumentIRService
 
-from app.services.document_ir.integrity import build_source_integrity
+from app.services.document_ir.integrity import DocumentIntegrityError, build_source_integrity
 from app.services.renderer.render_evidence import build_renderer_metadata
 from app.services.document_ir.models import (
     DocumentIR,
@@ -18,6 +19,13 @@ from app.services.document_ir.models import (
     DocumentIRBlockLayout,
     DocumentIRMetadata,
     DocumentIRPage,
+    SourceItemLedgerScope,
+)
+from app.services.document_ir.page_degradation import replace_degraded_pages
+from app.services.document_ir.source_item_ledger import (
+    ANNOTATION_LEDGER_MISMATCH, LIST_ITEM_COUNT_MISMATCH, LIST_ITEM_LEDGER_MISMATCH,
+    apply_target_digests, build_annotation_ledger, build_list_item_ledger, ledger_positions,
+    validate_ledger_source_identity,
 )
 
 
@@ -53,6 +61,7 @@ class DocumentIRLayoutContractTests(unittest.TestCase):
         self.assertIsNone(document.metadata.mineru_validation)
         self.assertIsNone(document.metadata.source_block_count)
         self.assertEqual(document.metadata.source_type_counts, {})
+        self.assertNotIn("source_item_ledger_scope", document.model_dump(mode="json")["metadata"])
 
         evidence = build_source_integrity(document)
         self.assertEqual(evidence["blocking_quality_flags"], [])
@@ -83,6 +92,168 @@ class DocumentIRLayoutContractTests(unittest.TestCase):
         legacy = build_source_integrity(document(["B"], with_ledger=False))
         self.assertEqual(legacy["blocking_quality_flags"], [])
         self.assertNotIn("list_item_ledger", legacy)
+
+    def test_v2_list_ledger_checks_content_order_expansion_empty_slots_and_identity(self) -> None:
+        ledger = build_list_item_ledger("items", "legacy_items", [
+            ("A", ["A"]), ("", []), ({"first": "B", "second": "C"}, ["B", "C"]), ("A", ["A"]),
+        ])
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(
+                job_id="job", source_file_id="file", document_language="en",
+                source_block_count=1, source_type_counts={"list": 1},
+                source_item_ledger_scope=SourceItemLedgerScope(
+                    version="source-item-ledger-scope/v1", annotation_block_ids=(),
+                ),
+            ),
+            blocks=[DocumentIRBlock(
+                id="list", type="list", order=0, list_items=["A", "B", "C", "A"],
+                metadata={"source_type": "list", "list_item_ledger": ledger},
+            )],
+        )
+        self.assertEqual(DocumentIR.model_validate_json(document.model_dump_json()), document)
+        self.assertEqual(
+            (ledger["source_item_count"], ledger["empty_item_count"], ledger["item_count"]), (4, 1, 4),
+        )
+        self.assertEqual(
+            [(item.get("output_index"), item.get("output_start"), item.get("output_end")) for item in ledger["items"]],
+            [(0, None, None), (None, None, None), (None, 1, 3), (3, None, None)],
+        )
+        self.assertEqual(build_source_integrity(document)["list_item_ledger"]["mismatch_block_ids"], [])
+
+        cases = [
+            (["A", "C", "A"], LIST_ITEM_COUNT_MISMATCH),
+            (["A", "B", "C"], LIST_ITEM_COUNT_MISMATCH),
+            (["A", "unexpected", "C", "A"], LIST_ITEM_LEDGER_MISMATCH),
+            (["A", "C", "B", "A"], LIST_ITEM_LEDGER_MISMATCH),
+        ]
+        for texts, flag in cases:
+            with self.subTest(texts=texts):
+                broken = document.model_copy(deep=True)
+                broken.blocks[0].list_items = texts
+                self.assertEqual(build_source_integrity(broken)["blocking_quality_flags"], [flag])
+                with self.assertRaises(DocumentIntegrityError) as caught:
+                    DocumentIR.model_validate_json(broken.model_dump_json())
+                self.assertEqual(caught.exception.evidence["blocking_quality_flags"], [flag])
+        broken = document.model_copy(deep=True)
+        broken.blocks[0].metadata["list_item_ledger"]["items"][3]["output_index"] = 0
+        with self.assertRaises(DocumentIntegrityError) as caught:
+            DocumentIR.model_validate_json(broken.model_dump_json())
+        self.assertEqual(caught.exception.evidence["blocking_quality_flags"], [LIST_ITEM_LEDGER_MISMATCH])
+
+    def test_annotation_ledger_detects_missing_arrays_and_duplicate_source_positions(self) -> None:
+        block = DocumentIRBlock(
+            id="figure", type="image", order=0, text="图题", captions=["图题"],
+            footnotes=["同文脚注", "同文脚注", "末尾脚注"],
+            metadata={"caption_text_alias_index": 0, "annotation_ledger": build_annotation_ledger([
+                ("figure", "captions", 0, "图题"),
+                ("figure", "footnotes", 0, "同文脚注"),
+                ("figure", "footnotes", 1, "同文脚注"),
+                ("figure", "footnotes", 2, "末尾脚注"),
+            ])},
+        )
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(
+                job_id="job", source_file_id="file", document_language="zh",
+                source_item_ledger_scope=SourceItemLedgerScope(
+                    version="source-item-ledger-scope/v1", annotation_block_ids=("figure",),
+                ),
+            ),
+            blocks=[block],
+        )
+        payload = document.model_dump(mode="json")
+        self.assertEqual(DocumentIR.model_validate(payload).blocks[0].footnotes, block.footnotes)
+        for damage in ("caption", "collapse", "reorder", "duplicate_identity", "drop_ledger_and_arrays", "unknown_version"):
+            with self.subTest(damage=damage):
+                broken = deepcopy(payload)
+                target = broken["blocks"][0]
+                if damage == "caption":
+                    target["captions"] = []
+                elif damage == "collapse":
+                    target["footnotes"] = ["同文脚注末尾脚注"]
+                elif damage == "reorder":
+                    target["footnotes"] = ["末尾脚注", "同文脚注", "同文脚注"]
+                elif damage == "duplicate_identity":
+                    target["metadata"]["annotation_ledger"]["items"][2]["source_index"] = 0
+                elif damage == "drop_ledger_and_arrays":
+                    target["captions"] = target["footnotes"] = []
+                    del target["metadata"]["annotation_ledger"]
+                else:
+                    broken["metadata"]["source_item_ledger_scope"]["version"] = "unknown"
+                with self.assertRaises(DocumentIntegrityError) as caught:
+                    DocumentIR.model_validate(broken)
+                self.assertEqual(caught.exception.evidence["blocking_quality_flags"], [ANNOTATION_LEDGER_MISMATCH])
+
+    def test_translated_ledger_checks_target_digest_and_frozen_source_identity(self) -> None:
+        def source(text: str) -> DocumentIR:
+            return DocumentIR(
+                schema_version="document-ir/v2",
+                metadata=DocumentIRMetadata(
+                    job_id="job", source_file_id="file", document_language="en", translation_item_scope="annotations-v1",
+                    source_item_ledger_scope=SourceItemLedgerScope(
+                        version="source-item-ledger-scope/v1", annotation_block_ids=("figure",),
+                    ),
+                ),
+                blocks=[
+                    DocumentIRBlock(id="list", type="list", order=0, list_items=[text],
+                                    metadata={"list_item_ledger": build_list_item_ledger(
+                                        "items", "legacy_items", [(text, [text])],
+                                    )}),
+                    DocumentIRBlock(id="figure", type="image", order=1, footnotes=["Note", "Note"],
+                                    metadata={"annotation_ledger": build_annotation_ledger([
+                                        ("figure", "footnotes", 0, "Note"), ("figure", "footnotes", 1, "Note"),
+                                    ])}),
+                ],
+            )
+        original = source("List")
+        translated = original.model_copy(deep=True)
+        positions = (("list", "list_items", 0), ("figure", "footnotes", 0), ("figure", "footnotes", 1))
+        self.assertEqual(ledger_positions(translated), positions)
+        with self.assertRaises(DocumentIntegrityError):
+            apply_target_digests(translated, {positions[0]: "条目", positions[1]: "脚注"})
+        apply_target_digests(translated, dict(zip(positions, ("条目", "脚注", "脚注"))))
+        translated.blocks[0].list_items = ["条目"]
+        translated.blocks[1].footnotes = ["脚注", "脚注"]
+        translated.metadata.translation_items_applied = True
+        restored = DocumentIR.model_validate_json(translated.model_dump_json())
+        validate_ledger_source_identity(original, restored)
+
+        with self.assertRaises(DocumentIntegrityError):
+            validate_ledger_source_identity(source("Another source"), restored)
+        with self.assertRaises(DocumentIntegrityError):
+            validate_ledger_source_identity(original, original)
+        restored.blocks[1].footnotes[1] = "替换"
+        with self.assertRaises(DocumentIntegrityError) as caught:
+            DocumentIR.model_validate_json(restored.model_dump_json())
+        self.assertEqual(caught.exception.evidence["blocking_quality_flags"], [ANNOTATION_LEDGER_MISMATCH])
+
+    def test_page_degradation_removes_only_annotation_scope_of_replaced_blocks(self) -> None:
+        blocks = [
+            DocumentIRBlock(id=block_id, type="image", order=page, page_index=page,
+                            footnotes=["脚注"], metadata={"annotation_ledger": build_annotation_ledger([
+                                (block_id, "footnotes", 0, "脚注"),
+                            ])})
+            for page, block_id in enumerate(("page_zero", "page_one"))
+        ]
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(
+                job_id="job", source_file_id="file", document_language="zh",
+                source_item_ledger_scope=SourceItemLedgerScope(
+                    version="source-item-ledger-scope/v1", annotation_block_ids=("page_zero", "page_one"),
+                ),
+            ),
+            blocks=blocks,
+        )
+        replaced, _ = replace_degraded_pages(
+            document, {0: b"raster"}, {0: {"reason_codes": ["render_failed"]}},
+            source_pdf_sha256="a" * 64, dpi=120, trigger="render",
+        )
+        self.assertEqual(replaced, {"page_zero"})
+        restored = DocumentIR.model_validate_json(document.model_dump_json())
+        self.assertEqual(restored.metadata.source_item_ledger_scope.annotation_block_ids, ("page_one",))
+        self.assertEqual(ledger_positions(restored), (("page_one", "footnotes", 0),))
 
     def test_list_and_toc_region_flags_project_as_controlled_codes(self) -> None:
         from app.domains.document_jobs.review import _safe_quality_flag

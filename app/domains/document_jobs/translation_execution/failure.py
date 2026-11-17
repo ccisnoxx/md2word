@@ -63,6 +63,7 @@ class TranslationFailureHandler:
                 error_message="翻译批次计划重建失败。",
                 trace_id=trace_id,
                 formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
+                failure_evidence=failure_policy.worker_failure_evidence(exc),
             )
             return self.deps.translation_batch_repository.get_translation_batch(batch.id) or batch
         if self._should_split(batch, error):

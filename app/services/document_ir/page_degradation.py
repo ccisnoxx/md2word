@@ -121,6 +121,9 @@ def replace_degraded_pages(document: DocumentIR, rasters: dict[int, bytes], reas
     document.assets = [asset for asset in document.assets if asset.id not in removed_assets]
     document.quality_flags = [flag for flag in document.quality_flags
                               if not any(flag.endswith(":" + block_id) for block_id in removed_ids)]
+    if (scope := document.metadata.source_item_ledger_scope) is not None:
+        scope.annotation_block_ids = tuple(block_id for block_id in scope.annotation_block_ids
+                                           if block_id not in removed_ids)
     document.metadata.degraded_pages = sorted([*document.metadata.degraded_pages, *records],
                                               key=lambda record: record["page_index"])
     return removed_ids, pending

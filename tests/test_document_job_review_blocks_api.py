@@ -151,7 +151,17 @@ class DocumentJobReviewBlocksApiTests(TestCase):
             def convert_without_scope(*args, **kwargs):
                 # 用历史序列化范围创建源件，后续批次、恢复摘要和审核走正式实现。
                 kwargs["translation_item_scope"] = None
-                return convert_zip(*args, **kwargs)
+                result = convert_zip(*args, **kwargs)
+                result.document.metadata.source_item_ledger_scope = None
+                for block in result.document.blocks:
+                    for key in ("annotation_ledger", "caption_text_alias_index", "table_annotation_source"):
+                        block.metadata.pop(key, None)
+                    if block.type == "list":
+                        block.metadata["list_item_ledger"] = {
+                            "version": "list-item-ledger/v1", "selected_field": "items", "mode": "legacy_items",
+                            "source_item_count": 2, "empty_item_count": 0, "item_count": 2,
+                        }
+                return result
 
             with patch.object(converter, "convert_zip", side_effect=convert_without_scope):
                 with TestClient(create_app(runtime)) as client:

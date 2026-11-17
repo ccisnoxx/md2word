@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.services.document_ir.artifact_validator import MinerUValidationReport
 from app.services.document_ir.mineru_package import DEFAULT_POLICY
+from app.services.document_ir.source_item_ledger import LEDGER_RECOVERED
 from app.services.document_ir.table_placeholder import TableStructureReason
 from app.services.renderer.docx_quality import validate_formula_report
 from app.services.renderer.render_evidence_validation import ensure_renderer_integrity
@@ -129,7 +130,7 @@ def project_base_quality(value: Any, *, generation: int | None = None) -> dict:
     public = contribution.model_dump(mode="json")
     recovery_codes = {review.reason for review in contribution.table_structure_reviews}
     public["warning_codes"] = [code for code in contribution.warning_codes
-        if code in ISSUE_CODES or code == "formula_text_fallback" or code in recovery_codes]
+        if code in ISSUE_CODES or code in {"formula_text_fallback", LEDGER_RECOVERED} or code in recovery_codes]
     return public
 
 
@@ -315,7 +316,11 @@ def derive_base_quality(job: Any) -> dict | None:
                             compared_layout_hints.add(f"layout_wide_table:{fragment.block_id}")
             if table.validator_version == BINDING_VALIDATOR_VERSION and verified_value_table_blocks:
                 compared_layout_hints.update(_verified_layout_hints(plan, trace, verified_value_table_blocks))
-    # 自由 flags 没有原 typed 分级；即使看起来像 info，也不能据名称忽略。
+    if LEDGER_RECOVERED in metadata.get("layout_quality_flags", []):
+        warnings += 1
+        codes.add(LEDGER_RECOVERED)
+        compared_layout_hints.add(LEDGER_RECOVERED)
+    # 自由 flags 没有受控分级，即使看起来像信息提示也不能据名称忽略。
     risk_flags = [*metadata.get("quality_flags", []),
                   *(flag for flag in metadata.get("layout_quality_flags", []) if flag not in compared_layout_hints)]
     unknown_count = sum(flag != "formula_text_fallback" for flag in risk_flags)

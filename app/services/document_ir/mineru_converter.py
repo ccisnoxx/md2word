@@ -13,14 +13,12 @@ from app.conversion.docx_rules.mineru_content import (
     clean_text,
     classify_mineru_block,
     mineru_raw_text_preserving_lines,
-    mineru_list_item_ledger,
     mineru_list_items,
+    mineru_list_source_items,
     coerce_text_list,
-    collect_text_from_fields,
     select_mineru_text_source,
     select_mineru_table_html,
     find_final_promotional_page,
-    merge_footnote_fragments,
 )
 from app.conversion.docx_rules.text_semantics import infer_source_heading_level
 from app.services.document_ir.layout_signals import (
@@ -37,7 +35,7 @@ from app.services.document_ir.layout_signals import (
     role_for_source_type,
 )
 from app.services.document_ir.integrity import DocumentIntegrityError, build_source_integrity, ensure_integrity
-from app.services.document_ir.caption_reconciler import reconcile_captions
+from app.services.document_ir.caption_reconciler import extract_footnotes, reconcile_captions
 from app.services.document_ir.logical_table_group import TableSourceLedger, attach_logical_table_groups, capture_table_sources
 from app.services.document_ir.artifact_validator import (
     DEFERRABLE_ISSUE_CODES,
@@ -55,11 +53,15 @@ from app.services.document_ir.models import (
     DocumentIRBlockType,
     DocumentIRMetadata,
     DocumentIRPage,
+    SourceItemLedgerScope,
 )
 from app.services.document_ir.page_degradation import (
     PAGE_RASTER_SOURCE_PATH, PageDegradationPolicy, degradation_closure, replace_degraded_pages,
 )
-from app.services.document_ir.table_annotations import freeze_table_annotation_sources, split_table_annotation_texts
+from app.services.document_ir.source_item_ledger import (
+    LEDGER_RECOVERED, AnnotationField, build_annotation_ledger, build_list_item_ledger,
+)
+from app.services.document_ir.table_annotations import freeze_table_annotation_sources, is_table_context_annotation
 from app.services.document_ir.table_figure import (
     FIGURE_SECTION_ROLE, TABLE_FIGURE_FIELD, TableFigureBinding, caption_source_sha256, split_table_figure_caption,
 )
@@ -195,6 +197,10 @@ class MinerUToDocumentIRService:
             except MinerUPackageError as error:
                 validator.add_package_error(error)
                 raise MinerUArtifactValidationError(report) from error
+            except DocumentIntegrityError as error:
+                raise DocumentIntegrityError(error.boundary, {
+                    **error.evidence, "mineru_validation": report.model_dump(mode="json"),
+                }) from error
 
     def _convert_blocks(
         self,
@@ -225,10 +231,11 @@ class MinerUToDocumentIRService:
         """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
         validation_report = validator.report
         blocks: list[DocumentIRBlock] = []
-        caption_alias_indices: dict[str, int] = {}
+        annotation_block_ids: list[str] = []
         image_assets: list[MinerUImageAsset] = []
         ir_assets: list[DocumentIRAsset] = []
         quality_flags: list[str] = []
+        ledger_recovered = False
         unsupported_types: set[str] = set()
         filtered_page_index = find_final_promotional_page(
             raw_blocks,
@@ -258,12 +265,7 @@ class MinerUToDocumentIRService:
         legacy_degradation_blocks = [
             block for block in raw_blocks if block.get("_mineru_degradable") not in recoverable_table_pointers
         ]
-        try:
-            reconciled = reconcile_captions(raw_blocks)
-        except DocumentIntegrityError as error:
-            raise DocumentIntegrityError(error.boundary, {
-                **error.evidence, "mineru_validation": validation_report.model_dump(mode="json"),
-            }) from error
+        reconciled = reconcile_captions(raw_blocks)
         if any(result.evidence and result.evidence["status"] == "uncertain" for result in reconciled):
             quality_flags.append("caption_binding_uncertain")
         source_type_counts = Counter(block["_mineru_source"]["source_type"] for block in raw_blocks)
@@ -306,18 +308,18 @@ class MinerUToDocumentIRService:
             )
             metadata = self._metadata_from_raw(raw_block)
             metadata.update(build_block_layout_metadata(layout, page_width=page_width))
+            list_items: list[str] = []
             if block_type == "list":
-                ledger = mineru_list_item_ledger(raw_block)
-                if (ledger["source_item_count"] is not None
-                        and ledger["source_item_count"] != ledger["item_count"] + ledger["empty_item_count"]):
-                    # 源项既非有效项也非已记账空项：属于静默丢项，构建 IR 前失败关闭。
-                    raise DocumentIntegrityError("MinerU→DocumentIR", {
-                        "blocking_quality_flags": ["source_ir_integrity:list_item_count_mismatch"],
-                        "mineru_validation": validation_report.model_dump(mode="json"),
-                    })
-                metadata["list_item_ledger"] = ledger
+                selected_field, mode, sources = mineru_list_source_items(raw_block)
+                metadata["list_item_ledger"] = build_list_item_ledger(selected_field, mode, sources)
+                frozen = [text for _, outputs in sources for text in outputs]
+                list_items = mineru_list_items(raw_block)
+                if list_items != frozen:
+                    list_items = frozen
+                    ledger_recovered = True
             caption_result = reconciled[index]
-            captions = caption_result.captions
+            if caption_result.captions != [item[2] for item in caption_result.source_items]:
+                ledger_recovered = True
             if caption_result.evidence is not None:
                 caption_evidence = caption_result.evidence
                 for receipt in [*caption_evidence["bindings"], *caption_evidence.get("candidates", [])]:
@@ -327,10 +329,15 @@ class MinerUToDocumentIRService:
                     caption_evidence["members"] = [f"block_{member + 1:04d}" for member in caption_evidence["members"]]
                 metadata["caption_reconciliation"] = caption_evidence
             table_contexts: list[str] = []
-            if block_type == "table" and captions:
-                captions, table_contexts = split_table_annotation_texts(captions)
+            caption_sources: list[tuple[str, AnnotationField, int, str]] = []
+            for donor, source_index, caption in caption_result.source_items:
+                if block_type == "table" and is_table_context_annotation(caption):
+                    table_contexts.append(caption)
+                else:
+                    caption_sources.append((f"block_{donor + 1:04d}", "captions", source_index, caption))
+            captions = [item[3] for item in caption_sources]
             figure_from_table = raw_block.get("_mineru_table_figure") is True
-            footnotes = self._footnotes(raw_block, "table" if figure_from_table else source_type)
+            footnotes = extract_footnotes(raw_block, "table" if figure_from_table else source_type)
             if table_contexts:
                 quality_flags.append(f"layout_table_context_binding:{block_id}")
             if captions:
@@ -407,11 +414,17 @@ class MinerUToDocumentIRService:
                     )
                 )
             text, caption_alias_index = self._text_for_block(
-                raw_block, block_type, captions=captions,
+                raw_block, block_type, captions=captions, footnotes=footnotes, list_items=list_items,
                 preserve_line_breaks=block_type == "paragraph" and block_role == "body",
             )
-            if translation_item_scope is not None and caption_alias_index is not None:
-                caption_alias_indices[block_id] = caption_alias_index
+            if caption_alias_index is not None:
+                metadata["caption_text_alias_index"] = caption_alias_index
+            if captions or footnotes:
+                metadata["annotation_ledger"] = build_annotation_ledger([
+                    *caption_sources,
+                    *((block_id, "footnotes", position, note) for position, note in enumerate(footnotes)),
+                ])
+                annotation_block_ids.append(block_id)
             blocks.append(
                 DocumentIRBlock(
                     id=block_id,
@@ -425,7 +438,7 @@ class MinerUToDocumentIRService:
                     ),
                     html=select_mineru_table_html(raw_block) if block_type == "table" else None,
                     latex=self._formula_text(raw_block) if block_type == "formula" else None,
-                    list_items=(mineru_list_items(raw_block) or None) if block_type == "list" else None,
+                    list_items=list_items or None,
                     asset_ref=asset_ref,
                     layout=layout,
                     captions=captions,
@@ -436,6 +449,8 @@ class MinerUToDocumentIRService:
 
         if not blocks:
             quality_flags.append("empty_content_list")
+        if ledger_recovered:
+            quality_flags.append(LEDGER_RECOVERED)
         for source_type in sorted(unsupported_types):
             quality_flags.append(f"unsupported_block_type:{source_type}")
 
@@ -448,6 +463,9 @@ class MinerUToDocumentIRService:
                 source_block_count=len(raw_blocks),
                 source_type_counts=dict(sorted(source_type_counts.items())),
                 mineru_validation=validation_report,
+                source_item_ledger_scope=SourceItemLedgerScope(
+                    version="source-item-ledger-scope/v1", annotation_block_ids=tuple(annotation_block_ids),
+                ),
             ),
             pages=pages,
             blocks=blocks,
@@ -505,16 +523,11 @@ class MinerUToDocumentIRService:
             except TablePlaceholderError as error:
                 error.mineru_validation_report = validation_report
                 raise
-        if translation_item_scope is not None:
-            # 布局筛选完成后，只登记有效的注释源位置和派生关系。
-            document.metadata.translation_item_scope = translation_item_scope
-            for block in document.blocks:
-                if block.id in caption_alias_indices:
-                    block.metadata["caption_text_alias_index"] = caption_alias_indices[block.id]
-            freeze_table_annotation_sources(document)
+        # 布局筛选完成后，只登记仍有效的表格注释位置和代表。
+        document.metadata.translation_item_scope = translation_item_scope
+        freeze_table_annotation_sources(document)
         document = DocumentIR.model_validate_json(document.model_dump_json())
         evidence = build_source_integrity(document)
-        evidence["mineru_validation"] = validation_report.model_dump(mode="json")
         ensure_integrity("MinerU→DocumentIR", evidence)
         return MinerUToDocumentIRResult(document=document, image_assets=image_assets,
             validation_report=validation_report, table_reference_assets=reference_assets,
@@ -666,7 +679,9 @@ class MinerUToDocumentIRService:
         raw_block: dict[str, Any],
         block_type: str,
         *,
-        captions: list[str] | None = None,
+        captions: list[str],
+        footnotes: list[str],
+        list_items: list[str],
         preserve_line_breaks: bool = False,
     ) -> tuple[str | None, int | None]:
         """返回块正文及正文确实从题注派生时使用的原始下标。"""
@@ -674,7 +689,7 @@ class MinerUToDocumentIRService:
             text = self._first_text_from_keys(raw_block, ("text",))
             if not select_mineru_table_html(raw_block):
                 # 只消费明确正文叶字段/typed runs，不把 table_type 等 schema 标签当上下文。
-                excluded = set([*(captions or []), *self._footnotes(raw_block, "table")])
+                excluded = {*captions, *footnotes}
                 contexts = []
                 containers = [raw_block]
                 if isinstance(raw_block.get("content"), dict):
@@ -694,9 +709,20 @@ class MinerUToDocumentIRService:
         if block_type == "formula":
             return self._formula_text(raw_block), None
         if block_type == "list":
-            items = (mineru_list_items(raw_block) or None)
-            return ("\n".join(items) if items else self._raw_text(raw_block)), None
-        text = self._raw_text(raw_block, preserve_line_breaks=preserve_line_breaks) or self._first_text_from_keys(raw_block, ("caption",))
+            return ("\n".join(list_items) if list_items else self._raw_text(raw_block)), None
+        text = self._raw_text(raw_block, preserve_line_breaks=preserve_line_breaks)
+        if text is None:
+            fallback = self._first_text_from_keys(raw_block, ("caption",))
+            if fallback and captions:
+                # 旧正文回退只读取题注。用第一个真实位置作为派生值，其余位置各自保留。
+                return captions[0], 0
+            return fallback, None
+        content = raw_block.get("content")
+        if captions and isinstance(content, dict) and set(content) in ({"caption"}, {"captions"}):
+            selected = select_mineru_text_source(raw_block)
+            if selected is not None and selected[0] == "content" and selected[2] == "texts":
+                # legacy 拍平内容容器时也可能只有题注，没有独立正文。
+                return captions[0], 0
         return text, None
 
     def _formula_text(self, raw_block: dict[str, Any]) -> str | None:
@@ -707,14 +733,6 @@ class MinerUToDocumentIRService:
                 return None
             return math_content.strip() or None
         return self._first_text_from_keys(raw_block, ("latex", "math_content", "equation_content", "text", "content"))
-
-    def _footnotes(self, raw_block: dict[str, Any], source_type: str) -> list[str]:
-        keys = ["footnote"]
-        if source_type == "table":
-            keys.insert(0, "table_footnote")
-        elif source_type in {"chart", "image", "figure"}:
-            keys.insert(0, f"{source_type}_footnote")
-        return self._unique_texts(merge_footnote_fragments(collect_text_from_fields(raw_block, tuple(keys))))
 
     def _raw_text(self, raw_block: dict[str, Any], *, preserve_line_breaks: bool = False) -> str | None:
         text = clean_text(
