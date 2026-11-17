@@ -24,8 +24,6 @@ from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import (
     TranslationMode,
-    is_translation_document_job_mode,
-    normalize_mineru_language,
     translation_mode_for_document_job_mode,
 )
 from app.services.auth.models import AuthenticatedUser
@@ -103,9 +101,6 @@ class DocumentJobSubmission:
             self.request_snapshot.legacy_translation_term_version_id(mode, term_version_id, translation_term_version),
         )
         debug_full_text_enabled = self.request_snapshot.resolve_debug_full_text_enabled(mode, debug_full_text)
-        mineru_language = None
-        if not is_translation_document_job_mode(mode) and document_language != "auto":
-            mineru_language = normalize_mineru_language(document_language)
         now = utc_now()
         job_id = f"docjob_{uuid4().hex[:12]}"
         request_snapshot = self.request_snapshot.build_request_snapshot(
@@ -122,7 +117,6 @@ class DocumentJobSubmission:
             translation_profile_id=translation_profile_id,
             translation_profile_version=translation_profile_version,
             template_layout_config_sha256=template.layout_config_sha256,
-            mineru_language=mineru_language,
             resource_snapshot=self.request_snapshot.build_resource_snapshot(
                 job_id=job_id,
                 mode=mode,
@@ -333,10 +327,16 @@ class DocumentJobSubmission:
             debug_full_text=requested_debug_full_text,
         )
 
+        normalized_document_language = document_language or source_job.document_language
+        if config_strategy == "keep_source_snapshot" and normalized_document_language != source_job.document_language:
+            raise ApplicationError(
+                "conflict",
+                "沿用源任务快照时不能修改文档语言。",
+                reason_code="clone_document_language_conflicts_with_snapshot",
+            )
+        self.request_snapshot.ensure_document_language_allowed(source_job.mode, normalized_document_language)
         now = utc_now()
         new_job_id = f"docjob_{uuid4().hex[:12]}"
-        normalized_document_language = document_language or source_job.document_language
-        self.request_snapshot.ensure_document_language_allowed(source_job.mode, normalized_document_language)
         clone_config = self.request_snapshot.resolve_clone_config(
             source_job,
             source_file,

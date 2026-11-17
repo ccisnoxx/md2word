@@ -18,7 +18,8 @@
 - 历史 `zh2zh`、`zh_to_zh` 仅在服务端输入归一为 direct。请求 schema 在 Literal 前处理明确 alias；OpenAPI/前端枚举保持五值，响应/snapshot/event 保存规范值。
 - direct 使用模板、MinerU、符号与排版规则，不调用翻译术语服务、Profile payload/Prompt 解析、Provider 或翻译批次服务。符号规则 `term_rule_set` 不属于翻译术语。
 - PDF 任务在 `request_snapshot.resources.mineru.language` 绑定 MinerU v4 语言包。无版本化资源快照时，绑定在 `request_snapshot.mineru_language`。Worker 提交 `/api/v4/file-urls/batch` 时用绑定值作为顶层 `language`。中译英和中译俄使用 `ch`，俄译中使用 `east_slavic`，英译中使用 `en`。
-- 新建 direct 任务按 `document_language` 绑定语言，`zh`、`en`、`ru` 分别使用 `ch`、`en`、`east_slavic`。`auto`（含未传该字段）沿用 `MINERU_LANGUAGE`，应用同样的别名映射，其它已配置语言包原样传递。
+- 新建 direct 任务和重选配置的 direct 克隆按 `document_language` 绑定语言，`zh`、`en`、`ru` 分别使用 `ch`、`en`、`east_slavic`。`auto` 使用任务创建时的 `MINERU_LANGUAGE`，应用同样的别名映射，其它已配置语言包原样传递。
+- 克隆省略 `document_language` 时沿用源任务文种。`keep_source_snapshot` 要求文种与源任务一致，并继承源任务绑定的 MinerU 语言。`use_current_defaults` 和 `select_published_versions` 允许在既有模式的文种准入范围内修改文种，按新建任务的规则冻结语言。
 - direct 的新请求不接受非空 `term_version_id`、`translation_term_set_id/version`、`translation_profile_id/version`。校验必须在翻译加载与 mutation 前，但仍保留权限/状态检查优先级。
 - 历史 direct 快照可读；默认 retry、keep-source clone 的惰性字段不重新加载或回写清理，源任务与审计保留。
 - 新建和 clone 在写任务和投递前检查最终绑定的模板版本。缺 YAML 或会读取外部页眉 Logo 的历史绑定为 `legacy_internal_only`。保留源快照的 clone 仍创建新任务，必须认证原绑定并通过新任务准入。版本化入口的默认资源失败不得降级为无快照任务。
@@ -41,19 +42,20 @@
 | 必需 P0 执行链未就绪 | 503 `document_jobs_not_ready`。 |
 | 已提交批次或已登记结果包 | 恢复既有批次或结果，不因语言映射变化重新上传。 |
 | 未提交的历史任务缺少 MinerU 语言快照 | 按任务模式和现有 `MINERU_LANGUAGE` 回退，应用同一映射。 |
-| 新建 direct 显式选择原文语言，配置另一语言 | 两种快照均绑定显式文种对应的 MinerU 值，后续环境配置变更不会改变请求。 |
+| `keep_source_snapshot` 指定不同的 `document_language` | 409 `conflict`，`error.reason_code=clone_document_language_conflicts_with_snapshot`，在创建任务和投递前拒绝。 |
+| 新建或重选配置的 direct 克隆显式选择原文语言，配置另一语言 | 两种快照均绑定显式文种对应的 MinerU 值，后续环境配置变更不会改变请求。 |
 
 ## 5. 正常、缺省与非法场景
 
 - 正常：direct 绑定 published 模板和符号规则，生成一份主 DOCX，零 AI/批次/翻译 Artifact。
 - 缺省：未给 mode/translation_mode 使用 direct；翻译默认资源缺失不构成 direct 的翻译依赖。
 - 非法：direct 传显式翻译术语，不能先加载后丢弃；未知模式不能回退 direct。
-- 历史快照可保留 `zh`、`ru`。再次上传时在请求边界转换旧值，默认重试保留历史记录。重绑术语时沿用已有 MinerU 语言，复用解析结果时保持语言证据。继承旧快照的克隆在新任务副本绑定规范语言包。
+- 历史快照可保留 `zh`、`ru`。再次上传时在请求边界转换旧值，默认重试保留历史记录。重绑术语时沿用已有 MinerU 语言，复用解析结果时保持语言证据。继承旧快照的克隆在新任务副本绑定规范语言包。源任务缺少绑定时，克隆在创建时冻结按模式和配置得到的回退值。
 
 ## 6. 必要测试
 
 - `tests.test_document_job_modes`：真实请求 schema alias、双字段与非法输入、direct 零翻译加载/单 DOCX、拒绝无 mutation、历史 retry/clone。
-- `tests.test_document_job_modes` 的 MinerU 语言回归覆盖五种模式的快照与序列化请求、两种快照下新建 direct 的 `zh/en/ru/auto` 及配置漂移、历史任务缺字段、继承克隆及术语重绑重试。
+- `tests.test_document_job_modes` 的 MinerU 语言回归覆盖五种模式的快照与序列化请求、两种快照下新建和重选配置的 direct 克隆的 `zh/en/ru/auto` 及配置漂移、保留快照时的文种校验和继承、历史任务缺字段及术语重绑重试。
 - `tests.test_fastapi_jobs_backend`：复用四方向资源、语言匹配、debug/owner 权限和正式 Worker 回归。
 - `frontend/src/utils/format.test.ts`、`documentJobConfig.test.ts`：模式能力、精确 warning 过滤、投影不修改输入。
 - mock API UI smoke：两角色 direct 创建/详情、翻译切 direct payload、展开快照隐藏、长文案宽度与键盘。
@@ -73,7 +75,7 @@ if not spec_for_document_job_mode(mode).is_translation:
 
 UI 同样先按共享模式能力判断是否展示，再构造展示副本；不能用删除后端 snapshot 字段来隐藏配置。
 
-新建 direct 的显式文种在创建用例映射为供应商值，再由快照构建器保存。例如 `document_language=zh` 即使遇到 `MINERU_LANGUAGE=en` 也绑定 `ch`。Worker 使用快照，以保证入队后的语言选择稳定。
+新建任务和克隆共用快照构建器解析和写入 MinerU 语言。例如指定 `use_current_defaults` 的 direct 克隆在 `document_language=zh`、`MINERU_LANGUAGE=en` 时绑定 `ch`。Worker 使用快照，以保证入队后的语言选择稳定。
 
 ## 8. 执行阶段与恢复合同（CON-102）
 

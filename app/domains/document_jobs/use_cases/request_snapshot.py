@@ -27,6 +27,23 @@ from app.domains.translation.modes import (
 from app.services.auth.models import AuthenticatedUser
 
 
+def resolve_bound_mineru_language(
+    mode: DocumentJobMode,
+    document_language: str,
+    configured_default: str,
+    *,
+    preserved_source: DocumentJobRecord | None = None,
+) -> str:
+    spec = spec_for_document_job_mode(mode)
+    if preserved_source is not None:
+        inherited = preserved_source.bound_mineru_language
+        if inherited is not None:
+            return normalize_mineru_language(inherited)
+        # 旧快照缺少绑定时，按原有执行回退规则冻结当前语言。
+        return spec.resolve_mineru_language(configured_default)
+    return spec.resolve_mineru_language(configured_default if document_language == "auto" else document_language)
+
+
 class DocumentJobRequestSnapshots:
     """创建、克隆、重试共用的请求快照、资源快照与模式/模板/术语版本解析。"""
 
@@ -62,7 +79,7 @@ class DocumentJobRequestSnapshots:
         translation_profile_version: str | None = None,
         resource_snapshot: dict | None = None,
         template_layout_config_sha256: str | None = None,
-        mineru_language: str | None = None,
+        preserved_source: DocumentJobRecord | None = None,
     ) -> dict:
         snapshot = {
             "source_file": {
@@ -93,13 +110,15 @@ class DocumentJobRequestSnapshots:
             "word_preview": self.settings.word_preview_policy().model_dump(mode="json"),
             "page_quality": self.settings.page_quality_policy().model_dump(mode="json"),
         }
+        mineru_language = resolve_bound_mineru_language(
+            mode, document_language, self.settings.mineru_language, preserved_source=preserved_source,
+        )
         if resource_snapshot is None:
-            spec = spec_for_document_job_mode(mode)
-            snapshot["mineru_language"] = mineru_language or spec.resolve_mineru_language(self.settings.mineru_language)
+            snapshot["mineru_language"] = mineru_language
             if template_layout_config_sha256 is not None:
                 # 本地模板只有清单路径，Worker 仍需认证提交时通过准入的同一份 YAML。
                 snapshot["template_layout_config_sha256"] = template_layout_config_sha256
-        elif mineru_language is not None:
+        else:
             snapshot["resources"] = self._with_mineru_language(resource_snapshot, mineru_language)
         return snapshot
 
@@ -126,12 +145,6 @@ class DocumentJobRequestSnapshots:
         if config_strategy == "keep_source_snapshot":
             template = self.resolve_new_template(source_job.template_version_id, allow_draft=user.role == "admin")
             source_resources = self._authorize_cloned_template(source_job, template)
-            inherited_language = source_job.bound_mineru_language
-            spec = spec_for_document_job_mode(source_job.mode)
-            mineru_language = (
-                normalize_mineru_language(inherited_language) if inherited_language is not None
-                else spec.resolve_mineru_language(self.settings.mineru_language)
-            )
             source_assets = self.read_snapshot_record(source_job.request_snapshot, "term_assets")
             source_profile = self.read_snapshot_record(source_job.request_snapshot, "translation_profile")
             resolved_debug = self.resolve_debug_full_text_enabled(
@@ -153,7 +166,7 @@ class DocumentJobRequestSnapshots:
                 translation_profile_version=self.read_snapshot_string(source_profile, "translation_profile_version"),
                 resource_snapshot=source_resources,
                 template_layout_config_sha256=template.layout_config_sha256,
-                mineru_language=mineru_language,
+                preserved_source=source_job,
             )
             if "word_preview" in source_job.request_snapshot:
                 request_snapshot["word_preview"] = source_job.request_snapshot["word_preview"]
