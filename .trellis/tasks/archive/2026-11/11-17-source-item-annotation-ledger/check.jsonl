@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"核对回归证据及定向检查范围。"}
+{"file":".trellis/spec/backend/word-generation-rules.md","reason":"核对列表、源注释、降级兼容及持久化 Word 取证。"}
+{"file":".trellis/spec/backend/translation-integrity-validator.md","reason":"核对翻译项身份、证据脱敏及旧范围兼容。"}
+{"file":".trellis/spec/backend/translation-batch-lifecycle.md","reason":"核对失败后无部分发布和持久化绑定。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"核对受控错误、warning 和 Worker 收口。"}
