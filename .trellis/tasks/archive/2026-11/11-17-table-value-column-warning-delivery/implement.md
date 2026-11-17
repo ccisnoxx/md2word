@@ -132,5 +132,129 @@ MD2WORD_TABLE_VALUE_P7_ZIP=/tmp/md2word-rollout5.roi2be/evidence/live-gs-008-ret
 ### 复用结果及未验证范围
 
 - 嵌字体 LOW/HIGH 的通过来自修复前的补验，覆盖异摘要逐页同源及同包新代批准发布。本次复用该记录，修复后未重跑 LOW/HIGH。
-- P7 此次使用留存回包、真实 Poppler、本地 Worker、测试仓储和预览替身。未对这份 P7 执行批准或正式发布，未验证真实 MySQL、生产 MinerU、在线 Worker、部署或实际预览后端，以及 Word/WPS 视觉效果。
+- 上述 P7 定向用例使用留存回包、真实 Poppler、本地 Worker、测试仓储和预览替身。两项定向用例完成后，已另行补验 P7 的本地批准与正式发布 API。 [本地回放](#真实-p7-审批发布本地回放)
 - 本次修复只运行上述两个目标。未运行全仓回归、完整发布检查或 CI。
+
+## 真实 P7 审批发布本地回放
+
+在 `main@74157997` 上复核原 PDF 和留存 MinerU ZIP 的 SHA-256，随后只启动一份 P7 本地任务。复用现有 `worker_case` 的隔离运行时与资源快照，使用真实 Poppler、留存回包和预览替身。批准与发布调用正式 HTTP 路由。未调用 unittest 入口或既有测试方法。
+
+### 实际执行的命令
+
+从仓库根目录运行。夹具将生成的文件与测试状态存放在自建临时目录，断言结果输出到终端。
+
+<details>
+<summary>展开完整回放命令</summary>
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python - <<'PY'
+from hashlib import sha256
+from pathlib import Path
+import subprocess
+
+def require(condition, problem):
+    if not condition:
+        raise SystemExit(problem)
+
+def describe(response):
+    try:
+        reason = response.json().get("error", {}).get("reason_code")
+    except ValueError:
+        reason = None
+    return f"HTTP {response.status_code}" + (f"，{reason}" if reason else "")
+
+def repository_state():
+    return (
+        subprocess.check_output(["git", "rev-parse", "HEAD"]),
+        subprocess.check_output(["git", "status", "--porcelain=v1", "--untracked-files=all", "-z"]),
+    )
+
+source_path = Path("mineru_result/OPA228_P7.pdf-d457d448-c495-41ea-8bcf-41a3f18c00fb/bb850108-9783-4a28-8523-9b115319bd47_origin.pdf")
+package_path = Path("/tmp/md2word-rollout5.roi2be/evidence/live-gs-008-returned.zip")
+source = source_path.read_bytes()
+package = package_path.read_bytes()
+require(sha256(source).hexdigest() == "24f724cf0e795f6afeb6fec5c72ff8f144085c59d57fbf0a5c9efbf1808b1eb3",
+        "P7 原 PDF 摘要变化，停止回放。")
+require(sha256(package).hexdigest() == "5de05d59fdacea166361bde14625ff8045350b0aefc894a923ff181a030fe033",
+        "P7 留存 ZIP 摘要变化，停止回放。")
+before = repository_state()
+require(not before[1], "工作区或暂存区状态已变化，停止回放。")
+
+try:
+    from tests.test_online_table_value_pdf_binding import OnlineTableValuePdfBindingTests
+
+    fixture = OnlineTableValuePdfBindingTests()
+    with fixture.worker_case(package, source, filename="OPA228_P7.pdf") as (runtime, _, job, client, owner, admin):
+        url = f"/api/v1/document-jobs/{job.id}"
+        tables = client.get(f"{url}/quality/tables", headers=owner)
+        require(tables.status_code == 200, f"读取当前报告失败，{describe(tables)}。")
+        payload = tables.json()
+        waiting = [row for item in payload["items"] for row in item["unresolved_value_columns"]]
+        report_hash = payload["report"]["report_sha256"]
+        require((job.status, job.stage, job.quality_status, len(waiting)) == ("succeeded", "completed", "warning", 13)
+                and {row["reason_code"] for row in waiting} == {"row_ambiguous"}
+                and all(row["manual_review_required"] is True for row in waiting),
+                "P7 任务状态或当前 13 项未决定位与预期不符。")
+        require(payload["source"]["generation"] == job.retry_count
+                and payload["source"]["result_file_id"] == job.result_file_id,
+                "当前表格报告与 P7 主件不匹配。")
+        result = runtime.document_file_repository.get_document_file(job.result_file_id)
+        word = runtime.file_upload_service.read_file_content(result)
+        word_hash = "sha256:" + sha256(word).hexdigest()
+        require(result.checksum_sha256 == word_hash, "登记主件的 DOCX 摘要与实际字节不一致。")
+        print(f"1. 通过。P7 succeeded/completed，整体 warning，13 项 row_ambiguous 均需人工复核。当前报告 SHA-256 {report_hash}", flush=True)
+
+        review_request = {"status": "approved", "expected_source": fixture.review_source(client, owner, url)}
+        denied = client.patch(f"{url}/review", headers=owner, json=review_request)
+        require(denied.status_code == 409 and denied.json()["error"]["reason_code"] == "table_semantics_confirmation_required",
+                f"缺少报告确认时的结果不符合预期，{describe(denied)}。")
+        print("2. 通过。未确认报告时批准返回 HTTP 409，table_semantics_confirmation_required。", flush=True)
+
+        approved = client.patch(f"{url}/review", headers=owner,
+            json={**review_request, "acknowledged_table_semantics_report_sha256": report_hash})
+        require(approved.status_code == 200, f"确认当前报告后批准失败，{describe(approved)}。")
+        review = approved.json()["review"]
+        binding = review["binding"]
+        require(review["status"] == "approved" and binding["result_file_id"] == job.result_file_id
+                and binding["result_sha256"] == word_hash
+                and binding["acknowledged_table_semantics_report_sha256"] == report_hash,
+                "批准记录与同一 DOCX 或当前报告摘要不匹配。")
+        print("3. 通过。携带当前报告摘要后批准返回 HTTP 200，状态 approved，确认摘要与主件绑定已核对。", flush=True)
+
+        published = fixture.try_publish(client, admin, url)
+        require(published.status_code == 201, f"管理员发布失败，{describe(published)}。")
+        publication = published.json()["publication"]
+        current = runtime.document_job_repository.get_document_job(job.id)
+        require(current.quality_status == "warning" and current.delivery_status == "published"
+                and current.current_publication_id == publication["publication_id"]
+                and publication["job_id"] == job.id and publication["generation"] == job.retry_count
+                and current.result_file_id == publication["result_file_id"] == job.result_file_id
+                and publication["result_sha256"] == word_hash
+                and publication["review_record_id"] == review["current_record_id"],
+                "发布记录与当前批准或同一主 DOCX 未对上。")
+        print(f"4. 通过。管理员发布返回 HTTP 201，状态 published，质量仍为 warning。发布记录的主 DOCX ID 与 SHA-256 和批准前一致。DOCX {word_hash}", flush=True)
+finally:
+    require(repository_state() == before, "回放结束后仓库状态发生变化，需核对。")
+    print("仓库 HEAD、工作区和暂存区状态与回放前一致。", flush=True)
+PY
+```
+
+</details>
+
+### 实测结果
+
+| 步骤 | 实测结果 |
+| --- | --- |
+| 读取当前表格报告 | HTTP 200，任务为 `succeeded/completed`、整体 `warning`。同代主件的报告返回 13 项未决定位，均为 `row_ambiguous` 且标记 `manual_review_required`。 |
+| 缺少报告确认时批准 | HTTP 409，原因码为 `table_semantics_confirmation_required`。 |
+| 确认当前报告后批准 | HTTP 200，状态为 `approved`。批准记录的确认摘要等于当前报告 SHA-256，主 DOCX 文件 ID 和摘要与批准前一致。 |
+| 管理员发布 | HTTP 201，交付状态为 `published`，整体质量仍为 `warning`。发布记录引用本次批准，任务、代次、主 DOCX 文件 ID 和实读 SHA-256 一致。 |
+
+- 当前报告 SHA-256 为 `65a8136f4cbe556774169749c6544315b0bb1eff5928c64e9af6242ca2a3878e`。
+- 主 DOCX SHA-256 为 `dc64c2d32272e8e19d2e05a4cc8ffd1a98058f7a5bccb8ee933f25eb02e06280`。
+- 仅回放一次，退出码为 0。回放前后仓库 HEAD、工作区和暂存区一致。
+
+### 更新后的未验证范围
+
+- 真实 P7 的当前报告确认、批准和发布 API 已通过隔离本地回放。发布后的最终件签发和下载本轮未执行。此前已核对的是内部主件下载。
+- 真实 MySQL、生产 MinerU 新提交、在线 Worker、部署环境、实际预览后端以及 Word/WPS 视觉效果仍未验证。全仓回归、完整发布检查和 CI 未运行。嵌字体 LOW/HIGH 继续复用此前的通过记录。
