@@ -158,6 +158,9 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
         "ir_source_type_counts": dict(sorted(actual_types.items())),
         "blocking_quality_flags": unique_flags,
     }
+    if document_ir.metadata.table_structure_reviews:
+        evidence["table_structure_reviews"] = [item.model_dump(mode="json")
+                                                for item in document_ir.metadata.table_structure_reviews]
     # 历史 IR 无账本时不新增键，持久化证据重算后须与原存储结构逐字节一致。
     if ledger_summary is not None:
         evidence["list_item_ledger"] = ledger_summary

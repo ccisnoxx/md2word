@@ -261,9 +261,10 @@ def _build_table_evidence(document: DocumentIR, content: bytes, evidence: dict, 
             if item["logical_group_id"] != group.logical_group_id:
                 continue
             placeholders.append(PlaceholderEvidence.model_validate({
-                **{key: item[key] for key in PlaceholderEvidence.model_fields if key != "proof_sha256"},
+                **{key: item[key] for key in PlaceholderEvidence.model_fields if key in item},
                 "proof_sha256": proof["evidence_sha256"]}))
-            flags.append(EvidenceFlag(producer="table_placeholder", code="table_noneditable_placeholder", severity="blocker",
+            flags.append(EvidenceFlag(producer="table_placeholder", code="table_noneditable_placeholder",
+                                      severity="warning" if item.get("structure_recovery") is not None else "blocker",
                                       identity=item["placeholder_id"], fragment_id=item["fragment_id"]))
         members = list(dict.fromkeys(f.render_owner_block_id for f in group.fragments))
         state = "mixed" if outputs and placeholders else "native" if outputs else "placeholder" if placeholders else "excluded_margin_artifact"

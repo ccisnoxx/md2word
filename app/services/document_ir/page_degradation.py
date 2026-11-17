@@ -14,6 +14,8 @@ DEGRADED_REASON_LABELS = {
     "missing_image_asset": "图片缺失",
     "invalid_image_asset": "图片损坏或格式不受支持",
     "invalid_table_html": "表格结构无法解析",
+    "invalid_table_merge": "表格合并格无效",
+    "empty_table_html": "表格缺少可编辑内容",
     "render_failed": "排版渲染失败",
 }
 DEPENDENT_PAGE_REASON = "所属跨页表格的其他页面失败"
@@ -124,7 +126,7 @@ def replace_degraded_pages(document: DocumentIR, rasters: dict[int, bytes], reas
     return removed_ids, pending
 
 
-def drop_degraded_table_groups(document: DocumentIR, removed_ids: set[str]) -> None:
+def drop_degraded_table_groups(document: DocumentIR, removed_ids: set[str], *, prune_removed_diagnostics: bool = False) -> None:
     """渲染阶段降级：IR 已挂接表格组、参考图与占位绑定，移除只属于被删表格块的部分。
 
     闭包保证被删组的片段全部位于降级页；残留引用（如保留组的不确定续表诊断指向被删片段）由调用方重新校验 IR 时拒绝。
@@ -138,7 +140,15 @@ def drop_degraded_table_groups(document: DocumentIR, removed_ids: set[str]) -> N
         return
     fragment_ids = {fragment.fragment_id for group in dropped for fragment in group.fragments}
     metadata.logical_table_groups = [group for group in metadata.logical_table_groups if group not in dropped]
+    if prune_removed_diagnostics:
+        # 认证原页已保留被移除组的全部内容；其不确定续表诊断不再属于剩余原生表。
+        for group in metadata.logical_table_groups:
+            group.diagnostics = [item for item in group.diagnostics
+                                 if item.from_fragment_id not in fragment_ids and item.to_fragment_id not in fragment_ids]
     metadata.logical_table_group_counts = _counts(metadata.logical_table_groups)
+    metadata.table_structure_reviews = [
+        item for item in metadata.table_structure_reviews if item.block_id not in removed_ids
+    ]
     metadata.pdf_value_column_unresolved = tuple(
         issue for issue in metadata.pdf_value_column_unresolved if issue.fragment_id not in fragment_ids
     )

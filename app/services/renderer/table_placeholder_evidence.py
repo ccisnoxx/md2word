@@ -10,8 +10,8 @@ from xml.etree import ElementTree as ET
 import zipfile
 
 from app.services.document_ir.table_placeholder import (
-    BLOCKER, LABEL, TablePlaceholderBinding, TablePlaceholderError, canonical_hash,
-    checksum, decode_placeholders, source_label, binding_identity, re_hash,
+    BLOCKER, TablePlaceholderBinding, TablePlaceholderError, canonical_hash,
+    checksum, decode_placeholders, placeholder_label, source_label, binding_identity, re_hash,
 )
 
 VERSION = "table-placeholder-rendering/v1"
@@ -63,7 +63,7 @@ def build_placeholder_evidence(document, content, *, _with_ownership=False):
                 expected_id = str(2_000_000 + index)
                 if ([n.get(W + "id") for n in starts] != [expected_id]
                         or [n.get(W + "id") for n in ends] != [expected_id]
-                        or "".join(p.itertext()) != LABEL + source_label(binding)):
+                        or "".join(p.itertext()) != placeholder_label(binding) + source_label(binding)):
                     raise ValueError()
                 pictures = p.findall(".//wp:inline", NS)
                 if len(pictures) != 1 or pictures[0].find("wp:docPr", NS).get("descr") != binding.placeholder_id:

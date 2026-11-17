@@ -7943,6 +7943,13 @@
             ],
             "title": "Schema Version"
           },
+          "table_structure_reviews": {
+            "items": {
+              "$ref": "#/components/schemas/TableStructureReviewSummary"
+            },
+            "title": "Table Structure Reviews",
+            "type": "array"
+          },
           "unknown_flag_count": {
             "default": 0,
             "minimum": 0.0,
@@ -17362,6 +17369,69 @@
           }
         },
         "title": "SavedViewUpdateRequest",
+        "type": "object"
+      },
+      "TableStructureReviewSummary": {
+        "additionalProperties": false,
+        "description": "本代已保留表格的人工复核定位，页码从一开始。",
+        "properties": {
+          "manual_review_required": {
+            "const": true,
+            "default": true,
+            "title": "Manual Review Required",
+            "type": "boolean"
+          },
+          "page_number": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Number"
+          },
+          "preserved_as": {
+            "enum": [
+              "native",
+              "reference_image",
+              "pdf_crop",
+              "pdf_page"
+            ],
+            "title": "Preserved As",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "invalid_table_html",
+              "invalid_table_merge",
+              "empty_table_html"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "severity": {
+            "const": "warning",
+            "default": "warning",
+            "title": "Severity",
+            "type": "string"
+          },
+          "source_pointer": {
+            "maxLength": 160,
+            "pattern": "^/(?:content_list/)?[0-9]+(?:/[0-9]+)?$",
+            "title": "Source Pointer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_pointer",
+          "page_number",
+          "reason",
+          "preserved_as"
+        ],
+        "title": "TableStructureReviewSummary",
         "type": "object"
       },
       "TemplateAssetResponse": {

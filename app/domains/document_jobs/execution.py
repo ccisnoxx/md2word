@@ -392,8 +392,16 @@ class DocumentJobExecutionService:
                     document_language=job.document_language,
                     placeholder_source_loader=load_source,
                     translation_item_scope=None if direct else "annotations-v1",
+                    reviewable_table_structure=direct and replay is None,
+                    table_structure_source_loader=lambda: self.rendering.placeholders.load_source(job, strict_identity=True),
                     **value_column_options,
                 )
+                if result.document.metadata.table_structure_reviews and (
+                    result.validation_report is None
+                    or "sha256:" + result.validation_report.package_sha256 != raw_file.checksum_sha256
+                    or raw_zip_path.stat().st_size != raw_file.size_bytes
+                ):
+                    raise TablePlaceholderError("table_placeholder_integrity_failed")
                 if bind_values:
                     ensure_table_value_mineru_result_current(
                         job, raw_file, job_repository=self.job_repository, file_repository=self.file_repository,

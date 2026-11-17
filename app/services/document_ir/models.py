@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 
 from app.services.document_ir.artifact_validator import MinerUValidationReport
 from app.services.document_ir.table_header_review import TableHeaderReview
-from app.services.document_ir.table_placeholder import TablePlaceholderBinding
+from app.services.document_ir.table_placeholder import TablePlaceholderBinding, TableStructureReason
 from app.services.document_ir.table_value_column_review import (
     LegacyValueColumnReplay, PdfValueColumnPageEquivalence, PdfValueColumnUnresolved, TableValueColumnReview,
 )
@@ -92,10 +92,11 @@ class TableFragment(BaseModel):
     upstream_coverage: UpstreamTableCoverage | None = Field(default=None, exclude_if=lambda value: value is None)
     normalization_rule_id: str | None = None
     normalization_reason: Literal["explicit_table_placeholder", "strict_empty_table_placeholder"] | None = None
+    structure_recovery: TableStructureReason | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @property
     def needs_placeholder(self) -> bool:
-        return self.html_state in {"missing", "empty"} and self.upstream_coverage is None
+        return (self.html_state in {"missing", "empty"} or self.structure_recovery is not None) and self.upstream_coverage is None
 
     @property
     def raw_html(self) -> str | None:
@@ -164,6 +165,17 @@ class TableReferenceProvenance(BaseModel):
     retry_count: int = Field(ge=0)
 
 
+class TableStructureReview(BaseModel):
+    """同代保留方式及原始表格定位，不包含原文。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    source_pointer: str = Field(pattern=r"^/(?:content_list/)?\d+(?:/\d+)?$")
+    page_index: int | None = Field(ge=0)
+    block_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    reason: TableStructureReason
+    preserved_as: Literal["native", "reference_image", "pdf_crop", "pdf_page"]
+
+
 class DocumentIRMetadata(BaseModel):
     """文档追溯、解析信息及受控 Artifact 内的原始表格来源账本。"""
 
@@ -191,6 +203,7 @@ class DocumentIRMetadata(BaseModel):
     table_references_version: Literal["table-reference/v1"] | None = None
     table_placeholders_version: Literal["table-placeholder/v1"] | None = None
     table_placeholders: list[TablePlaceholderBinding] = Field(default_factory=list)
+    table_structure_reviews: list[TableStructureReview] = Field(default_factory=list, exclude_if=lambda value: not value)
     # 旧源件缺省即保留原批次抽取范围，不能从已存批次反推。
     translation_item_scope: AnnotationTranslationScope | None = Field(default=None, exclude_if=lambda value: value is None)
     translation_items_applied: Literal[True] | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -296,4 +309,10 @@ class DocumentIR(BaseModel):
         decode_table_references(self)
         from app.services.document_ir.table_placeholder import decode_placeholders
         decode_placeholders(self)
+        if self.metadata.table_structure_reviews or any(
+            fragment.structure_recovery is not None
+            for group in self.metadata.logical_table_groups for fragment in group.fragments
+        ):
+            from app.services.document_ir.table_structure_recovery import validate_structure_reviews
+            validate_structure_reviews(self)
         return self

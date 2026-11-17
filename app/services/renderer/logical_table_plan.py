@@ -302,7 +302,7 @@ def build_logical_table_render_plan(document: DocumentIR, layout: LayoutPlan, *,
             continue
         unresolved = [fragment for fragment in group.fragments if fragment.needs_placeholder]
         diagnostics = tuple(dict.fromkeys(item.reason for item in group.diagnostics))
-        blockers = ["table_fragment_missing"] if unresolved else []
+        blockers = ["table_fragment_missing"] if any(fragment.structure_recovery is None for fragment in unresolved) else []
         compatible = all(fragment.fragment_id in placeholder_ids for fragment in unresolved)
         source_members = [fragment.fragment_id for fragment, _, _ in present]
         verified = {(relation.from_fragment_id, relation.to_fragment_id) for relation in group.continuation_relations

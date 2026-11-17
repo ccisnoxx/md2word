@@ -73,7 +73,8 @@ FAILURE_OPERATION_KINDS = frozenset({"section", "configure_page", "decoration", 
 FAILURE_REASON_CODES = frozenset({
     "table_render_input", "table_render_geometry", "table_render_failed", "table_build_limit", "table_html_encoding",
     "table_html_unsupported_structure", "table_placeholder_crop_failed", "table_placeholder_geometry_invalid",
-    "table_placeholder_integrity_failed", "table_placeholder_source_unavailable",
+    "table_placeholder_integrity_failed", "table_placeholder_source_unavailable", "table_structure_recovery_unavailable",
+    "table_structure_recovery_limit",
     "ValueError", "KeyError", "TypeError", "IndexError", "AttributeError", "UnicodeError", "OSError",
     "ZeroDivisionError", "OverflowError", "RuntimeError",
 })

@@ -155,7 +155,8 @@ def project_quality_summary(summary: Mapping, *, generation: int | None = None) 
             coverage=coverage if coverage in ("complete", "unavailable") else None,
             report_sha256=report_hash if isinstance(report_hash, str) and re.fullmatch(r"[0-9a-f]{64}", report_hash) else None,
             reason_code=_reason(details.get("reason_code", details.get("reason"))), counts=_counts(details.get("counts", details)),
-            flags=safe_flags, unknown_flag_count=unknown))
+            flags=safe_flags, unknown_flag_count=unknown,
+            table_structure_reviews=details.get("table_structure_reviews", []) if producer == "document_base" else []))
     return DocumentQualitySummaryResponse(**flags, unknown_flag_count=unknown_flags), DocumentQualityProducersResponse(
         items=rows, unknown_producer_count=unknown_producers)
 

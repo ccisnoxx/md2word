@@ -101,11 +101,16 @@ def build_table_grid(group: LogicalTableGroup, *, source_content_sha256: str) ->
         header_review=fragment.header_review, upstream_coverage=fragment.upstream_coverage,
     ) for fragment in group.fragments]
     return _build_table_grid(fragments, table_id=group.logical_group_id,
-                             source_content_sha256=source_content_sha256)
+                             source_content_sha256=source_content_sha256,
+                             image_fragments=frozenset(
+                                 fragment.fragment_id for fragment in group.fragments
+                                 if fragment.structure_recovery is not None
+                             ))
 
 
 def _build_table_grid(fragments: list[TableSourceFragment], *, table_id: str,
-                      source_content_sha256: str, render_view: bool = False) -> TableBuildResult:
+                      source_content_sha256: str, render_view: bool = False,
+                      image_fragments: frozenset[str] = frozenset()) -> TableBuildResult:
     """共用占位和诊断；仅渲染视图选择 Word 既有脚本优先级，源入口保持默认。"""
     # 先复用模型验证身份、来源顺序及 hash；损坏输入不进入解析和占位分配。
     root = dict(schema_version="canonical-table/v1", table_id=table_id,
@@ -116,8 +121,9 @@ def _build_table_grid(fragments: list[TableSourceFragment], *, table_id: str,
     cell_count = 0
     row_count = 0
     for fragment in fragments:
-        parsed = (normalize_table_fragment(fragment, render_script_precedence=True)
-                  if render_view else normalize_table_fragment(fragment))
+        # 非原生保留仍保有来源 state 和摘要；其文本不可冒充已重建的 Word 行。
+        parsed = (NormalizedTableFragment(fragment.fragment_id, "", (), ()) if fragment.fragment_id in image_fragments
+                  else normalize_table_fragment(fragment, render_script_precedence=render_view))
         cell_count += sum(len(row.cells) for row in parsed.rows)
         row_count += len(parsed.rows)
         if cell_count > MAX_CELLS:
