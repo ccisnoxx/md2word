@@ -2,6 +2,7 @@
 // 用途：提供工作台使用的 document_jobs API 调用。
 import { apiRequest } from "@/api/client";
 import type {
+  DocumentCurrentReviewResponse,
   DocumentJobBulkJobIdsRequest,
   DocumentJobBulkResponse,
   DocumentJobCallbackMessageSummaryResponse,
@@ -21,7 +22,10 @@ import type {
   DocumentJobFileListResponse,
   DocumentJobListResponse,
   DocumentJobListSort,
+  DocumentJobNewGenerationRequest,
+  DocumentJobNewGenerationResponse,
   DocumentJobStatusGroup,
+  DocumentJobTableReferenceListResponse,
   DocumentJobRetryRequest,
   DocumentJobResponse,
   DocumentJobRetryResponse,
@@ -30,9 +34,21 @@ import type {
   DocumentJobTranslationQaResponse,
   DocumentJobTranslationQaUpdateRequest,
   DocumentJobTranslationQaUpdateResponse,
+  DocumentPreviewResponse,
+  DocumentPublicationDownloadUrlResponse,
+  DocumentPublicationsResponse,
+  DocumentPublishRequest,
+  DocumentPublishResponse,
+  DocumentQualityPagesResponse,
+  DocumentQualityResponse,
+  DocumentQualityTablesResponse,
+  DocumentReviewBlockDetailResponse,
   DocumentReviewBlockItemResponse,
   DocumentReviewBlockFlagResponse,
   DocumentReviewBlocksResponse,
+  DocumentReviewHistoryResponse,
+  DocumentReviewUpdateRequest,
+  DocumentReviewUpdateResponse,
   TranslationQaStatus,
 } from "@/api/types";
 
@@ -56,6 +72,25 @@ export type DocumentReviewBlocksParams = {
   block_type?: DocumentReviewBlockItemResponse["block_type"];
   problem?: "all" | "flagged";
   severity?: "all" | DocumentReviewBlockFlagResponse["severity"];
+};
+
+export type CursorPaginationParams = {
+  limit?: number;
+  cursor?: string;
+};
+
+export type DocumentReviewBlockDetailParams = CursorPaginationParams & {
+  snapshot_id: string;
+};
+
+export type DocumentTableReferenceListParams = {
+  block_id?: string;
+};
+
+export type DocumentTableReferenceContentParams = {
+  generation: number;
+  ir_file_id: string;
+  disposition?: "inline" | "attachment";
 };
 
 export const documentJobsApi = {
@@ -108,6 +143,148 @@ export const documentJobsApi = {
       url: `/api/v1/document-jobs/${jobId}/review/blocks`,
       method: "GET",
       params,
+    });
+  },
+
+  getQuality(jobId: string): Promise<DocumentQualityResponse> {
+    return apiRequest<DocumentQualityResponse>({
+      url: `/api/v1/document-jobs/${jobId}/quality`,
+      method: "GET",
+    });
+  },
+
+  listQualityTables(jobId: string, params: CursorPaginationParams = {}): Promise<DocumentQualityTablesResponse> {
+    return apiRequest<DocumentQualityTablesResponse>({
+      url: `/api/v1/document-jobs/${jobId}/quality/tables`,
+      method: "GET",
+      params,
+    });
+  },
+
+  listQualityPages(jobId: string, params: CursorPaginationParams = {}): Promise<DocumentQualityPagesResponse> {
+    return apiRequest<DocumentQualityPagesResponse>({
+      url: `/api/v1/document-jobs/${jobId}/quality/pages`,
+      method: "GET",
+      params,
+    });
+  },
+
+  getPreview(jobId: string, params: CursorPaginationParams = {}): Promise<DocumentPreviewResponse> {
+    return apiRequest<DocumentPreviewResponse>({
+      url: `/api/v1/document-jobs/${jobId}/preview`,
+      method: "GET",
+      params,
+    });
+  },
+
+  getReview(jobId: string): Promise<DocumentCurrentReviewResponse> {
+    return apiRequest<DocumentCurrentReviewResponse>({
+      url: `/api/v1/document-jobs/${jobId}/review`,
+      method: "GET",
+    });
+  },
+
+  listReviewHistory(jobId: string, params: CursorPaginationParams = {}): Promise<DocumentReviewHistoryResponse> {
+    return apiRequest<DocumentReviewHistoryResponse>({
+      url: `/api/v1/document-jobs/${jobId}/review/history`,
+      method: "GET",
+      params,
+    });
+  },
+
+  submitReview(jobId: string, payload: DocumentReviewUpdateRequest): Promise<DocumentReviewUpdateResponse> {
+    return apiRequest<DocumentReviewUpdateResponse>({
+      url: `/api/v1/document-jobs/${jobId}/review`,
+      method: "PATCH",
+      data: payload,
+    });
+  },
+
+  getReviewBlockDetail(
+    jobId: string,
+    blockId: string,
+    params: DocumentReviewBlockDetailParams,
+  ): Promise<DocumentReviewBlockDetailResponse> {
+    return apiRequest<DocumentReviewBlockDetailResponse>({
+      url: `/api/v1/document-jobs/${jobId}/review/blocks/${encodeURIComponent(blockId)}`,
+      method: "GET",
+      params,
+    });
+  },
+
+  listTableReferences(
+    jobId: string,
+    params: DocumentTableReferenceListParams = {},
+  ): Promise<DocumentJobTableReferenceListResponse> {
+    return apiRequest<DocumentJobTableReferenceListResponse>({
+      url: `/api/v1/document-jobs/${jobId}/table-references`,
+      method: "GET",
+      params,
+    });
+  },
+
+  // 通过后端返回的受鉴权相对路径拉取表格参考图二进制流，由调用方负责 revokeObjectURL。
+  getTableReferenceContentBlob(contentPath: string): Promise<Blob> {
+    return apiRequest<Blob>({
+      url: contentPath,
+      method: "GET",
+      responseType: "blob",
+    });
+  },
+
+  getTableReferenceContent(
+    jobId: string,
+    assetId: string,
+    params: DocumentTableReferenceContentParams,
+  ): Promise<Blob> {
+    return apiRequest<Blob>({
+      url: `/api/v1/document-jobs/${jobId}/table-references/${encodeURIComponent(assetId)}/content`,
+      method: "GET",
+      params,
+      responseType: "blob",
+    });
+  },
+
+  requestNewGeneration(
+    jobId: string,
+    payload: DocumentJobNewGenerationRequest,
+  ): Promise<DocumentJobNewGenerationResponse> {
+    return apiRequest<DocumentJobNewGenerationResponse>({
+      url: `/api/v1/document-jobs/${jobId}/new-generation`,
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  getGenerationRequest(jobId: string, requestId: string): Promise<DocumentJobNewGenerationResponse> {
+    return apiRequest<DocumentJobNewGenerationResponse>({
+      url: `/api/v1/document-jobs/${jobId}/generation-requests/${encodeURIComponent(requestId)}`,
+      method: "GET",
+    });
+  },
+
+  listPublications(jobId: string): Promise<DocumentPublicationsResponse> {
+    return apiRequest<DocumentPublicationsResponse>({
+      url: `/api/v1/document-jobs/${jobId}/publications`,
+      method: "GET",
+    });
+  },
+
+  publish(jobId: string, payload: DocumentPublishRequest): Promise<DocumentPublishResponse> {
+    return apiRequest<DocumentPublishResponse>({
+      url: `/api/v1/document-jobs/${jobId}/publish`,
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  createPublicationDownloadUrl(
+    jobId: string,
+    publicationId: string,
+  ): Promise<DocumentPublicationDownloadUrlResponse> {
+    return apiRequest<DocumentPublicationDownloadUrlResponse>({
+      url: `/api/v1/document-jobs/${jobId}/publications/${encodeURIComponent(publicationId)}/download-url`,
+      method: "GET",
     });
   },
 

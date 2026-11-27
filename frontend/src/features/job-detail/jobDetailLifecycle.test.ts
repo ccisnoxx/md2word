@@ -88,6 +88,47 @@ describe("任务详情真实生命周期", () => {
     await pending;
     expect(data.job.value?.status).toBe("running");
   });
+
+  it("页面隐藏超过 15 秒后切回前台会触发静默刷新", async () => {
+    vi.useFakeTimers();
+    const document = Object.assign(new EventTarget(), { hidden: false });
+    vi.stubGlobal("document", document);
+    vi.stubGlobal("window", { setInterval, clearInterval });
+    vi.mocked(documentJobsApi.get).mockResolvedValue(job({ status: "succeeded", stage: "completed" }));
+    vi.mocked(documentJobsApi.listEvents).mockResolvedValue({ items: [] } as never);
+    vi.mocked(documentJobsApi.listFiles).mockResolvedValue({ files: [] } as never);
+    vi.mocked(documentJobsApi.getCallbackMessageSummary).mockResolvedValue({} as never);
+    vi.mocked(documentJobsApi.listReviewBlocks).mockResolvedValue({
+      job_id: "job-a", source: { generation: 0, ir_file_id: null, result_file_id: null },
+      content_snapshot: { source_pdf_file_id: "pdf-a", source_ir_file_id: null, final_ir_file_id: null, basis: "none" },
+      availability: "not_ready", items: [],
+    } as never);
+    const route = reactive({ params: { jobId: "job-a" }, query: {}, fullPath: "/jobs/job-a" });
+    let data!: ReturnType<typeof useJobDetailData>;
+    const app = renderer.createApp({ setup() {
+      data = useJobDetailData(route, { onRetryRequested: vi.fn(), onRouteReset: vi.fn() });
+      return () => null;
+    } });
+    app.mount({});
+    disposers.push(() => app.unmount());
+    await vi.waitFor(() => expect(data.reviewBlocks.value).not.toBeNull());
+    expect(documentJobsApi.get).toHaveBeenCalledTimes(1);
+
+    document.hidden = true;
+    document.dispatchEvent(new Event("visibilitychange"));
+    vi.advanceTimersByTime(5_000);
+    document.hidden = false;
+    document.dispatchEvent(new Event("visibilitychange"));
+    await nextTick();
+    expect(documentJobsApi.get).toHaveBeenCalledTimes(1);
+
+    document.hidden = true;
+    document.dispatchEvent(new Event("visibilitychange"));
+    vi.advanceTimersByTime(16_000);
+    document.hidden = false;
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.waitFor(() => expect(documentJobsApi.get).toHaveBeenCalledTimes(2));
+  });
 });
 
 function setupActions(role: "admin" | "operator") {
@@ -141,5 +182,60 @@ describe("任务动作共享数据与配置权限", () => {
     actions.resetForRouteChange();
     expect(actions.retryDialogVisible.value || actions.cloneDialogVisible.value).toBe(false);
     expect(data.job.value?.retry_count).toBe(0);
+  });
+
+  it("direct 克隆按策略控制 document_language：keep_source_snapshot 不发送，重选配置修改文种时发送", async () => {
+    const { data, actions } = setupActions("operator");
+    data.job.value = job({ status: "succeeded", document_language: "auto" });
+    vi.mocked(documentJobsApi.clone).mockResolvedValue({ job_id: "job-new" } as never);
+
+    actions.openCloneDialog(data.job.value);
+    actions.cloneDialog.strategy = "keep_source_snapshot";
+    actions.cloneDialog.documentLanguage = "ru";
+    await actions.submitCloneDialog();
+    expect(documentJobsApi.clone).toHaveBeenLastCalledWith("job-a", {
+      reason: "frontend clone",
+      config_strategy: "keep_source_snapshot",
+    });
+
+    actions.openCloneDialog(data.job.value);
+    actions.cloneDialog.strategy = "use_current_defaults";
+    actions.cloneDialog.documentLanguage = "ru";
+    await actions.submitCloneDialog();
+    expect(documentJobsApi.clone).toHaveBeenLastCalledWith("job-a", {
+      reason: "frontend clone",
+      config_strategy: "use_current_defaults",
+      document_language: "ru",
+    });
+
+    const adminSetup = setupActions("admin");
+    adminSetup.data.job.value = job({ status: "succeeded", document_language: "en" });
+    adminSetup.actions.openCloneDialog(adminSetup.data.job.value);
+    adminSetup.actions.cloneDialog.strategy = "select_published_versions";
+    adminSetup.actions.cloneDialog.documentLanguage = "zh";
+    adminSetup.actions.cloneDialog.templateVersion = "template@v1";
+    await adminSetup.actions.submitCloneDialog();
+    expect(documentJobsApi.clone).toHaveBeenLastCalledWith("job-a", {
+      reason: "frontend clone",
+      config_strategy: "select_published_versions",
+      document_language: "zh",
+      template_version_id: "template@v1",
+    });
+
+    const translationSetup = setupActions("admin");
+    translationSetup.data.job.value = job({
+      status: "succeeded",
+      mode: "en2zh_pdf_to_word",
+      translation_mode: "en2zh",
+      document_language: "en",
+    });
+    translationSetup.actions.openCloneDialog(translationSetup.data.job.value);
+    translationSetup.actions.cloneDialog.strategy = "use_current_defaults";
+    translationSetup.actions.cloneDialog.documentLanguage = "ru";
+    await translationSetup.actions.submitCloneDialog();
+    expect(documentJobsApi.clone).toHaveBeenLastCalledWith("job-a", {
+      reason: "frontend clone",
+      config_strategy: "use_current_defaults",
+    });
   });
 });

@@ -52,7 +52,12 @@ export function useJobDetailData(
   const filesLoading = ref(false);
   const callbackSummaryLoading = ref(false);
   const translationBatchesLoading = ref(false);
-  const activeTab = ref("overview");
+  const validTabs = new Set(["overview", "quality", "publication", "diagnostics", "context", "files", "events"]);
+  function resolveRouteTab(): string {
+    const raw = typeof route.query.tab === "string" ? route.query.tab.trim() : "";
+    return validTabs.has(raw) ? raw : "overview";
+  }
+  const activeTab = ref(resolveRouteTab());
   const eventLevelFilter = ref<"" | "info" | "warning" | "error">("");
 
   const eventStageFilter = ref<DocumentJobStage | "">("");
@@ -70,6 +75,8 @@ export function useJobDetailData(
   let pollTimer: number | undefined;
 
   let pollRefreshCount = 0;
+
+  let lastLoadedAtMs = 0;
 
   let disposed = false;
 
@@ -90,6 +97,7 @@ export function useJobDetailData(
       const response = await documentJobsApi.get(targetJobId);
       if (isCurrentRequest("job", requestRound, targetJobId)) {
         job.value = response;
+        lastLoadedAtMs = Date.now();
       }
     } catch (caught) {
       if (isCurrentRequest("job", requestRound, targetJobId)) {
@@ -381,10 +389,23 @@ export function useJobDetailData(
 
   function handleVisibilityChange(): void {
     syncPolling();
+    if (
+      disposed
+      || document.hidden
+      || !job.value
+      || lastLoadedAtMs === 0
+      || Date.now() - lastLoadedAtMs <= 15_000
+      || loading.value
+      || eventsLoading.value
+    ) {
+      return;
+    }
+    void loadAll({ secondary: "smart" });
   }
 
   function resetPageStateForRouteChange(): void {
     stopPolling();
+    lastLoadedAtMs = 0;
     routeEpoch += 1;
     invalidateRequests();
     resetReviewBlocks();
@@ -408,7 +429,7 @@ export function useJobDetailData(
     lifecycle.onRouteReset();
     eventLevelFilter.value = "";
     eventStageFilter.value = "";
-    activeTab.value = "overview";
+    activeTab.value = resolveRouteTab();
   }
 
   function jobErrorDiagnosticContext(operation: string) {
@@ -421,8 +442,12 @@ export function useJobDetailData(
     };
   }
 
+  function openTab(tabName: string): void {
+    activeTab.value = tabName;
+  }
+
   function openEventsTab(): void {
-    activeTab.value = "events";
+    openTab("events");
   }
 
   watch(() => job.value?.status, syncPolling);
@@ -441,6 +466,14 @@ export function useJobDetailData(
     syncPolling();
     if (route.query.retry === "1" && job.value?.status === "failed") {
       lifecycle.onRetryRequested(job.value);
+    }
+  });
+
+  // 保持放在 jobId watch 之后，避免改变既有生命周期测试中的 watch 注册顺序。
+  watch(() => route.query.tab, () => {
+    const raw = typeof route.query.tab === "string" ? route.query.tab.trim() : "";
+    if (validTabs.has(raw) && activeTab.value !== raw) {
+      activeTab.value = raw;
     }
   });
 
@@ -502,6 +535,7 @@ export function useJobDetailData(
     syncPolling,
     resetPageStateForRouteChange,
     jobErrorDiagnosticContext,
+    openTab,
     openEventsTab,
   };
 }

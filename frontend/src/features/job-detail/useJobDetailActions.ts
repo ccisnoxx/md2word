@@ -6,9 +6,15 @@ import type {
   DocumentJobConfigSummaryResponse,
   DocumentJobRetryRequest,
   DocumentJobResponse,
+  DocumentLanguage,
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
-import { formatDateTime, documentJobDownloadNotice, shouldShowDocumentJobAction } from "@/utils/format";
+import {
+  formatDateTime,
+  documentJobDownloadNotice,
+  normalizeDocumentLanguage,
+  shouldShowDocumentJobAction,
+} from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { copyDownloadLink, openDownloadLink, type DownloadLinkNotice } from "@/utils/download";
 import { configVersionId, findConfigOption } from "@/utils/configOptions";
@@ -73,6 +79,8 @@ export function useJobDetailActions(
     job: null as DocumentJobResponse | null,
     reason: "frontend clone",
     strategy: "keep_source_snapshot" as CloneConfigStrategy,
+    documentLanguage: "" as DocumentLanguage | "",
+    sourceDocumentLanguage: "" as DocumentLanguage | "",
     templateVersion: "",
     termRuleVersion: "",
     translationTermVersion: "",
@@ -117,9 +125,12 @@ export function useJobDetailActions(
   }
 
   function openCloneDialog(target: DocumentJobResponse): void {
+    const normalizedLang = normalizeDocumentLanguage(target.document_language);
     cloneDialog.job = target;
     cloneDialog.reason = "frontend clone";
     cloneDialog.strategy = "keep_source_snapshot";
+    cloneDialog.documentLanguage = normalizedLang;
+    cloneDialog.sourceDocumentLanguage = normalizedLang;
     cloneDialog.templateVersion = "";
     cloneDialog.termRuleVersion = "";
     cloneDialog.translationTermVersion = "";
@@ -166,6 +177,17 @@ export function useJobDetailActions(
       return;
     }
     void router.push({ name: "job-translation-qa", params: { jobId: job.value.id } });
+  }
+
+  function openDocumentReview(blockId?: string): void {
+    if (!job.value) {
+      return;
+    }
+    void router.push({
+      name: "job-review",
+      params: { jobId: job.value.id },
+      ...(blockId ? { query: { block: blockId } } : {}),
+    });
   }
 
   async function handleDownload(target: DocumentJobResponse): Promise<void> {
@@ -433,6 +455,14 @@ export function useJobDetailActions(
       reason: cloneDialog.reason || "frontend clone",
       config_strategy: cloneDialog.strategy,
     };
+    if (
+      cloneDialog.strategy !== "keep_source_snapshot"
+      && !usesTranslationResources(cloneDialog.job)
+      && cloneDialog.documentLanguage
+      && cloneDialog.documentLanguage !== cloneDialog.sourceDocumentLanguage
+    ) {
+      payload.document_language = cloneDialog.documentLanguage;
+    }
     if (!isAdmin.value || cloneDialog.strategy !== "select_published_versions") {
       return payload;
     }
@@ -514,6 +544,7 @@ export function useJobDetailActions(
     openTermRuleProposal,
     openTranslationTermProposal,
     openTranslationQa,
+    openDocumentReview,
     handleDownload,
     handleFileDownload,
     copyLastDownloadLink,

@@ -16,7 +16,7 @@ vi.mock("@/api/client", () => ({ setUnauthorizedHandler: vi.fn() }));
 vi.mock("@/layouts/AppLayout.vue", () => ({ default: { name: "AppLayout", render: () => null } }));
 
 const pageNames = [
-  "AcceptanceCenterPage", "AiProviderConfigPage", "AuditLogPage", "FileRetentionPage",
+  "AcceptanceCenterPage", "AiProviderConfigPage", "AuditLogPage", "DocumentReviewPage", "FileRetentionPage",
   "ForbiddenPage", "IncidentTriagePage", "JobCreatePage", "JobDetailPage", "JobsPage",
   "LoginPage", "MinerUConfigPage", "OpsDashboardPage", "OperationsCockpitPage",
   "SettingsHomePage", "SystemStatusPage", "TemplateDetailPage", "TemplateListPage",
@@ -114,12 +114,13 @@ describe("按需加载的页面路由", () => {
   });
 
   it.each([
+    ["/jobs/job_42/review?block=blk_4", "job-review", "DocumentReviewPage", { jobId: "job_42" }],
     ["/jobs/job_42/translation-qa?from=translation-qa", "job-translation-qa", "TranslationResultQaPage", { jobId: "job_42" }],
     ["/settings/templates/template_42?version=2", "settings-template-detail", "TemplateDetailPage", { templateId: "template_42" }],
     ["/settings/word-page-styles/style_42?version=3", "settings-word-page-style-detail", "WordPageStyleDetailPage", { templateId: "style_42" }],
   ] as const)("首次深链接 %s 保留参数、查询和 props", async (target, name, page, params) => {
     auth.token = "restored_token";
-    vi.mocked(authApi.me).mockResolvedValue(user("admin", ["translation_qa:read", "settings:read"]));
+    vi.mocked(authApi.me).mockResolvedValue(user("admin", ["document_jobs:read", "translation_qa:read", "settings:read"]));
     await router.push(target);
     await router.isReady();
     expect(authApi.me).toHaveBeenCalledTimes(1);
