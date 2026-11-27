@@ -36,7 +36,9 @@
         </div>
 
         <div v-if="loading" class="command-state" aria-live="polite">保存视图加载中...</div>
+        <div v-if="jobSearchLoading" class="command-state" aria-live="polite">正在搜索匹配任务...</div>
         <div v-if="loadErrorText" class="command-state is-warning" aria-live="polite">{{ loadErrorText }}</div>
+        <div v-if="jobSearchError" class="command-state is-warning" aria-live="polite">{{ jobSearchError }}</div>
 
         <div
           v-if="groupedCommands.length"
@@ -78,23 +80,28 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { ElMessage } from "element-plus";
 import { Search } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 
+import { documentJobsApi } from "@/api/documentJobs";
 import { savedViewsApi } from "@/api/savedViews";
-import type { SavedViewPageKey, SavedViewResponse } from "@/api/types";
+import type { DocumentJobResponse, SavedViewPageKey, SavedViewResponse } from "@/api/types";
 import ShortcutHintList from "@/components/ShortcutHintList.vue";
 import type { AppAccessContext } from "@/navigation/appShell";
 import { normalizeApiError } from "@/utils/errors";
 import { isCommandPaletteShortcut, type ShortcutHint } from "@/utils/keyboardShortcuts";
 import {
+  buildJobSearchCommands,
   buildPageCommands,
+  buildQuickActionCommands,
   buildSavedViewCommands,
   filterOperatorCommands,
   groupOperatorCommands,
   savedViewPageKeysForAccess,
   type OperatorCommand,
 } from "@/utils/operatorCommands";
+import { cycleStoredThemeMode, type ThemeMode } from "@/utils/theme";
 
 const props = defineProps<{
   access: AppAccessContext;
@@ -109,7 +116,21 @@ const savedViewsByPage = ref<Partial<Record<SavedViewPageKey, SavedViewResponse[
 const loadErrors = ref<Partial<Record<SavedViewPageKey, string>>>({});
 const loading = ref(false);
 const loadedKey = ref("");
+const matchedJobs = ref<DocumentJobResponse[]>([]);
+const jobSearchLoading = ref(false);
+const jobSearchError = ref("");
+let jobSearchTimer: number | undefined;
+let jobSearchSeq = 0;
 let lastFocusedElement: HTMLElement | null = null;
+
+const JOB_SEARCH_DEBOUNCE_MS = 250;
+const JOB_SEARCH_MIN_CHARS = 2;
+
+const themeModeLabels: Record<ThemeMode, string> = {
+  system: "跟随系统主题",
+  dark: "深色模式",
+  light: "浅色模式",
+};
 
 const paletteHints: ShortcutHint[] = [
   { keys: ["Cmd/Ctrl", "K"], label: "打开" },
@@ -117,11 +138,16 @@ const paletteHints: ShortcutHint[] = [
   { keys: ["↑/↓"], label: "选择" },
 ];
 
-const flatCommands = computed(() => [
+const canSearchJobs = computed(() => props.access.permissions.includes("document_jobs:read"));
+const staticCommands = computed(() => [
   ...buildPageCommands(props.access),
   ...buildSavedViewCommands(props.access, savedViewsByPage.value),
+  ...buildQuickActionCommands(),
 ]);
-const filteredCommands = computed(() => filterOperatorCommands(flatCommands.value, query.value));
+const filteredCommands = computed(() => [
+  ...buildJobSearchCommands(matchedJobs.value),
+  ...filterOperatorCommands(staticCommands.value, query.value),
+]);
 const groupedCommands = computed(() => groupOperatorCommands(filteredCommands.value));
 const activeCommand = computed(() => filteredCommands.value[activeIndex.value] ?? null);
 const activeCommandId = computed(() => (activeCommand.value ? commandElementId(activeCommand.value.id) : undefined));
@@ -132,6 +158,21 @@ const loadErrorText = computed(() => {
 
 watch(filteredCommands, () => {
   activeIndex.value = filteredCommands.value.length ? Math.min(activeIndex.value, filteredCommands.value.length - 1) : 0;
+});
+
+watch(query, (nextQuery) => {
+  clearJobSearchTimer();
+  const trimmed = nextQuery.trim();
+  if (!open.value || !canSearchJobs.value || trimmed.length < JOB_SEARCH_MIN_CHARS) {
+    jobSearchSeq += 1;
+    matchedJobs.value = [];
+    jobSearchLoading.value = false;
+    jobSearchError.value = "";
+    return;
+  }
+  jobSearchTimer = window.setTimeout(() => {
+    void searchDocumentJobs(trimmed);
+  }, JOB_SEARCH_DEBOUNCE_MS);
 });
 
 watch(
@@ -151,8 +192,45 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  clearJobSearchTimer();
   window.removeEventListener("keydown", handleGlobalKeydown);
 });
+
+function clearJobSearchTimer(): void {
+  if (jobSearchTimer !== undefined) {
+    window.clearTimeout(jobSearchTimer);
+    jobSearchTimer = undefined;
+  }
+}
+
+async function searchDocumentJobs(keyword: string): Promise<void> {
+  const seq = ++jobSearchSeq;
+  jobSearchLoading.value = true;
+  jobSearchError.value = "";
+  try {
+    const response = await documentJobsApi.list({
+      page: 1,
+      page_size: 5,
+      q: keyword,
+      sort: "updated_at_desc",
+      include_archived: false,
+    });
+    if (seq !== jobSearchSeq || !open.value) {
+      return;
+    }
+    matchedJobs.value = response.items;
+  } catch (caught) {
+    if (seq !== jobSearchSeq || !open.value) {
+      return;
+    }
+    matchedJobs.value = [];
+    jobSearchError.value = `任务搜索暂不可用：${normalizeApiError(caught).message}`;
+  } finally {
+    if (seq === jobSearchSeq) {
+      jobSearchLoading.value = false;
+    }
+  }
+}
 
 function show(): void {
   openPalette();
@@ -164,14 +242,21 @@ function openPalette(): void {
   }
   open.value = true;
   query.value = "";
+  matchedJobs.value = [];
+  jobSearchError.value = "";
   activeIndex.value = 0;
   void loadSavedViews();
   void nextTick(() => searchInput.value?.focus());
 }
 
 function closePalette(restoreFocus = false): void {
+  clearJobSearchTimer();
+  jobSearchSeq += 1;
   open.value = false;
   query.value = "";
+  matchedJobs.value = [];
+  jobSearchLoading.value = false;
+  jobSearchError.value = "";
   if (restoreFocus) {
     void nextTick(() => lastFocusedElement?.focus());
   }
@@ -244,7 +329,14 @@ function selectActiveCommand(): void {
 
 function selectCommand(command: OperatorCommand): void {
   closePalette(false);
-  void router.push(command.to);
+  if (command.action === "toggle-theme") {
+    const nextMode = cycleStoredThemeMode();
+    ElMessage.success(`已切换为${themeModeLabels[nextMode]}。`);
+    return;
+  }
+  if (command.to) {
+    void router.push(command.to);
+  }
 }
 
 function commandElementId(commandId: string): string {

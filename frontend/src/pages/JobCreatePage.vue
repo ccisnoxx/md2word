@@ -2,7 +2,7 @@
 <!-- Purpose: Render the focused document job creation page. -->
 <template>
   <main class="job-create-page app-page" aria-labelledby="job-create-title">
-    <section class="create-shell app-page-shell app-page-shell--narrow">
+    <section class="create-shell app-page-shell">
       <div class="create-header app-page-header">
         <div>
           <p class="create-kicker page-kicker">Document Jobs</p>

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { SavedViewResponse } from "@/api/types";
+import type { DocumentJobResponse, SavedViewResponse } from "@/api/types";
 import type { AppAccessContext } from "@/navigation/appShell";
 import {
+  buildJobSearchCommands,
   buildPageCommands,
+  buildQuickActionCommands,
   buildSavedViewCommands,
   filterOperatorCommands,
   groupOperatorCommands,
@@ -81,6 +83,27 @@ describe("operator commands", () => {
 
     expect(filtered.map((command) => command.title)).toEqual(expect.arrayContaining(["任务工作台 · 失败任务"]));
     expect(groupOperatorCommands(filtered).map((group) => group.label)).toContain("保存视图");
+  });
+
+  it("builds live job search commands ahead of pages and includes theme toggle quick action", () => {
+    const jobCommands = buildJobSearchCommands([
+      {
+        id: "docjob_search_01",
+        source_file_id: "file_opa",
+        mode: "direct_pdf_to_word",
+        status: "succeeded",
+        request_snapshot: { source_file: { original_filename: "OPA228_P1.pdf" } },
+      } as unknown as DocumentJobResponse,
+    ]);
+    const quickActions = buildQuickActionCommands();
+    const grouped = groupOperatorCommands([...jobCommands, ...buildPageCommands(operatorAccess), ...quickActions]);
+
+    expect(grouped[0]).toMatchObject({ id: "jobs", label: "匹配任务" });
+    expect(grouped[0].commands[0]).toMatchObject({
+      title: "OPA228_P1.pdf",
+      to: { name: "job-detail", params: { jobId: "docjob_search_01" } },
+    });
+    expect(filterOperatorCommands(quickActions, "深色").map((item) => item.action)).toEqual(["toggle-theme"]);
   });
 });
 

@@ -5,10 +5,13 @@ import type {
   DocumentFileSummaryResponse,
   DocumentLanguage,
   DocumentJobActionId,
+  DocumentJobDeliveryStatus,
   DocumentJobDisabledReason,
   DocumentJobDownloadAvailability,
   DocumentJobMode,
+  DocumentJobQualityStatus,
   DocumentJobResponse,
+  DocumentJobReviewStatus,
   DocumentJobStage,
   DocumentJobStatus,
   DocumentReviewBlockFlagResponse,
@@ -137,6 +140,105 @@ export function documentJobModeTranslationMode(mode: DocumentJobMode): Translati
 
 export function documentJobModeSupportsTranslationQa(mode: DocumentJobMode): boolean {
   return documentJobModeDefinitions[mode].supportsTranslationQa;
+}
+
+export type DocumentLanguageOption = {
+  value: DocumentLanguage;
+  label: string;
+  mineruHint: string;
+};
+
+export const documentLanguageOptions: DocumentLanguageOption[] = [
+  { value: "auto", label: "自动识别", mineruHint: "使用当前环境默认 MinerU 语言包" },
+  { value: "zh", label: "中文", mineruHint: "冻结绑定 MinerU ch 语言包" },
+  { value: "en", label: "英文", mineruHint: "冻结绑定 MinerU en 语言包" },
+  { value: "ru", label: "俄文", mineruHint: "冻结绑定 MinerU east_slavic 语言包" },
+];
+
+export const documentLanguageText: Record<DocumentLanguage, string> = {
+  auto: "自动识别",
+  zh: "中文",
+  en: "英文",
+  ru: "俄文",
+};
+
+export function normalizeDocumentLanguage(value?: string | null): DocumentLanguage | "" {
+  if (value === "auto" || value === "zh" || value === "en" || value === "ru") {
+    return value;
+  }
+  return "";
+}
+
+export function documentLanguageLabel(value?: string | null): string {
+  const normalized = normalizeDocumentLanguage(value);
+  if (normalized) {
+    return documentLanguageText[normalized];
+  }
+  return value && value.trim() ? value : "-";
+}
+
+export function documentLanguageMineruHint(value?: string | null): string {
+  const normalized = normalizeDocumentLanguage(value);
+  if (!normalized) {
+    return "";
+  }
+  return documentLanguageOptions.find((option) => option.value === normalized)?.mineruHint || "";
+}
+
+export const jobQualityStatusText: Record<DocumentJobQualityStatus, string> = {
+  pending: "待检查",
+  passed: "通过",
+  warning: "警告",
+  blocked: "阻断",
+};
+
+export function jobQualityStatusTagType(status?: DocumentJobQualityStatus | null): "success" | "warning" | "danger" | "info" {
+  if (status === "passed") {
+    return "success";
+  }
+  if (status === "warning") {
+    return "warning";
+  }
+  if (status === "blocked") {
+    return "danger";
+  }
+  return "info";
+}
+
+export const jobReviewStatusText: Record<DocumentJobReviewStatus, string> = {
+  unreviewed: "未复核",
+  approved: "已批准",
+  needs_fix: "需修正",
+  blocked: "已阻断",
+};
+
+export function jobReviewStatusTagType(status?: DocumentJobReviewStatus | null): "success" | "warning" | "danger" | "info" {
+  if (status === "approved") {
+    return "success";
+  }
+  if (status === "needs_fix") {
+    return "warning";
+  }
+  if (status === "blocked") {
+    return "danger";
+  }
+  return "info";
+}
+
+export const jobDeliveryStatusText: Record<DocumentJobDeliveryStatus, string> = {
+  internal_draft: "内部草稿",
+  ready_to_publish: "待发布",
+  published: "已发布",
+};
+
+export function jobDeliveryStatusTagType(status?: DocumentJobDeliveryStatus | null): "success" | "warning" | "danger" | "info" {
+  if (status === "published") {
+    return "success";
+  }
+  if (status === "ready_to_publish") {
+    return "warning";
+  }
+  return "info";
 }
 
 export const translationQaStatusText: Record<TranslationQaStatus, string> = {

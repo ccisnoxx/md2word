@@ -1,14 +1,15 @@
-// File: frontend/src/utils/operatorCommands.ts
-// Purpose: Build permission-filtered command-palette entries from app navigation and saved-view contracts.
+// 文件：frontend/src/utils/operatorCommands.ts
+// 用途：按权限构建命令面板的页面入口、保存视图、实时匹配任务与快捷操作命令。
 import type { RouteLocationRaw } from "vue-router";
 
-import type { SavedViewPageKey, SavedViewResponse } from "@/api/types";
+import type { DocumentJobResponse, SavedViewPageKey, SavedViewResponse } from "@/api/types";
 import {
   getAppNavigationGroups,
   type AppAccessContext,
   type AppNavGroupId,
   type AppNavItemId,
 } from "@/navigation/appShell";
+import { getJobSourceFilename, jobModeText, jobStatusText } from "@/utils/format";
 import {
   SAVED_VIEW_PAGE_LABELS,
   personalSavedViewToStripItem,
@@ -17,7 +18,9 @@ import {
   type SavedViewStripItem,
 } from "@/utils/savedViews";
 
-export type OperatorCommandGroupId = "pages" | "saved_views";
+export type OperatorCommandGroupId = "jobs" | "pages" | "saved_views" | "actions";
+
+export type OperatorCommandAction = "toggle-theme";
 
 export type OperatorCommand = {
   id: string;
@@ -25,7 +28,8 @@ export type OperatorCommand = {
   title: string;
   description: string;
   keywords: string[];
-  to: RouteLocationRaw;
+  to?: RouteLocationRaw;
+  action?: OperatorCommandAction;
 };
 
 export type OperatorCommandGroup = {
@@ -37,8 +41,10 @@ export type OperatorCommandGroup = {
 const PAGE_COMMAND_IDS: AppNavItemId[] = ["cockpit", "jobs", "incidents", "translation-qa", "job-create", "ops-dashboard"];
 
 const GROUP_LABELS: Record<OperatorCommandGroupId, string> = {
+  jobs: "匹配任务",
   pages: "页面入口",
   saved_views: "保存视图",
+  actions: "快捷操作",
 };
 
 const NAV_GROUP_LABELS: Record<AppNavGroupId, string> = {
@@ -85,6 +91,35 @@ export function buildSavedViewCommands(
   });
 }
 
+export function buildJobSearchCommands(jobs: DocumentJobResponse[]): OperatorCommand[] {
+  return jobs.map((job) => {
+    const filename = getJobSourceFilename(job);
+    const modeLabel = jobModeText[job.mode] || job.mode;
+    const statusLabel = jobStatusText[job.status] || job.status;
+    return {
+      id: `job:${job.id}`,
+      groupId: "jobs",
+      title: filename,
+      description: `${modeLabel} · ${statusLabel} · ${job.id}`,
+      keywords: [job.id, filename, job.mode, modeLabel, job.status, statusLabel],
+      to: { name: "job-detail", params: { jobId: job.id } },
+    };
+  });
+}
+
+export function buildQuickActionCommands(): OperatorCommand[] {
+  return [
+    {
+      id: "action:toggle-theme",
+      groupId: "actions",
+      title: "切换深色 / 浅色主题",
+      description: "在跟随系统、深色与浅色模式间切换",
+      keywords: ["theme", "dark", "light", "system", "主题", "深色", "浅色", "暗黑"],
+      action: "toggle-theme",
+    },
+  ];
+}
+
 export function filterOperatorCommands(commands: OperatorCommand[], query: string): OperatorCommand[] {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
@@ -123,4 +158,3 @@ function compareSavedViews(left: SavedViewStripItem, right: SavedViewStripItem):
   }
   return (left.position ?? Number.MAX_SAFE_INTEGER) - (right.position ?? Number.MAX_SAFE_INTEGER) || left.name.localeCompare(right.name);
 }
-

@@ -290,6 +290,7 @@ import {
   translationQaStatusTagType,
   translationQaStatusText,
 } from "@/utils/format";
+import { syncTranslationQaBadgeCount } from "@/stores/workbenchBadges";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import {
   selectNextTranslationQaJob,
@@ -577,6 +578,9 @@ async function loadJobs(): Promise<void> {
       needs_fix: response.translation_qa_summary?.needs_fix ?? 0,
       blocked: response.translation_qa_summary?.blocked ?? 0,
     };
+    syncTranslationQaBadgeCount(
+      qaSummary.value.blocked + qaSummary.value.needs_fix + qaSummary.value.unreviewed,
+    );
   } catch (caught) {
     error.value = normalizeApiError(caught);
   } finally {

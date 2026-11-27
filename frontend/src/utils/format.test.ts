@@ -13,7 +13,17 @@ import {
   documentJobModeRequiresTranslationResources,
   documentJobModeSupportsTranslationQa,
   documentJobModeTranslationMode,
+  documentLanguageLabel,
+  documentLanguageMineruHint,
+  documentLanguageOptions,
   isDocumentJobActionEnabled,
+  jobDeliveryStatusTagType,
+  jobDeliveryStatusText,
+  jobQualityStatusTagType,
+  jobQualityStatusText,
+  jobReviewStatusTagType,
+  jobReviewStatusText,
+  normalizeDocumentLanguage,
   shouldShowDocumentJobAction,
 } from "@/utils/format";
 
@@ -374,5 +384,39 @@ describe("document job quality evidence", () => {
     expect(summary.status).toBe("manual_review_required");
     expect(summary.flags).toEqual([]);
     expect(summary.title).toContain("人工复核");
+  });
+});
+
+describe("document language and four-state presentation helpers", () => {
+  it("normalizes known document languages and preserves unknown values safely", () => {
+    expect(documentLanguageOptions.map((item) => item.value)).toEqual(["auto", "zh", "en", "ru"]);
+    expect(normalizeDocumentLanguage("ru")).toBe("ru");
+    expect(normalizeDocumentLanguage("fr")).toBe("");
+    expect(documentLanguageLabel("zh")).toBe("中文");
+    expect(documentLanguageLabel("ru")).toBe("俄文");
+    expect(documentLanguageLabel("ja")).toBe("ja");
+    expect(documentLanguageLabel(null)).toBe("-");
+    expect(documentLanguageMineruHint("ru")).toContain("east_slavic");
+    expect(documentLanguageMineruHint("zh")).toContain("ch");
+    expect(documentLanguageMineruHint("unknown")).toBe("");
+  });
+
+  it("maps quality, review, and delivery states to labels and semantic tag types", () => {
+    expect(jobQualityStatusText.blocked).toBe("阻断");
+    expect(jobQualityStatusTagType("passed")).toBe("success");
+    expect(jobQualityStatusTagType("warning")).toBe("warning");
+    expect(jobQualityStatusTagType("blocked")).toBe("danger");
+    expect(jobQualityStatusTagType("pending")).toBe("info");
+
+    expect(jobReviewStatusText.approved).toBe("已批准");
+    expect(jobReviewStatusTagType("approved")).toBe("success");
+    expect(jobReviewStatusTagType("needs_fix")).toBe("warning");
+    expect(jobReviewStatusTagType("blocked")).toBe("danger");
+    expect(jobReviewStatusTagType("unreviewed")).toBe("info");
+
+    expect(jobDeliveryStatusText.published).toBe("已发布");
+    expect(jobDeliveryStatusTagType("published")).toBe("success");
+    expect(jobDeliveryStatusTagType("ready_to_publish")).toBe("warning");
+    expect(jobDeliveryStatusTagType("internal_draft")).toBe("info");
   });
 });

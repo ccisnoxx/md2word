@@ -141,4 +141,34 @@ describe("app shell navigation", () => {
     expect(context.itemId).toBe("mineru-config");
     expect(context.breadcrumbs.map((item) => item.label)).toEqual(["配置中心", "MinerU 配置"]);
   });
+
+  it("converges template and page-style sidebar entries, renames symbol rules, and overlays nav badges", () => {
+    const adminGroups = getAppNavigationGroups(adminAccess, {
+      incidents: { badge: "5", tone: "danger" },
+      "translation-qa": { badge: "12", tone: "warning" },
+    });
+    const adminItems = adminGroups.flatMap((group) => group.items);
+
+    expect(adminItems.find((item) => item.id === "term-rules")?.label).toBe("符号与排版规则");
+    expect(adminItems.find((item) => item.id === "templates")?.label).toBe("模板与样式");
+    expect(adminItems.find((item) => item.id === "word-page-styles")).toBeUndefined();
+    expect(adminItems.find((item) => item.id === "incidents")).toMatchObject({ badge: "5", tone: "danger" });
+    expect(adminItems.find((item) => item.id === "translation-qa")).toMatchObject({ badge: "12", tone: "warning" });
+
+    // 页面样式旧路由继续兼容，并正确高亮合并后的「模板与样式」侧栏项。
+    const styleContext = getAppRouteContext(routeFixture("settings-word-page-style-detail", { templateId: "default" }), adminAccess);
+    expect(styleContext.groupId).toBe("configuration");
+    expect(styleContext.itemId).toBe("templates");
+    expect(styleContext.breadcrumbs.map((item) => item.label)).toEqual(["配置中心", "Word 页面样式配置", "default"]);
+
+    const ruleContext = getAppRouteContext(routeFixture("settings-term-rules"), adminAccess);
+    expect(ruleContext.pageLabel).toBe("符号与排版规则");
+    expect(ruleContext.breadcrumbs.map((item) => item.label)).toEqual(["质量治理", "符号与排版规则", "当前生效规则"]);
+
+    const reviewContext = getAppRouteContext(routeFixture("job-review", { jobId: "docjob_rev_1" }), operatorAccess);
+    expect(reviewContext.groupId).toBe("processing");
+    expect(reviewContext.itemId).toBe("jobs");
+    expect(reviewContext.pageLabel).toBe("文档复核工作台");
+    expect(reviewContext.breadcrumbs.map((item) => item.label)).toEqual(["任务工作台", "任务详情", "文档复核"]);
+  });
 });

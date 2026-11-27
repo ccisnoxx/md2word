@@ -235,6 +235,15 @@ async function setupCockpitApi(page: Page, options: MockOptions = {}): Promise<v
 
   await page.route(/\/api\/v1\/document-jobs(?:\?.*)?$/, async (route) => {
     const params = new URL(route.request().url()).searchParams;
+    const keyword = (params.get("q") || "").trim().toLowerCase();
+    if (keyword) {
+      const candidates = [failedJob, activeJob, qaBlockedJob, qaUnreviewedJob].filter((item) =>
+        item.id.toLowerCase().includes(keyword)
+        || String(item.request_snapshot.source_file.original_filename).toLowerCase().includes(keyword),
+      );
+      await fulfillJson(route, documentJobsResponse(candidates, candidates.length));
+      return;
+    }
     if (params.get("status") === "failed") {
       await fulfillJson(route, documentJobsResponse([failedJob], 2));
       return;
@@ -253,6 +262,27 @@ async function setupCockpitApi(page: Page, options: MockOptions = {}): Promise<v
       return;
     }
     await fulfillJson(route, documentJobsResponse([], 0));
+  });
+
+  await page.route("**/api/v1/document-job-incidents/*/diagnostics", async (route) => {
+    await fulfillJson(route, {
+      item: incidentItem,
+      recent_events: [
+        {
+          id: "evt_diag_1",
+          job_id: incidentItem.job.id,
+          stage: "parsing",
+          level: "error",
+          event_type: "worker_timeout",
+          message: "MinerU 解析超时，支持重试。",
+          trace_id: "trace_cockpit_diag",
+          created_at: ISO_NOW,
+        },
+      ],
+      files: [],
+      evidence_links: [],
+      failure_diagnostic: null,
+    });
   });
 
   await page.route(/\/api\/v1\/document-job-incidents(?:\?.*)?$/, async (route) => {
@@ -359,6 +389,7 @@ test("command palette opens with Cmd/Ctrl+K, filters permissions, and routes to 
   await setupCockpitApi(page);
 
   await page.goto("/cockpit");
+  await expect(page.getByRole("heading", { name: "今日工作" })).toBeVisible();
   await page.keyboard.press("Control+K");
 
   await expect(page.getByRole("dialog", { name: "命令面板" })).toBeVisible();
@@ -392,4 +423,61 @@ test("command palette closes with Escape and stays usable on mobile", async ({ p
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "命令面板" })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
+});
+
+test("Phase 1B：驾驶舱 8:4 主副栏、新建任务 CTA、行内异常诊断抽屉与侧栏待办角标", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 920 });
+  await setupCockpitApi(page);
+
+  await page.goto("/cockpit");
+  await expect(page.getByRole("button", { name: "新建转换任务" })).toBeVisible();
+
+  // 桌面宽屏下「优先处理项」在左主栏，「保存视图入口」在右侧副栏。
+  const layout = await page.evaluate(() => {
+    const queue = document.querySelector("[aria-label='下一步工作']")?.getBoundingClientRect();
+    const rail = document.querySelector("[aria-label='保存视图入口']")?.getBoundingClientRect();
+    return { queueLeft: queue?.left ?? 0, railLeft: rail?.left ?? 0 };
+  });
+  expect(layout.queueLeft).toBeLessThan(layout.railLeft);
+
+  // 侧栏自动同步待办角标（非轮询缓存）：异常 total=1，翻译 QA blocked(3)+needs_fix(4)+unreviewed(5)=12。
+  const sidebar = page.locator(".app-sidebar-shell");
+  await expect(sidebar.getByRole("link", { name: /异常处理/ })).toContainText("1");
+  await expect(sidebar.getByRole("link", { name: /翻译 QA/ })).toContainText("12");
+
+  // 分类筛选与异常行内「快速诊断」抽屉联动。
+  await page.getByRole("tab", { name: /^异常/ }).click();
+  await expect(page.getByText("incident-cockpit.pdf")).toBeVisible();
+  await page.getByRole("button", { name: "快速诊断" }).click();
+  await expect(page.getByLabel("异常诊断")).toBeVisible();
+  await expect(page.getByText("MinerU 解析超时，支持重试。")).toBeVisible();
+  await page.getByLabel("异常诊断").getByRole("button", { name: "关闭" }).click();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("Phase 1B：命令面板支持防抖搜索任务直达详情及主题快捷切换", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 920 });
+  await setupCockpitApi(page);
+
+  await page.goto("/cockpit");
+  await expect(page.getByRole("heading", { name: "今日工作" })).toBeVisible();
+  await page.keyboard.press("Control+K");
+  await expect(page.getByRole("dialog", { name: "命令面板" })).toBeVisible();
+  const input = page.getByPlaceholder("搜索页面、视图或操作");
+
+  // 输入 PDF 文件名片段触发防抖任务搜索并展示「匹配任务」分组。
+  await input.fill("failed-cockpit");
+  await expect(page.getByRole("option", { name: /failed-cockpit\.pdf/ })).toBeVisible();
+
+  // 清空后搜索主题快捷动作并验证切换主题生效。
+  await input.fill("深色");
+  await page.getByRole("option", { name: /切换深色 \/ 浅色主题/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  // 再次打开命令面板搜索任务并回车跳转详情页。
+  await page.keyboard.press("Control+K");
+  await page.getByPlaceholder("搜索页面、视图或操作").fill("failed-cockpit");
+  await expect(page.getByRole("option", { name: /failed-cockpit\.pdf/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/jobs\/docjob_cockpit_failed$/);
 });
