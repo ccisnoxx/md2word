@@ -459,9 +459,7 @@ onMounted(() => {
     32px 32px,
     32px 32px,
     auto;
-  box-shadow:
-    0 24px 64px color-mix(in srgb, var(--app-color-primary) 22%, transparent),
-    var(--app-shadow-panel);
+  box-shadow: var(--app-shadow-subtle);
 }
 
 .page-heading::before {
@@ -514,7 +512,7 @@ onMounted(() => {
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--app-color-surface) 88%, var(--app-color-primary-soft)), var(--app-color-glass-muted)),
     var(--app-gradient-panel-depth);
-  box-shadow: var(--app-shadow-panel);
+  box-shadow: var(--app-shadow-subtle);
 }
 
 .word-config-entry::before {

@@ -1783,7 +1783,12 @@ async function loginAsRole(page: Page, role: MockRole = "operator"): Promise<voi
 }
 
 async function selectTaskConfigOption(page: Page, fieldLabel: string, optionLabel: string): Promise<void> {
-  const field = page.locator(".config-selection label").filter({ hasText: fieldLabel });
+  const selectionPanel = page.locator(".config-selection");
+  if (!(await selectionPanel.isVisible())) {
+    await page.locator(".config-advanced-toggle").click();
+    await expect(selectionPanel).toBeVisible();
+  }
+  const field = selectionPanel.locator("label").filter({ hasText: fieldLabel });
   await field.locator(".el-select").click();
   await page.locator(".el-select-dropdown:visible").getByText(optionLabel, { exact: true }).click();
   await expect(field).toContainText(optionLabel);
@@ -1874,7 +1879,7 @@ for (const scenario of con102StageScenarios) {
     await page.goto(`/jobs/${documentJob.id}`);
     await expect(page).toHaveURL(`/jobs/${documentJob.id}`);
     await expect(page).toHaveTitle("内部文档转换工作台");
-    await expect(page.getByRole("heading", { name: "任务详情", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "smoke.pdf", exact: true })).toBeVisible();
     await expect(page.locator(".detail-overview .job-progress")).toContainText(scenario.label);
     const actions = page.locator(".detail-header .job-actions");
     await expect(actions.getByRole("button", { name: "下载", exact: true })).toBeDisabled();
@@ -2152,7 +2157,7 @@ test("operations redesign renders verified desktop, tablet, and mobile screensho
     await page.screenshot({ path: testInfo.outputPath(`ops-jobs-${viewport.name}.png`) });
 
     await page.goto("/jobs/docjob_smoke_001");
-    await expect(page.getByRole("heading", { name: "任务详情" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "smoke.pdf", exact: true })).toBeVisible();
     await page.getByRole("tab", { name: "诊断" }).click();
     await expect(page.getByRole("heading", { name: "诊断摘要" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "下一步建议" })).toBeVisible();
@@ -2298,7 +2303,7 @@ test("operator can log in and inspect the document job workbench", async ({ page
   await page.goto("/jobs?sort=created_at_desc&include_archived=false&page=1");
   await page.getByRole("link", { name: "docjob_smoke_001" }).click();
   await expect(page).toHaveURL(/\/jobs\/docjob_smoke_001$/);
-  await expect(page.getByRole("heading", { name: "任务详情" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "smoke.pdf", exact: true })).toBeVisible();
   await expect(page.getByText("结果文件 ID")).toBeVisible();
   await expect(page.getByRole("button", { name: "下载" })).toBeEnabled();
   await expect(page.locator(".job-actions").getByRole("button", { name: "删除" })).toHaveCount(0);
@@ -2502,7 +2507,7 @@ for (const role of ["admin", "operator"] as const) {
     await page.goto("/jobs/docjob_smoke_001");
     const detail = page.locator(".job-detail-page");
 
-    await expect(detail.getByText(directProductName, { exact: true })).toBeVisible();
+    await expect(detail.getByText(directProductName, { exact: true }).first()).toBeVisible();
     await expect(detail.getByText("保持原文语言和语义，不调用 AI。", { exact: true })).toBeVisible();
     await expect(detail.getByText("con-template@2", { exact: true })).toBeVisible();
     await expect(detail.getByText("con-symbols@3", { exact: true }).first()).toBeVisible();
@@ -2885,4 +2890,44 @@ test("admin can inspect status, audit, ops gates, and file retention workspaces"
   await expect(page.getByRole("heading", { name: "过期候选" })).toBeVisible();
   await expect(page.getByRole("button", { name: "执行物理删除" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "执行 cleanup run" })).toBeDisabled();
+});
+
+test("Phase 1A：创建页两栏与 direct 原文语言选择、详情页紧凑头、阶段条与分域标签页", async ({ page }) => {
+  test.setTimeout(60_000);
+  const controls = await mockApi(page, { en2zhAvailable: true, configOptions: con101ConfigOptions });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/login");
+  await loginAsRole(page, "admin");
+  await page.goto("/jobs/new");
+
+  // 高级覆盖配置默认折叠，direct 模式可直接选择俄文并提交。
+  await expect(page.locator(".config-selection")).toBeHidden();
+  await page.locator(".language-row .el-radio-button").filter({ hasText: "俄文" }).click();
+  await expect(page.locator(".language-hint")).toContainText("east_slavic");
+  await page.locator("input[type='file']").setInputFiles({
+    name: "datasheet-ru.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4\n%%EOF\n"),
+  });
+  await expect(page.locator(".selected-file-strip")).toContainText("datasheet-ru.pdf");
+  await page.getByRole("button", { name: "创建任务", exact: true }).click();
+
+  await expect.poll(() => controls.createdDocumentJobPayloads().length).toBe(1);
+  expect(controls.createdDocumentJobPayloads()[0]).toMatchObject({
+    translation_mode: "direct",
+    document_language: "ru",
+  });
+
+  // 验证详情页以源 PDF 文件名为主标题、展示水平阶段条，并将提示与发布状态收拢到独立标签页。
+  await page.goto("/jobs/docjob_smoke_001");
+  await expect(page.getByRole("heading", { name: "smoke.pdf", exact: true })).toBeVisible();
+  await expect(page.getByLabel("任务执行阶段进度")).toBeVisible();
+  await expect(page.getByLabel("任务四态摘要")).toBeVisible();
+  await expect(page.getByRole("tab", { name: /质量与提示/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "发布与交付", exact: true })).toBeVisible();
+
+  await page.getByRole("tab", { name: "发布与交付", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "发布与交付状态", exact: true })).toBeVisible();
+  await expect(page.getByLabel("发布禁用原因")).toBeVisible();
+  await expectNoPageHorizontalOverflow(page);
 });

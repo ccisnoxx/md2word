@@ -5,7 +5,6 @@ import {
   Collection,
   Cpu,
   DataAnalysis,
-  Document,
   DocumentAdd,
   DocumentChecked,
   Files,
@@ -145,7 +144,7 @@ const NAV_GROUP_DEFINITIONS: AppNavGroupDefinition[] = [
         icon: Notebook,
         permissions: ["settings:read"],
       },
-      { id: "term-rules", label: "术语规则", to: "/settings/term-rules", icon: Collection, permissions: ["term_proposals:read"] },
+      { id: "term-rules", label: "符号与排版规则", to: "/settings/term-rules", icon: Collection, permissions: ["term_proposals:read"] },
       { id: "terminology-releases", label: "术语发布", to: "/settings/terminology-releases", icon: Ticket, permissions: ["settings:read"] },
     ],
   },
@@ -155,15 +154,7 @@ const NAV_GROUP_DEFINITIONS: AppNavGroupDefinition[] = [
     icon: Setting,
     items: [
       { id: "settings", label: "配置中心", to: "/settings", icon: Setting, permissions: ["settings:read"] },
-      { id: "templates", label: "Word 模板", to: "/settings/templates", icon: FolderOpened, roles: ["admin"], permissions: ["settings:read"] },
-      {
-        id: "word-page-styles",
-        label: "页面样式",
-        to: "/settings/word-page-styles",
-        icon: Document,
-        roles: ["admin"],
-        permissions: ["settings:read"],
-      },
+      { id: "templates", label: "模板与样式", to: "/settings/templates", icon: FolderOpened, roles: ["admin"], permissions: ["settings:read"] },
       {
         id: "translation-profiles",
         label: "翻译配置",
@@ -223,14 +214,15 @@ const ROUTE_OWNERS: Record<string, RouteOwnership> = {
   incidents: { groupId: "processing", itemId: "incidents", pageLabel: "异常处理" },
   "job-create": { groupId: "processing", itemId: "job-create", pageLabel: "创建任务" },
   "job-detail": { groupId: "processing", itemId: "jobs", pageLabel: "任务详情" },
+  "job-review": { groupId: "processing", itemId: "jobs", pageLabel: "文档复核工作台" },
   "translation-qa": { groupId: "quality", itemId: "translation-qa", pageLabel: "翻译 QA" },
   settings: { groupId: "configuration", itemId: "settings", pageLabel: "配置中心" },
   "settings-templates": { groupId: "configuration", itemId: "templates", pageLabel: "Word 模板" },
   "settings-template-detail": { groupId: "configuration", itemId: "templates", pageLabel: "Word 模板详情" },
-  "settings-word-page-styles": { groupId: "configuration", itemId: "word-page-styles", pageLabel: "页面样式" },
-  "settings-word-page-style-detail": { groupId: "configuration", itemId: "word-page-styles", pageLabel: "页面样式详情" },
+  "settings-word-page-styles": { groupId: "configuration", itemId: "templates", pageLabel: "页面样式" },
+  "settings-word-page-style-detail": { groupId: "configuration", itemId: "templates", pageLabel: "页面样式详情" },
   "settings-term-rule-sets": { groupId: "quality", itemId: "term-rules", pageLabel: "规则集草稿与发布" },
-  "settings-term-rules": { groupId: "quality", itemId: "term-rules", pageLabel: "术语规则" },
+  "settings-term-rules": { groupId: "quality", itemId: "term-rules", pageLabel: "符号与排版规则" },
   "settings-terminology-releases": { groupId: "quality", itemId: "terminology-releases", pageLabel: "术语发布" },
   "settings-translation-profiles": { groupId: "configuration", itemId: "translation-profiles", pageLabel: "翻译配置" },
   "settings-ai-provider": { groupId: "configuration", itemId: "ai-provider", pageLabel: "AI 配置" },
@@ -246,10 +238,19 @@ const ROUTE_OWNERS: Record<string, RouteOwnership> = {
   forbidden: { groupId: null, itemId: null, moduleLabel: "访问控制", pageLabel: "没有访问权限" },
 };
 
-function materializeItem(item: AppNavItemDefinition, access: AppAccessContext): AppNavItem {
+export type AppNavBadgeMap = Partial<Record<AppNavItemId, { badge?: string; tone?: AppNavTone }>>;
+
+function materializeItem(
+  item: AppNavItemDefinition,
+  access: AppAccessContext,
+  badges?: AppNavBadgeMap,
+): AppNavItem {
+  const badgeOverlay = badges?.[item.id];
   return {
     ...item,
     label: typeof item.label === "function" ? item.label(access) : item.label,
+    ...(badgeOverlay?.badge ? { badge: badgeOverlay.badge } : {}),
+    ...(badgeOverlay?.tone ? { tone: badgeOverlay.tone } : {}),
   };
 }
 
@@ -266,10 +267,12 @@ function hasRouteAccess(item: AppNavItemDefinition, access: AppAccessContext): b
   return true;
 }
 
-export function getAppNavigationGroups(access: AppAccessContext): AppNavGroup[] {
+export function getAppNavigationGroups(access: AppAccessContext, badges?: AppNavBadgeMap): AppNavGroup[] {
   return NAV_GROUP_DEFINITIONS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => hasRouteAccess(item, access)).map((item) => materializeItem(item, access)),
+    items: group.items
+      .filter((item) => hasRouteAccess(item, access))
+      .map((item) => materializeItem(item, access, badges)),
   })).filter((group) => group.items.length > 0);
 }
 
@@ -341,6 +344,12 @@ export function getBreadcrumbItems(route: RouteLocationNormalizedLoaded, access:
         { label: "任务详情" },
         { label: jobId },
       ];
+    case "job-review":
+      return [
+        { label: "任务工作台", to: "/jobs" },
+        { label: "任务详情", to: `/jobs/${jobId}` },
+        { label: "文档复核" },
+      ];
     case "job-translation-qa":
       if (route.query.from === "translation-qa") {
         return [
@@ -386,7 +395,7 @@ export function getBreadcrumbItems(route: RouteLocationNormalizedLoaded, access:
     case "settings-term-rule-sets":
       return [
         { label: "质量治理" },
-        { label: "术语工作台", to: terminologyWorkbenchRoute(route) },
+        { label: "符号与排版规则", to: terminologyWorkbenchRoute(route) },
         { label: "草稿与发布" },
       ];
     case "settings-terminology-releases":
@@ -397,7 +406,7 @@ export function getBreadcrumbItems(route: RouteLocationNormalizedLoaded, access:
     case "settings-term-rules":
       return [
         { label: "质量治理" },
-        { label: "术语工作台", to: terminologyWorkbenchRoute(route) },
+        { label: "符号与排版规则", to: terminologyWorkbenchRoute(route) },
         { label: "当前生效规则" },
       ];
     case "settings-translation-profiles":

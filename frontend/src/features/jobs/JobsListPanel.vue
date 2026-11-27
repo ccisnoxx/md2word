@@ -256,7 +256,7 @@ defineExpose({
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--app-color-surface) 86%, var(--app-color-primary-soft)), var(--app-color-glass-muted)),
     var(--app-gradient-panel-depth);
-  box-shadow: var(--app-shadow-panel);
+  box-shadow: var(--app-shadow-subtle);
 }
 
 .table-header {

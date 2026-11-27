@@ -14,6 +14,7 @@ import type {
   DocumentJobStatus,
 } from "@/api/types";
 import { useWorkbenchSavedViews } from "@/composables/useWorkbenchSavedViews";
+import { syncIncidentsBadgeCount } from "@/stores/workbenchBadges";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import {
   activeSavedViewId,
@@ -179,6 +180,7 @@ export function useIncidentQueue(
       items.value = response.items;
       total.value = response.total;
       summary.value = response.summary;
+      syncIncidentsBadgeCount(response.summary.total ?? ((response.summary.retryable || 0) + (response.summary.stalled || 0)));
       selectedItems.value = [];
       lastRefreshedAt.value = new Date().toISOString();
     } catch (caught) {

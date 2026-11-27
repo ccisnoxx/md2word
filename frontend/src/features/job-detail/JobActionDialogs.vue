@@ -96,6 +96,37 @@
             <el-radio v-if="isAdmin" label="select_published_versions">指定 published 版本</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item
+          v-if="cloneDialog.job && !usesTranslationResources(cloneDialog.job)"
+          label="原文语言"
+        >
+          <div class="clone-language-field">
+            <el-select
+              v-if="cloneDialog.strategy !== 'keep_source_snapshot'"
+              v-model="cloneDialog.documentLanguage"
+              placeholder="沿用源任务原文语言"
+            >
+              <el-option
+                v-for="option in documentLanguageOptions"
+                :key="option.value"
+                :label="`${option.label}（${option.mineruHint}）`"
+                :value="option.value"
+              />
+            </el-select>
+            <el-input
+              v-else
+              :model-value="documentLanguageLabel(cloneDialog.job.document_language)"
+              disabled
+            />
+            <small class="clone-language-hint">
+              {{
+                cloneDialog.strategy === "keep_source_snapshot"
+                  ? "沿用源任务快照时必须保持源任务文种与 MinerU 语言绑定。"
+                  : documentLanguageMineruHint(cloneDialog.documentLanguage) || "未修改时沿用源任务文种。"
+              }}
+            </small>
+          </div>
+        </el-form-item>
         <template v-if="isAdmin && cloneDialog.strategy === 'select_published_versions'">
           <el-form-item label="Word 模板">
             <el-select
@@ -182,6 +213,11 @@
 <script setup lang="ts">
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { configOptionKey } from "@/utils/configOptions";
+import {
+  documentLanguageLabel,
+  documentLanguageMineruHint,
+  documentLanguageOptions,
+} from "@/utils/format";
 import { usesTranslationResources } from "./jobDetailFormat";
 import type { UnwrapRef } from "vue";
 import type { JobDetailData } from "./useJobDetailData";
@@ -242,5 +278,17 @@ const {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 4px;
+}
+
+.clone-language-field {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+}
+
+.clone-language-hint {
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 </style>

@@ -1658,6 +1658,698 @@ export type DocumentReviewBlocksResponse = {
   next_cursor: string | null;
 };
 
+export type QualityAvailability = "available" | "legacy_unavailable" | "not_ready" | "disabled" | "unavailable";
+export type QualityRule = "clipping" | "overflow" | "blank" | "overlap" | "density";
+export type QualityIssue =
+  | "conversion"
+  | "translation"
+  | "terminology"
+  | "table_structure"
+  | "layout"
+  | "source_quality"
+  | "artifact_missing"
+  | "other";
+export type TableSemanticsReviewConflict =
+  | "table_semantics_confirmation_required"
+  | "table_semantics_confirmation_stale"
+  | "table_semantics_evidence_invalid";
+export type DocumentReviewValidityReason =
+  | "legacy_unbound"
+  | "source_changed"
+  | "artifact_missing"
+  | "artifact_unavailable"
+  | "integrity_conflict"
+  | "quality_blocked"
+  | TableSemanticsReviewConflict;
+export type ValueColumnLabel = "MIN" | "TYP" | "MAX" | "LOW" | "NOM" | "HIGH" | "最小" | "典型" | "最大";
+
+export type ReviewExpectedSourceRequest = {
+  generation: number;
+  result_file_id: string | null;
+  result_sha256: string | null;
+  file_review_source_revision: number | null;
+  receipt_sha256: string | null;
+};
+
+export type DocumentQualityCountsResponse = {
+  formula_count?: number | null;
+  omml_count?: number | null;
+  semantic_count?: number | null;
+  fallback_count?: number | null;
+  table_count?: number | null;
+  fragment_count?: number | null;
+  native_count?: number | null;
+  placeholder_count?: number | null;
+  blocker_count?: number | null;
+  warning_count?: number | null;
+  page_count?: number | null;
+  complete_page_count?: number | null;
+  flag_count?: number | null;
+  count?: number | null;
+  pages?: number | null;
+  observed_pages?: number | null;
+  flags?: number | null;
+  manual_checks?: number | null;
+  checked_rules?: number | null;
+  not_checked_rules?: number | null;
+};
+
+export type TableStructureReviewSummaryResponse = {
+  source_pointer: string;
+  page_number: number | null;
+  reason: string;
+  preserved_as: "native" | "reference_image" | "pdf_crop" | "pdf_page";
+  severity: "warning";
+  manual_review_required: true;
+};
+
+export type DocumentQualityProducerResponse = {
+  producer:
+    | "formula"
+    | "table_evidence"
+    | "table_placeholder"
+    | "word_preview"
+    | "word_page_quality"
+    | "document_base"
+    | "unattributed";
+  schema_version?: string | null;
+  quality_status?: DocumentJobQualityStatus | null;
+  evaluation_state?: "complete" | "incomplete" | null;
+  availability?: QualityAvailability | null;
+  coverage?: "complete" | "unavailable" | null;
+  report_sha256?: string | null;
+  reason_code?: string | null;
+  counts: DocumentQualityCountsResponse;
+  flags: string[];
+  unknown_flag_count: number;
+  table_structure_reviews?: TableStructureReviewSummaryResponse[];
+};
+
+export type DocumentQualityProducersResponse = {
+  items: DocumentQualityProducerResponse[];
+  unknown_producer_count: number;
+};
+
+export type DocumentQualitySummaryResponse = {
+  quality_flags: string[];
+  layout_quality_flags: string[];
+  blocking_quality_flags: string[];
+  unknown_flag_count: number;
+};
+
+export type DocumentReviewBindingResponse = {
+  generation: number;
+  result_file_id: string | null;
+  binding_state: "verified" | "no_result" | "unverified_result" | "legacy_unbound";
+  result_sha256: string | null;
+  file_review_source_revision: number | null;
+  receipt_sha256: string | null;
+  acknowledged_table_semantics_report_sha256?: string | null;
+};
+
+export type DocumentReviewQualityResponse = {
+  quality_status: DocumentJobQualityStatus;
+  summary_sha256: string;
+  summary: DocumentQualitySummaryResponse;
+  producers: DocumentQualityProducersResponse;
+};
+
+export type DocumentReviewResponse = {
+  status: DocumentJobReviewStatus;
+  current_record_id: string | null;
+  sequence: number | null;
+  issue_type: QualityIssue | null;
+  note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  binding: DocumentReviewBindingResponse | null;
+  validity_reason: DocumentReviewValidityReason | null;
+  quality: DocumentReviewQualityResponse | null;
+};
+
+export type DocumentReviewHistoryItemResponse = {
+  id: string;
+  sequence: number;
+  record_status: DocumentJobReviewStatus;
+  issue_type: QualityIssue | null;
+  note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  origin: "live" | "legacy_import";
+  legacy_observed_status: DocumentJobReviewStatus | null;
+  binding: DocumentReviewBindingResponse;
+  quality: DocumentReviewQualityResponse;
+};
+
+export type DocumentReviewHistoryResponse = {
+  job_id: string;
+  through_sequence: number;
+  items: DocumentReviewHistoryItemResponse[];
+  next_cursor: string | null;
+};
+
+export type DocumentQualityStatesResponse = {
+  execution_status: DocumentJobStatus;
+  quality_status: DocumentJobQualityStatus;
+  review_status: DocumentJobReviewStatus;
+  delivery_status: DocumentJobDeliveryStatus;
+};
+
+export type DocumentQualityResponse = {
+  job_id: string;
+  source: DocumentQualitySourceResponse;
+  states: DocumentQualityStatesResponse;
+  summary: DocumentQualitySummaryResponse;
+  producers: DocumentQualityProducersResponse;
+  review: DocumentReviewResponse;
+  available_actions: Record<DocumentJobActionId, DocumentJobAvailableAction>;
+};
+
+export type DocumentCurrentReviewResponse = {
+  job_id: string;
+  source: DocumentQualitySourceResponse;
+  review: DocumentReviewResponse;
+  available_actions: Record<DocumentJobActionId, DocumentJobAvailableAction>;
+};
+
+export type DocumentReviewUpdateRequest = {
+  status: DocumentJobReviewStatus;
+  issue_type?: QualityIssue | null;
+  note?: string | null;
+  expected_source: ReviewExpectedSourceRequest;
+  acknowledged_table_semantics_report_sha256?: string | null;
+};
+
+export type DocumentReviewUpdateResponse = {
+  job_id: string;
+  accepted_record_id: string;
+  accepted_sequence: number;
+  source: DocumentQualitySourceResponse;
+  review: DocumentReviewResponse;
+  available_actions: Record<DocumentJobActionId, DocumentJobAvailableAction>;
+};
+
+export type DocumentQualitySourceSpanResponse = {
+  fragment_id?: string | null;
+  source_page_index: number | null;
+  bbox: [number, number, number, number] | null;
+  html_state?: "missing" | "empty" | "present" | null;
+  row_start?: number | null;
+  row_count?: number | null;
+  columns?: number | null;
+};
+
+export type DocumentQualityGridResponse = {
+  rows: number;
+  columns: number;
+  header_rows: number[];
+  rowspan_count: number;
+  colspan_count: number;
+};
+
+export type DocumentQualityTableReferenceResponse = {
+  fragment_id: string;
+  source_status: "valid" | "missing" | "invalid" | "unavailable";
+  asset_id: string | null;
+  file_id: string | null;
+  mime_type: string | null;
+  registered: boolean;
+};
+
+export type DocumentQualityCellShapeResponse = {
+  grid_span: number;
+  vertical_merge: "restart" | "continue" | null;
+};
+
+export type DocumentQualityRowShapeResponse = {
+  cells: DocumentQualityCellShapeResponse[];
+  header: boolean;
+  cant_split: boolean;
+};
+
+export type DocumentQualityFragmentResponse = {
+  fragment_id: string;
+  block_id: string | null;
+  render_owner_block_id: string;
+  source_rows: number[];
+  retained_source_rows: number[];
+  output_rows: number[];
+  removed_header_rows: number[] | null;
+  shared_header_rows: number[] | null;
+  status: "rendered" | "header_only" | "empty" | "missing";
+};
+
+export type DocumentQualityNativeTableResponse = {
+  output_table_key: string;
+  anchor_block_id: string;
+  table_index: number;
+  grid_columns: number;
+  rows: DocumentQualityRowShapeResponse[];
+  fragments: DocumentQualityFragmentResponse[];
+};
+
+export type DocumentQualityPlaceholderResponse = {
+  placeholder_id: string;
+  fragment_id: string;
+  owner_block_id: string;
+  asset_ref: string;
+  source_kind: "mineru_reference" | "source_pdf_crop";
+  issue_code: "table_noneditable_placeholder";
+};
+
+export type DocumentQualityTableFlagResponse = {
+  producer: "table_validator" | "table_rendering" | "table_reference" | "table_placeholder";
+  code: string;
+  severity: "blocker" | "warning";
+  fragment_id: string | null;
+};
+
+export type DocumentQualityValueColumnResponse = {
+  column: number;
+  label: ValueColumnLabel;
+  group_start_column: number;
+};
+
+export type DocumentQualityTableValueFindingResponse = {
+  finding_id: string;
+  code: "table_semantics:value_column_span_ambiguous";
+  fragment_id: string;
+  cell_id: string;
+  source_page_index: number | null;
+  source_row_index: number;
+  column: number;
+  end_column: number;
+  columns: DocumentQualityValueColumnResponse[];
+  value: string;
+  unit: string | null;
+  manual_review_required: true;
+};
+
+export type DocumentQualityUnresolvedValueColumnResponse = {
+  finding_id: string;
+  fragment_id: string;
+  source_page_index: number | null;
+  bbox: [number, number, number, number] | null;
+  source_row_index: number;
+  source_cell_index: number;
+  reason_code: string;
+  manual_review_required: true;
+};
+
+export type DocumentQualityTableItemResponse = {
+  table_id: string;
+  logical_group_id: string;
+  member_block_ids: string[];
+  anchor_block_id: string;
+  source_spans: DocumentQualitySourceSpanResponse[];
+  source_grid: DocumentQualityGridResponse;
+  references: DocumentQualityTableReferenceResponse[];
+  outputs: DocumentQualityNativeTableResponse[];
+  placeholders: DocumentQualityPlaceholderResponse[];
+  render_state: "native" | "placeholder" | "mixed" | "excluded_margin_artifact";
+  flags: DocumentQualityTableFlagResponse[];
+  unknown_flag_count: number;
+  status: DocumentJobQualityStatus;
+  value_column_findings?: DocumentQualityTableValueFindingResponse[] | null;
+  unresolved_value_columns?: DocumentQualityUnresolvedValueColumnResponse[] | null;
+};
+
+export type DocumentQualityTableReportResponse = {
+  schema_version: string;
+  report_file_id: string;
+  report_sha256: string;
+  coverage: "complete" | "unavailable" | null;
+  status: DocumentJobQualityStatus | null;
+  counts: DocumentQualityCountsResponse;
+};
+
+export type DocumentQualityTablesResponse = {
+  job_id: string;
+  source: DocumentQualitySourceResponse;
+  availability: QualityAvailability;
+  reason_code: string | null;
+  report: DocumentQualityTableReportResponse | null;
+  items: DocumentQualityTableItemResponse[];
+  next_cursor: string | null;
+};
+
+export type DocumentQualityPageRuleResponse = {
+  rule_version: "v1";
+  checked: boolean;
+  reason_code: string | null;
+  metrics: Record<string, number | null>;
+  units: Record<string, "pt" | "pt2" | "ratio" | "count" | "char/pt2">;
+};
+
+export type DocumentQualityPageFlagResponse = {
+  code:
+    | "page_clip_risk"
+    | "page_overflow_risk"
+    | "unexpected_blank_page_suspected"
+    | "page_overlap_suspected"
+    | "page_density_low"
+    | "page_density_high";
+  severity: "warning" | "info";
+  rule_version: "v1";
+  preview_page_index: number;
+  metric_refs: string[];
+  evidence_kind: "native_and_raster";
+  manual_check_required: true;
+};
+
+export type DocumentQualityBlockCandidateResponse = {
+  block_id: string;
+  association: "single_page" | "estimated_start" | "navigation_fallback";
+  confidence: "high" | "low";
+  source_page_indices: number[];
+  source_spans: DocumentQualitySourceSpanResponse[];
+};
+
+export type DocumentQualityPageItemResponse = {
+  preview_page_index: number;
+  rules: Partial<Record<QualityRule, DocumentQualityPageRuleResponse>>;
+  flags: DocumentQualityPageFlagResponse[];
+  unknown_flag_count: number;
+  manual_checks: string[];
+  block_candidates: DocumentQualityBlockCandidateResponse[];
+};
+
+export type DocumentQualityCoverageResponse = {
+  checked: number;
+  not_checked: number;
+};
+
+export type DocumentQualityPageReportResponse = {
+  schema_version: string;
+  analyzer_version: string;
+  id: string;
+  run_sha256: string;
+  generation: number;
+  preview_run_id: string;
+  revision: number;
+  attempt: number;
+  manifest_file_id: string;
+  profile_id: string;
+  profile_sha256: string;
+  page_count: number;
+  evaluation_state: "complete" | "incomplete";
+  quality_status: "pending" | "passed" | "warning";
+  reason_code: string | null;
+  manual_checks: string[];
+  coverage: Partial<Record<QualityRule, DocumentQualityCoverageResponse>>;
+  counts: DocumentQualityCountsResponse;
+};
+
+export type DocumentQualityPagesResponse = {
+  job_id: string;
+  source: DocumentQualitySourceResponse;
+  availability: QualityAvailability;
+  reason_code: string | null;
+  report: DocumentQualityPageReportResponse | null;
+  items: DocumentQualityPageItemResponse[];
+  next_cursor: string | null;
+};
+
+export type DocumentPreviewPageResponse = {
+  file_id: string;
+  page_index: number;
+  width: number;
+  height: number;
+};
+
+export type DocumentPreviewRunResponse = {
+  run_id: string;
+  revision: number;
+  attempt: number;
+  status: "pending" | "running" | "succeeded" | "failed" | "unavailable";
+  profile_id: string;
+  profile_sha256: string;
+  started_at: string;
+  completed_at: string | null;
+  error_code: string | null;
+};
+
+export type DocumentPreviewResponse = {
+  job_id: string;
+  source: DocumentQualitySourceResponse;
+  status: "not_ready" | "disabled" | "pending" | "running" | "succeeded" | "failed" | "unavailable";
+  availability: QualityAvailability;
+  reason_code: string | null;
+  run: DocumentPreviewRunResponse | null;
+  pdf_file_id: string | null;
+  page_count: number | null;
+  items: DocumentPreviewPageResponse[];
+  next_cursor: string | null;
+};
+
+export type DocumentJobTableReferenceResponse = {
+  block_id: string;
+  fragment_id: string;
+  logical_group_id: string;
+  page_index: number | null;
+  bbox: [number, number, number, number] | null;
+  asset_id: string | null;
+  file_id: string | null;
+  source_status: "valid" | "missing" | "invalid";
+  availability: "available" | "source_missing" | "source_invalid" | "missing" | "expired" | "deleted" | "not_uploaded";
+  mime_type: string | null;
+  checksum_sha256: string | null;
+  size_bytes: number | null;
+  warning_codes: string[];
+  display_supported: boolean;
+  content_path: string | null;
+};
+
+export type DocumentJobTableReferenceListResponse = {
+  job_id: string;
+  generation: number;
+  ir_file_id: string | null;
+  evidence_status: "not_ready" | "legacy_unavailable" | "registered";
+  items: DocumentJobTableReferenceResponse[];
+};
+
+export type DocumentReviewTermResponse = {
+  unit_id: string;
+  batch_id: string;
+  source_term: string;
+  target_term: string;
+  version: string | null;
+};
+
+export type DocumentReviewTokenCountsResponse = {
+  formula: number;
+  literal_placeholder: number;
+  address: number;
+  bit_field: number;
+  model: number;
+  standard: number;
+  version: number;
+  signal: number;
+  quantity: number;
+  unit: number;
+  url: number;
+  email: number;
+  number: number;
+  symbol: number;
+  technical_literal: number;
+};
+
+export type DocumentReviewBatchResponse = {
+  scope: "batch";
+  batch_id: string;
+  attempt: number;
+  status: "succeeded" | "failed";
+  provider_backend?: "fake" | "openai_compatible" | null;
+  provider_model?: string | null;
+  schema_version?: string | null;
+  validator_version?: string | null;
+  codec_version?: "MD2W_PT_v1" | null;
+  instruction_version?: string | null;
+  instruction_sha256?: string | null;
+  integrity_status?: "passed" | "failed" | "pending" | null;
+  error_code?: string | null;
+  expected_item_count?: number | null;
+  actual_item_count?: number | null;
+  checked_item_count?: number | null;
+  failed_item_count?: number | null;
+  expected_token_counts?: DocumentReviewTokenCountsResponse | null;
+  actual_token_counts?: DocumentReviewTokenCountsResponse | null;
+  source_sha256?: string | null;
+  restored_sha256?: string | null;
+};
+
+export type DocumentReviewContentPartResponse = {
+  kind:
+    | "text"
+    | "list_item"
+    | "caption"
+    | "footnote"
+    | "latex"
+    | "table_text"
+    | "html_summary"
+    | "term"
+    | "batch"
+    | "table"
+    | "reference";
+  side: "source" | "target" | "shared";
+  field: string;
+  index?: number | null;
+  unit_id?: string | null;
+  fragment_id?: string | null;
+  offset: number;
+  text?: string | null;
+  total_chars?: number | null;
+  truncated: boolean;
+  html_state?: "missing" | "empty" | "present" | null;
+  sha256?: string | null;
+  term?: DocumentReviewTermResponse | null;
+  batch?: DocumentReviewBatchResponse | null;
+  table?: DocumentQualityTableItemResponse | null;
+  reference?: DocumentJobTableReferenceResponse | null;
+};
+
+export type DocumentReviewBlockDetailResponse = {
+  job_id: string;
+  source: DocumentQualitySourceResponse;
+  content_snapshot: DocumentReviewContentSnapshotResponse;
+  block: DocumentReviewBlockItemResponse;
+  items: DocumentReviewContentPartResponse[];
+  next_cursor: string | null;
+};
+
+export type PublicationExpectedSource = ReviewExpectedSourceRequest & {
+  review_record_id: string | null;
+  review_sequence: number;
+  preview_run_id: string | null;
+  preview_revision: number | null;
+  quality_summary_sha256: string;
+};
+
+export type DocumentPublishRequest = {
+  request_id: string;
+  note: string;
+  expected_source: PublicationExpectedSource;
+};
+
+export type DocumentPublicationResourceVersionResponse = {
+  resource_id: string;
+  version: string;
+  snapshot_hash: string;
+};
+
+export type DocumentPublicationVersionsResponse = {
+  template: DocumentPublicationResourceVersionResponse;
+  symbol_rules: DocumentPublicationResourceVersionResponse;
+  renderer_implementation_sha256: string;
+  translation_status: "complete" | "not_applicable";
+  models: string[];
+};
+
+export type DocumentPublicationRecordResponse = {
+  publication_id: string;
+  job_id: string;
+  generation: number;
+  source_file_id: string;
+  source_sha256: string;
+  result_file_id: string;
+  result_sha256: string;
+  review_record_id: string;
+  review_sequence: number;
+  preview_run_id: string;
+  published_by: string;
+  published_at: string;
+  note: string;
+  versions: DocumentPublicationVersionsResponse;
+};
+
+export type DocumentPublishResponse = {
+  publication: DocumentPublicationRecordResponse;
+  available_actions: Record<DocumentJobActionId, DocumentJobAvailableAction>;
+};
+
+export type DocumentPublicationPreflightCheckResponse = {
+  code: string;
+  status: "passed" | "blocked" | "not_checked";
+  reason_code: string | null;
+  message: string;
+};
+
+export type DocumentPublicationDownloadUrlResponse = {
+  publication_id: string;
+  job_id: string;
+  result_file_id: string;
+  result_sha256: string;
+  size_bytes: number;
+  download_url: string;
+  expires_at: string;
+  method: "GET";
+  classification: "final_delivery";
+};
+
+export type DocumentPublicationsResponse = {
+  preflight_checks: DocumentPublicationPreflightCheckResponse[];
+  download_actions: Record<string, DocumentJobAvailableAction>;
+  job_id: string;
+  expected_source: PublicationExpectedSource;
+  items: DocumentPublicationRecordResponse[];
+  available_actions: Record<DocumentJobActionId, DocumentJobAvailableAction>;
+};
+
+export type TableValueColumnTargetHeader = "MIN" | "TYP" | "MAX" | "NOM" | "LOW" | "HIGH";
+
+export type ManualTableValueColumnCorrectionRequest = {
+  source_row_index: number;
+  source_cell_index: number;
+  content_sha256: string;
+  original_column_range: [number, number];
+  target_column: number;
+  target_header: TableValueColumnTargetHeader;
+};
+
+export type ManualTableValueColumnReviewRequest = {
+  schema_version: "table-value-column-review/v1";
+  source_pdf_sha256: string;
+  content_list_sha256: string;
+  page_index: number;
+  json_pointer: string;
+  raw_html_sha256: string;
+  normalizer_version: "table-html/v1";
+  corrections: ManualTableValueColumnCorrectionRequest[];
+};
+
+export type DocumentJobNewGenerationRequest = {
+  request_id: string;
+  note: string;
+  expected_source: ReviewExpectedSourceRequest;
+  action?: "replay_table_value_columns" | null;
+  table_value_column_reviews?: ManualTableValueColumnReviewRequest[] | null;
+};
+
+export type DocumentJobGenerationCurrentResponse = {
+  id: string;
+  status: DocumentJobStatus;
+  stage: DocumentJobStage;
+  progress: number;
+  retry_count: number;
+  result_file_id: string | null;
+  quality_status: DocumentJobQualityStatus;
+  review_status: DocumentJobReviewStatus;
+  delivery_status: DocumentJobDeliveryStatus;
+};
+
+export type DocumentJobNewGenerationResponse = {
+  accepted: true;
+  request_id: string;
+  job_id: string;
+  accepted_generation: number;
+  accepted_at: string;
+  source: ReviewExpectedSourceRequest;
+  audit_id: string;
+  replayed: boolean;
+  current_generation: number;
+  current_job: DocumentJobGenerationCurrentResponse;
+};
+
 export type DocumentJobCreateResponse = {
   job_id: string;
   status: DocumentJobStatus;

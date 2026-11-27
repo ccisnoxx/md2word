@@ -4,6 +4,10 @@ import axios from "axios";
 export type ApiClientError = {
   status?: number;
   code?: string;
+  reasonCode?: string;
+  generationRequestId?: string;
+  accepted?: boolean;
+  acceptedGeneration?: number;
   message: string;
   traceId?: string;
   raw: unknown;
@@ -57,13 +61,35 @@ export function normalizeApiErrorBody(
     readString(body.request_id) ||
     readString(body.trace_id);
 
+  const reasonCode = readString(nestedError.reason_code) || readString(body.reason_code);
+  const generationRequestId = readString(nestedError.generation_request_id);
+  const accepted = nestedError.accepted === true ? true : undefined;
+  const acceptedGeneration = typeof nestedError.accepted_generation === "number" && Number.isFinite(nestedError.accepted_generation)
+    ? nestedError.accepted_generation
+    : undefined;
+
   return {
     status,
     code,
+    ...(reasonCode ? { reasonCode } : {}),
+    ...(generationRequestId ? { generationRequestId } : {}),
+    ...(accepted !== undefined ? { accepted } : {}),
+    ...(acceptedGeneration !== undefined ? { acceptedGeneration } : {}),
     message,
     traceId: responseTraceId || traceId || undefined,
     raw: data,
   };
+}
+
+// 5xx、网络异常或超时下，后端可能已提交写操作；客户端必须保留原幂等键走对账。
+export function isAmbiguousWriteError(error: ApiClientError | null | undefined): boolean {
+  if (!error) {
+    return false;
+  }
+  if (error.code === "timeout") {
+    return true;
+  }
+  return error.status === undefined || error.status >= 500;
 }
 
 export function normalizeApiError(error: unknown): ApiClientError {

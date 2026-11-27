@@ -88,6 +88,7 @@ import { ArrowDown, ArrowRight, DocumentChecked, Expand, Fold } from "@element-p
 import type { RouteLocationRaw } from "vue-router";
 
 import type { AppNavGroup, AppNavGroupId, AppNavItemId } from "@/navigation/appShell";
+import { getStoredSidebarOpenGroups, persistSidebarOpenGroups } from "@/utils/sidebarState";
 
 const props = withDefaults(
   defineProps<{
@@ -120,10 +121,39 @@ const collapseIcon = computed(() => (props.collapsed ? Expand : Fold));
 const brandAriaLabel = computed(() => (isCompact.value ? "md2word 工作台" : "md2word 运营工作台"));
 const groupIdsKey = computed(() => props.groups.map((group) => group.id).join("|"));
 
+function buildInitialOpenGroups(): Set<AppNavGroupId> {
+  const validGroupIds = new Set(props.groups.map((group) => group.id));
+  const stored = getStoredSidebarOpenGroups();
+  if (stored !== null) {
+    const restored = new Set<AppNavGroupId>(
+      stored.filter((id): id is AppNavGroupId => validGroupIds.has(id as AppNavGroupId)),
+    );
+    if (props.activeGroupId && validGroupIds.has(props.activeGroupId)) {
+      restored.add(props.activeGroupId);
+    }
+    return restored;
+  }
+  // 权限较少（<=2 个分组）时全部展开；管理员多分组默认展开处理队列与当前分组，降低侧栏视觉负担。
+  if (props.groups.length <= 2) {
+    return new Set(props.groups.map((group) => group.id));
+  }
+  const defaults = new Set<AppNavGroupId>();
+  if (validGroupIds.has("processing")) {
+    defaults.add("processing");
+  }
+  if (props.activeGroupId && validGroupIds.has(props.activeGroupId)) {
+    defaults.add(props.activeGroupId);
+  }
+  if (!defaults.size && props.groups[0]) {
+    defaults.add(props.groups[0].id);
+  }
+  return defaults;
+}
+
 watch(
   groupIdsKey,
   () => {
-    openGroupIds.value = new Set(props.groups.map((group) => group.id));
+    openGroupIds.value = buildInitialOpenGroups();
   },
   { immediate: true },
 );
@@ -131,7 +161,7 @@ watch(
 watch(
   () => props.activeGroupId,
   (groupId) => {
-    if (!groupId) {
+    if (!groupId || openGroupIds.value.has(groupId)) {
       return;
     }
     const next = new Set(openGroupIds.value);
@@ -152,6 +182,7 @@ function toggleGroup(groupId: AppNavGroupId): void {
     next.add(groupId);
   }
   openGroupIds.value = next;
+  persistSidebarOpenGroups([...next]);
 }
 
 function emitNavigate(): void {

@@ -56,11 +56,13 @@
           :show-open-detail="false"
           :show-submit-next="false"
           :show-shortcut-hints="false"
+          :show-propose-term="supportsJobTranslationQa(job)"
           submit-label="保存复核"
           @update:form="updateForm"
           @segment-index-change="setActiveSegmentIndex"
           @submit="saveQa"
           @refresh="loadAll()"
+          @propose-term="openInlineTermProposal"
         />
       </section>
 
@@ -108,6 +110,17 @@
         </el-card>
       </section>
     </template>
+
+    <InlineTermProposalDrawer
+      v-model="inlineProposalVisible"
+      :job="job"
+      :observed-term-set-id="observedTranslationTermSetId"
+      :observed-term-version="observedTranslationTermVersion"
+      :initial-source-term="inlineProposalDraft.sourceTerm"
+      :initial-target-term="inlineProposalDraft.targetTerm"
+      :context-summary="inlineProposalDraft.contextSummary"
+      :source-excerpt="inlineProposalDraft.excerpt"
+    />
   </main>
 </template>
 
@@ -124,11 +137,12 @@ import type {
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import InlineTermProposalDrawer from "@/components/InlineTermProposalDrawer.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import TranslationQaReviewPanel from "@/components/TranslationQaReviewPanel.vue";
 import { documentJobModeSupportsTranslationQa, formatDateTime, jobModeText } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
-import type { TranslationQaReviewDraft } from "@/utils/translationQa";
+import type { TranslationQaReviewDraft, TranslationQaSegmentTraceRow } from "@/utils/translationQa";
 
 const route = useRoute();
 const router = useRouter();
@@ -139,6 +153,13 @@ const loading = ref(false);
 const saving = ref(false);
 const error = ref<ApiClientError | null>(null);
 const activeSegmentIndex = ref(0);
+const inlineProposalVisible = ref(false);
+const inlineProposalDraft = reactive({
+  sourceTerm: "",
+  targetTerm: "",
+  excerpt: "",
+  contextSummary: "",
+});
 
 const form = reactive<TranslationQaReviewDraft>({
   status: "unreviewed",
@@ -271,6 +292,15 @@ function openTranslationTermProposal(): void {
   appendQueryValue(query, "observed_translation_term_set_id", observedTranslationTermSetId.value);
   appendQueryValue(query, "observed_translation_term_version", observedTranslationTermVersion.value);
   void router.push({ name: "term-proposals", query });
+}
+
+function openInlineTermProposal(segment: TranslationQaSegmentTraceRow): void {
+  const selectedText = typeof window !== "undefined" ? (window.getSelection()?.toString() || "").trim() : "";
+  inlineProposalDraft.sourceTerm = selectedText.length <= 120 ? selectedText : "";
+  inlineProposalDraft.targetTerm = "";
+  inlineProposalDraft.excerpt = segment.source_text || segment.final_text || "";
+  inlineProposalDraft.contextSummary = `片段 ${segment.id}（块 ${segment.block_id}）`;
+  inlineProposalVisible.value = true;
 }
 
 function supportsJobTranslationQa(target: DocumentJobResponse | null | undefined): boolean {

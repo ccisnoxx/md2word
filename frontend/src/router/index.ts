@@ -30,6 +30,13 @@ const router = createRouter({
         { path: "jobs/new", name: "job-create", component: () => import("@/pages/JobCreatePage.vue"), meta: { permissions: ["document_jobs:create"] } },
         { path: "jobs/:jobId", name: "job-detail", component: () => import("@/pages/JobDetailPage.vue"), props: true, meta: { permissions: ["document_jobs:read"] } },
         {
+          path: "jobs/:jobId/review",
+          name: "job-review",
+          component: () => import("@/pages/DocumentReviewPage.vue"),
+          props: true,
+          meta: { permissions: ["document_jobs:read"], fullWidth: true },
+        },
+        {
           path: "jobs/:jobId/translation-qa",
           name: "job-translation-qa",
           component: () => import("@/pages/TranslationResultQaPage.vue"),

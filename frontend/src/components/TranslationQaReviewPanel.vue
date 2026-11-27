@@ -117,6 +117,15 @@
                 <el-tag size="small" :type="activeSegment.termTraceCount ? 'success' : 'info'" effect="plain">
                   {{ activeSegment.termTraceCount }} 条术语命中
                 </el-tag>
+                <el-button
+                  v-if="showProposeTerm"
+                  size="small"
+                  type="primary"
+                  plain
+                  @click="$emit('propose-term', activeSegment)"
+                >
+                  从此段提议术语
+                </el-button>
               </div>
             </header>
             <div class="segment-columns">
@@ -288,6 +297,7 @@ const props = withDefaults(defineProps<{
   showOpenDetail?: boolean;
   showSubmitNext?: boolean;
   showShortcutHints?: boolean;
+  showProposeTerm?: boolean;
   submitLabel?: string;
   submitNextLabel?: string;
 }>(), {
@@ -295,6 +305,7 @@ const props = withDefaults(defineProps<{
   showOpenDetail: true,
   showSubmitNext: true,
   showShortcutHints: true,
+  showProposeTerm: false,
   submitLabel: "仅保存",
   submitNextLabel: "保存并下一条",
 });
@@ -307,6 +318,7 @@ const emit = defineEmits<{
   refresh: [];
   close: [];
   "open-detail": [];
+  "propose-term": [segment: ReturnType<typeof buildTranslationQaSegmentRows>[number]];
 }>();
 
 const displayJobId = computed(() => props.job?.id || props.qa?.job_id || "无选中任务");

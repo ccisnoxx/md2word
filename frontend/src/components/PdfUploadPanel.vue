@@ -1,4 +1,4 @@
-<!-- 文件：frontend/src/components/PdfUploadPanel.vue；用途：授权、上传 PDF 并创建单个文档任务。 -->
+<!-- 文件：frontend/src/components/PdfUploadPanel.vue；用途：两栏渐进式授权、上传 PDF 并创建单个文档任务。 -->
 <template>
   <el-card class="upload-card card-flat" shadow="never">
     <div class="section-header">
@@ -11,153 +11,217 @@
 
     <ApiErrorAlert :error="error" />
 
-    <el-steps class="upload-steps" :active="activeStep" finish-status="success" process-status="process">
-      <el-step title="选择 PDF" />
-      <el-step title="上传文件" />
-      <el-step title="创建任务" />
-    </el-steps>
+    <div class="upload-workbench-grid">
+      <section class="upload-primary-pane" aria-label="上传与任务参数">
+        <el-steps class="upload-steps" :active="activeStep" finish-status="success" process-status="process">
+          <el-step title="选择 PDF" />
+          <el-step title="上传文件" />
+          <el-step title="创建任务" />
+        </el-steps>
 
-    <el-upload
-      ref="uploadRef"
-      drag
-      action=""
-      accept=".pdf,application/pdf"
-      :auto-upload="false"
-      :limit="1"
-      :on-change="handleFileChange"
-      :on-remove="handleFileRemove"
-      :on-exceed="handleExceed"
-    >
-      <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-      <div class="el-upload__text">拖入 PDF，或点击选择文件</div>
-      <template #tip>
-        <div class="el-upload__tip">最大 {{ maxUploadMb }} MB；后端会继续校验文件内容和页数。</div>
-      </template>
-    </el-upload>
-
-    <div class="mode-row">
-      <span class="mode-label">任务模式</span>
-      <el-radio-group v-model="mode" size="small">
-        <el-radio-button
-          v-for="option in selectableModeOptions"
-          :key="option.mode"
-          :label="option.mode"
-          :disabled="option.disabled"
+        <el-upload
+          ref="uploadRef"
+          drag
+          action=""
+          accept=".pdf,application/pdf"
+          :auto-upload="false"
+          :limit="1"
+          :on-change="handleFileChange"
+          :on-remove="handleFileRemove"
+          :on-exceed="handleExceed"
         >
-          {{ option.shortLabel }}
-        </el-radio-button>
-      </el-radio-group>
-    </div>
-    <p v-if="!selectedModeRequiresTranslationResources" class="section-subtitle">保持原文语言和语义，不调用 AI。</p>
-    <el-alert
-      v-if="modeReadinessHint"
-      class="mode-readiness"
-      type="warning"
-      :closable="false"
-      show-icon
-      :title="modeReadinessHint"
-    />
+          <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+          <div class="el-upload__text">拖入 PDF，或点击选择文件</div>
+          <template #tip>
+            <div class="el-upload__tip">最大 {{ maxUploadMb }} MB；后端会继续校验文件内容和页数。</div>
+          </template>
+        </el-upload>
 
-    <div class="config-panel" v-loading="configLoading">
-      <div class="config-panel-header">
-        <div>
-          <strong>任务配置</strong>
-          <small>默认使用当前 published 版本，也可为本次任务指定已发布配置。</small>
+        <div v-if="selectedFile" class="selected-file-strip" role="status">
+          <div class="selected-file-meta">
+            <strong :title="selectedFile.name">{{ selectedFile.name }}</strong>
+            <small>{{ formatBytes(selectedFile.size) }}</small>
+          </div>
+          <el-button link size="small" :disabled="submitting" @click="clearSelectedFile">清除</el-button>
         </div>
-        <div class="config-panel-actions">
-          <el-tag size="small" effect="plain">{{ configSummary?.resource_mode || "unknown" }}</el-tag>
-          <el-button link size="small" :loading="configLoading" @click="loadConfigSummary">重新加载</el-button>
-        </div>
-      </div>
-      <ApiErrorAlert :error="configError" />
-      <div class="config-summary-grid">
-        <div v-for="item in defaultConfigItems" :key="item.key" class="config-summary-item">
-          <span>{{ item.label }}</span>
-          <b>{{ item.value }}</b>
-        </div>
-      </div>
-      <el-alert
-        v-if="configWarnings.length"
-        class="config-warning"
-        type="warning"
-        :closable="false"
-        show-icon
-        :title="configWarnings.join('；')"
-      />
-      <el-alert
-        v-if="p0ExecutionBlocked"
-        class="config-warning"
-        type="error"
-        title="P0 执行链路未就绪"
-        :closable="false"
-        show-icon
-      >
-        <ul class="config-blocker-list">
-          <li v-for="blocker in p0ReadinessMessages" :key="blocker">{{ blocker }}</li>
-        </ul>
-      </el-alert>
 
-      <div class="config-selection">
-        <el-divider />
-        <div class="config-selection-grid">
-          <label>
-            <span>模板版本</span>
-            <el-select v-model="selectedTemplateVersion" clearable filterable placeholder="使用默认模板">
-              <el-option
-                v-for="option in configSummary?.options.templates || []"
-                :key="configOptionKey(option)"
-                :label="option.label"
-                :value="configOptionKey(option)"
-              />
-            </el-select>
-          </label>
-          <label>
-            <span>符号与排版规则</span>
-            <el-select v-model="selectedTermRuleVersion" clearable filterable placeholder="使用默认规则集">
-              <el-option
-                v-for="option in configSummary?.options.term_rule_sets || []"
-                :key="configOptionKey(option)"
-                :label="option.label"
-                :value="configOptionKey(option)"
-              />
-            </el-select>
-          </label>
-          <label v-if="selectedModeRequiresTranslationResources">
-            <span>翻译术语集</span>
-            <el-select v-model="selectedTranslationTermVersion" clearable filterable placeholder="使用默认翻译术语">
-              <el-option
-                v-for="option in filteredTranslationTermOptions"
-                :key="configOptionKey(option)"
-                :label="option.label"
-                :value="configOptionKey(option)"
-              />
-            </el-select>
-          </label>
-          <label v-if="selectedModeRequiresTranslationResources">
-            <span>翻译配置</span>
-            <el-select v-model="selectedTranslationProfileVersion" clearable filterable placeholder="使用默认翻译配置">
-              <el-option
-                v-for="option in filteredTranslationProfileOptions"
-                :key="configOptionKey(option)"
-                :label="option.label"
-                :value="configOptionKey(option)"
-              />
-            </el-select>
-          </label>
-          <label v-if="isAdmin && selectedModeRequiresTranslationResources" class="switch-row">
-            <span>全文调试归档</span>
-            <el-switch v-model="debugFullText" active-text="开启" inactive-text="关闭" />
-            <small>仅 P1 复核样本使用；归档会按后端保留期过期。</small>
-          </label>
+        <div class="mode-row">
+          <span class="mode-label">任务模式</span>
+          <el-radio-group v-model="mode" size="small">
+            <el-radio-button
+              v-for="option in selectableModeOptions"
+              :key="option.mode"
+              :label="option.mode"
+              :disabled="option.disabled"
+            >
+              {{ option.shortLabel }}
+            </el-radio-button>
+          </el-radio-group>
         </div>
-      </div>
-    </div>
+        <p v-if="!selectedModeRequiresTranslationResources" class="section-subtitle mode-caption">
+          保持原文语言和语义，不调用 AI。
+        </p>
 
-    <div class="upload-footer">
-      <div class="muted">{{ statusText }}</div>
-      <el-button type="primary" :icon="Upload" :loading="submitting" :disabled="createDisabled" @click="submit">
-        创建任务
-      </el-button>
+        <div v-if="!selectedModeRequiresTranslationResources" class="language-row">
+          <div class="language-row-header">
+            <span class="mode-label">原文语言</span>
+            <small class="language-hint">{{ selectedLanguageHint }}</small>
+          </div>
+          <el-radio-group v-model="directDocumentLanguage" size="small" aria-label="原文语言">
+            <el-radio-button
+              v-for="option in documentLanguageOptions"
+              :key="option.value"
+              :label="option.value"
+            >
+              {{ option.label }}
+            </el-radio-button>
+          </el-radio-group>
+        </div>
+
+        <el-alert
+          v-if="modeReadinessHint"
+          class="mode-readiness"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="modeReadinessHint"
+        />
+
+        <div class="upload-footer">
+          <div class="muted">{{ statusText }}</div>
+          <el-button type="primary" :icon="Upload" :loading="submitting" :disabled="createDisabled" @click="submit">
+            创建任务
+          </el-button>
+        </div>
+      </section>
+
+      <aside class="config-panel" v-loading="configLoading" aria-label="任务配置与门禁">
+        <div class="config-panel-header">
+          <div>
+            <strong>任务配置</strong>
+            <small>默认使用当前 published 版本，可在下方按需覆盖已发布配置。</small>
+          </div>
+          <div class="config-panel-actions">
+            <el-tag size="small" effect="plain">{{ configSummary?.resource_mode || "unknown" }}</el-tag>
+            <el-button link size="small" :loading="configLoading" @click="loadConfigSummary">重新加载</el-button>
+          </div>
+        </div>
+
+        <ApiErrorAlert :error="configError" />
+
+        <div class="config-summary-grid">
+          <div v-for="item in effectiveConfigItems" :key="item.key" class="config-summary-item">
+            <div class="config-summary-item-head">
+              <span>{{ item.label }}</span>
+              <el-tag v-if="item.overridden" size="small" type="warning" effect="plain">已覆盖</el-tag>
+            </div>
+            <b>{{ item.value }}</b>
+          </div>
+        </div>
+
+        <el-alert
+          v-if="configWarnings.length"
+          class="config-warning"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="configWarnings.join('；')"
+        />
+        <el-alert
+          v-if="p0ExecutionBlocked"
+          class="config-warning"
+          type="error"
+          title="P0 执行链路未就绪"
+          :closable="false"
+          show-icon
+        >
+          <ul class="config-blocker-list">
+            <li v-for="blocker in p0ReadinessMessages" :key="blocker">{{ blocker }}</li>
+          </ul>
+        </el-alert>
+
+        <div class="config-advanced-shell">
+          <button
+            type="button"
+            class="config-advanced-toggle"
+            :aria-expanded="advancedConfigOpen"
+            aria-controls="pdf-upload-advanced-config"
+            @click="advancedConfigOpen = !advancedConfigOpen"
+          >
+            <span class="config-advanced-toggle-copy">
+              <el-icon class="config-advanced-chevron" :class="{ 'is-open': advancedConfigOpen }">
+                <ArrowRight />
+              </el-icon>
+              <strong>高级：覆盖已发布版本</strong>
+            </span>
+            <span class="config-advanced-toggle-meta">
+              <el-tag v-if="customOverrideCount > 0" size="small" type="warning" effect="plain">
+                已自定义 {{ customOverrideCount }} 项
+              </el-tag>
+              <small v-else>{{ advancedConfigOpen ? "收起" : "展开" }}</small>
+            </span>
+          </button>
+
+          <div
+            v-show="advancedConfigOpen"
+            id="pdf-upload-advanced-config"
+            class="config-selection"
+          >
+            <el-divider />
+            <div class="config-selection-grid">
+              <label>
+                <span>模板版本</span>
+                <el-select v-model="selectedTemplateVersion" clearable filterable placeholder="使用默认模板">
+                  <el-option
+                    v-for="option in configSummary?.options.templates || []"
+                    :key="configOptionKey(option)"
+                    :label="option.label"
+                    :value="configOptionKey(option)"
+                  />
+                </el-select>
+              </label>
+              <label>
+                <span>符号与排版规则</span>
+                <el-select v-model="selectedTermRuleVersion" clearable filterable placeholder="使用默认规则集">
+                  <el-option
+                    v-for="option in configSummary?.options.term_rule_sets || []"
+                    :key="configOptionKey(option)"
+                    :label="option.label"
+                    :value="configOptionKey(option)"
+                  />
+                </el-select>
+              </label>
+              <label v-if="selectedModeRequiresTranslationResources">
+                <span>翻译术语集</span>
+                <el-select v-model="selectedTranslationTermVersion" clearable filterable placeholder="使用默认翻译术语">
+                  <el-option
+                    v-for="option in filteredTranslationTermOptions"
+                    :key="configOptionKey(option)"
+                    :label="option.label"
+                    :value="configOptionKey(option)"
+                  />
+                </el-select>
+              </label>
+              <label v-if="selectedModeRequiresTranslationResources">
+                <span>翻译配置</span>
+                <el-select v-model="selectedTranslationProfileVersion" clearable filterable placeholder="使用默认翻译配置">
+                  <el-option
+                    v-for="option in filteredTranslationProfileOptions"
+                    :key="configOptionKey(option)"
+                    :label="option.label"
+                    :value="configOptionKey(option)"
+                  />
+                </el-select>
+              </label>
+              <label v-if="isAdmin && selectedModeRequiresTranslationResources" class="switch-row">
+                <span>全文调试归档</span>
+                <el-switch v-model="debugFullText" active-text="开启" inactive-text="关闭" />
+                <small>仅 P1 复核样本使用；归档会按后端保留期过期。</small>
+              </label>
+            </div>
+          </div>
+        </div>
+      </aside>
     </div>
   </el-card>
 </template>
@@ -165,12 +229,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage, type UploadFile, type UploadInstance, type UploadRawFile } from "element-plus";
-import { Upload, UploadFilled } from "@element-plus/icons-vue";
+import { ArrowRight, Upload, UploadFilled } from "@element-plus/icons-vue";
 
 import type {
   DocumentJobConfigSummaryResponse,
   DocumentJobCreateRequest,
   DocumentJobMode,
+  DocumentLanguage,
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
 import { filesApi } from "@/api/files";
@@ -191,6 +256,9 @@ import {
   documentJobModeOptions,
   documentJobModeRequiresTranslationResources,
   documentJobModeTranslationMode,
+  documentLanguageMineruHint,
+  documentLanguageOptions,
+  formatBytes,
 } from "@/utils/format";
 
 const emit = defineEmits<{
@@ -208,6 +276,8 @@ const configError = ref<ApiClientError | null>(null);
 const configLoading = ref(false);
 const configSummary = ref<DocumentJobConfigSummaryResponse | null>(null);
 const mode = ref<DocumentJobMode>("direct_pdf_to_word");
+const directDocumentLanguage = ref<DocumentLanguage>("auto");
+const advancedConfigOpen = ref(false);
 const selectedTemplateVersion = ref("");
 const selectedTermRuleVersion = ref("");
 const selectedTranslationTermVersion = ref("");
@@ -235,6 +305,7 @@ const firstUnavailableModeOption = computed(() =>
   selectableModeOptions.value.find((option) => option.disabled),
 );
 const selectedModeRequiresTranslationResources = computed(() => documentJobModeRequiresTranslationResources(mode.value));
+const selectedLanguageHint = computed(() => documentLanguageMineruHint(directDocumentLanguage.value));
 const selectedModeDisabled = computed(() =>
   selectedModeRequiresTranslationResources.value
   && !isTranslationModeAvailable(configSummary.value, selectedTranslationMode.value),
@@ -255,41 +326,6 @@ const modeReadinessHint = computed(() => {
 const selectedTranslationDefaults = computed(() =>
   translationResourceDefaultsForMode(configSummary.value, selectedTranslationMode.value),
 );
-const defaultConfigItems = computed(() => {
-  const defaults = configSummary.value?.defaults;
-  const items = [
-    { key: "template", label: "模板", value: defaults?.template?.label || "未配置" },
-    { key: "term-rule-set", label: "符号与排版规则", value: defaults?.term_rule_set?.label || "未配置" },
-  ];
-  if (selectedModeRequiresTranslationResources.value) {
-    items.push(
-      {
-        key: "translation-term-set",
-        label: "翻译术语集",
-        value: selectedTranslationDefaults.value?.translation_term_set?.label || "未配置",
-      },
-      {
-        key: "translation-profile",
-        label: "翻译配置",
-        value: selectedTranslationDefaults.value?.translation_profile?.label || "未配置",
-      },
-    );
-  }
-  return items;
-});
-const activeStep = computed(() => {
-  if (createStep.value === "authorize" || createStep.value === "upload") {
-    return 1;
-  }
-  if (createStep.value === "create") {
-    return 2;
-  }
-  if (createStep.value === "done") {
-    return 3;
-  }
-  return selectedFile.value ? 1 : 0;
-});
-
 const selectedTemplateOption = computed(() =>
   findConfigOption(configSummary.value?.options.templates || [], selectedTemplateVersion.value),
 );
@@ -303,19 +339,85 @@ const createDisabled = computed(() => !selectedFile.value || configurationBlocks
 const selectedTermRuleOption = computed(() =>
   findConfigOption(configSummary.value?.options.term_rule_sets || [], selectedTermRuleVersion.value),
 );
-const selectedTranslationTermOption = computed(() =>
-  findConfigOption(filteredTranslationTermOptions.value, selectedTranslationTermVersion.value),
-);
-const selectedTranslationProfileOption = computed(() =>
-  findConfigOption(filteredTranslationProfileOptions.value, selectedTranslationProfileVersion.value),
-);
-
 const filteredTranslationTermOptions = computed(() =>
   filterConfigOptionsByLanguagePair(configSummary.value?.options.translation_term_sets || [], selectedTranslationMode.value),
 );
 const filteredTranslationProfileOptions = computed(() =>
   filterConfigOptionsByLanguagePair(configSummary.value?.options.translation_profiles || [], selectedTranslationMode.value),
 );
+const selectedTranslationTermOption = computed(() =>
+  findConfigOption(filteredTranslationTermOptions.value, selectedTranslationTermVersion.value),
+);
+const selectedTranslationProfileOption = computed(() =>
+  findConfigOption(filteredTranslationProfileOptions.value, selectedTranslationProfileVersion.value),
+);
+const effectiveConfigItems = computed(() => {
+  const defaults = configSummary.value?.defaults;
+  const items = [
+    {
+      key: "template",
+      label: "模板",
+      value: selectedTemplateOption.value?.label || defaults?.template?.label || "未配置",
+      overridden: Boolean(selectedTemplateOption.value),
+    },
+    {
+      key: "term-rule-set",
+      label: "符号与排版规则",
+      value: selectedTermRuleOption.value?.label || defaults?.term_rule_set?.label || "未配置",
+      overridden: Boolean(selectedTermRuleOption.value),
+    },
+  ];
+  if (selectedModeRequiresTranslationResources.value) {
+    items.push(
+      {
+        key: "translation-term-set",
+        label: "翻译术语集",
+        value: selectedTranslationTermOption.value?.label || selectedTranslationDefaults.value?.translation_term_set?.label || "未配置",
+        overridden: Boolean(selectedTranslationTermOption.value),
+      },
+      {
+        key: "translation-profile",
+        label: "翻译配置",
+        value: selectedTranslationProfileOption.value?.label || selectedTranslationDefaults.value?.translation_profile?.label || "未配置",
+        overridden: Boolean(selectedTranslationProfileOption.value),
+      },
+    );
+  }
+  return items;
+});
+const customOverrideCount = computed(() => {
+  let count = 0;
+  if (selectedTemplateOption.value) {
+    count += 1;
+  }
+  if (selectedTermRuleOption.value) {
+    count += 1;
+  }
+  if (selectedModeRequiresTranslationResources.value) {
+    if (selectedTranslationTermOption.value) {
+      count += 1;
+    }
+    if (selectedTranslationProfileOption.value) {
+      count += 1;
+    }
+    if (isAdmin.value && debugFullText.value) {
+      count += 1;
+    }
+  }
+  return count;
+});
+const activeStep = computed(() => {
+  if (createStep.value === "authorize" || createStep.value === "upload") {
+    return 1;
+  }
+  if (createStep.value === "create") {
+    return 2;
+  }
+  if (createStep.value === "done") {
+    return 3;
+  }
+  return selectedFile.value ? 1 : 0;
+});
 
 async function loadConfigSummary(): Promise<void> {
   configLoading.value = true;
@@ -353,6 +455,11 @@ function handleFileRemove(): void {
   statusText.value = "等待选择 PDF。";
 }
 
+function clearSelectedFile(): void {
+  uploadRef.value?.clearFiles();
+  handleFileRemove();
+}
+
 function handleExceed(): void {
   ElMessage.warning("当前仅支持单文件上传。");
 }
@@ -384,7 +491,9 @@ async function submit(): Promise<void> {
     const payload: DocumentJobCreateRequest = {
       source_file_id: authorization.file_id,
       translation_mode: selectedTranslationMode.value,
-      document_language: documentJobModeCreateLanguage(mode.value),
+      document_language: selectedModeRequiresTranslationResources.value
+        ? documentJobModeCreateLanguage(mode.value)
+        : directDocumentLanguage.value,
       debug_full_text: isAdmin.value && selectedModeRequiresTranslationResources.value && debugFullText.value,
     };
     if (selectedTemplateOption.value) {
@@ -407,6 +516,7 @@ async function submit(): Promise<void> {
     ElMessage.success("任务已创建。");
     uploadRef.value?.clearFiles();
     selectedFile.value = null;
+    directDocumentLanguage.value = "auto";
     createStep.value = "done";
     statusText.value = "任务创建成功。";
     emit("created", response.job_id);
@@ -436,6 +546,13 @@ watch(selectedModeDisabled, (disabled) => {
   }
 });
 
+watch(templateUnavailable, (unavailable) => {
+  // 默认模板受限时自动展开覆盖区，降低用户寻找替代模板的成本。
+  if (unavailable) {
+    advancedConfigOpen.value = true;
+  }
+});
+
 onMounted(() => {
   void loadConfigSummary();
 });
@@ -459,11 +576,23 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
   border: 1px solid var(--app-color-primary-border);
   border-radius: var(--app-radius-md);
   background: linear-gradient(180deg, var(--app-color-surface), var(--app-color-surface-muted));
-  box-shadow: var(--app-shadow-panel);
+  box-shadow: var(--app-shadow-subtle);
 }
 
 .upload-card :deep(.el-card__body) {
   padding: var(--app-space-5);
+}
+
+.upload-workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr);
+  gap: var(--app-space-5);
+  align-items: start;
+  margin-top: var(--app-space-3);
+}
+
+.upload-primary-pane {
+  min-width: 0;
 }
 
 .upload-card :deep(.el-upload-dragger) {
@@ -501,7 +630,38 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
 }
 
 .upload-steps {
-  margin: 12px 0 18px;
+  margin: 0 0 16px;
+}
+
+.selected-file-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-3);
+  margin-top: var(--app-space-3);
+  padding: 10px 12px;
+  border: 1px solid var(--app-color-primary-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-color-primary-soft);
+}
+
+.selected-file-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.selected-file-meta strong {
+  color: var(--app-color-text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.selected-file-meta small {
+  color: var(--app-color-text-muted);
+  font-size: 12px;
 }
 
 .upload-card :deep(.el-button),
@@ -520,24 +680,58 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.mode-row :deep(.el-radio-group),
+.language-row :deep(.el-radio-group) {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 6px;
+  max-width: 100%;
+}
+
+.mode-caption {
+  margin: 8px 0 0;
+}
+
+.language-row {
+  display: grid;
+  gap: 8px;
   margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--app-color-border-soft);
+}
+
+.language-row-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.language-hint {
+  color: var(--app-color-text-muted);
+  font-size: 12px;
 }
 
 .mode-label {
   color: var(--app-color-text-muted);
   font-size: 14px;
+  font-weight: 600;
 }
 
 .mode-readiness {
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 .config-panel {
   display: grid;
   gap: 12px;
-  margin-top: 14px;
-  padding: 12px;
+  min-width: 0;
+  padding: 14px;
   border: 1px solid var(--app-color-accent-cyan-border);
   border-radius: var(--app-radius-md);
   background:
@@ -580,10 +774,15 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
   font-size: 12px;
 }
 
-.config-summary-grid,
-.config-selection-grid {
+.config-summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.config-selection-grid {
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
@@ -593,6 +792,13 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
   border: 1px solid var(--app-color-border-soft);
   border-radius: var(--app-radius-md);
   background: linear-gradient(180deg, var(--app-color-glass-strong), var(--app-color-surface-muted));
+}
+
+.config-summary-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
 }
 
 .config-summary-item b {
@@ -611,8 +817,63 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
   padding-left: 18px;
 }
 
+.config-advanced-shell {
+  border-top: 1px solid var(--app-color-border-soft);
+  padding-top: 10px;
+}
+
+.config-advanced-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--app-radius-sm);
+  background: transparent;
+  color: var(--app-color-text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--app-motion-fast) var(--app-ease-out);
+}
+
+.config-advanced-toggle:hover {
+  background: var(--app-color-surface);
+  border-color: var(--app-color-border-soft);
+}
+
+.config-advanced-toggle:focus-visible {
+  outline: 2px solid var(--app-color-primary);
+  outline-offset: 2px;
+}
+
+.config-advanced-toggle-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.config-advanced-toggle-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+}
+
+.config-advanced-chevron {
+  transition: transform var(--app-motion-fast) var(--app-ease-out);
+}
+
+.config-advanced-chevron.is-open {
+  transform: rotate(90deg);
+}
+
 .config-selection :deep(.el-divider--horizontal) {
-  margin: 2px 0 12px;
+  margin: 8px 0 12px;
 }
 
 .config-selection label {
@@ -631,7 +892,19 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--app-color-border-soft);
+}
+
+@media (max-width: 960px) {
+  .upload-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .config-selection-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -650,7 +923,7 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
   .upload-card {
     border-color: var(--app-color-border);
     background: var(--app-color-surface);
-    box-shadow: var(--app-shadow-panel);
+    box-shadow: var(--app-shadow-subtle);
   }
 
   .config-panel,

@@ -6,7 +6,10 @@
         <p class="section-subtitle">{{ reviewHintSummary }}</p>
         <p class="section-subtitle">页码指源 PDF，不能作为 Word 实际页码；此处只读提示，不代表正式复核或发布结论。</p>
       </div>
-      <el-button :icon="Refresh" :loading="reviewBlocksLoading" @click="loadReviewBlocks()">刷新提示</el-button>
+      <div class="review-hints-actions">
+        <el-button type="primary" plain @click="openDocumentReview()">打开三栏复核</el-button>
+        <el-button :icon="Refresh" :loading="reviewBlocksLoading" @click="loadReviewBlocks()">刷新提示</el-button>
+      </div>
     </div>
     <ApiErrorAlert :error="reviewBlocksError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.review_blocks')" />
     <el-alert
@@ -17,8 +20,15 @@
     />
     <ul v-if="reviewHintItems.length" class="review-hint-list" aria-label="源 PDF 复核提示位置">
       <li v-for="item in reviewHintItems" :key="item.block_id" class="review-hint-item">
-        <strong>{{ documentReviewSourcePagesText(item.source_spans) }}</strong>
-        <span class="mono review-hint-block-id">块 ID：{{ item.block_id }}</span>
+        <div class="review-hint-item-head">
+          <div>
+            <strong>{{ documentReviewSourcePagesText(item.source_spans) }}</strong>
+            <span class="mono review-hint-block-id">块 ID：{{ item.block_id }}</span>
+          </div>
+          <el-button size="small" link type="primary" @click="openDocumentReview(item.block_id)">
+            定位复核
+          </el-button>
+        </div>
         <ul class="review-hint-flags">
           <li v-for="(flag, index) in item.flags" :key="`${flag.code}-${index}`">
             <el-tag size="small" :type="flag.severity === 'blocker' ? 'danger' : flag.severity === 'warning' ? 'warning' : 'info'" effect="plain">
@@ -42,6 +52,7 @@ import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { documentReviewFlagSuggestion, documentReviewSourcePagesText } from "@/utils/format";
 import type { UnwrapRef } from "vue";
 import type { JobDetailData } from "./useJobDetailData";
+import type { JobDetailActions } from "./useJobDetailActions";
 import type { JobDetailReviewHints } from "./useJobDetailReviewHints";
 const {
   reviewBlocks,
@@ -55,6 +66,7 @@ const {
   reviewHintsHaveWarnings,
   reviewHintSummary,
   reviewHintNotice,
+  openDocumentReview,
 } = defineProps<{
   reviewBlocks: UnwrapRef<JobDetailData["reviewBlocks"]>;
   reviewBlocksLoading: UnwrapRef<JobDetailData["reviewBlocksLoading"]>;
@@ -67,6 +79,7 @@ const {
   reviewHintsHaveWarnings: UnwrapRef<JobDetailReviewHints["reviewHintsHaveWarnings"]>;
   reviewHintSummary: UnwrapRef<JobDetailReviewHints["reviewHintSummary"]>;
   reviewHintNotice: UnwrapRef<JobDetailReviewHints["reviewHintNotice"]>;
+  openDocumentReview: UnwrapRef<JobDetailActions["openDocumentReview"]>;
 }>();
 </script>
 
@@ -79,9 +92,22 @@ const {
   overflow-wrap: anywhere;
 }
 
+.review-hints-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .review-hint-item {
   padding-block: var(--app-space-3);
   border-bottom: 1px solid var(--app-color-border-soft);
+}
+
+.review-hint-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .review-hint-block-id {

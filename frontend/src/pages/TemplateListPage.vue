@@ -16,6 +16,11 @@
       </template>
     </WorkbenchPageHeader>
 
+    <nav class="template-style-switch app-page-shell app-page-shell--wide" aria-label="模板与样式切换">
+      <router-link class="switch-tab is-active" to="/settings/templates" aria-current="page">Word 模板文档</router-link>
+      <router-link class="switch-tab" to="/settings/word-page-styles">Word 页面样式配置</router-link>
+    </nav>
+
     <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
     <el-alert
@@ -118,6 +123,32 @@ onMounted(() => {
 .template-list-page > .app-page-shell {
   width: 100%;
   max-width: 100%;
+}
+
+.template-style-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-muted);
+  width: fit-content;
+}
+
+.switch-tab {
+  padding: 6px 14px;
+  border-radius: var(--app-radius-sm);
+  color: var(--app-color-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.switch-tab.is-active {
+  background: var(--app-color-surface);
+  color: var(--app-color-primary-hover);
+  box-shadow: var(--app-shadow-subtle);
 }
 
 .table-wrap {

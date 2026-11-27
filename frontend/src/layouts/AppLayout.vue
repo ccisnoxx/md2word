@@ -77,7 +77,7 @@
         </div>
       </header>
 
-      <el-main class="app-main">
+      <el-main class="app-main" :class="{ 'is-full-width': Boolean(route.meta.fullWidth) }">
         <div id="app-main-content" ref="mainContentRef" class="app-main-focus-target" tabindex="-1">
           <router-view />
         </div>
@@ -148,10 +148,12 @@ import AppThemeToggle from "@/components/AppThemeToggle.vue";
 import OperatorCommandPalette from "@/components/OperatorCommandPalette.vue";
 import { getAppNavigationGroups, getAppRouteContext, getDefaultProtectedRoute, type AppAccessContext } from "@/navigation/appShell";
 import { useAuthStore } from "@/stores/auth";
+import { useWorkbenchBadgesStore } from "@/stores/workbenchBadges";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { getStoredSidebarCollapsed, persistSidebarCollapsed } from "@/utils/sidebarState";
 
 const auth = useAuthStore();
+const workbenchBadges = useWorkbenchBadgesStore();
 const route = useRoute();
 const router = useRouter();
 const sidebarCollapsed = ref(getStoredSidebarCollapsed());
@@ -177,7 +179,7 @@ const access = computed<AppAccessContext>(() => ({
   roles: auth.user?.roles ?? [],
   permissions: auth.user?.permissions ?? [],
 }));
-const navGroups = computed(() => getAppNavigationGroups(access.value));
+const navGroups = computed(() => getAppNavigationGroups(access.value, workbenchBadges.navBadges));
 const routeContext = computed(() => getAppRouteContext(route, access.value));
 const defaultProtectedRoute = computed(() => getDefaultProtectedRoute(access.value));
 const userDisplayName = computed(() => auth.user?.display_name || auth.user?.username || "未命名用户");
@@ -223,6 +225,7 @@ function handleSidebarNavigate(): void {
 }
 
 function handleLogout(): void {
+  workbenchBadges.reset();
   auth.logout();
   void router.push("/login");
 }
@@ -459,6 +462,10 @@ async function submitChangePassword(): Promise<void> {
   min-width: 0;
   width: 100%;
   padding: var(--app-space-6) var(--app-space-6) 40px;
+}
+
+.app-main.is-full-width {
+  padding: var(--app-space-3) var(--app-space-4) var(--app-space-4);
 }
 
 .app-main-focus-target {

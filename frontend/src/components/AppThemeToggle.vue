@@ -14,10 +14,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, type Component } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, type Component } from "vue";
 import { Moon, Monitor, Sunny } from "@element-plus/icons-vue";
 
-import { applyThemeMode, getStoredThemeMode, persistThemeMode, type ThemeMode } from "@/utils/theme";
+import { applyThemeMode, getStoredThemeMode, persistThemeMode, THEME_CHANGE_EVENT, type ThemeMode } from "@/utils/theme";
 
 const themeMode = ref<ThemeMode>(getStoredThemeMode());
 const themeOrder: ThemeMode[] = ["system", "dark", "light"];
@@ -38,8 +38,18 @@ const themeIcon = computed<Component>(() => {
 });
 const themeTooltip = computed(() => `当前：${themeLabels[themeMode.value]}。点击切换主题。`);
 
+function handleThemeChange(event: Event): void {
+  const detail = (event as CustomEvent<ThemeMode>).detail;
+  themeMode.value = detail || getStoredThemeMode();
+}
+
 onMounted(() => {
   applyThemeMode(themeMode.value);
+  window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange);
 });
 
 function cycleThemeMode(): void {
